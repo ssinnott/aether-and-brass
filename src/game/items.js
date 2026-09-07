@@ -241,7 +241,8 @@ export class Prop extends Entity {
     audio.play('valve_blow');
     particles.burst('steam', this.x, this.h, this.z, 24, { speed: 3, up: 4, spread: 1.2, sizeJitter: 2 });
     if (!b) return;
-    if (typeof b.stun !== 'function' && b.enterStagger) { b.enterStagger(60); b.rig.tell = false; }
+    if (typeof b.stun === 'function') return; // world._checkValves -> Boss.stun does the stun, ring, text and shake
+    if (b.enterStagger) { b.enterStagger(60); b.rig.tell = false; }
     world.addFx('ring', b.x, 40, b.z, { r0: 10, r1: 90, color: '#4DF0E0' });
     floatText(b.x, b.y + b.h + 10, b.z, 'STUNNED!', '#4DF0E0', 2);
     if (world.camera) world.camera.shake(6, 12);

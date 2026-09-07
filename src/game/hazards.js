@@ -166,6 +166,9 @@ export function createHazards(list = []) { return list.map((h) => new Hazard(h))
 
 // ---------------------------------------------------------------- environment zones
 const MOLTEN_Z = 20, RAIL = 12, DAIS_EVERY = 20, DAIS_DMG = 5, CONVEYOR_EVERY = 240;
+/** Edge shove: a body knocked down / thrown within EDGE_LANE px of a lethal edge by an attacker standing deeper in the lane drifts
+ *  toward that edge at EDGE_VZ px/f while airborne (hits carry no z knockback, so this is what makes "knock them in" reachable). */
+const EDGE_LANE = 30, EDGE_VZ = 2.4;
 const MOLTEN_HIT = { damage: 10, type: 'knockdown', kbX: 0, kbY: 5, hitstun: 20, sfx: 'burn' };
 
 /**
@@ -180,10 +183,23 @@ export class Zone extends Entity {
     this.x = (spec.x0 + spec.x1) / 2; this.z = -5; this.shadowW = 0;
     this.forced = !!spec.active;
     this.burns = new Map();        // fighter id -> { f, ticks, t }
+    this.wasAir = new Map();       // enemy id -> was airborne last frame (edge shove detection)
     this.t = 0; this.lastCrate = 0;
   }
   hurtbox() { return null; }
   inX(e) { return e.x >= this.x0 && e.x <= this.x1; }
+  /** Enemy `f` just entered KNOCKDOWN / THROWN near a lethal edge (low = z of the back edge, high = z of the front edge, null = none):
+   *  shove it over when the attacker stood deeper in the lane than the body. */
+  edgeShove(f, low, high) {
+    const air = f.state === ST.THROWN || f.state === ST.KNOCKDOWN;
+    const was = this.wasAir.get(f.id);
+    if (f.dead) this.wasAir.delete(f.id); else this.wasAir.set(f.id, air);
+    if (!air || was || f.dead) return;
+    const by = f.thrownBy || f.lastHitBy;
+    if (!by || by.kind !== 'player') return;
+    if (low != null && f.z < low + EDGE_LANE && by.z > f.z + 4) f.vz = -EDGE_VZ;
+    else if (high != null && f.z > high - EDGE_LANE && by.z < f.z - 4) f.vz = EDGE_VZ;
+  }
   /** The zone applies only while its arena's boss is up (conveyor / dais) or always (molten / rails). */
   get active() {
     if (this.forced) return true;
@@ -213,6 +229,7 @@ export class Zone extends Entity {
       else if (AIR_STATES.has(f.state) || f.airborne || f.state === ST.LYING) ringOut(world, f, 'molten');
       else f.z = MOLTEN_Z + 1;
     }
+    for (const f of world.fighters) if (f.kind === 'enemy' && this.inX(f)) this.edgeShove(f, MOLTEN_Z, null);
     for (const b of this.burns.values()) {
       if (++b.t % 20 === 0) { b.f.takeHitRaw(2, 'light'); particles.burst('ember', b.f.x, 20, b.f.z, 3, { speed: 1.5, up: 2 }); if (--b.ticks <= 0 || b.f.dead) this.burns.delete(b.f.id); }
     }
@@ -222,9 +239,10 @@ export class Zone extends Entity {
   updateRails(world) {
     for (const f of world.fighters) {
       if (!this.inX(f)) continue;
+      if (f.kind === 'enemy') this.edgeShove(f, RAIL, Z_MAX - RAIL);
       const over = f.z < RAIL ? -1 : f.z > Z_MAX - RAIL ? 1 : 0;
       if (!over) continue;
-      if (f.kind === 'enemy' && (f.state === ST.THROWN || (f.state === ST.KNOCKDOWN && f.y > 30))) { ringOut(world, f, 'rail', over); continue; }
+      if (f.kind === 'enemy' && (f.state === ST.THROWN || (f.state === ST.KNOCKDOWN && f.y > 4))) { ringOut(world, f, 'rail', over); continue; }
       f.z = over < 0 ? RAIL : Z_MAX - RAIL;
       if (f.vz * over > 0) f.vz = 0;
     }
