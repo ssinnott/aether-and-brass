@@ -136,7 +136,7 @@ export class World {
    * One-frame area hit centred at (x, z) with radius r, credited to `owner`. Uses an invisible explosion projectile.
    */
   spawnAreaHit(owner, x, z, r, hit, exclude = null, y = 0) {
-    const p = new Projectile({ owner, team: owner ? owner.team : TEAM.NONE, x, y: r * 0.5, z, r, life: 2, style: 'explosion', hit: { ...hit, z: r }, pierce: 99 });
+    const p = new Projectile({ owner, team: owner ? owner.team : TEAM.NONE, x, y: Math.max(y, r * 0.5), z, r, life: 2, style: 'explosion', hit: { ...hit, z: r }, pierce: 99 });
     if (exclude) p.hitTargets.add(exclude.id);
     return this.add(p);
   }
@@ -174,7 +174,7 @@ export class World {
   /** Reset for a new run. */
   clear() { this.entities.length = 0; this.players.length = 0; this.fx.length = 0; this.boss = null; this.attackTokens.holders.clear(); particles.clear(); }
   /** Living enemies excluding bosses (wave bookkeeping). */
-  get waveEnemies() { return this._enemies.filter((e) => e.kind !== 'boss' && !e.fleeing); }
+  get waveEnemies() { return this._enemies.filter((e) => e.kind !== 'boss' && !e.fleeing && !e.dead); }
 }
 
 function depthCompare(a, b) {

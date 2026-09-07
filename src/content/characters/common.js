@@ -5,6 +5,11 @@ import { P } from '../../art/poses.js';
 
 export { strike, frontBox, areaBox, STYLES, P };
 
+/** Keyframe shorthand for hand-authored anims: F(dur, poseSpec, extraFrameFields) -> { dur, pose: P(spec), ...extra }. */
+export const F = (dur, spec, extra) => ({ dur, pose: P(spec), ...(extra || {}) });
+/** Hit data shorthand: hit(damage, type, kbX, kbY, hitstun, extra). */
+export const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
+
 /** GDD stat -> movement mapping (GDD 2: walk 1.7 / 2.2 / 2.8 px/f for Speed 2 / 3 / 5; run = walk x 1.7). */
 export function speedFor(speedStat) { return speedStat >= 5 ? 2.8 : speedStat >= 3 ? 2.2 : 1.7; }
 /** Health stat -> max HP. */

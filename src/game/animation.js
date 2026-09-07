@@ -1,11 +1,15 @@
 // Keyframe animation player (ARCHITECTURE.md section 4). Frame durations are in fixed steps (60 Hz).
-import { lerpPose, makePose, copyPose } from '../art/poses.js';
+import { lerpPose, makePose, copyPose, ease, faceIndex } from '../art/poses.js';
 import { markFull } from '../art/rig.js';
 
 const EMPTY = Object.freeze({ dur: 1, pose: null });
 
 /**
- * Plays named animations from an `anims` table: { name: { loop, frames: [ { dur, pose, interp, hitbox, move, fx, sfx, cancel, event } ] } }.
+ * Plays named animations from an `anims` table: { name: { loop, frames: [ { dur, pose, interp, hitbox, move, fx, sfx, cancel, event,
+ *   ease: 'in'|'out'|'inout'|'overshoot'|'snap',   // easing of the lerp toward the next frame (default linear)
+ *   smear: { from, to, a, r, fade },                // weapon smear arc (root-space degrees) drawn by rig.js; alpha fades toward the next frame
+ *   face: 'angry'|'hurt'|...                        // facial expression override for this frame (see poses.js FACE)
+ * } ] } }.
  * `pose` is a fully populated, interpolated pose object reused every tick (never keep references across frames).
  * `events` accumulates { type: 'event'|'sfx'|'fx', name, value, frameIndex } entries as frames are entered; the owner
  * reads and clears it (`events.length = 0`) each step.
@@ -92,8 +96,18 @@ export class AnimPlayer {
     const interp = f.interp !== false && !this.done;
     let next = f;
     if (interp) next = this.frameIndex + 1 < frames.length ? frames[this.frameIndex + 1] : (this.def.loop ? frames[0] : f);
-    const t = interp ? Math.min(1, this.frameTime / (f.dur || 1)) : 0;
-    lerpPose(f.pose, next.pose, t, this.pose);
+    let t = interp ? Math.min(1, this.frameTime / (f.dur || 1)) : 0;
+    if (f.ease) t = ease(f.ease, t);
+    const pose = lerpPose(f.pose, next.pose, t, this.pose);
+    // frame-level overrides (authoring convenience): smear arc and facial expression live on the frame, not the pose
+    if (f.face != null) pose.face = faceIndex(f.face);
+    const sm = f.smear;
+    if (sm) {
+      const ps = pose.smear;
+      ps.from = sm.from || 0; ps.to = sm.to || 0; ps.r = sm.r || 0;
+      const a0 = sm.a != null ? sm.a : 0.45, a1 = next !== f && next.smear ? (next.smear.a != null ? next.smear.a : 0.45) : 0;
+      ps.a = sm.fade === false ? a0 : a0 + (a1 - a0) * t;
+    }
   }
 }
 

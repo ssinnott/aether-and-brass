@@ -16,6 +16,12 @@ const AIR_FALL_STATES = new Set([ST.KNOCKDOWN, ST.HURT_AIR, ST.THROWN]);
 const GROUND_FRICTION = 0.82;
 const HITSTUN_SCALE_AFTER = 5, HITSTUN_MIN = 8;
 const HP_BAR_FRAMES = 90;
+/** Frames after which a looping animation in an action state is treated as finished (missing-anim safety net). */
+const LOOP_ACTION_LIMIT = 60;
+/** Extra i-frames players get after standing up (GDD 7: 30f after get-up). */
+const PLAYER_GETUP_INVULN = 30;
+/** Hit-stop granted to both sides when an attack passes through a dodge's i-frames (GDD 7). */
+const DODGE_THROUGH_HITSTOP = 4;
 const THROW_BODY_HIT = { damage: 15, type: 'knockdown', kbX: 4, kbY: 4, hitstun: 20, friendly: true, sfx: 'hit_heavy' };
 
 /**
@@ -97,14 +103,18 @@ export class Fighter extends Entity {
     if (s === ST.IDLE) { if (a.name !== 'idle' && a.done) this.play('idle'); return; }
     if (ACTION_STATES.has(s)) {
       if (s === ST.SUPER) this.invuln = Math.max(this.invuln, 2);
-      if (a.done) this.onActionDone(world);
+      // a looping fallback (missing anim -> idle) would never finish: bail out after a while (the victory 'win' loop is intentional)
+      if (a.done || (a.def && a.def.loop && !this.victory && this.stateTimer > LOOP_ACTION_LIMIT)) this.onActionDone(world);
       return;
     }
     if (s === ST.JUMP) { if (this.vy < 0 && a.name === 'jump') this.play('fall', { fallback: 'jump' }); return; }
     if (s === ST.HURT) { if (--this.hurtTimer <= 0) this.setState(ST.IDLE, 'idle'); return; }
     if (s === ST.LYING) {
       const frames = this.def.lyingFrames || FIGHTER_DEFAULTS.lyingFrames;
-      if (this.stateTimer >= frames) { this.invuln = Math.max(this.invuln, FIGHTER_DEFAULTS.getupInvuln); this.setState(ST.GETUP, 'getup'); audio.play('getup'); }
+      if (this.stateTimer >= frames) {
+        this.setState(ST.GETUP, 'getup'); audio.play('getup');
+        this.invuln = Math.max(this.invuln, this.kind === 'player' ? this.anim.length + PLAYER_GETUP_INVULN : FIGHTER_DEFAULTS.getupInvuln);
+      }
       return;
     }
     if (s === ST.DEAD) { if (--this.deadTimer <= 0) { this.removeMe = true; this.alive = false; } return; }
@@ -148,7 +158,7 @@ export class Fighter extends Entity {
       this.vx *= 0.3;
       burstDust(this.x, this.z, 6, 2);
       if (this.dead) { this.setState(ST.DEAD, 'dead'); this.deadTimer = FIGHTER_DEFAULTS.deadBlinkFrames; world.onDeath(this); audio.play(this.def.sfx && this.def.sfx.death || 'hit_knockdown'); }
-      else { this.setState(ST.LYING, 'lying'); audio.play('land_heavy'); }
+      else { this.thrownBy = null; this.setState(ST.LYING, 'lying'); audio.play('land_heavy'); }
       if (world.camera) world.camera.shake(3, 6);
       return;
     }
@@ -232,7 +242,15 @@ export class Fighter extends Entity {
   takeHit(hit, attacker) {
     if (!this.alive || this.dead || this.state === ST.DEAD) return false;
     if (attacker && attacker.team === this.team && !hit.friendly) return false;
-    if (this.invuln > 0 && !hit.unblockable) return false;
+    if (this.invuln > 0 && !hit.unblockable) {
+      // dodging through an enemy's active frames: 4f hit-stop for both + meter (GDD 7), once per attack instance
+      if (this.state === ST.DODGE && attacker && attacker.anim && this.dodgedInstance !== attacker.anim.instance) {
+        this.dodgedInstance = attacker.anim.instance;
+        this.hitstop = Math.max(this.hitstop, DODGE_THROUGH_HITSTOP); attacker.hitstop = Math.max(attacker.hitstop, DODGE_THROUGH_HITSTOP);
+        this.onDodged(attacker);
+      }
+      return false;
+    }
     if (this.state === ST.LYING && !hit.otg) return false;
     if (this.juggleImmune && this.airborne) return false;
     const type = hit.type || 'light';
@@ -241,18 +259,23 @@ export class Fighter extends Entity {
     if (air) dmg *= 1.2;
     dmg = Math.max(0, Math.round(dmg));
     if (this.godmode) dmg = 0;
+    const hpBefore = this.hp;
     this.hp = Math.max(0, this.hp - dmg);
+    this.lastDamage = hpBefore - this.hp; // HP actually lost (no overkill in the results tally)
     this.hpBarTimer = HP_BAR_FRAMES;
     this.flashTimer = 4;
     this.lastHitBy = attacker || this.lastHitBy;
-    const stop = HITSTOP[type] != null ? HITSTOP[type] : HITSTOP.light;
+    // a hit on a fighter holding someone frees the held target (GDD 7 "assist"; also clears a stale grabTarget)
+    if (this.grabTarget && this.state === ST.GRAB) this.releaseGrab(false);
+    const finisher = attacker && attacker.state === ST.SUPER && (type === 'knockdown' || type === 'launch' || hit.finisher);
+    const stop = finisher ? HITSTOP.superFinisher : HITSTOP[type] != null ? HITSTOP[type] : HITSTOP.light;
     this.hitstop = Math.max(this.hitstop, stop);
     if (attacker) attacker.hitstop = Math.max(attacker.hitstop, stop);
     const face = attacker ? (sign(this.x - attacker.x) || attacker.facing) : -this.facing;
     const cy = this.y + this.h * 0.6;
     burstHit(this.x - face * 6, cy, this.z, type, face);
     if (this.world) this.world.addFx('spark', this.x - face * 8, cy, this.z, { type });
-    if (dmg > 0) floatText(this.x, this.y + this.h + 6, this.z, String(dmg), type === 'light' ? '#fff8d0' : '#ffd050', type === 'light' ? 1 : 2);
+    if (dmg > 0) this.damageText(dmg, type === 'light' ? '#fff8d0' : '#ffd050', type === 'light' ? 1 : 2);
     if (this.grabbedBy && this.grabbedBy !== attacker) this.grabbedBy.releaseGrab(false);
     if (this.def.sfx && this.def.sfx.hurt) audio.play(this.def.sfx.hurt);
     const cam = this.world ? this.world.camera : null;
@@ -263,7 +286,8 @@ export class Fighter extends Entity {
     if (this.armor && ((type !== 'launch' && type !== 'knockdown') || this.unlaunchable) && !hit.breaksArmor) { this.vx += face * 0.5; this.onHurt(hit, attacker); audio.play('armor'); return true; }
     if (air || this.state === ST.KNOCKDOWN) {
       this.juggleCount++;
-      if (this.juggleCount >= FIGHTER_DEFAULTS.maxJuggles) { this.juggleImmune = true; this.knockDown(1, face * 3); }
+      // up to maxJuggles (4) air hits; the next one is a hard knockdown and the body is immune until it lands (RECONCILIATION physics row)
+      if (this.juggleCount > FIGHTER_DEFAULTS.maxJuggles) { this.juggleImmune = true; this.knockDown(1, face * 3); }
       else { this.juggleGravity += 0.05; this.knockDown(Math.max(JUGGLE_VY, (hit.kbY || 0) * 0.8), face * (hit.kbX != null ? hit.kbX * 0.6 : 2), 'hurtAir'); }
     } else if (type === 'launch') {
       this.knockDown(hit.kbY || LAUNCH_VY, face * (hit.kbX != null ? hit.kbX * 0.5 : 1));
@@ -335,7 +359,8 @@ export class Fighter extends Entity {
   }
   /** Hold hit: damage the held target; auto-throws after the move's max hits. */
   grabHit() {
-    const t = this.grabTarget, mv = (this.def.moves && this.def.moves.grabHit) || { damage: 8, hits: 3 };
+    // enemies without a grabHit move squeeze for 5 per hit, `ai.grabHoldHits` times (GDD 4: Cinder Hulk 4 x 5)
+    const t = this.grabTarget, mv = (this.def.moves && this.def.moves.grabHit) || { damage: this.kind === 'player' ? 8 : 5, hits: (this.ai && this.ai.grabHoldHits) || 3 };
     if (!t || this.throwPending) return false;
     this.play('grabHit');
     this.grabHits++;
@@ -389,13 +414,22 @@ export class Fighter extends Entity {
     if (!this.alive || this.dead) return;
     let dmg = Math.round(damage * this.damageTaken * (attacker && attacker.damageMult || 1));
     if (this.godmode) dmg = 0;
+    const hpBefore = this.hp;
     this.hp = Math.max(0, this.hp - dmg);
     this.hpBarTimer = HP_BAR_FRAMES; this.flashTimer = 4; this.lastHitBy = attacker || this.lastHitBy;
     const stop = HITSTOP[type] != null ? HITSTOP[type] : HITSTOP.medium;
     this.hitstop = Math.max(this.hitstop, stop); if (attacker) attacker.hitstop = Math.max(attacker.hitstop, stop);
-    if (dmg > 0) floatText(this.x, this.y + this.h + 6, this.z, String(dmg), '#ffd050', 2);
+    this.lastDamage = hpBefore - this.hp;
+    if (dmg > 0) this.damageText(dmg, '#ffd050', 2);
     if (this.hp <= 0) this.dead = true;
   }
+  /** Floating damage number; consecutive numbers are staggered so multi-hits stay legible. */
+  damageText(dmg, color, size) {
+    const j = this.textJitter = ((this.textJitter || 0) + 1) % 3;
+    floatText(this.x + (j - 1) * 9, this.y + this.h + 6 + j * 5, this.z, String(dmg), color, size);
+  }
+  /** Hook: an attack passed through this fighter's dodge i-frames (players gain meter). */
+  onDodged(attacker) {}
   /** Hit data used when this thrown body collides with others. */
   get bodyHit() { return THROW_BODY_HIT; }
 

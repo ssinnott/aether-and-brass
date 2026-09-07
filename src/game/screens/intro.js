@@ -4,6 +4,7 @@ import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
 import { rrect, rivetLine } from '../../art/shapes.js';
 import { particles } from '../../engine/particles.js';
+import { stage1 } from '../../content/stage/stage1.js';
 
 const INTRO_FRAMES = 150;
 const TOWERS = [[40, 200, 50], [100, 170, 40], [150, 220, 70], [230, 150, 36], [280, 190, 60], [350, 140, 44], [410, 200, 40], [460, 160, 70], [540, 210, 50], [590, 180, 40]];
@@ -14,7 +15,9 @@ export class IntroScreen extends Screen {
   enter(params) {
     super.enter(params);
     this.chars = params.chars || this.game.options.chars;
-    this.stageName = params.stageName || 'THE ASCENT OF CALDERWICK';
+    this.stage = params.stage || stage1;
+    this.stageName = params.stageName || this.stage.name;
+    this.subtitle = (params.subtitle || this.stage.subtitle || '').split('. ').map((t) => t.replace(/\.$/, ''));
     this.done = false;
     particles.clear();
     this.game.audio.music.stop();
@@ -27,7 +30,7 @@ export class IntroScreen extends Screen {
     if (this.done) return;
     let skip = this.frame >= INTRO_FRAMES || this.game.options.bot;
     for (let p = 0; p < 2 && !skip; p++) if (this.frame > 10 && (inp.pressed(p, 'attack') || inp.pressed(p, 'start'))) skip = true;
-    if (skip) { this.done = true; this.game.fadeTo(() => this.game.replace('gameplay', { chars: this.chars }), 0.08); }
+    if (skip) { this.done = true; this.game.fadeTo(() => this.game.replace('gameplay', { chars: this.chars, stage: this.stage }), 0.08); }
   }
   draw(ctx) {
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -40,8 +43,7 @@ export class IntroScreen extends Screen {
     rivetLine(ctx, 34, VIEW_H - 32, VIEW_W - 34, VIEW_H - 32, 24, 2, UI.brass);
     const fade = Math.min(1, this.frame / 30);
     ctx.globalAlpha = fade;
-    drawText(ctx, 'CALDERWICK, CITY OF THE HEART-ENGINE.', VIEW_W / 2, 60, { size: 1, color: UI.paper, align: 'center' });
-    drawText(ctx, 'THE CHANCELLOR HAS SEALED THE SKY.', VIEW_W / 2, 74, { size: 1, color: UI.paper, align: 'center' });
+    this.subtitle.forEach((t, i) => drawText(ctx, t + '.', VIEW_W / 2, 60 + i * 14, { size: 1, color: UI.paper, align: 'center' }));
     drawText(ctx, 'FOUR UNLIKELY DELIVERIES ARE ABOUT TO BE MADE, UPWARD.', VIEW_W / 2, 96, { size: 1, color: UI.steel, align: 'center' });
     ctx.globalAlpha = Math.min(1, Math.max(0, (this.frame - 30) / 30));
     drawTextOutlined(ctx, 'STAGE 1', VIEW_W / 2, 250, { size: 2, color: UI.copper, outline: '#3a2010', align: 'center' });

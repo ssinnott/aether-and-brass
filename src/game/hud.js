@@ -44,7 +44,7 @@ export class Hud {
     ctx.fillStyle = UI.brassDark; ctx.fillRect(0, STRIP_H - 1, VIEW_W, 1);
     for (let i = 0; i < ps.length; i++) this.drawPlayer(ctx, ps[i], i);
     if (ps.length < 2 && !this.game.input.joined(1) && (this.frame % 90) < 60) drawText(ctx, 'P2 PRESS J TO JOIN', VIEW_W - 8, 6, { size: 1, color: UI.p2, align: 'right' });
-    if (this.target && this.target.alive && !this.target.dead) this.drawTarget(ctx, this.target);
+    if (this.target && this.target.alive && !this.target.dead && this.target.kind !== 'boss') this.drawTarget(ctx, this.target);
     if (w.boss && w.boss.alive) this.drawBoss(ctx, w.boss);
     for (let i = 0; i < ps.length; i++) this.drawCombo(ctx, ps[i], i);
     if (this.banner) this.drawBanner(ctx, this.banner);
@@ -92,17 +92,22 @@ export class Hud {
   }
   drawBoss(ctx, b) {
     const x = Math.round(VIEW_W / 2 - BOSS_BAR_W / 2), y = BOSS_BAR_Y;
+    const hp = b.hpTotal != null ? b.hpTotal : b.hp, max = b.hpTotalMax || b.maxHp;
     ctx.fillStyle = 'rgba(10,6,12,0.7)'; ctx.fillRect(0, y - 6, VIEW_W, VIEW_H - y + 6);
     drawText(ctx, b.name, x, y - 3, { size: 1, color: UI.brass });
+    if (b.phaseName) drawText(ctx, b.phaseName, x + BOSS_BAR_W, y - 3, { size: 1, color: b.phaseColor || UI.paper, align: 'right' });
     ctx.fillStyle = '#120c14'; ctx.fillRect(x - 1, y + 5, BOSS_BAR_W + 2, 10);
     ctx.fillStyle = '#4a1a1a'; ctx.fillRect(x, y + 6, BOSS_BAR_W, 8);
-    ctx.fillStyle = b.phaseColor || UI.hp; ctx.fillRect(x, y + 6, Math.round(BOSS_BAR_W * Math.max(0, b.hp / b.maxHp)), 8);
-    if (b.phases) for (let i = 1; i < b.phases; i++) { ctx.fillStyle = '#120c14'; ctx.fillRect(x + Math.round(BOSS_BAR_W * i / b.phases), y + 6, 2, 8); }
+    ctx.fillStyle = b.phaseColor || UI.hp; ctx.fillRect(x, y + 6, Math.round(BOSS_BAR_W * Math.max(0, hp / max)), 8);
+    if (b.phaseHps) { let acc = 0; for (let i = b.phaseHps.length - 1; i > 0; i--) { acc += b.phaseHps[i]; ctx.fillStyle = '#120c14'; ctx.fillRect(x + Math.round(BOSS_BAR_W * acc / max), y + 6, 2, 8); } }
+    else if (b.phases) for (let i = 1; i < b.phases; i++) { ctx.fillStyle = '#120c14'; ctx.fillRect(x + Math.round(BOSS_BAR_W * i / b.phases), y + 6, 2, 8); }
   }
   drawCombo(ctx, p, i) {
     const cam = this.world.camera;
-    if (p.combo >= 2) {
-      const sx = cam.toScreenX(p.x) + (i === 0 ? -50 : 50), sy = Math.round(FLOOR_TOP + p.z - p.y - p.h - 26 + cam.shakeY);
+    if (p.combo >= 3) {
+      // behind the player (away from the facing direction) so it never overprints the target's damage numbers
+      // P2's counter sits a step higher so two counters never overprint when the players stand together
+      const sx = cam.toScreenX(p.x) - p.facing * 50, sy = Math.round(FLOOR_TOP + p.z - p.y - p.h - 26 - i * 22 + cam.shakeY);
       const tier = p.combo >= 60 ? 4 : p.combo >= 35 ? 3 : p.combo >= 20 ? 2 : p.combo >= 10 ? 1 : 0;
       const size = Math.max(2, Math.round(2 * p.comboScale + 0.3));
       drawTextOutlined(ctx, String(p.combo), sx, sy, { size, color: COMBO_COLORS[tier], outline: '#2a1410', thickness: 1, align: 'center' });

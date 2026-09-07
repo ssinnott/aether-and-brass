@@ -46,7 +46,7 @@ export const HITSTOP = Object.freeze({ light: 3, medium: 5, heavy: 8, launch: 8,
 /** Misc fighter defaults referenced by the contract. */
 export const FIGHTER_DEFAULTS = Object.freeze({
   lyingFrames: 40, getupInvuln: 20, grabHoldFrames: 90, maxJuggles: 4, deadBlinkFrames: 60,
-  comboTimer: 60, respawnDelay: 90, respawnInvuln: 120, hitstunLight: 14, hitstunHeavy: 22,
+  comboTimer: 90, respawnDelay: 90, respawnInvuln: 120, hitstunLight: 14, hitstunHeavy: 22,
 });
 
 /** Meter economy: 3 bars x 100 (RECONCILIATION). special = 1 bar, super = full; HP fallback 8% max HP when no bar is full and HP > 15%. */

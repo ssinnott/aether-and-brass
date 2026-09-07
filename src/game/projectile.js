@@ -85,7 +85,7 @@ export class Projectile extends Entity {
       world.addFx('ring', this.x, 0, this.z, { r1: this.radius, flat: true, color: '#ffb060' });
       particles.burst('ember', this.x, this.y + 4, this.z, 10, { speed: 3, up: 2 });
       particles.burst('smoke', this.x, this.y + 4, this.z, 6, { speed: 1.2, up: 1 });
-      if (world.camera) world.camera.shake(6, 10);
+      if (world.camera) world.camera.shake(8, 12); // GDD 7: explosions 8px / 12f
     } else if (typeof this.onExpire === 'function') this.onExpire(world, this, byHit);
     if (this.chained && !byHit) { this.retract = true; this.hit = null; return; }
     this.removeMe = true;

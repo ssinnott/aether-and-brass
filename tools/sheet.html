@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rig contact sheet</title>
+<style>
+  html, body { margin: 0; background: #1c1822; color: #eee; font: 12px monospace; }
+  canvas { display: block; image-rendering: pixelated; }
+  #help { position: fixed; right: 8px; top: 8px; color: #9a8f7a; white-space: pre; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="sheet" width="64" height="64"></canvas>
+<div id="help">?char=brunhild | ?enemy=typeA:grunt
+&mode=anims|strip|attacks|closeup|cast  &zoom=3
+&anims=walk,run  &step=3  &cols=9  &samples=8
+&bg=docks|#hex  &cw=100  &ch=124</div>
+<script type="module" src="./sheet.js"></script>
+</body>
+</html>

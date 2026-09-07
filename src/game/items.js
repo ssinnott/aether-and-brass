@@ -5,6 +5,7 @@ import { audio } from '../engine/audio.js';
 import { rng } from '../engine/rng.js';
 import { floatText, burstBreak } from '../art/fx.js';
 import { rrect, circle, gear, pathPoly, paint, line } from '../art/shapes.js';
+import { PROP_TYPES, getPropType } from '../art/props.js';
 
 /** Pickup catalogue (GDD 7). hp = fraction of max HP, meter = points, score = points, life = extra lives. */
 export const PICKUPS = Object.freeze({
@@ -71,23 +72,26 @@ export class Pickup extends Entity {
   }
 }
 
-/** Breakable prop: crate / barrel. Takes hits from any team, drops items. */
+/** Breakable (or static) stage prop from the art/props.js catalogue. Takes hits from any team, drops items. */
 export class Prop extends Entity {
-  constructor(type, x, z, { drops = null, hp = 0 } = {}) {
+  constructor(type, x, z, { drops = null, hp = 0, solid = true } = {}) {
     super('prop');
-    this.type = type || 'crate';
+    this.type = PROP_TYPES[type] ? type : 'crate';
+    this.info = getPropType(this.type);
     this.team = TEAM.NONE;
     this.x = x; this.z = z;
-    this.maxHp = hp || (this.type === 'barrel' ? 24 : 20);
+    this.maxHp = hp || this.info.hp || 20;
     this.hp = this.maxHp;
+    this.solid = solid && this.maxHp > 0;
     this.drops = drops;
-    this.w = this.type === 'barrel' ? 22 : 28; this.h = this.type === 'barrel' ? 30 : 24; this.zSize = 18; this.shadowW = this.w + 6;
+    this.w = this.info.w; this.h = this.info.h; this.zSize = 18; this.shadowW = Math.min(40, this.w + 6);
     this.flashTimer = 0; this.wobble = 0; this.hitstop = 0;
   }
   update(world) { this.world = world; if (this.flashTimer > 0) this.flashTimer--; if (this.wobble > 0) this.wobble--; }
+  hurtbox() { return this.solid && this.alive ? super.hurtbox() : null; }
   /** Damage the prop. Returns true when the hit counted. */
   takeHit(hit, attacker) {
-    if (!this.alive) return false;
+    if (!this.alive || !this.solid) return false;
     this.hp -= Math.max(1, Math.round(hit.damage || 1));
     this.flashTimer = 4; this.wobble = 10;
     if (attacker) attacker.hitstop = Math.max(attacker.hitstop || 0, HITSTOP.light);
@@ -96,26 +100,21 @@ export class Prop extends Entity {
   }
   break(attacker) {
     this.alive = false; this.removeMe = true;
-    burstBreak(this.x, this.y + 8, this.z, this.type === 'barrel' ? '#6a4a30' : '#8a6a40', 8);
+    burstBreak(this.x, this.y + 8, this.z, this.info.color || '#8a6a40', 8);
     audio.play('prop_break');
     if (attacker && attacker.addScore) attacker.addScore(50, true);
-    if (this.world) spawnDrops(this.world, this.x, this.z, this.drops || (this.type === 'barrel' ? 'coalScrip' : 'brassCog'));
+    if (this.world) {
+      spawnDrops(this.world, this.x, this.z, this.drops || this.info.drops);
+      const ex = this.info.explode;
+      if (ex) this.world.spawnProjectile({ owner: null, team: TEAM.NONE, style: 'bomb', x: this.x, y: 0, z: this.z, life: ex.delay, rest: true, gravity: 0, hit: null, onExpire: 'explode',
+        radius: ex.radius, explodeHit: { damage: ex.damage, type: 'knockdown', kbX: 5, kbY: 5, friendly: true }, color: '#8a2e2e', r: 7 });
+    }
   }
   draw(ctx, cam) {
     const sx = cam.toScreenX(this.x), sy = Math.round(FLOOR_TOP + this.z - this.y + cam.shakeY);
-    const ol = '#1a1018', w = this.w, h = this.h;
     ctx.save();
     if (this.wobble > 0) ctx.translate(sx, sy), ctx.rotate(Math.sin(this.wobble * 1.2) * 0.06), ctx.translate(-sx, -sy);
-    if (this.type === 'barrel') {
-      rrect(ctx, sx - w / 2, sy - h, w, h, 5, this.flashTimer ? '#ffffff' : '#7a5230', ol, 1);
-      ctx.fillStyle = this.flashTimer ? '#ffffff' : UI.brassDark; ctx.fillRect(sx - w / 2 + 1, sy - h + 5, w - 2, 3); ctx.fillRect(sx - w / 2 + 1, sy - 8, w - 2, 3);
-      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(sx + 2, sy - h + 2, w / 2 - 3, h - 4);
-    } else {
-      rrect(ctx, sx - w / 2, sy - h, w, h, 2, this.flashTimer ? '#ffffff' : '#9a7040', ol, 1);
-      ctx.strokeStyle = this.flashTimer ? '#ffffff' : '#5a3a20'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(sx - w / 2 + 2, sy - h + 2); ctx.lineTo(sx + w / 2 - 2, sy - 2); ctx.moveTo(sx + w / 2 - 2, sy - h + 2); ctx.lineTo(sx - w / 2 + 2, sy - 2); ctx.stroke();
-      ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(sx - w / 2 + 2, sy - h / 2, w - 4, h / 2 - 2);
-    }
+    this.info.draw(ctx, sx, sy, this, this.world ? this.world.frame : 0);
     ctx.restore();
   }
 }

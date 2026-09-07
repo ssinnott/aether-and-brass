@@ -1,54 +1,55 @@
-// Gameplay screen: World + players + HUD on a placeholder arena until the StageRunner exists (ARCHITECTURE.md sections 9, 12, 15).
-import { VIEW_W, VIEW_H, TEAM, Z_MAX, METER, UI } from '../../constants.js';
+// Gameplay screen: World + players + HUD + StageRunner (ARCHITECTURE.md sections 7, 9, 12, 15).
+// Exposes spawnEnemy / spawnEnemyAt / killAllEnemies / fillMeter / facePlayerToNearestEnemy / summary for window.__game.
+import { VIEW_W, VIEW_H, TEAM, ST, Z_MAX, METER, UI } from '../../constants.js';
 import { Screen } from '../game.js';
 import { World } from '../world.js';
 import { Player } from '../player.js';
-import { Fighter } from '../fighter.js';
+import { Enemy } from '../enemy.js';
+import { Boss } from '../boss.js';
 import { Hud } from '../hud.js';
-import { Prop } from '../items.js';
-import { makeDummyDef } from '../dummy.js';
-import { createBackdrop } from '../../art/backgrounds/index.js';
-import { drawText, drawTextOutlined } from '../../engine/text.js';
+import { StageRunner } from '../stage.js';
+import { getEnemyDef } from '../../content/enemies/index.js';
+import { stage1 } from '../../content/stage/stage1.js';
+import { drawTextOutlined } from '../../engine/text.js';
 import { clamp } from '../../engine/math.js';
 
-const ARENA_LENGTH = 2000;
-const GAME_OVER_FRAMES = 240;
+const GAME_OVER_DELAY = 150;
+const START_X = 100;
 
-/** The main in-game screen. Exposes spawnEnemy / killAllEnemies / fillMeter / facePlayerToNearestEnemy / summary for window.__game. */
+/** The main in-game screen. */
 export class GameplayScreen extends Screen {
   constructor(game) { super(game, 'gameplay'); }
   enter(params) {
     super.enter(params);
     const game = this.game, opt = game.options;
     const chars = (params.chars && params.chars.length ? params.chars : opt.chars) || [0];
-    // Placeholder arena: the stage runner (game/stage.js) replaces this with real stage data when it lands.
-    this.stage = { id: 'arena', name: 'TRAINING YARD', length: ARENA_LENGTH, sections: [{ id: 'arena', x0: 0, x1: ARENA_LENGTH, backdrop: 'section1', floor: 'planks' }] };
-    this.backdrop = createBackdrop(this.stage.sections[0], this.stage);
-    this.world = new World({ stageLength: ARENA_LENGTH, game, backdrop: this.backdrop, options: opt });
-    this.world.onEnemyKilled = (e, killer) => { this.enemiesDefeated++; };
+    this.stage = params.stage || stage1;
+    this.backdrop = null;
+    this.world = new World({ stageLength: this.stage.length, game, backdrop: null, options: opt });
+    this.world.onEnemyKilled = () => { this.enemiesDefeated++; };
     this.enemiesDefeated = 0;
     this.players = [];
-    chars.slice(0, 2).forEach((ci, i) => this.addPlayer(ci, i));
+    this.continues = params.continues != null ? params.continues : 3;
+    this.continuesUsed = 0;
     this.hud = new Hud(this.world, game);
+    chars.slice(0, 2).forEach((ci, i) => this.addPlayer(ci, i));
     game.players = this.players;
-    this.gameOverTimer = 0;
+    this.gameOverTimer = 0; this.gameOverShown = false;
     this.time = 0;
-    // free-roam props so breakables can be tested without a stage
-    this.world.add(new Prop('crate', 420, 40, { drops: 'meatPie' }));
-    this.world.add(new Prop('barrel', 560, 110, { drops: 'coalScrip' }));
+    this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves: !!opt.nowaves, startSection: opt.section || 0 });
+    this.runner.start();
     for (const s of opt.spawn || []) this.spawnEnemy(s.type, s.variant, s.dx, s.dz);
-    if (params.resume) return;
-    game.audio.music.play('section1');
-    this.hud.showBanner('TRAINING YARD', 'NO STAGE LOADED - FREE ROAM', 120);
+    if (!params.resume && !(opt.section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);
   }
+  /** Swap the backdrop (StageRunner calls this on section changes). */
+  setBackdrop(b) { this.backdrop = b; this.world.backdrop = b; }
   /** Add a player for character index `ci` in slot `slot`. */
   addPlayer(ci, slot) {
     const def = this.game.characters[ci] || this.game.characters[0];
     if (!def) return null;
-    const opt = this.game.options;
-    const cam = this.world.camera;
-    const p = new Player(def, slot, { input: this.game.input, x: clamp(cam.x + 100 + slot * 40, 20, ARENA_LENGTH - 20), z: 70 + slot * 24, facing: 1, bot: !!opt.bot, godmode: !!opt.godmode });
-    if (slot === 1) p.tint = null;
+    const opt = this.game.options, cam = this.world.camera;
+    const x = clamp(Math.max(cam.x, cam.left) + START_X + slot * 40, 20, this.stage.length - 20);
+    const p = new Player(def, slot, { input: this.game.input, x, z: 70 + slot * 24, facing: 1, bot: !!opt.bot, godmode: !!opt.godmode });
     this.world.add(p);
     this.players[slot] = p;
     return p;
@@ -67,30 +68,64 @@ export class GameplayScreen extends Screen {
     // pause: Escape (global) or a joined player's start button
     let pause = inp.globalPressed('pause');
     for (let i = 0; i < 2 && !pause; i++) if (inp.joined(i) && inp.pressed(i, 'start')) pause = true;
-    if (pause && this.game.factories.pause) { this.game.audio.play('pause'); this.game.push('pause'); return; }
+    if (pause && this.game.factories.pause && !this.gameOverShown) { this.game.audio.play('pause'); this.game.push('pause'); return; }
     this.time++;
     world.update();
+    this.runner.update();
     this.hud.update();
     const anyAlive = this.players.some((p) => p && !p.out);
-    if (!anyAlive) {
+    if (!anyAlive && !this.gameOverShown) {
       if (++this.gameOverTimer === 1) this.game.audio.music.play('gameover');
-      if (this.gameOverTimer >= GAME_OVER_FRAMES) {
-        if (this.game.factories.gameover) this.game.replace('gameover', { players: this.players });
+      if (this.gameOverTimer >= GAME_OVER_DELAY) {
+        this.gameOverShown = true;
+        if (this.game.factories.gameover) this.game.push('gameover', { screen: this, continues: this.continues });
         else this.game.fadeTo(() => this.game.reset('title'), 0.05);
       }
     }
   }
+  /** Spend a continue: every player back with fresh lives and full HP at the current spot (GDD 7). */
+  continueRun() {
+    if (this.continues <= 0) return false;
+    this.continues--; this.continuesUsed++;
+    const cam = this.world.camera;
+    this.players.forEach((p, i) => {
+      if (!p) return;
+      p.out = false; p.dead = false; p.alive = true; p.removeMe = false; p.lives = 3; p.continuesUsed++;
+      p.hp = p.maxHp; p.meter = 0; p.state = ST.IDLE; p.stateTimer = 0; p.hitstop = 0; p.grabbedBy = null; p.grabTarget = null; p.heldBody = null;
+      p.hurtTimer = 0; p.juggleCount = 0; p.juggleGravity = 0; p.juggleImmune = false; p.chainHits = 0; p.combo = 0; p.comboTimer = 0; p.running = false; p.comboStep = 0; p.busy = 0;
+      p.x = clamp(cam.x + VIEW_W / 2 - 40 + i * 60, cam.left + 20, cam.right - 20); p.z = 70 + i * 24; p.y = 0; p.vy = 0; p.vx = 0;
+      p.invuln = 120; p.play('idle');
+      if (!this.world.entities.includes(p)) this.world.add(p);
+    });
+    this.world._refreshLists();
+    this.gameOverTimer = 0; this.gameOverShown = false;
+    this.game.audio.music.play(this.runner.music || 'section1');
+    this.hud.showBanner('CONTINUE!', `${this.continues} LEFT`, 90);
+    return true;
+  }
+  /** Stage cleared: results screen with the run statistics. */
+  onVictory() {
+    this.game.audio.music.stop();
+    this.game.fadeTo(() => this.showResults(false), 0.04);
+  }
+  /** Replace this screen with the results plaque (`defeat` = continue countdown expired: GDD 9, D-rank ceiling). */
+  showResults(defeat = false) {
+    const stats = this.players.filter(Boolean).map((p) => ({
+      name: p.def.name, kills: p.kills, maxCombo: p.maxCombo, damageTaken: Math.round(p.damageTakenTotal), continues: p.continuesUsed, score: p.score, lives: p.lives, index: p.index,
+    }));
+    this.game.replace('results', { stats, defeat, time: this.time, enemiesDefeated: this.enemiesDefeated, continuesUsed: this.continuesUsed, sectionIndex: this.world.sectionIndex, wavesCleared: this.world.wavesCleared, cameraX: this.world.camera.x });
+  }
   draw(ctx) {
     this.world.draw(ctx);
+    this.runner.draw(ctx);
     this.hud.draw(ctx);
     if (window.__game && window.__game.debug) this.world.drawDebug(ctx);
-    if (this.gameOverTimer > 0) {
-      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    if (this.gameOverTimer > 0 && !this.gameOverShown) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
       drawTextOutlined(ctx, 'THE ENGINE WINS.', VIEW_W / 2, 150, { size: 3, color: UI.red, outline: '#2a1010', thickness: 1, align: 'center' });
-      drawText(ctx, 'GAME OVER', VIEW_W / 2, 190, { size: 2, color: UI.paper, align: 'center' });
     }
   }
-  exit() { this.game.players = []; }
+  exit() { this.game.players = []; if (this.runner) this.runner.dispose(); }
 
   // ---------- window.__game hooks ----------
   summary() {
@@ -98,22 +133,22 @@ export class GameplayScreen extends Screen {
     return {
       sectionIndex: w.sectionIndex, cameraX: w.camera.x, locked: w.camera.locked, wavesCleared: w.wavesCleared,
       players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out })),
-      enemies: w.enemies.filter((e) => e.kind !== 'boss').map((e) => ({ name: e.name, type: e.def.type || '', variant: e.def.variant || '', hp: e.hp, state: e.state, x: e.x, z: e.z })),
-      boss: b ? { kind: b.bossKind || 'boss', name: b.name, hp: b.hp, maxHp: b.maxHp, phase: b.phase || 1, state: b.state } : null,
-      enemiesDefeated: this.enemiesDefeated, time: this.time,
+      enemies: w.enemies.filter((e) => e.kind !== 'boss').map((e) => ({ name: e.name, type: e.def.type || '', variant: e.def.variant || '', hp: e.hp, state: e.state, x: e.x, z: e.z, ai: e.aiState })),
+      boss: b ? { kind: b.bossKind || 'boss', name: b.name, hp: b.hpTotal != null ? b.hpTotal : b.hp, maxHp: b.hpTotalMax || b.maxHp, phase: b.phase || 1, state: b.state, phaseName: b.phaseName } : null,
+      enemiesDefeated: this.enemiesDefeated, time: this.time, continues: this.continues,
     };
   }
-  /**
-   * Spawn an enemy at P1.x + dx, P1.z + dz. Uses `game.enemyFactory(type, variant, x, z, world)` when the enemy content
-   * registry has installed one; otherwise a generic dummy Fighter so combat can be exercised.
-   */
-  spawnEnemy(type = 'typeA', variant = 'grunt', dx = 80, dz = 0) {
+  /** Spawn an enemy at P1.x + dx, P1.z + dz (bosses too: type 'midboss' | 'boss'). */
+  spawnEnemy(type = 'brassbound', variant = 'footman', dx = 80, dz = 0) {
     const p1 = this.players[0] || { x: this.world.camera.x + 200, z: 70 };
     const x = p1.x + (Number(dx) || 0), z = clamp(p1.z + (Number(dz) || 0), 0, Z_MAX);
-    let e = null;
-    if (typeof this.game.enemyFactory === 'function') e = this.game.enemyFactory(type, variant, x, z, this.world);
-    if (!e) { e = new Fighter(makeDummyDef(type, variant), { team: TEAM.ENEMY, kind: 'enemy', x, z, facing: x < p1.x ? 1 : -1 }); }
-    if (!e.world) this.world.add(e);
+    return this.spawnEnemyAt(type, variant, x, z, { facing: x < p1.x ? 1 : -1 });
+  }
+  /** Spawn an enemy from the content registry at absolute world coords. */
+  spawnEnemyAt(type, variant, x, z, opts = {}) {
+    const def = getEnemyDef(type, variant);
+    const e = def.boss ? new Boss(def, { x, z, facing: opts.facing != null ? opts.facing : -1 }) : new Enemy(def, { x, z, ...opts });
+    this.world.add(e);
     return e;
   }
   /** Remove every enemy (and boss) immediately. */
@@ -121,7 +156,14 @@ export class GameplayScreen extends Screen {
     for (const e of this.world.entities.slice()) {
       if ((e.kind === 'enemy' || e.kind === 'boss') || (e.kind === 'projectile' && e.team === TEAM.ENEMY)) this.world.remove(e);
     }
-    for (const p of this.players) if (p) { p.grabTarget = null; p.heldBody = null; if (p.lastTarget && p.lastTarget.removeMe) p.lastTarget = null; }
+    for (const p of this.players) {
+      if (!p) continue;
+      p.grabTarget = null; p.heldBody = null; p.grabbedBy = null; p.hitstop = 0;
+      if (p.lastTarget && p.lastTarget.removeMe) p.lastTarget = null;
+      // test hook: scripted moves expect a clean actionable player, so leftover hitstun from the removed enemies is cleared
+      if (p.inHitstun && !p.out && !p.dead) { p.hurtTimer = 0; p.y = 0; p.vy = 0; p.vx = 0; p.setState(ST.IDLE, 'idle'); }
+    }
+    this.world.attackTokens.holders.clear();
     this.world._refreshLists();
   }
   /** Fill a player's meter to the max (super ready). */
@@ -129,3 +171,4 @@ export class GameplayScreen extends Screen {
   /** Turn a player toward (and step toward) the nearest enemy. */
   facePlayerToNearestEnemy(pi = 0) { const p = this.players[pi]; if (p) p.faceNearestEnemy(this.world); }
 }
+

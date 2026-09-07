@@ -130,3 +130,46 @@ export function pathStar(ctx, cx, cy, rOuter, rInner, points = 5, rot = 0) {
   }
   ctx.closePath();
 }
+
+/**
+ * Trace a tapered capsule (a limb segment): circle radius r0 at (x0,y0), r1 at (x1,y1), joined by the external tangents.
+ * Degenerates to a plain capsule when r0 == r1 and to a circle when one end swallows the other.
+ */
+export function pathTaperedCapsule(ctx, x0, y0, x1, y1, r0, r1, append = false) {
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
+  if (!append) ctx.beginPath();
+  if (len < 0.0001 || Math.abs(r0 - r1) >= len) {
+    const big = r0 >= r1, cx = big ? x0 : x1, cy = big ? y0 : y1, r = Math.max(r0, r1);
+    ctx.moveTo(cx + r, cy); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.closePath();
+    return;
+  }
+  const a = Math.atan2(dy, dx), t = Math.asin((r0 - r1) / len);
+  const s0 = a + Math.PI / 2 + t;
+  ctx.moveTo(x0 + Math.cos(s0) * r0, y0 + Math.sin(s0) * r0);
+  ctx.arc(x0, y0, r0, s0, a - Math.PI / 2 - t);
+  ctx.arc(x1, y1, r1, a - Math.PI / 2 - t, a + Math.PI / 2 + t);
+  ctx.closePath();
+}
+/** Trace a polygon with every corner rounded by radius r (flat [x0,y0,x1,y1,...] list). */
+export function pathRoundedPoly(ctx, pts, r = 2) {
+  const n = pts.length >> 1;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const pi = ((i + n - 1) % n) * 2, ni = ((i + 1) % n) * 2;
+    const px = pts[pi], py = pts[pi + 1], cx = pts[i * 2], cy = pts[i * 2 + 1], nx = pts[ni], ny = pts[ni + 1];
+    const d0 = Math.hypot(cx - px, cy - py) || 1, d1 = Math.hypot(nx - cx, ny - cy) || 1;
+    const rr = Math.min(r, d0 / 2, d1 / 2);
+    const sx = cx + (px - cx) / d0 * rr, sy = cy + (py - cy) / d0 * rr;
+    if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    ctx.arcTo(cx, cy, nx, ny, rr);
+  }
+  ctx.closePath();
+}
+/** Trace an annular arc band (a weapon "smear" / sweep) around (cx,cy) from angle a0 to a1 (radians), radii rIn..rOut. */
+export function pathArcBand(ctx, cx, cy, rIn, rOut, a0, a1) {
+  const ccw = a1 < a0;
+  ctx.beginPath();
+  ctx.arc(cx, cy, rOut, a0, a1, ccw);
+  ctx.arc(cx, cy, rIn, a1, a0, !ccw);
+  ctx.closePath();
+}

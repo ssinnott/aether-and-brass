@@ -1,0 +1,166 @@
+// Cel-shading system for rigs: every colour gets a 3-tone ramp (highlight / base / shadow) plus a 1px rim tone,
+// and parts are painted as flat bands (offset sub-shapes or clipped half-planes), never gradients. Light comes from
+// the top-left in root space; `enter()` in rig.js keeps `rig.light` pointing at the light in the current part space.
+// All helpers are allocation-free after the first use of a colour (tone ramps are cached per rig).
+import { hexToRgb, rgbToHex } from './palettes.js';
+import { pathTaperedCapsule } from './shapes.js';
+
+/** Unit vector toward the light in root space (top-left). */
+export const LIGHT_X = -0.7071, LIGHT_Y = -0.7071;
+/** Default ramp factors (build.shading may override { hi, sh, rim }). */
+export const RAMP = Object.freeze({ hi: 1.22, sh: 0.66, rim: 1.55 });
+
+function c255(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+/** Shade a colour: shadows go cooler / bluer, highlights warmer (pixel-art hue shift). */
+export function toneOf(hex, f) {
+  const [r, g, b] = hexToRgb(hex);
+  if (f < 1) return rgbToHex(c255(r * f), c255(g * (f + 0.03)), c255(b * (f + 0.12) + 8));
+  return rgbToHex(c255(r * f + 14), c255(g * f + 6), c255(b * (f - 0.08)));
+}
+/** Build a tone ramp object for a base colour. */
+export function makeTones(hex, ramp = RAMP) {
+  return { base: hex, hi: toneOf(hex, ramp.hi), sh: toneOf(hex, ramp.sh), rim: toneOf(hex, ramp.rim), deep: toneOf(hex, ramp.sh * 0.78) };
+}
+/**
+ * Cached tone ramp for `hex` on this rig. First use of a colour allocates its ramp; later uses do not.
+ * Non-hex colours (rgba strings) get a flat ramp.
+ */
+export function tones(rig, hex) {
+  let t = rig.tones.get(hex);
+  if (!t) {
+    t = hex && hex[0] === '#' ? makeTones(hex, rig.ramp) : { base: hex, hi: hex, sh: hex, rim: hex, deep: hex };
+    rig.tones.set(hex, t);
+  }
+  return t;
+}
+
+/** Outline-stroke the current path (2*ow wide so exactly `ow` px shows outside the fill). */
+export function outlinePath(ctx, rig) {
+  ctx.strokeStyle = rig.col(rig.outline); ctx.lineWidth = rig.ow * 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+}
+
+/**
+ * Paint the current path as a cel-shaded part: outline, base fill, then (clipped to the path) a shadow half-plane on
+ * the side away from the light and a highlight cap toward it.
+ * @param cx,cy part centre; ext radius covering the part; sh shadow coverage (0..1 of the diameter, from the far edge);
+ *        hi highlight coverage (0..1 of the radius from the lit edge, 0 = none).
+ * While the rig flashes (`rig.override`) only outline + flat fill are drawn.
+ */
+export function celPath(ctx, rig, hex, cx, cy, ext, sh = 0.36, hi = 0.35) {
+  outlinePath(ctx, rig);
+  const t = tones(rig, hex);
+  ctx.fillStyle = rig.col(t.base); ctx.fill();
+  if (rig.override || !rig.shading) return;
+  ctx.save(); ctx.clip();
+  ctx.translate(cx, cy); ctx.rotate(Math.atan2(rig.light.y, rig.light.x)); // +x points at the light
+  const E = ext + 3;
+  ctx.fillStyle = t.sh; ctx.fillRect(-E, -E, E - ext + ext * 2 * sh, E * 2);
+  if (hi > 0) { ctx.fillStyle = t.hi; ctx.fillRect(ext - ext * hi, -E, E, E * 2); }
+  ctx.restore();
+}
+
+/** Capsule between two points: outline, base, shadow capsule offset away from the light, highlight sliver toward it. */
+export function celCapsule(ctx, rig, x0, y0, x1, y1, r, hex, hiFrac = 0.3) {
+  pathCap(ctx, x0, y0, x1, y1, r);
+  outlinePath(ctx, rig);
+  const t = tones(rig, hex);
+  ctx.fillStyle = rig.col(t.base); ctx.fill();
+  if (rig.override || !rig.shading || r < 2.5) return;
+  const lx = rig.light.x, ly = rig.light.y;
+  const rs = r * 0.6, off = r - rs; // thinner capsule shifted away from the light stays inside the silhouette
+  pathCap(ctx, x0 - lx * off, y0 - ly * off, x1 - lx * off, y1 - ly * off, rs);
+  ctx.fillStyle = t.sh; ctx.fill();
+  if (hiFrac > 0) {
+    const rh = Math.max(0.7, r * hiFrac * 0.5), offh = r - rh - 0.6;
+    pathCap(ctx, x0 + lx * offh, y0 + ly * offh, x1 + lx * offh, y1 + ly * offh, rh);
+    ctx.fillStyle = t.hi; ctx.fill();
+  }
+}
+
+/** Tapered capsule (r0 at the start, r1 at the end): same bands as celCapsule; the anatomy helper for limbs. */
+export function celTaper(ctx, rig, x0, y0, x1, y1, r0, r1, hex, hiFrac = 0.3) {
+  pathTaperedCapsule(ctx, x0, y0, x1, y1, r0, r1);
+  outlinePath(ctx, rig);
+  const t = tones(rig, hex);
+  ctx.fillStyle = rig.col(t.base); ctx.fill();
+  if (rig.override || !rig.shading || Math.max(r0, r1) < 2.5) return;
+  const lx = rig.light.x, ly = rig.light.y, k = 0.6;
+  const o0 = r0 - r0 * k, o1 = r1 - r1 * k;
+  pathTaperedCapsule(ctx, x0 - lx * o0, y0 - ly * o0, x1 - lx * o1, y1 - ly * o1, r0 * k, r1 * k);
+  ctx.fillStyle = t.sh; ctx.fill();
+  if (hiFrac > 0) {
+    const rh0 = Math.max(0.7, r0 * hiFrac * 0.5), rh1 = Math.max(0.7, r1 * hiFrac * 0.5);
+    const h0 = r0 - rh0 - 0.6, h1 = r1 - rh1 - 0.6;
+    pathTaperedCapsule(ctx, x0 + lx * h0, y0 + ly * h0, x1 + lx * h1, y1 + ly * h1, rh0, rh1);
+    ctx.fillStyle = t.hi; ctx.fill();
+  }
+}
+
+/** Ball: outline, base, crescent shadow away from the light, 2px highlight dot toward it. */
+export function celBall(ctx, rig, cx, cy, r, hex, hi = true) {
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  outlinePath(ctx, rig);
+  const t = tones(rig, hex);
+  ctx.fillStyle = rig.col(t.base); ctx.fill();
+  if (rig.override || !rig.shading || r < 2.5) return;
+  const lx = rig.light.x, ly = rig.light.y;
+  const rs = r * 0.72, off = r - rs;
+  ctx.beginPath(); ctx.arc(cx - lx * off, cy - ly * off, rs, 0, Math.PI * 2);
+  ctx.fillStyle = t.sh; ctx.fill();
+  if (hi) { ctx.fillStyle = t.hi; ctx.fillRect(Math.round(cx + lx * r * 0.5) - 1, Math.round(cy + ly * r * 0.5) - 1, 2, 2); }
+}
+
+/** Rounded rect: outline, base, shadow band on the far side, highlight toward the light (clipped). */
+export function celRect(ctx, rig, x, y, w, h, rr, hex, sh = 0.36, hi = 0.3) {
+  pathRR(ctx, x, y, w, h, rr);
+  celPath(ctx, rig, hex, x + w / 2, y + h / 2, Math.hypot(w, h) / 2, sh, hi);
+}
+
+/** Polygon (flat [x0,y0,...] array): outline + cel bands. Centre / extent are computed from the points. */
+export function celPoly(ctx, rig, pts, hex, sh = 0.36, hi = 0.3) {
+  let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
+  ctx.beginPath(); ctx.moveTo(pts[0], pts[1]);
+  for (let i = 0; i < pts.length; i += 2) {
+    const x = pts[i], y = pts[i + 1];
+    if (i) ctx.lineTo(x, y);
+    if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
+  }
+  ctx.closePath();
+  celPath(ctx, rig, hex, (minx + maxx) / 2, (miny + maxy) / 2, Math.hypot(maxx - minx, maxy - miny) / 2, sh, hi);
+}
+
+/** 1px rim light along the lit edges of an axis-aligned rect (call after the fill). */
+export function rimRect(ctx, rig, x, y, w, h, hex) {
+  if (rig.override || !rig.shading) return;
+  ctx.fillStyle = tones(rig, hex).rim;
+  const lx = rig.light.x, ly = rig.light.y;
+  if (ly < -0.3) ctx.fillRect(x + 1, y, w - 2, 1);
+  if (lx < -0.3) ctx.fillRect(x, y + 1, 1, h - 2);
+  if (lx > 0.3) ctx.fillRect(x + w - 1, y + 1, 1, h - 2);
+}
+
+/** Flat 1px-outlined fill without shading (details: buckles, straps, rivets). */
+export function flat(ctx, rig, hex, outline = true) {
+  if (outline) outlinePath(ctx, rig);
+  ctx.fillStyle = rig.col(hex); ctx.fill();
+}
+
+// tiny path helpers kept local so shading.js has no dependency on shapes.js
+export function pathCap(ctx, x0, y0, x1, y1, r) {
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
+  const a = len > 0.0001 ? Math.atan2(dy, dx) : 0;
+  ctx.beginPath();
+  ctx.arc(x0, y0, r, a + Math.PI / 2, a - Math.PI / 2);
+  ctx.arc(x1, y1, r, a - Math.PI / 2, a + Math.PI / 2);
+  ctx.closePath();
+}
+export function pathRR(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.lineTo(x + w - rr, y); ctx.arcTo(x + w, y, x + w, y + rr, rr);
+  ctx.lineTo(x + w, y + h - rr); ctx.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+  ctx.lineTo(x + rr, y + h); ctx.arcTo(x, y + h, x, y + h - rr, rr);
+  ctx.lineTo(x, y + rr); ctx.arcTo(x, y, x + rr, y, rr);
+  ctx.closePath();
+}

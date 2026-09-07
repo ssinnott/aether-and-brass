@@ -7,6 +7,7 @@ import { audio } from '../engine/audio.js';
 import { clamp, sign } from '../engine/math.js';
 import { drawText } from '../engine/text.js';
 import { FLOOR_TOP } from '../constants.js';
+import { Prop } from './items.js';
 
 /** Defaults for `def.ai` (content overrides per type / variant). */
 export const AI_DEFAULTS = Object.freeze({
@@ -32,7 +33,7 @@ export class Enemy extends Fighter {
     this.aiTimer = 0; this.target = null; this.retargetTimer = 0;
     this.attackCooldown = this.ai.firstAttackDelay; this.rangedCooldown = Math.round(this.ai.firstAttackDelay * 0.8);
     this.hoverSide = rng.sign(); this.hoverDist = 60; this.hoverZ = 0; this.flankZ = this.ai.flank ? rng.range(-40, 40) : 0;
-    this.offscreenTimer = 0; this.hitCount = 0; this.staggerTimer = 0; this.shieldStripped = false;
+    this.offscreenTimer = 0; this.enterTimer = 0; this.hitCount = 0; this.staggerTimer = 0; this.shieldStripped = false;
     this.fled = false; this.fleeTimer = 0; this.fleeing = false; this.fleeOff = false; this.fleeDir = 1; this.fleeChecked = false;
     this.pendingAttack = null; this.currentAttack = null; this.attackUses = new Map(); this.hasToken = false; this.attackCount = 0;
     this.retreatBudget = this.ai.retreatBudget; this.panicCooldown = 0; this.panicFlee = false; this.evadeTimer = 0; this.lastSeenAttack = -1; this.riposteTimer = 0;
@@ -70,7 +71,8 @@ export class Enemy extends Fighter {
     this.pickTarget(world);
     if (this.aiState === 'STAGGER') { if (--this.aiTimer <= 0) this.endStagger(); return; }
     if (this.aiState === 'FLEE') { this.thinkFlee(world); return; }
-    if (this.aiState === 'ENTER') { this.thinkEnter(world); return; }
+    // an enemy that has not walked inside the lock yet always keeps entering (a hit while entering must not park it outside the arena)
+    if (this.aiState === 'ENTER' || !this.entered) { this.thinkEnter(world); return; }
     const t = this.target;
     if (!t) { this.stand(); return; }
     if (this.tryEvade(world, t) || this.tryPanic(world, t)) return;
@@ -120,6 +122,16 @@ export class Enemy extends Fighter {
   checkOffscreen(world) {
     const cam = world.camera;
     if (this.fleeOff) return;
+    // still walking in: after OFFSCREEN_FRAMES outside the arena, teleport to the nearest lock edge (prevents stuck waves)
+    if (!this.entered) {
+      if (++this.enterTimer > OFFSCREEN_FRAMES) {
+        const lo = cam.locked ? cam.left : cam.x, hi = cam.locked ? cam.right : cam.x + VIEW_W;
+        this.x = this.x < (lo + hi) / 2 ? lo + 16 : hi - 16; this.y = 0; this.vy = 0; this.vx = 0;
+        this.entered = true; this.enterTimer = 0; this.offscreenTimer = 0;
+        if (this.aiState === 'ENTER') this.aiState = 'APPROACH';
+      }
+      return;
+    }
     if (this.x < cam.x - OFFSCREEN_MARGIN || this.x > cam.x + VIEW_W + OFFSCREEN_MARGIN) {
       if (++this.offscreenTimer > OFFSCREEN_FRAMES) {
         this.x = this.x < cam.x ? cam.x + 16 : cam.x + VIEW_W - 16; this.entered = true; this.offscreenTimer = 0;
@@ -148,12 +160,17 @@ export class Enemy extends Fighter {
     if (ai.ranged && this.retreatBudget > 0 && adx <= ai.ranged.maxRange + 40 && adx > ai.attackRange + 10) { this.aiState = 'KEEP_DISTANCE'; return; }
     this.face(t);
     if (adx <= ai.attackRange && adz <= ai.zTolerance) {
-      if (this.attackCooldown <= 0 && this.acquireToken(world)) { const atk = this.chooseAttack(adx); if (atk) { this.startAttack(atk, t); return; } }
+      if (this.attackCooldown <= 0 && this.acquireToken(world)) {
+        const atk = this.chooseAttack(adx);
+        if (atk) { this.startAttack(atk, t); return; }
+        this.releaseToken(world); // nothing fits at this distance (e.g. inside a lunge's minRange): do not hog the token
+      }
       if (!ai.ignoresTokens && !this.hasToken) { this.aiState = 'HOVER'; this.hoverDist = ai.attackRange + rng.range(30, 60); this.aiTimer = 0; return; }
       this.stand(); return;
     }
     if (this.attackCooldown <= 0 && adz <= ai.zTolerance && adx <= this.maxAttackRange && this.acquireToken(world)) {
       const atk = this.chooseAttack(adx); if (atk) { this.startAttack(atk, t); return; }
+      this.releaseToken(world);
     }
     const standoff = Math.max(10, ai.attackRange - 8);
     const wantX = t.x - sign(dx || this.facing) * standoff;
@@ -296,6 +313,7 @@ export class Enemy extends Fighter {
   onAnimEvent(name, frame, world) {
     if (name === 'aim') { const t = this.target; if (t) { this.aimX = t.x; this.aimZ = t.z; } return; }
     if (name === 'summon') { this.summon(frame && frame.summon, world); return; }
+    if (name === 'crateDrop') { this.crateDrop(frame && frame.projectile, world); return; }
     if (name === 'timeStop') { for (const p of world.players) if (p.alive && !p.dead) { p.hitstop = Math.max(p.hitstop, (frame && frame.freeze) || 60); p.flashTimer = 2; } world.addFx('flash', this.x, 0, this.z, { color: '#4DF0E0' }); audio.play('time_stop_tick'); return; }
     if (name === 'teleportBehind') {
       const t = this.target; if (!t) return;
@@ -306,6 +324,21 @@ export class Enemy extends Fighter {
       return;
     }
     super.onAnimEvent(name, frame, world);
+  }
+  /** Hoister crate drop (GDD 5.1): a crate falls on the aimed spot, lands as an area knockdown and leaves a breakable crate with food. */
+  crateDrop(spec, world) {
+    if (!spec) return;
+    const hit = { damage: spec.damage || 24, type: spec.type || 'knockdown', kbX: spec.kbX != null ? spec.kbX : 4, kbY: spec.kbY || 5, hitstun: spec.hitstun || 24 };
+    const r = spec.radius || 60;
+    this.fireProjectile({ ...spec, noContactHit: true, onExpire: (w, proj) => {
+      w.spawnAreaHit(this, proj.x, proj.z, r, hit);
+      w.addFx('ring', proj.x, 0, proj.z, { r1: r, flat: true, color: '#ffd080' }); w.addFx('dust', proj.x, 0, proj.z, { count: 8 });
+      if (w.camera) w.camera.shake(8, 10);
+      audio.play('crate_drop');
+      const drop = spec.drops || (rng.chance(0.5) ? 'meatPie' : 'aetherVial');
+      const crate = new Prop('crate', proj.x, clamp(proj.z, Z_MIN, Z_MAX), { drops: drop });
+      w.add(crate);
+    } }, world);
   }
   summon(list, world) {
     if (!list || !world.spawnEnemy) return;
@@ -336,7 +369,7 @@ export class Enemy extends Fighter {
   onHurt(hit, attacker) {
     const ai = this.ai, world = this.world;
     this.pendingAttack = null; this.releaseToken(world);
-    if (this.aiState !== 'FLEE') { this.aiState = 'APPROACH'; this.retreating = false; }
+    if (this.aiState !== 'FLEE' && this.aiState !== 'ENTER') { this.aiState = 'APPROACH'; this.retreating = false; }
     this.attackCooldown = Math.max(this.attackCooldown, 25);
     if (attacker && attacker.kind === 'player') { this.target = attacker; this.retargetTimer = RETARGET; }
     this.hitCount++;

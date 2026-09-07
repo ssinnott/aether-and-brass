@@ -13,7 +13,10 @@ import { GalleryScreen } from './game/screens/gallery.js';
 import { GameplayScreen } from './game/screens/gameplay.js';
 import { IntroScreen } from './game/screens/intro.js';
 import { PauseScreen } from './game/screens/pause.js';
+import { GameOverScreen } from './game/screens/gameover.js';
+import { ResultsScreen } from './game/screens/results.js';
 import { CHARACTERS } from './content/characters/index.js';
+import { ENEMY_LIST, ENEMY_GALLERY } from './content/enemies/index.js';
 
 /** Parse URL params into game options. */
 export function parseOptions(search = window.location.search) {
@@ -62,17 +65,18 @@ function boot() {
   audio.init();
 
   const game = new Game({ input, audio, rng, options });
-  // Content registries. content/enemies/index.js (step 2) sets game.enemyList, game.enemyFactory and extends the gallery.
+  // Content registries: playable characters, enemy list (10 variants + midboss + boss) and the gallery (all rigs).
   game.characters = CHARACTERS;
-  game.galleryRegistry = CHARACTERS.map((c) => ({ id: c.id, name: c.name, build: c.build, anims: c.anims }));
-  game.enemyList = game.enemyList || [];
-  game.enemyFactory = game.enemyFactory || null; // (type, variant, x, z, world) => Fighter; null = dummy enemies
+  game.enemyList = ENEMY_LIST;
+  game.galleryRegistry = [...CHARACTERS.map((c) => ({ id: c.id, name: c.name, build: c.build, anims: c.anims })), ...ENEMY_GALLERY];
   game.registerScreen('title', (g) => new TitleScreen(g));
   game.registerScreen('select', (g) => new SelectScreen(g));
   game.registerScreen('intro', (g) => new IntroScreen(g));
   game.registerScreen('gallery', (g) => new GalleryScreen(g));
   game.registerScreen('gameplay', (g) => new GameplayScreen(g));
   game.registerScreen('pause', (g) => new PauseScreen(g));
+  game.registerScreen('gameover', (g) => new GameOverScreen(g));
+  game.registerScreen('results', (g) => new ResultsScreen(g));
 
   let showDebug = options.debug;
   let frameCounter = 0;

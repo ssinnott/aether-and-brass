@@ -7,7 +7,8 @@ import { clamp, sign } from '../engine/math.js';
 import { floatText } from '../art/fx.js';
 
 const DOUBLE_TAP_FRAMES = 12;
-const DODGE_FRAMES = 20, DODGE_DIST = 60, DODGE_IFRAMES = 12, DODGE_COOLDOWN = 6;
+const DODGE_FRAMES = 20, DODGE_DIST = 60, DODGE_IFRAME_START = 2, DODGE_IFRAME_END = 12, DODGE_COOLDOWN = 6;
+const DODGE_METER = 10, GRAB_MASH_OUT = 6, MASH_OUT_INVULN = 20;
 const GRADES = [[60, 'AETHERIC', '#ffffff'], [35, 'STEAMED', '#4DF0E0'], [20, 'BRASSY', '#ff9a30'], [10, 'SPARKY', '#ffe45a'], [3, 'SOOTY', '#c8c8c8']];
 const AIR_HIT_COMBO = 2;
 
@@ -37,7 +38,7 @@ export class Player extends Fighter {
     this.dodgeCooldown = 0; this.dodgeDx = 0; this.dodgeDz = 0;
     this.jumpsLeft = 0; this.airShotUsed = false;
     this.out = false; this.respawnTimer = 0;
-    this.lastTarget = null; this.blinkHit = new Set(); this.heldBody = null;
+    this.lastTarget = null; this.blinkHit = new Set(); this.heldBody = null; this.victory = false;
     this.intent = { x: 0, y: 0, attack: false, jump: false, special: false, super: false, dodge: false, taunt: false, run: false, start: false };
     this.grabReach = def.grabReach || 20;
   }
@@ -68,10 +69,12 @@ export class Player extends Fighter {
 
   // ---------- think ----------
   think(world) {
+    if (this.victory) { if (!this.airborne && (this.state === ST.IDLE || this.state === ST.WALK || this.state === ST.RUN)) { this.state = ST.TAUNT; this.play('win', { restart: false }); } return; }
     this.readIntent(world);
     if (this.out || this.dead) return;
     const it = this.intent;
     if (this.dodgeCooldown > 0) this.dodgeCooldown--;
+    if (this.state !== ST.GRABBED) this.mashCount = 0;
     if (it.run && it.x) { this.running = true; this.runDir = it.x; }
     if (this.running && it.x !== this.runDir) this.running = false;
     switch (this.state) {
@@ -80,8 +83,12 @@ export class Player extends Fighter {
       case ST.JUMP: this.thinkAir(world, true); break;
       case ST.JUMP_ATTACK: this.thinkAir(world, false); break;
       case ST.GRAB: this.thinkGrab(); break;
+      case ST.GRABBED: this.thinkGrabbed(); break;
       case ST.DODGE: this.thinkDodge(); break;
       case ST.SUPER: this.thinkSuper(); break;
+      case ST.TAUNT: // interruptible (ARCHITECTURE 5): any action or movement input cancels it
+        if (it.attack || it.jump || it.dodge || it.special || it.super || it.x || it.y) { this.setState(ST.IDLE, 'idle'); this.thinkGround(world); }
+        break;
       default: break;
     }
   }
@@ -127,7 +134,9 @@ export class Player extends Fighter {
     if (it.x) { this.x += it.x * this.walkSpeed * 0.9; this.facing = this.airFacingLocked ? this.facing : it.x; }
     if (it.y) this.z = clamp(this.z + it.y * this.walkSpeed * 0.3, 0, Z_MAX);
     if (canAttack && it.attack && !this.airActed) { this.consume('attack'); this.jumpAttack(); return; }
-    if (!canAttack && it.attack && !this.airShotUsed && this.anim.has('jumpAttack2') && this.anim.done) { this.consume('attack'); this.airShotUsed = true; this.play('jumpAttack2'); return; }
+    // second air action (Rook's downward shot, GDD 2.3): once the jump attack has finished (state is back to JUMP) and still airborne
+    const inRecovery = this.state === ST.JUMP_ATTACK && this.anim.name === 'jumpAttack' && this.anim.frameIndex >= 2;
+    if ((canAttack || inRecovery) && it.attack && this.airActed && !this.airShotUsed && this.anim.has('jumpAttack2')) { this.consume('attack'); this.airShotUsed = true; this.setState(ST.JUMP_ATTACK, 'jumpAttack2'); return; }
     if (it.jump && this.jumpsLeft > 0 && this.state === ST.JUMP) { this.consume('jump'); this.jumpsLeft--; this.vy = this.jumpVy * 0.9; this.play('jump'); audio.play('jump'); world.addFx('dust', this.x, 0, this.z, { count: 4 }); }
   }
   thinkGrab() {
@@ -141,7 +150,22 @@ export class Player extends Fighter {
   }
   thinkDodge() {
     if (this.stateTimer <= DODGE_FRAMES) { this.x += this.dodgeDx; this.z = clamp(this.z + this.dodgeDz, 0, Z_MAX); }
-    if (this.stateTimer === 1) this.invuln = Math.max(this.invuln, DODGE_IFRAMES);
+    // i-frames 2..12 (GDD 7): invuln is decremented at the top of each update, so this covers exactly frames 2 through 12
+    if (this.stateTimer === DODGE_IFRAME_START) this.invuln = Math.max(this.invuln, DODGE_IFRAME_END - DODGE_IFRAME_START + 1);
+  }
+  /** Held by an enemy: mashing attack 6 times breaks free (GDD 4 / 7). */
+  thinkGrabbed() {
+    const it = this.intent, h = this.grabbedBy;
+    if (!it.attack || !h) return;
+    this.consume('attack');
+    if (++this.mashCount < GRAB_MASH_OUT) return;
+    this.mashCount = 0;
+    h.releaseGrab(false);
+    this.invuln = Math.max(this.invuln, MASH_OUT_INVULN);
+    this.vx = -h.facing * 4;
+    this.setState(ST.IDLE, 'idle');
+    floatText(this.x, this.y + this.h + 10, this.z, 'BREAK!', UI.brassLight, 1);
+    audio.play('hit_grab');
   }
   thinkSuper() {
     const b = this.heldBody;
@@ -179,6 +203,8 @@ export class Player extends Fighter {
     this.invuln = Math.max(this.invuln, this.anim.length + 4);
     world.freezeFrames(12, this);
     world.addFx('flash', this.x, 0, this.z, { color: '#ffffff' });
+    // super cut-in: name plate during the screen freeze
+    if (world.announce) world.announce((this.def.moves && this.def.moves.super && this.def.moves.super.name) || 'SUPER', this.def.fullName ? this.def.fullName.toUpperCase() : this.def.name, 50);
     if (world.camera) world.camera.shake(6, 20);
     audio.play('super_charge'); audio.play(this.def.sfx && this.def.sfx.super || 'super_' + this.def.id);
   }
@@ -189,7 +215,6 @@ export class Player extends Fighter {
     else { const dir = it.x || this.facing; this.dodgeDx = dir * DODGE_DIST / DODGE_FRAMES; this.dodgeDz = 0; if (it.x) this.facing = it.x; }
     this.dodgeCooldown = DODGE_COOLDOWN + DODGE_FRAMES;
     this.setState(ST.DODGE, 'dodge');
-    this.invuln = Math.max(this.invuln, DODGE_IFRAMES + 1);
   }
   /** Nearest enemy inside grab reach in front of the player that is idle (not in hitstun, not armored). */
   findGrabTarget(world) {
@@ -254,14 +279,16 @@ export class Player extends Fighter {
     this.comboScale = 1.3;
     if (this.combo > this.maxCombo) this.maxCombo = this.combo;
   }
+  onDodged(attacker) { this.addMeter(DODGE_METER); floatText(this.x, this.y + this.h + 10, this.z, 'DODGE', UI.meter, 1); }
   onHurt(hit, attacker) {
-    this.damageTakenTotal += hit.damage || 0;
+    this.damageTakenTotal += this.lastDamage != null ? this.lastDamage : (hit.damage || 0);
     if (this.combo > 0) this.dropCombo();
     this.addMeter(METER.damaged);
   }
   onKill(target) {
     this.kills++;
-    this.addScore((target.def && target.def.score) || 100, true);
+    const base = (target.def && target.def.score) || 100;
+    this.addScore(target.thrownBy === this ? Math.round(base * 1.5) : base, true); // GDD 7: throw kill x1.5
     this.addMeter(12);
   }
   /** Score multiplier from the current combo (GDD 7): 1 + combo/20, capped at 3. */
@@ -307,6 +334,10 @@ export class Player extends Fighter {
     const e = world.nearestEnemy(this.x, this.z);
     if (!e) return;
     this.facing = sign(e.x - this.x) || this.facing;
-    if (this.actionable) { const reach = (this.def.reach || 40) - 8; if (Math.abs(e.x - this.x) > reach) this.x += this.facing * Math.min(this.walkSpeed * 3, Math.abs(e.x - this.x) - reach); this.z += clamp(e.z - this.z, -4, 4); }
+    if (this.actionable) {
+      const reach = (this.def.reach || 40) - 8, gap = Math.abs(e.x - this.x) - (e.w || 28) / 2;
+      if (gap > reach) this.x += this.facing * Math.min(40, gap - reach); // big steps: kiting ranged enemies must not outrun the hook
+      this.z += clamp(e.z - this.z, -8, 8);
+    }
   }
 }

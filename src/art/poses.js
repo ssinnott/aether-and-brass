@@ -17,9 +17,22 @@ export const DEFAULT_POSE = Object.freeze({
   weapon: Object.freeze({ rot: 0 }),
   squash: 1,
   stretch: 1,
+  /** 0..1 blend of the far arm onto a two-handed weapon's grip (2-bone IK; only used when build.weapon.twoHanded). */
+  grip: 0,
+  /** Facial expression index (see FACE); stepped, never interpolated. */
+  face: 0,
+  /** Weapon smear arc in root space: from/to angles in degrees (0 = forward, -90 = up), a = alpha, r = radius (0 = auto). from/to step, a/r lerp. */
+  smear: Object.freeze({ from: 0, to: 0, a: 0, r: 0 }),
 });
 
+/** Named facial expressions for `pose.face` (P() accepts the names). */
+export const FACE = Object.freeze({ neutral: 0, angry: 1, hurt: 2, happy: 3, shout: 4, dazed: 5, grit: 6, closed: 7 });
+/** Resolve a face name or number to an index. */
+export function faceIndex(v) { return typeof v === 'number' ? v : (v != null && FACE[v] != null ? FACE[v] : 0); }
+
 const KEYS = Object.keys(DEFAULT_POSE);
+/** Keys whose numbers are held (stepped) rather than interpolated. */
+const STEP = Object.freeze({ face: true, from: true, to: true });
 
 /** Allocate a fresh, fully populated pose object. */
 export function makePose(partial = null) {
@@ -38,7 +51,7 @@ export function copyPose(src, out, reset = false) {
   for (const k of KEYS) {
     const d = DEFAULT_POSE[k];
     const v = src ? src[k] : undefined;
-    if (typeof d === 'number') { out[k] = v != null ? v : (reset ? d : out[k]); continue; }
+    if (typeof d === 'number') { out[k] = v != null ? (k === 'face' ? faceIndex(v) : v) : (reset ? d : out[k]); continue; }
     const o = out[k];
     for (const s of Object.keys(d)) {
       const sv = v && v[s] != null ? v[s] : undefined;
@@ -60,6 +73,7 @@ export function lerpPose(a, b, t, out = SCRATCH_POSE) {
     const d = DEFAULT_POSE[k];
     const av = a ? a[k] : undefined, bv = b ? b[k] : undefined;
     if (typeof d === 'number') {
+      if (STEP[k]) { out[k] = av != null ? faceIndex(av) : d; continue; }
       const x = av != null ? av : d, y = bv != null ? bv : d;
       out[k] = x + (y - x) * t;
       continue;
@@ -67,12 +81,25 @@ export function lerpPose(a, b, t, out = SCRATCH_POSE) {
     const o = out[k];
     for (const s of Object.keys(d)) {
       const x = av && av[s] != null ? av[s] : d[s];
+      if (STEP[s]) { o[s] = x; continue; }
       const y = bv && bv[s] != null ? bv[s] : d[s];
       o[s] = x + (y - x) * t;
     }
   }
   return out;
 }
+
+/** Easing curves for keyframes (frame.ease). t in [0,1]. */
+export const EASE = Object.freeze({
+  linear: (t) => t,
+  in: (t) => t * t * t,
+  out: (t) => 1 - (1 - t) * (1 - t) * (1 - t),
+  inout: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+  overshoot: (t) => 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2),
+  snap: (t) => (t < 0.5 ? 0 : 1),
+});
+/** Apply a named easing to t (unknown names = linear). */
+export function ease(name, t) { const f = name && EASE[name]; return f ? f(t) : t; }
 
 /** Swap near/far limbs (armR<->armL, legR<->legL, handR<->handL, footR<->footL) into `out`. */
 export function mirrorPose(pose, out = makePose()) {
@@ -101,6 +128,8 @@ export function P(spec = {}) {
     else if (k === 'torso' || k === 'head') o[k] = typeof v === 'number' ? { rot: v } : Array.isArray(v) ? { rot: v[0], x: v[1], y: v[2] } : v;
     else if (k === 'root') o[k] = Array.isArray(v) ? { x: v[0], y: v[1], rot: v[2] || 0 } : v;
     else if (k === 'handR' || k === 'handL' || k === 'weapon' || k === 'footR' || k === 'footL') o[k] = typeof v === 'number' ? { rot: v } : v;
+    else if (k === 'smear') o[k] = Array.isArray(v) ? { from: v[0], to: v[1], a: v[2] != null ? v[2] : 0.45, r: v[3] || 0 } : v;
+    else if (k === 'face') o[k] = faceIndex(v);
     else o[k] = v;
   }
   return o;
