@@ -3,3 +3,4 @@ dist/
 tools/screens/
 *.log
 .DS_Store
+.claude/worktrees/
