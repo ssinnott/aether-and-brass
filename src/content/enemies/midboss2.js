@@ -10,7 +10,7 @@
 // her brow, the face and the braid are out, the coat is torn to a shirt, and all that is left is a fast woman with a
 // boarding axe. Rig and kit from ./stormcrowRig.js + ./stormcrowKit.js.
 import {
-  CROW, CROW_PAL, CROW_PROPS, FK, makeCrowBase, crowStrike, crowWings, crowTails, crowScarf,
+  CROW, CROW_PAL, CROW_PROPS, FK, makeCrowBase, crowStrike, crowWings, crowTails, crowScarf, crowRank,
 } from './stormcrowRig.js';
 import { CROW_PARTS, drawBoardingAxe, IRON } from './stormcrowKit.js';
 import { frontBox, areaBox } from './common.js';
@@ -20,6 +20,11 @@ import { particles } from '../../engine/particles.js';
 
 const R = Math.round, TAU = Math.PI * 2;
 const DRUM = '#6A5E44', CHAIN = '#8A94A2', HOT = '#FFD27A';
+/**
+ * Flag rank (see boss2.js): the quartermaster is the first Stormcrow to wear the Wing's RED in a gold frame rather
+ * than a line rate's heat-ramp colour. Hers is the lighter, hotter of the two boss reds; the Admiral's is deeper.
+ */
+const RANK = '#D8532C';
 const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
 
 // ---------------------------------------------------------------- the harness (phase 1 only)
@@ -33,6 +38,13 @@ function drawWinch(ctx, rig) {
   const p = rig.p, hw = R(p.torsoW / 2), H = p.torsoH, x = -hw - 9, y = -R(H * 0.84);
   // drum cradle across the shoulders
   celRect(ctx, rig, x - 5, y - 3, R(p.torsoW) + 12, 13, 4, CROW.pewterDark, 0.36, 0.3);
+  // phase 1's rank rides the MACHINE, not the woman: a gold-framed band across the drum cradle. In phase 2 the
+  // drum is gone and the same colour turns up on her sash, her braid tie and her cuffs — same rank, relocated,
+  // which is the whole point of the phase change.
+  if (!rig.override) {
+    ctx.fillStyle = rig.col(crowRank(rig)); ctx.fillRect(x - 4, y + 1, R(p.torsoW) + 10, 8);
+    ctx.fillStyle = rig.col(CROW.goldDark); ctx.fillRect(x - 4, y + 9, R(p.torsoW) + 10, 2);
+  }
   // the chain drum itself, spinning
   const a = rig.jammed ? 0 : (rig.chainOut ? rig.tick * 0.42 : rig.tick * 0.06);
   ctx.save(); ctx.translate(x + 4, y + 4); ctx.rotate(a);
@@ -104,13 +116,13 @@ function drawGrapnel(ctx, p, sx, sy) {
 }
 
 // ---------------------------------------------------------------- builds
-const SKREE_PAL = { ...CROW_PAL, primary: '#3A4256', sleeve: '#C9BDA0', secondary: '#7E8798', metal: '#B4BECA', hair: '#3A2620' };
+const SKREE_PAL = { ...CROW_PAL, primary: '#3A4256', sleeve: '#C9BDA0', secondary: '#7E8798', metal: '#B4BECA', hair: '#3A2620', rank: RANK };
 /** Phase 1: the winch. Squat and top-heavy under the drum — short legs, wide hips, a barrel of a torso. */
 const WINCH_BUILD = {
   scale: 1.5, palette: SKREE_PAL, outline: CROW.outline, outlineWidth: 1,
   proportions: { ...CROW_PROPS, headR: 9, torsoW: 26, torsoH: 26, hip: 22, upperLeg: 14, lowerLeg: 13, legR: 6, armR: 5, handR: 5.4, footL: 13, footH: 6, bulge: 0.5 },
-  parts: { ...CROW_PARTS, hat: skreePlate }, clan: '#C4913A', smearColor: '#DCE6F4',
-  crow: { coat: 'plate', hair: 'crop', band: '#C4913A' },
+  parts: { ...CROW_PARTS, hat: skreePlate }, clan: RANK, smearColor: '#DCE6F4',
+  crow: { coat: 'plate', hair: 'crop', flag: true, cuff: true, lace: true },
   weapon: { attach: 'handR', length: 44, draw: drawBoardingAxe, headAt: 34 },
   accessories: [{ attach: 'back', draw: drawWinch }],
 };
@@ -119,7 +131,9 @@ const SKREE_BUILD = {
   ...WINCH_BUILD, scale: 1.3,
   proportions: { ...CROW_PROPS, headR: 8.5, torsoW: 21, torsoH: 27, hip: 17, upperLeg: 17, lowerLeg: 16, armR: 4.2 },
   parts: { ...CROW_PARTS, hat: skreePlateUp },
-  crow: { coat: 'jerkin', hair: 'queue', band: '#C4913A', scarf: '#C4913A', scarfLen: 3, tailLen: 18 },
+  // cut loose: the rank comes off the drum and onto her — waist sash, braid tie, cuffs, and the flag-rank gold edge
+  crow: { coat: 'jerkin', hair: 'queue', flag: true, sash: true, tie: true, cuff: true, lace: true,
+    scarf: RANK, scarfLen: 3, tailLen: 18 },
   accessories: [{ attach: 'back', draw: crowWings }, { attach: 'back', draw: crowTails }, { attach: 'torso', draw: crowScarf }],
 };
 

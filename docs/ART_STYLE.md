@@ -209,8 +209,13 @@ eyes in `parts.face`), `opts.eyeY`, `opts.pupil`, `opts.brow`, `opts.big`. **Fea
 head out in rows (§0.5) — `drawSkull(..., { noNose: true })` when the default profile nose would land on the eye row;
 keep hats and goggles above the hairline (`cy <= -r`); a beard is ONE polygon (chain-sheared, two segments at most) in a
 colour distinct from the garment beneath it. Every attack hit frame is `shout` or `grit`; hurt/knockdown/lying use
-`hurt` → `dazed`; win/taunt `happy`; dodge `closed`. Brassbound have no face: draw the lens in `parts.face` and colour it
-from the pose (`pose.face === FACE.angry` → red tell). Sootborn eyes track the player: shift the pupil by the sign of
+`hurt` → `dazed`; win/taunt `happy`; dodge `closed`. **A sealed head has no face: draw the lens in `parts.face` and
+colour it from the pose** — Brassbound (`pose.face === FACE.angry` → red tell) and the two sealed Stormcrows, the
+Galewright and the Ironwing Marine (`crowVisorMask` in `stormcrowRig.js`: the lens colour is the mood, a shutter
+plate dropped over its top is the eyelid, and `rig.down` puts it out for good on death). This is the sanctioned
+pattern for any masked rig; it needs no new animation data, because every key already carries `face:`. Keep the
+sealed variant behind ONE kit predicate (`crow.sealed`) so unmasked variants of the same faction are untouched by
+construction, and keep the lens on the same row `drawFace` puts the eyes on, so masked and bare heads match. Sootborn eyes track the player: shift the pupil by the sign of
 the target direction the AI writes into the def (`eyeTrack`) — keep it inside `parts.face`.
 
 ## 7. Secondary motion (beards, hair, scarves, chains, coat-tails)

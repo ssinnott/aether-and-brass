@@ -28,7 +28,20 @@ const R = Math.round, TAU = Math.PI * 2;
 /** Torso outlines: the full admiral's coat, and the ragged waistcoat left of it in phase 3. */
 const COAT_PTS = (hw, H) => [-hw - 3, -H + 4, -hw + 1, -H - 1, hw - 1, -H - 1, hw + 3, -H + 4, hw + 4, 2, -hw - 4, 2];
 const TORN_PTS = (hw, H, W) => [-hw - 1, -H + 5, -hw + 2, -H - 1, hw - 2, -H - 1, hw + 1, -H + 5, hw + 2, R(-H * 0.2), hw - 1, 2, R(W * 0.2), R(-H * 0.12), R(-W * 0.12), 2, -hw - 2, R(-H * 0.16)];
-const GOLD = '#D8AE52', GOLD_DK = '#8A6A26', COAT = '#2A3556', COAT_DK = '#1A2138', SASH = '#8E2F38';
+const GOLD = '#D8AE52', GOLD_DK = '#8A6A26', COAT = '#2A3556', COAT_DK = '#1A2138';
+/**
+ * FLAG RANK. The line rates climb a warm heat ramp and top out at the Ironwing Marine's signal gold on cloth
+ * (stormcrow.js WATCH); flag rank does NOT continue that ramp, it steps out of it — the Wing's RED, in a gold
+ * frame. Cloth alone = rated; cloth in a gold frame = flag rank, and no line trooper ever wears the frame.
+ * Two reasons this beats putting the Admiral one rung further up the gold: a cloth gold on her would sit ~9 L*
+ * from the Marine's and make the top line trooper read as a boss, and it would spend the one colour the phase
+ * ladder needs held in reserve. Phase 2 strips the bicorne and the cape but KEEPS the sash and the epaulettes —
+ * they are the only thing still saying she outranks everyone. Phase 3 strips even those, and the garment itself
+ * becomes the mark: the ladder ends in red, on a bare head, which is what phase 1's sash has been promising.
+ */
+const SASH = '#C0392F';
+/** The cape lining is the same red one value down, so the cape reads off the coat without being a rank mark. */
+const LINING = '#8E2F38';
 const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
 
 // ---------------------------------------------------------------- phase 1: the Admiral
@@ -54,21 +67,27 @@ function admiralCoat(ctx, rig, pose, inf) {
   if (rig.override) return;
   const t = tones(rig, pal.primary);
   if (!torn) {
-    // gold frogging: four bars down the chest
-    ctx.fillStyle = rig.col(GOLD);
-    for (let i = 0; i < 4; i++) ctx.fillRect(R(-W * 0.2), -H + 6 + i * 6, R(W * 0.4), 2);
+    // gold frogging: four bars down the chest, in the DARK gold with a bright cap - the sash beside them is now
+    // the rate ladder's cloth gold, and two bright golds on one chest merge into a single slab
     ctx.fillStyle = rig.col(GOLD_DK);
-    for (let i = 0; i < 4; i++) ctx.fillRect(R(-W * 0.2), -H + 8 + i * 6, R(W * 0.4), 1);
+    for (let i = 0; i < 4; i++) ctx.fillRect(R(-W * 0.2), -H + 6 + i * 6, R(W * 0.4), 3);
+    ctx.fillStyle = rig.col(GOLD);
+    for (let i = 0; i < 4; i++) ctx.fillRect(R(-W * 0.2), -H + 6 + i * 6, R(W * 0.4), 1);
   } else {
     // torn: the shirt shows through the front of the waistcoat, one gold bar left on the chest
     ctx.fillStyle = rig.col(CROW.canvas);
     ctx.beginPath(); ctx.moveTo(R(-W * 0.16), -H + 1); ctx.lineTo(R(W * 0.16), -H + 1); ctx.lineTo(0, R(-H * 0.44)); ctx.closePath(); ctx.fill();
     ctx.fillStyle = rig.col(GOLD); ctx.fillRect(R(-W * 0.2), R(-H * 0.7), R(W * 0.4), 2);
   }
-  // wine sash across the body + a gold clasp
-  ctx.strokeStyle = rig.col(SASH); ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.moveTo(-hw + 1, -H + 6); ctx.lineTo(hw, R(-H * 0.2)); ctx.stroke();
-  celBall(ctx, rig, R(W * 0.3), R(-H * 0.26), 3, GOLD, false);
+  // the flag-rank sash across the body, in its gold frame, with a gold clasp. Phase 3 is the terminus and loses it
+  // with the rest of the hardware: there the garment itself is the mark and the only rank left is the brow ribbon.
+  if (!torn) {
+    ctx.strokeStyle = rig.col(SASH); ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(-hw + 1, -H + 6); ctx.lineTo(hw, R(-H * 0.2)); ctx.stroke();
+    ctx.strokeStyle = rig.col(GOLD_DK); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-hw + 1, -H + 10); ctx.lineTo(hw, R(-H * 0.2) + 4); ctx.stroke();
+    celBall(ctx, rig, R(W * 0.3), R(-H * 0.26), 3, GOLD, false);
+  }
   if (!torn) for (const sx of [-hw + 1, hw - 6]) { // epaulettes
     celRect(ctx, rig, sx - 1, -H - 3, 7, 6, 2, GOLD, 0.36, 0.32);
     ctx.fillStyle = rig.col(GOLD_DK); ctx.fillRect(sx, -H + 3, 6, 4);
@@ -82,13 +101,13 @@ function admiralCape(ctx, rig) {
   ctx.save(); ctx.translate(0, -p.torsoH + 1); ctx.rotate(rad(ch.ang[0] * 0.6));
   celPoly(ctx, rig, [-hw - 2, 0, hw + 2, 0, hw + 7, 22, 0, 30, -hw - 7, 22], COAT_DK, 0.4, 0.18);
   // wine lining down the swept edge, so the cape separates from the coat instead of merging into one dark mass
-  if (!rig.override) { ctx.fillStyle = rig.col(SASH); ctx.fillRect(hw, 2, 4, 20); ctx.fillRect(-hw - 5, 2, 3, 19); }
+  if (!rig.override) { ctx.fillStyle = rig.col(LINING); ctx.fillRect(hw, 2, 4, 20); ctx.fillRect(-hw - 5, 2, 3, 19); }
   ctx.translate(0, 26); ctx.rotate(rad(ch.ang[1]));
   celPoly(ctx, rig, [-hw - 5, -3, hw + 5, -3, hw + 8, 14, 0, 22, -hw - 8, 14], COAT_DK, 0.42, 0.16);
-  if (!rig.override) { ctx.fillStyle = rig.col(SASH); ctx.fillRect(hw + 2, -1, 4, 13); }
+  if (!rig.override) { ctx.fillStyle = rig.col(LINING); ctx.fillRect(hw + 2, -1, 4, 13); }
   ctx.restore();
   if (rig.override) return;
-  ctx.fillStyle = rig.col(SASH); ctx.fillRect(-hw + 1, -p.torsoH + 1, R(p.torsoW) - 2, 4);
+  ctx.fillStyle = rig.col(LINING); ctx.fillRect(-hw + 1, -p.torsoH + 1, R(p.torsoW) - 2, 4);
 }
 // ---------------------------------------------------------------- phase 2: Storm-Wing
 /** The hat is gone: her hair stands straight up in the static, with a violet corona (hat hook). */
@@ -167,11 +186,11 @@ function drawShell(ctx, p, sx, sy) {
 }
 
 // ---------------------------------------------------------------- builds
-const ADM_PAL = { ...CROW_PAL, primary: COAT, sleeve: '#C6BCA0', secondary: '#77809A', accent: GOLD, metal: '#C2CCD8', hair: '#4A2E24', glow: CROW.spark };
+const ADM_PAL = { ...CROW_PAL, primary: COAT, sleeve: '#C6BCA0', secondary: '#77809A', accent: GOLD, metal: '#C2CCD8', hair: '#4A2E24', glow: CROW.spark, rank: SASH };
 const BASE_BUILD = {
   scale: 1.22, palette: ADM_PAL, outline: CROW.outline, outlineWidth: 1, proportions: CROW_PROPS,
   parts: { ...CROW_PARTS, torso: admiralCoat, hat: bicorne }, clan: SASH, smearColor: '#E4ECFA',
-  crow: { coat: 'admiral', hair: 'crop', band: SASH },
+  crow: { coat: 'admiral', hair: 'crop', flag: true, cuff: true, lace: true },
   weapon: { attach: 'handR', length: 68, draw: drawLance, headAt: 58 },
 };
 /** Phase 1: bicorne athwart, epaulettes, floor-length cape. The widest silhouette in the game. */
@@ -179,15 +198,20 @@ const ADMIRAL_BUILD = { ...BASE_BUILD, accessories: [{ attach: 'back', draw: adm
 /** Phase 2: hat off, hair up, four vanes standing off the shoulders; the cape is cut away. */
 const WING_BUILD = {
   ...BASE_BUILD, parts: { ...CROW_PARTS, torso: admiralCoat, hat: stormCrown },
-  crow: { coat: 'admiral', hair: 'loose', band: SASH, tailLen: 18 },
+  crow: { coat: 'admiral', hair: 'loose', flag: true, cuff: true, lace: true, tailLen: 18 },
   accessories: [{ attach: 'back', draw: stormHarness }, { attach: 'back', draw: crowTails }],
 };
-/** Phase 3: a torn ribbon, shirt sleeves, nothing on her back. */
+/**
+ * Phase 3, THE LAST CROW: a torn ribbon, shirt sleeves, nothing on her back — and the terminus of the rate ladder.
+ * The gold hardware is stripped to the single surviving frogging bar, and the GARMENT becomes the rank mark: her
+ * waistcoat goes to the ladder's red, so the reddest thing on the bridge is the person. The brow ribbon keeps the
+ * sash colour, because it is the one rank mark she has left.
+ */
 const CROW_BUILD = {
   ...BASE_BUILD, scale: 1.14,
-  palette: { ...ADM_PAL, primary: '#7A3038', secondary: '#8C99AE' },
+  palette: { ...ADM_PAL, primary: '#A8362E', secondary: '#8C99AE' },
   parts: { ...CROW_PARTS, torso: admiralCoat, hat: tornRibbon },
-  crow: { coat: 'admiral', hair: 'crop', band: SASH, torn: true, scarf: GOLD_DK, scarfLen: 3 },
+  crow: { coat: 'admiral', hair: 'crop', flag: true, cuff: true, torn: true, scarf: GOLD_DK, scarfLen: 3 },
   accessories: [{ attach: 'torso', draw: crowScarf }],
 };
 

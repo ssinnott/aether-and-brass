@@ -4,9 +4,18 @@
 //
 // Type identity: SKY PRIVATEERS. Not a regiment — a press-ganged crew of freebooters in their own weather-beaten
 // kit, and the art says so: five silhouettes, five headgears, five back pieces, five sleeve colours, five stances.
-// What holds them together is the kit language (wine Wing armband, brass badge, goggles or a lens on every head,
+// What holds them together is the kit language (the Wing armband, the brass badge, goggles or a lens on every head,
 // violet static as the only energy colour) and the way they fight: they give ground, they hop back out of a
 // whiffed swing, they keep their feet.
+// Two ladders run up the five, and both point the same way — at the Marine:
+//  - RANK COLOUR heats one step per rate (WATCH below) and the marks that carry it multiply and climb the body:
+//    1 carrier on the Crimper (armband) -> 2 on the Corsair (+ hatband) -> 3 on the Bosun (brow band, smock
+//    collar, waist sash) -> 4 on the Galewright (brow band, gorget, armband, lace) -> 6 on the Marine (crest
+//    edge, cuirass band, armband, cuff, lace, wing-plate boss).
+//  - THE HIGHER THE RATE, THE MORE SEALED THE MASK: bandana with the goggles up, goggles under the brim, one eye
+//    behind a brass loupe, then a sealed keel visor and a sealed iron muzzle with a hot-white sighting lens.
+// Rank colour is the ONLY high-chroma warm left on a rig: every scarf and the Crimper's bandana are neutral, so
+// nothing on the deck competes with the mark that says who is in charge.
 // Faction rules:
 //  - JUMP ATTACKS DO 1.5x. A Stormcrow covers the deck, not the air above it: go over the top.
 //  - At most 2 attack at once (tokenGroup 'stormcrow'); the rest circle on the other z lane.
@@ -33,8 +42,15 @@ import { ST } from '../../constants.js';
 const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
 /** drawFace options for the one variant with a beard over his mouth (ART_STYLE section 6). */
 const BEARDED = { noMouth: true };
-/** Regiment colours: every Stormcrow wears its watch's chevron on the coat and its colour in its headgear. */
-export const WATCH = { crimper: '#8E2F38', corsair: '#2F6E7A', bosun: '#A8632A', galewright: '#5B3E8C', marine: '#3C5A88' };
+/**
+ * THE RATE LADDER. One warm ramp, heated a step per rate — ash rust, brick red, ember orange, flame amber, signal
+ * gold (~L* 41 / 48 / 58 / 70 / 82, chroma climbing with it). It survives a squint, a 0.5x downscale and
+ * colourblindness because it is a brightness ramp, not five arbitrary hues, and every rung is a hue-family jump
+ * from its own coat (rust vs slate-blue, brick vs teal, ember vs grey-plum, amber vs violet, gold vs navy).
+ * Each variant carries it in BOTH `build.clan` and `palette.rank` — same literal; `palette.rank` is what the limb
+ * hooks read, because farPalette shades it once at buildRig so the far arm's band darkens for free.
+ */
+export const WATCH = { crimper: '#9C4F3C', corsair: '#BE4E2E', bosun: '#D46E28', galewright: '#E89A34', marine: '#F6C24A' };
 
 // ---------------------------------------------------------------- projectiles
 /** Harpoon on a reel line: a pewter dart trailing rope back the way it came (pale once batted back). */
@@ -79,12 +95,19 @@ const BASE = {
     backstepAfterWhiffs: { whiffs: 2, dist: 46, iframes: 8, cooldown: 70, range: 110 },
   },
 };
-/** Rig flags the art reads: the wing vanes flare on any hop / lunge, the goggle glass lights on tell frames. */
+/**
+ * Rig flags the art reads: the wing vanes flare on any hop / lunge, the goggle glass lights on tell frames, and
+ * `rig.down` says the aeronaut is dead so the two sealed helms can put their lens out and keep it out. fighter.js
+ * stops calling onUpdate once `dead` is set, so the flag latches on death and clears itself when the rig is reused
+ * — which is why every variant hook must call BASE_HOOKS.onUpdate first (galeHooks and corsairHooks do).
+ */
 const BASE_HOOKS = {
   onUpdate(f) {
     const n = f.anim.name;
     f.rig.wings = f.state === ST.DODGE || f.airborne || n === 'lunge' || n === 'gale' || n === 'shove';
+    f.rig.down = false;
   },
+  onDeath(f) { f.rig.down = true; },
 };
 /** Assemble a Stormcrow variant: faction traits + hooks on top of makeEnemyDef. */
 function def(v, hooks) {
@@ -143,8 +166,10 @@ const crimperAnims = crowAnims(CRIMP_CARRY, CRIMP_STANCE, {
 const crimper = def({
   variant: 'crimper', name: 'DECK CRIMPER', role: 'rusher', hp: 45, damage: 1, speed: 1.2, score: 150, drops: 'none',
   build: { ...BASE.build, clan: WATCH.crimper,
-    palette: { ...CROW_PAL, hair: '#4A3226' },
-    crow: { head: 'bandana', coat: 'jerkin', hair: 'crop', band: '#B4483A', scarf: '#B07A22', scarfLen: 2 },
+    palette: { ...CROW_PAL, hair: '#4A3226', rank: WATCH.crimper },
+    // rating: ONE rank carrier, the armband. The bandana is a dirty rag (hatBandana draws it neutral) and the
+    // scarf is plain rope — nothing above his collar says anything about rank.
+    crow: { head: 'bandana', coat: 'jerkin', hair: 'crop', scarf: CROW.rope, scarfLen: 2 },
     weapon: { attach: 'handR', length: 50, draw: drawBoatHook, headAt: 44 },
     accessories: [{ attach: 'back', draw: crowLines }, { attach: 'torso', draw: crowScarf }] },
   anims: crimperAnims,
@@ -189,9 +214,11 @@ const corsairHooks = {
 const corsair = def({
   variant: 'corsair', name: 'LINE CORSAIR', role: 'ranged', hp: 40, damage: 1, speed: 1.15, score: 200, drops: 'none',
   build: { ...BASE.build, scale: 0.93, clan: WATCH.corsair,
-    palette: { ...CROW_PAL, primary: '#3E6B6E', sleeve: '#C9B79A', secondary: '#7E8AA0', hair: '#33241F' },
+    palette: { ...CROW_PAL, primary: '#3E6B6E', sleeve: '#C9B79A', secondary: '#7E8AA0', hair: '#33241F', rank: WATCH.corsair },
     proportions: { ...CROW_PROPS, headR: 8, torsoW: 19, torsoH: 26, hip: 16, upperLeg: 18, lowerLeg: 17, upperArm: 15, lowerArm: 14, armR: 3.8, legR: 4.6 },
-    crow: { head: 'slouch', coat: 'oilskin', hair: 'queue', band: WATCH.corsair, scarf: '#8E2F38', scarfLen: 2, tailLen: 26 },
+    // petty officer: armband + hatband, the first rate whose colour reaches the head. The scarf goes neutral
+    // strap — it used to wear the Crimper's old rank red, which is exactly how the ladder went soft.
+    crow: { head: 'slouch', coat: 'oilskin', hair: 'queue', scarf: CROW.strap, scarfLen: 2, tailLen: 26 },
     weapon: { attach: 'handR', length: 40, draw: drawLineGun, headAt: 32 },
     accessories: [{ attach: 'back', draw: crowReel }, { attach: 'back', draw: crowTails }, { attach: 'torso', draw: crowScarf }] },
   anims: corsairAnims,
@@ -232,9 +259,11 @@ const bosunAnims = crowAnims(BOSUN_CARRY, BOSUN_STANCE, {
 const bosun = def({
   variant: 'bosun', name: 'POWDER BOSUN', role: 'bruiser', hp: 85, damage: 1, speed: 0.85, score: 300, drops: 'none',
   build: { ...BASE.build, scale: 1.15, clan: WATCH.bosun,
-    palette: { ...CROW_PAL, primary: '#5A5560', sleeve: CROW.skin, secondary: '#7C8496', hair: '#A79C88' },
+    palette: { ...CROW_PAL, primary: '#5A5560', sleeve: CROW.skin, secondary: '#7C8496', hair: '#A79C88', rank: WATCH.bosun },
     proportions: { ...CROW_PROPS, headR: 9.5, neckR: 4, torsoW: 27, torsoH: 25, hip: 23, upperLeg: 13, lowerLeg: 12, legR: 6, armR: 5, handR: 5.4, footL: 13, footH: 6, bulge: 0.6 },
-    crow: { head: 'loupe', coat: 'smock', hair: 'bald', beard: true, band: WATCH.bosun, faceOpts: BEARDED },
+    // gunner: waist sash, brow band, smock collar — all cloth, and the widest rank field on the deck. NO armband
+    // and no rank cuff: his `sleeve` is his own bare skin, and a warm band on warm tan fails ART_STYLE section 0.1.
+    crow: { head: 'loupe', coat: 'smock', hair: 'bald', beard: true, faceOpts: BEARDED, bareArm: true, sash: true, collar: true },
     weapon: { attach: 'handR', length: 48, draw: drawChainShot, headAt: 40 },
     accessories: [{ attach: 'back', draw: crowKeg }, { attach: 'torso', draw: crowBandolier }] },
   anims: bosunAnims,
@@ -288,9 +317,15 @@ const galeHooks = {
 const galewright = def({
   variant: 'galewright', name: 'GALEWRIGHT', role: 'elite', hp: 90, damage: 1, speed: 1, score: 500, drops: 'meter',
   build: { ...BASE.build, scale: 0.92, clan: WATCH.galewright,
-    palette: { ...CROW_PAL, primary: '#4A3F68', sleeve: '#B9AECB', secondary: '#8A8296', hair: '#9A86C0', glow: CROW.spark },
+    palette: { ...CROW_PAL, primary: '#4A3F68', sleeve: '#B9AECB', secondary: '#8A8296', hair: '#9A86C0', glow: CROW.spark, rank: WATCH.galewright },
     proportions: { ...CROW_PROPS, headR: 8, torsoW: 19, torsoH: 28, hip: 16, neck: 4, upperLeg: 17, lowerLeg: 16, armR: 3.6, legR: 4.6 },
-    crow: { head: 'visor', coat: 'duster', hair: 'loose', band: WATCH.galewright, scarf: '#C9BEA6', scarfLen: 3, tailLen: 28 },
+    // warrant specialist: SEALED. A small head with a big eye (lens 1.15) under a swept storm cowl and a long keel
+    // beak. Four rank carriers: the brow band inside the brass fitting, the duster's gorget, both armbands and the
+    // trouser lace — head / throat / arm / leg, all of it in front. No rank cuff (her rod hand is already a stack of
+    // warm copper rings) and nothing on the cowl behind her, where amber would read as coil charge.
+    // `hair: 'loose'` is gone with the standing hair.
+    crow: { head: 'visor', coat: 'duster', sealed: true, cowl: 'storm', beak: 'keel', lens: 1.15,
+      gorget: true, lace: true, scarf: '#C9BEA6', scarfLen: 3, tailLen: 28 },
     weapon: { attach: 'handR', length: 42, draw: drawCoilRod, headAt: 34 },
     accessories: [{ attach: 'back', draw: crowRods }, { attach: 'back', draw: crowTails }, { attach: 'torso', draw: crowScarf }] },
   anims: galewrightAnims,
@@ -326,8 +361,14 @@ const marineAnims = crowAnims(MARINE_CARRY, MARINE_STANCE, {
     r: { armR: [22, 20], weapon: 6, armL: [0, 62], torso: 24, head: 4, root: [4, 2], legR: [38, 18], legL: [-28, 30], face: 'grit' },
   }),
 });
-/** The wing-plate is a rig flag, so stripping it is visible for the rest of the fight. */
+/** The wing-plate is a rig flag, so stripping it is visible for the rest of the fight; the sealed helm vents. */
 const marineHooks = {
+  onUpdate(f, world) {
+    BASE_HOOKS.onUpdate(f, world);
+    if (f.aiState === 'STAGGER' && world && (world.frame & 7) === 0) {
+      particles.burst('spark', f.x + f.facing * 8, 54, f.z, 1, { speed: 1, up: 0.5, color: CROW.spark });
+    }
+  },
   onShieldStripped(f, world) {
     if (!world) return;
     particles.burst('debris', f.x, 44, f.z, 12, { speed: 3.4, up: 2.4, color: CROW.pewter, sizeJitter: 2 });
@@ -337,9 +378,14 @@ const marineHooks = {
 const marine = def({
   variant: 'marine', name: 'IRONWING MARINE', role: 'elite', hp: 190, damage: 1, speed: 0.7, score: 1000, drops: 'food_small',
   build: { ...BASE.build, scale: 1.31, clan: WATCH.marine,
-    palette: { ...CROW_PAL, primary: '#36486B', sleeve: '#BFAE90', secondary: '#6E7A90', metal: '#AEB9C6', hair: '#2A2018' },
+    palette: { ...CROW_PAL, primary: '#36486B', sleeve: '#BFAE90', secondary: '#6E7A90', metal: '#AEB9C6', hair: '#2A2018', rank: WATCH.marine },
     proportions: { ...CROW_PROPS, headR: 9, torsoW: 24, torsoH: 25, hip: 20, upperLeg: 15, lowerLeg: 14, legR: 5.6, armR: 4.6, handR: 5.2, footL: 13, footH: 6, bulge: 0.35 },
-    crow: { head: 'helm', coat: 'plate', hair: 'crop', band: WATCH.marine },
+    // marine: SEALED, and the top of both ladders. A big head with a small eye (lens 0.85) behind a short grilled
+    // iron muzzle — the inverted lens sizes are what stop two pewter heads reading as the same man. Six rank
+    // carriers, more than anyone: the helm crest at the very crown, the cuirass band, both armbands, both cuffs,
+    // the trouser lace and the wing-plate boss. `hair: 'crop'` is gone with the bare skull.
+    crow: { head: 'helm', coat: 'plate', sealed: true, cowl: 'iron', beak: 'iron', lens: 0.85,
+      cuff: true, lace: true },
     weapon: { attach: 'handR', length: 42, draw: drawBoardingAxe, headAt: 32 },
     accessories: [{ attach: 'back', draw: crowWings }, { attach: 'handL', draw: drawWingShield }] },
   anims: marineAnims,

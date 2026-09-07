@@ -2,27 +2,36 @@
 // pieces and weapons — plus the shared part table. Art only (ARCHITECTURE.md section 14); the rig, palette and base
 // animation set live in ./stormcrowRig.js.
 //
-// Headgear is the single biggest silhouette lever (docs/ART_STYLE.md section 0.6 / 11): a knotted bandana, a wide
-// slouch hat, a bald head and beard, a static-lifted shock of hair under a lens visor, and a crested storm-helm.
-// Every one of them carries a piece of glass — goggles, a loupe, a sighting tube, a helm lamp — and every one of
-// them ends by calling crowTell() on that glass, so the wind-up tell is the same violet light on all five heads.
+// Headgear is the single biggest silhouette lever (docs/ART_STYLE.md section 0.6 / 11), and it is also the RATE
+// ladder: a knotted bandana, a wide slouch hat, a bald head with a brass loupe, a sealed keel visor and a sealed
+// iron muzzle. THE HIGHER THE RATE, THE MORE SEALED THE MASK — the bottom three keep their faces, the two elites
+// are welded shut. Every one of them carries a piece of glass — goggles, a loupe, a sighting lens — and every one
+// of them ends with ONE crowTell() on that glass, so the wind-up tell is the same violet light on all five heads.
+// On the two sealed heads the dome, the crest and the mask belong to crowHelmShell / crowVisorMask (they must sit
+// BEHIND the mask plate, and the hat hook draws last); `hatVisor` / `hatHelm` keep only what goes above the
+// hairline and on top of the dome (the Galewright's brass fitting and rank brow band, the Marine's dome rim).
 // Back pieces are the second lever: a rope coil, a line drum, a powder keg, two lightning rods and the wing-pack.
 import { celRect, celBall, celPoly, celCapsule, tones, rimTop } from '../../art/shading.js';
 import { getChain } from '../../art/secondary.js';
 import { rad } from '../../engine/math.js';
 import {
   CROW, farTone, crowHead, crowFace, crowBeard, crowCoat, crowHips, crowArmUpper, crowArmLower, crowHand,
-  crowLegUpper, crowLegLower, crowBoot, crowTell, crowGoggles, crowWings, crowTails,
+  crowLegUpper, crowLegLower, crowBoot, crowTell, crowGoggles, crowWings, crowTails, crowRank, rankBand, rankH,
 } from './stormcrowRig.js';
 
 const R = Math.round, TAU = Math.PI * 2;
+const EMPTY = {};
 const WOOD = '#7A5230', WOOD_D = '#54371F', IRON = '#6E7684', KEG = '#6A4A32';
 const WOOD_F = farTone(WOOD);
 
 // ---------------------------------------------------------------- headgear (head space, facing right)
-/** C1 Deck Crimper: a knotted bandana over the crown with two tails on a chain, goggles shoved up onto the knot. */
+/**
+ * C1 Deck Crimper: a knotted bandana over the crown with two tails on a chain, goggles shoved up onto the knot.
+ * The rag is deliberately NEUTRAL canvas: the lowest rate carries its rank on the armband and nowhere else, and a
+ * warm bandana would be a second high-chroma warm competing with the ladder (see stormcrowRig.js header).
+ */
 function hatBandana(ctx, rig, r) {
-  const col = rig.build.crow.band || CROW.wine;
+  const col = CROW.canvasSh;
   celPoly(ctx, rig, [-r - 2, R(-r * 0.82), -r - 1, R(-r * 1.12), R(-r * 0.5), R(-r * 1.44), R(r * 0.5), R(-r * 1.4), r + 2, R(-r * 1.0), r + 2, R(-r * 0.8)], col, 0.4, 0.28);
   if (!rig.override) {
     ctx.fillStyle = tones(rig, col).deep;
@@ -51,7 +60,8 @@ function hatSlouch(ctx, rig, r) {
   // brim: swept forward and down, tacked up over the back of the crown
   celPoly(ctx, rig, [R(-r * 2.0), R(-r * 1.24), R(-r * 0.3), R(-r * 1.6), R(r * 1.1), R(-r * 1.56), R(r * 2.3), R(-r * 1.16), R(r * 1.2), R(-r * 1.06), R(-r * 1.0), R(-r * 1.02)], col, 0.36, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(rig.build.crow.band || CROW.wine); ctx.fillRect(R(-r * 0.85), R(-r * 1.56), R(r * 1.7), 3);
+  // rank hatband: the first rate whose colour reaches the head (and 3 local units failed the 3px floor at 0.93)
+  rankBand(ctx, rig, R(-r * 0.85), R(-r * 1.58), R(r * 1.7), rankH(rig, 5));
   rimTop(ctx, rig, R(-r * 1.6), R(-r * 1.2), R(r * 1.6), R(-r * 1.36), CROW.strap);
   crowTell(ctx, rig, r, R(r * 0.55), R(-r * 0.92));
 }
@@ -63,37 +73,34 @@ function hatLoupe(ctx, rig, r) {
   ctx.beginPath(); ctx.arc(cx, cy, 3.4, 0, TAU); ctx.fillStyle = rig.col(rig.tell ? CROW.glassHot : '#5B7A6A'); ctx.fill();
   if (rig.override) return;
   ctx.fillStyle = rig.col('#FFFFFF'); ctx.fillRect(cx - 3, cy - 3, 2, 2);
-  ctx.fillStyle = rig.col(CROW.strap); ctx.fillRect(R(-r) - 1, R(-r * 1.12) + 2, R(r * 2) + 2, 2);
+  // the brow strap is his rank band (it ignored `band:` entirely before this pass); laid into the leather so a
+  // 1px strap edge still frames it
+  rankBand(ctx, rig, R(-r) - 1, R(-r * 1.12) + 1, R(r * 2) + 2, rankH(rig, 5));
   crowTell(ctx, rig, r, cx, cy);
 }
-/** C4 Galewright: hair standing on end with the charge, a brass band and a sighting tube swung up over the brow. */
+/**
+ * C4 Galewright, ABOVE THE HAIRLINE ONLY: a pewter keel ridge on the crown and A's brass brow fitting with her rank
+ * band laid into it. The dome, the storm cowl, the keel beak and the lens are crowHelmShell / crowVisorMask — the
+ * old standing hair and the monocular tube are gone, and the tube's glass became the lens in the face hook, which
+ * is now what carries the 36-frame gale charge (it grows and lights with rig.coil).
+ */
 function hatVisor(ctx, rig, r) {
-  const hair = rig.palette.hair, k = 1 + (rig.coil || 0) * 0.5;
-  celPoly(ctx, rig, [R(-r * 1.1), R(-r * 0.45), R(-r * 1.5), R(-r * 1.5 * k), R(-r * 0.62), R(-r * 1.0), R(-r * 0.3), R(-r * 2.25 * k), R(r * 0.18), R(-r * 1.02), R(r * 0.62), R(-r * 1.85 * k), R(r * 1.05), R(-r * 0.84), R(r * 1.05), R(-r * 0.45)], hair, 0.4, 0.3);
-  celRect(ctx, rig, R(-r) - 1, R(-r * 0.98), R(r * 2) + 2, 5, 2, CROW.brass, 0.36, 0.34);
-  // monocular tube hinged up off the band, glass forward
-  celCapsule(ctx, rig, R(r * 0.1), R(-r * 1.05), R(r * 1.15), R(-r * 1.35), 3.4, CROW.copper, 0.3);
-  celBall(ctx, rig, R(r * 1.2), R(-r * 1.38), 3.6, rig.tell ? CROW.glassHot : CROW.glass, true);
+  if (!(rig.build.crow || EMPTY).sealed) return;
+  celRect(ctx, rig, R(-r * 0.35), R(-r * 1.62), R(r * 0.95), 5, 1, CROW.pewter, 0.34, 0.3);
+  celRect(ctx, rig, R(-r) - 1, R(-r * 1.06), R(r * 2) + 2, 6, 2, CROW.brass, 0.36, 0.34);
   if (rig.override) return;
-  ctx.fillStyle = tones(rig, CROW.brass).deep; ctx.fillRect(R(-r) - 1, R(-r * 0.98) + 3, R(r * 2) + 2, 2);
-  crowTell(ctx, rig, r, R(r * 1.2), R(-r * 1.38));
+  // her rank band laid INTO A's brass fitting, so the brass reads as the frame round it
+  rankBand(ctx, rig, R(-r * 0.9), R(-r * 1.02), R(r * 1.8), rankH(rig, 4));
+  ctx.fillStyle = tones(rig, CROW.brass).deep; ctx.fillRect(R(-r) - 1, R(-r * 1.06) + 5, R(r * 2) + 2, 1);
 }
-/** C5 Ironwing Marine: a crested storm-helm with cheek plates, a brow lamp and the beaked half-mask over the jaw. */
+/**
+ * C5 Ironwing Marine, ABOVE THE HAIRLINE ONLY: the dome rim light and the rank brow band. The crest, the dome, the
+ * nape plate, the iron muzzle and the lens all moved into crowHelmShell / crowVisorMask; there is no second lamp
+ * and no second crowTell here — one unmistakable light per head.
+ */
 function hatHelm(ctx, rig, r) {
-  const crest = rig.build.crow.band || CROW.wine;
-  // crest first (behind the dome), then the dome and cheek plates
-  celPoly(ctx, rig, [R(-r * 1.15), R(-r * 0.95), R(-r * 0.85), R(-r * 2.2), R(r * 0.1), R(-r * 2.5), R(r * 0.9), R(-r * 1.7), R(r * 0.7), R(-r * 1.0)], crest, 0.4, 0.3);
-  // dome + a neck guard hanging behind the skull; the face stays wide open under the brow
-  celPoly(ctx, rig, [R(-r * 1.3), R(r * 0.55), R(-r * 1.24), R(-r * 0.9), R(-r * 0.5), R(-r * 1.45), R(r * 0.5), R(-r * 1.4), r + 3, R(-r * 0.86), r + 3, R(-r * 0.56), R(-r * 0.55), R(-r * 0.62), R(-r * 0.72), R(r * 0.6)], CROW.pewter, 0.34, 0.34);
-  // beaked half-mask over nose and jaw: the eyes stay open above it
-  celPoly(ctx, rig, [R(r * 0.15), R(r * 0.05), R(r * 1.75), R(r * 0.3), R(r * 1.5), R(r * 0.62), R(r * 0.1), R(r * 0.85)], CROW.pewterDark, 0.36, 0.3);
-  if (rig.override) return;
-  ctx.fillStyle = tones(rig, CROW.pewterDark).deep; ctx.fillRect(R(r * 0.7), R(r * 0.34), R(r * 0.7), 2);
-  ctx.fillStyle = tones(rig, CROW.pewter).deep; ctx.fillRect(R(-r * 1.2), R(-r * 0.6), R(r * 0.5), R(r * 1.1));
+  if (rig.override || !(rig.build.crow || EMPTY).sealed) return;
   rimTop(ctx, rig, R(-r * 1.0), R(-r * 1.05), R(r * 0.4), R(-r * 1.34), CROW.pewter);
-  const cx = R(r * 0.15), cy = R(-r * 1.2);
-  celBall(ctx, rig, cx, cy, 2.8, rig.tell ? CROW.glassHot : CROW.glass, false);
-  crowTell(ctx, rig, r, cx, cy);
 }
 const HATS = { bandana: hatBandana, slouch: hatSlouch, loupe: hatLoupe, visor: hatVisor, helm: hatHelm };
 /** Headgear dispatch (hat hook, drawn last in head space so the tell sits over everything). */
@@ -255,7 +262,7 @@ export function drawWingShield(ctx, rig) {
     if (!rig.override) { ctx.fillStyle = tones(rig, hot ? CROW.sparkPale : CROW.pewter).deep; ctx.fillRect(1, y + 5, 8, 2); }
   }
   if (rig.override) return;
-  ctx.fillStyle = rig.col(rig.build.clan || CROW.wine); ctx.fillRect(0, -3, 7, 7);
+  ctx.fillStyle = rig.col(crowRank(rig)); ctx.fillRect(0, -3, 7, 7);
   ctx.fillStyle = rig.col(CROW.brass); ctx.fillRect(1, -1, 4, 3);
 }
 

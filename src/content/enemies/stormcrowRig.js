@@ -6,8 +6,23 @@
 // Brassbound are boxy steel and the Sootborn are round green, a Stormcrow is a WEATHERED FLYER: bare face under
 // goggles, a scarf streaming off the neck, oiled canvas sleeves, patched leather and brass. Silhouette, headgear
 // and back piece change completely from variant to variant; what makes them one faction is the kit language —
-// a wine WING ARMBAND on the upper arm, a brass wing badge, goggles/lenses somewhere on the head, and STATIC
-// VIOLET as the only energy colour (never aether cyan, which belongs to the Concordat's machinery).
+// a WING ARMBAND on the upper arm (in the wearer's rank colour), a brass wing badge in the same place on the chest
+// of all seven, goggles or a lens somewhere on the head, and STATIC VIOLET as the only energy colour (never aether
+// cyan, which belongs to the Concordat's machinery).
+//
+// RANK (docs/STAGE2.md section 2): one rate ladder, read at a glance. The colour is `crowRank()` (the variant's
+// `palette.rank`, mirrored into `build.clan`), a single warm ramp heated one step per rate — ash rust, brick red,
+// ember orange, flame amber, signal gold — and it is the ONLY high-chroma warm left on a rig, so nothing competes
+// with it. The ladder is carried by COUNT and AREA, not by hue alone, and it climbs the body as it climbs the
+// rates: 1 carrier on the Crimper (armband) -> 2 on the Corsair (+ hatband) -> 3 on the Bosun (brow band, smock
+// collar, waist sash; nothing on his bare arms) -> 4 on the Galewright (brow band, gorget, armband, trouser lace)
+// -> 6 on the Marine (helm-crest edge, cuirass band, armband, cuff, lace, wing-plate boss).
+// Flag rank (`crow.flag`) is NOT one rung further up the ramp - the two bosses wear the Wing's red with a 2px gold
+// underscore no line trooper ever gets: cloth alone = rated, cloth in a gold frame = flag rank.
+//
+// SEALED HEADS: `crow.sealed` swaps the bare skull + face for a beaked storm helm (crowHelmShell + crowVisorMask).
+// THE HIGHER THE RATE, THE MORE SEALED THE MASK — bandana, slouch hat and brass loupe keep their faces; the two
+// elites are welded shut behind a lens. Only the two elites set it; the three line troops and both bosses never do.
 //
 // Value ladder (docs/ART_STYLE.md section 0.1 / 3): light canvas sleeves > warm skin > pale slate trousers >
 // slate/teal/violet coat > dark plum leather boots > near-black outline. Sleeves are NEVER the coat colour and the
@@ -33,6 +48,11 @@ export const CROW = {
   canvas: '#D8CDB2', canvasSh: '#A99C80', duck: '#8C99AE',
   pewter: '#9AA6B4', pewterDark: '#5C6675', copper: '#A8763F', brass: '#C89B3C',
   glass: '#BBD4E8', glassHot: '#FFF4CE',
+  // sealed-helm set: the gun-metal beak, the WARM taupe mask plate that keeps pewter off gun (only ~17% apart in
+  // luminance, so they may never touch), and the two dead states of the sighting lens.
+  gun: '#7E8A9C', mask: '#6A5F55', glassDim: '#7E93A6', glassDead: '#4E5460',
+  // flag-rank hardware: the dark-gold edge that frames a boss's rank band and no line trooper's
+  goldDark: '#8A6A26',
   boot: '#4C3A44',
   skin: '#E2AE83', hair: '#3A2A24', beard: '#7A6E5E',
   wine: '#8E2F38', spark: '#9B7BFF', sparkPale: '#D7CBFF',
@@ -40,13 +60,37 @@ export const CROW = {
 };
 /** Far-side copies of the module constants (never darken twice: far parts pick these, near parts the originals). */
 export const farTone = (hex) => farShade(hex, 0.62, 0.25);
-const WINE_F = farTone(CROW.wine), LEATHER_F = farTone(CROW.leather), STRAP_F = farTone(CROW.strap),
+const LEATHER_F = farTone(CROW.leather), STRAP_F = farTone(CROW.strap),
   PEWTER_F = farTone(CROW.pewter), ROPE_F = farTone(CROW.rope);
+
+/**
+ * THE rank colour — one source of truth for every rank mark on the faction. `palette.rank` is authoritative because
+ * `farPalette()` shades it once at buildRig, so far limbs get a correct dark copy for free (`inf.pal.rank`);
+ * `build.clan` stays as the fallback for the few marks that predate it. Rule: rank on torso / head / hips (no far
+ * copy) goes through `rig.col(crowRank(rig))`, rank on arms and legs through `inf.pal.rank` — never darken twice.
+ */
+export function crowRank(rig) { return rig.palette.rank || rig.build.clan || CROW.wine; }
+/** Flag rank: a boss's rank band carries a gold underscore the line rates never get. */
+const crowFlag = (rig) => !!(rig.build.crow && rig.build.crow.flag);
+/** Band thickness in LOCAL units, floored so the mark still clears ART_STYLE section 0.7's 3px band floor at 1x. */
+export const rankH = (rig, n) => Math.max(n || 3, Math.ceil(3 / (rig.build.scale || 1)));
+/**
+ * A rank band and its 1px shadow, in a space with no far copy (torso / head / hips). Detail, not silhouette: call it
+ * AFTER the part's `if (rig.override) return;` so the smear and hit-flash passes stay one flat colour.
+ */
+export function rankBand(ctx, rig, x, y, w, h) {
+  const c = crowRank(rig);
+  ctx.fillStyle = rig.col(c); ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = tones(rig, c).sh; ctx.fillRect(x, y + h - 1, w, 1);
+  if (crowFlag(rig)) { ctx.fillStyle = rig.col(CROW.goldDark); ctx.fillRect(x, y + h, w, 2); }
+}
+/** The sealed-helm kit, or null. The ONE predicate every sealed branch keys off: unsealed rigs never set it. */
+const sealedOf = (rig) => { const k = rig.build.crow; return k && k.sealed ? k : null; };
 
 /** Base value ladder: light canvas sleeves over a slate coat, pale slate trousers, dark plum boots, brass fittings. */
 export const CROW_PAL = {
   skin: CROW.skin, hair: CROW.hair, primary: CROW.coat, sleeve: CROW.canvas, secondary: CROW.duck,
-  accent: CROW.brass, metal: CROW.pewter, dark: CROW.boot, glow: CROW.spark,
+  accent: CROW.brass, metal: CROW.pewter, dark: CROW.boot, glow: CROW.spark, rank: CROW.wine,
 };
 /** Lean aeronaut build: the five variants each re-space this (see stormcrow.js). ~74px tall at scale 1. */
 export const CROW_PROPS = {
@@ -63,6 +107,8 @@ export const FK = (dur, spec, extra) => ({ dur, pose: P(spec), ...(extra || {}) 
  */
 export function crowHead(ctx, rig, pose, inf) {
   const r = inf.r, k = rig.build.crow || EMPTY, pal = inf.pal;
+  const sk = sealedOf(rig);
+  if (sk) { crowHelmShell(ctx, rig, r, sk); return; }
   if (k.hair === 'queue' && !rig.override) drawQueue(ctx, rig, r, pal.hair);
   drawSkull(ctx, rig, r, pal.skin, k.hair === 'bald' || k.hair === 'loose' ? null : pal.hair, null);
   if (rig.override || !k.stubble) return;
@@ -72,10 +118,13 @@ export function crowHead(ctx, rig, pose, inf) {
 /** Tarred queue: a 2-segment braid hanging off the back of the skull (drawn under the skull). */
 function drawQueue(ctx, rig, r, hair) {
   const ch = getChain(rig, 'queue', 2, { joint: 'head', rest: [-1, 0.5], stiffness: 0.15, damping: 0.66, gain: 2, rotGain: 0.5, maxAng: 34 });
+  const tie = (rig.build.crow || EMPTY).tie;
   ctx.save(); ctx.translate(R(-r * 0.8), R(-r * 0.2));
   for (let i = 0; i < 2; i++) {
     ctx.rotate(rad(ch.ang[i] + (i ? 12 : 26)));
     celPoly(ctx, rig, [-2, 0, 3, 0, 2, 10, -2, 10], hair, 0.4, 0.25);
+    // rank ribbon knotted at the top of the braid (Skree on foot: her rank came off the machine and onto her)
+    if (!i && tie) rankBand(ctx, rig, -3, 2, 7, rankH(rig, 3));
     ctx.translate(0, 10);
   }
   ctx.restore();
@@ -86,6 +135,8 @@ function drawQueue(ctx, rig, r, hair) {
  */
 export function crowFace(ctx, rig, pose, inf) {
   const r = inf.r, k = rig.build.crow || EMPTY;
+  const sk = sealedOf(rig);
+  if (sk) { crowVisorMask(ctx, rig, r, pose, sk); return; }
   drawFace(ctx, rig, r, pose.face | 0, k.faceOpts || null);
   if (rig.override) return;
   const look = rig.look;
@@ -95,6 +146,101 @@ export function crowFace(ctx, rig, pose, inf) {
   if (!dx) return;
   ctx.fillStyle = rig.col('#1a1418');
   ctx.fillRect(R(r * 0.45) + 1 + dx, ey, 2, 2); ctx.fillRect(R(-r * 0.12) - 1 + dx, ey, 2, 2);
+}
+/**
+ * SEALED HELM, shell half (head hook). Everything that must sit BEHIND the mask lives here, because art/rig.js draws
+ * head -> hair -> face -> beard -> hat: the crest and the fin would land ON the mask plate if they were hat marks.
+ * Value ladder on this head, top to bottom, and it may not be re-spaced: lens / specular > pewter dome > taupe mask
+ * plate > gun beak > copper can. The plate is warm and the Marine's nape plate is cool pewterDark - that pair is a
+ * hue-family change (ART_STYLE section 0.1), not a value failure; do not "fix" it by darkening the plate.
+ */
+export function crowHelmShell(ctx, rig, r, k) {
+  // a. crest / fin FIRST, behind the dome. The body of the fin is dark and the RANK rides its LEADING EDGE - a
+  // whole crest in signal gold turns the top of the head into one bright slab and eats the helm underneath it.
+  if (k.cowl === 'storm') {
+    // Galewright: a swept storm cowl off the back of the helm. No rank on it - it points backwards, and
+    // ART_STYLE section 0.6 keeps her rank in front where the player reads it (her mark is the brow band).
+    celPoly(ctx, rig, [r * 0.3, -r * 1.1, -r * 0.7, -r * 2.05, -r * 1.85, -r * 1.6, -r * 2.05, -r * 0.1, -r * 1.25, r * 1.2, -r * 0.2, r * 1.0], CROW.coatDark, 0.4, 0.26);
+  } else if (k.cowl === 'iron') {
+    // Ironwing Marine: A's own crest, then a nape / cheek plate hanging behind the jaw
+    celPoly(ctx, rig, [-r * 1.15, -r * 0.95, -r * 0.85, -r * 2.2, r * 0.1, -r * 2.5, r * 0.9, -r * 1.7, r * 0.7, -r * 1.0], CROW.pewterDark, 0.4, 0.3);
+    celPoly(ctx, rig, [r * 0.1, -r * 2.5, r * 0.9, -r * 1.7, r * 0.7, -r * 1.0, r * 0.35, -r * 1.05, r * 0.5, -r * 1.72, -r * 0.15, -r * 2.3], crowRank(rig), 0.4, 0.3);
+    celPoly(ctx, rig, [r * 0.2, -r * 1.2, -r * 1.35, -r * 1.0, -r * 1.65, r * 0.35, -r * 1.1, r * 1.25, r * 0.1, r * 1.0], CROW.pewterDark, 0.36, 0.3);
+  }
+  // b. the dome, in A's pewter so the two elites stay LIGHT against the board-2 grating like the rest of the cast
+  celPoly(ctx, rig, [-r * 1.06, r * 0.4, -r * 1.02, -r * 0.55, -r * 0.55, -r * 1.1, r * 0.35, -r * 1.12, r * 1.02, -r * 0.4, r * 1.06, r * 0.35, r * 0.45, r * 1.0, -r * 0.6, r * 1.0], CROW.pewter, 0.34, 0.34);
+  // c. gorget, drawn in HEAD space (registering a neck part would seal all five and both bosses): it covers exactly
+  // the strip of warm throat the other three show, and the head draws after the torso so it laps the coat collar.
+  celCapsule(ctx, rig, R(-r * 0.5), R(r * 1.0), R(r * 0.35), R(r * 1.0), 3.2, CROW.mask, 0.25);
+  if (rig.override) return;
+  rimTop(ctx, rig, R(-r * 0.7), R(-r * 0.95), R(r * 0.4), R(-r * 1.06), CROW.pewter);
+  ctx.fillStyle = tones(rig, CROW.pewter).deep; ctx.fillRect(R(-r * 0.9), R(-r * 0.6), R(r * 1.8), 2);
+}
+/**
+ * SEALED HELM, face half (face hook). A welded head cannot emote, so `pose.face` is rerouted into the LENS - the
+ * colour is the mood and a pewterDark shutter dropped over the top of the glass is the eyelid. No animation data
+ * changes: makeCrowBase and every crowStrike key already carry `face:` on every frame and this only re-reads them.
+ * Row geometry is keyed to drawFace's own eye rows, so the sealed pair's eye height and eye spacing match the three
+ * bare faces exactly - that, the brass socket, the copper filter can and the shared crowTell are what keep these two
+ * in the same species as the men who still have chins.
+ */
+export function crowVisorMask(ctx, rig, r, pose, k) {
+  const face = pose.face | 0;
+  const cx = R(r * 0.45) + 1, cy = R(-r * 0.15);          // drawFace's near-eye row
+  const fx = R(-r * 0.12);                                // drawFace's far-eye column
+  const coil = rig.coil || 0;
+  // the lens grows with rig.coil: this REPLACES the standing-on-end hair as the read on the Galewright's 36f gale
+  // charge (12 damage + 30 frames stunned), so it may never get quieter than the hair was.
+  const lr = Math.max(3, R(r * 0.42 * (k.lens || 1)) + R(coil * 2));
+  const jolt = face === FACE.hurt ? 1 : 0;                // the helm knocked askew on its straps
+  ctx.save(); ctx.translate(jolt, jolt);
+  // a. beak: a long keel on the Galewright, a short grilled muzzle on the Marine - with the inverted lens sizes,
+  // this is what stops two pewter heads reading as the same man.
+  if (k.beak === 'keel') celPoly(ctx, rig, [r * 0.05, -r * 0.22, r * 2.05, r * 0.06, r * 2.1, r * 0.4, r * 1.3, r * 0.7, r * 0.05, r * 0.84], CROW.gun, 0.34, 0.34);
+  else celPoly(ctx, rig, [r * 0.05, -r * 0.24, r * 1.5, -r * 0.02, r * 1.6, r * 0.72, r * 0.05, r * 0.92], CROW.pewterDark, 0.34, 0.3);
+  // b. mask plate across the eye row (the value step that keeps pewter off gun)
+  celPoly(ctx, rig, [-r * 1.02, -r * 0.66, r * 1.0, -r * 0.74, r * 1.14, -r * 0.04, -r * 1.0, r * 0.06], CROW.mask, 0.4, 0.3);
+  // d. socket in BRASS, not pewter: the sealed lens is one of the faction's own goggles bolted shut (crowGoggles' rim)
+  celBall(ctx, rig, cx, cy, lr + 1.8, CROW.brass, false);
+  // g. copper filter can under the jaw - the one warm mark on a metal head, exactly where the bare three have a chin
+  celBall(ctx, rig, R(r * 0.05), R(r * 0.92), 3.2, CROW.copper, false);
+  // e. the lens itself
+  const down = !!rig.down, tell = !!rig.tell && !down;
+  const warn = tell && rig.tellWarn && (rig.tick & 2) !== 0;
+  const flick = (rig.tick >> 2) & 1;
+  const glass = down ? CROW.glassDead                                  // dead: flat grey, and it stays there
+    : warn ? '#FFFFFF'                                                 // pure white ONLY here (crowTell's warn colour)
+    : tell ? (coil > 0.05 && coil < 0.6 ? CROW.sparkPale : CROW.glassHot)  // charge ramps violet -> A's warm hot
+    : face === FACE.dazed ? (flick ? CROW.glassDim : CROW.glassDead)   // stagger: the lights stuttering, not out
+    : face === FACE.hurt ? CROW.glassDim
+    : CROW.glass;
+  // shutter = px of iris plate dropped over the TOP of the lens; the mask's version of drawFace's pressed-down lids
+  const shut = down ? lr                                               // half-lidded on the deck
+    : face === FACE.closed ? lr * 2                                    // winks out (the dodge frames)
+    : (face === FACE.angry || face === FACE.shout || face === FACE.grit) ? 2   // hooded = a glare
+    : face === FACE.dazed ? 1 : 0;
+  const look = rig.look, dx = look && Math.abs(look.x) > 0.35 ? Math.sign(look.x) : 0;  // crowFace's pupil nudge
+  ctx.beginPath(); ctx.arc(cx + dx, cy, lr, 0, TAU); ctx.fillStyle = rig.col(glass); ctx.fill();
+  if (rig.override) { ctx.restore(); return; }
+  // c. far eye = a dead slot (drawFace's far column, so the spacing matches the bare heads)
+  ctx.fillStyle = rig.col(CROW.outline); ctx.fillRect(fx - 1, cy - 1, 3, 2);
+  if (shut > 0) { ctx.fillStyle = rig.col(CROW.pewterDark); ctx.fillRect(cx + dx - lr + 1, cy - lr, lr * 2 - 2, Math.min(shut, lr * 2)); }
+  // the same 2x2 white pixel crowGoggles puts on every other head in the faction
+  if (!down && shut < lr) { ctx.fillStyle = rig.col('#FFFFFF'); ctx.fillRect(cx + dx - R(lr * 0.75), cy - R(lr * 0.8), 2, 2); }
+  // f. one detail mark per beak, and one only (section 0.7)
+  if (k.beak === 'iron') { ctx.fillStyle = rig.col(CROW.outline); for (let i = 0; i < 3; i++) ctx.fillRect(R(r * 0.5) + i * 4, R(r * 0.34), 2, 4); }
+  else { ctx.fillStyle = tones(rig, CROW.gun).deep; ctx.fillRect(R(r * 0.6), R(r * 0.24), R(r * 0.9), 2); }
+  // damage sputter: deliberately the opposite shape from crowTell (small, stuttering, no halo)
+  if (!down && (face === FACE.hurt || face === FACE.dazed)) {
+    ctx.strokeStyle = rig.col(CROW.spark); ctx.lineWidth = 1.5;
+    for (let i = 0; i < 2; i++) {
+      const a = rig.tick * 0.9 + i * 2.4;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * (r * 0.45), cy + Math.sin(a) * (r * 0.45)); ctx.stroke();
+    }
+  }
+  // h. the shared faction light, on the lens centre - the same call the other three heads make
+  crowTell(ctx, rig, r, cx, cy);
+  ctx.restore();
 }
 /**
  * The faction tell, drawn by every headgear as its last mark: while `rig.tell` runs, static crawls off the goggle
@@ -147,7 +293,8 @@ export function crowBeard(ctx, rig, pose, inf) {
  * Body garment (torso hook). `build.crow.coat` picks the cut, and the cut is most of the silhouette:
  * 'jerkin' short cut-down leather bolero over a shirt | 'oilskin' long coat with a shoulder capelet |
  * 'smock' barrel-chested powder smock with a canvas apron | 'duster' narrow closed duster with a rubber gorget |
- * 'plate' riveted breastplate. Everyone wears the Wing badge; the watch chevron is `build.clan`.
+ * 'plate' riveted breastplate. Everyone wears the brass Wing badge; the RANK bands are per-cut (`crow.collar` on the
+ * smock, the duster's gorget, the cuirass band + `crow.epaulette` on the plate) and all read `crowRank()`.
  */
 export function crowCoat(ctx, rig, pose, inf) {
   const W = inf.w, H = inf.h, hw = R(W / 2), pal = inf.pal, k = rig.build.crow || EMPTY, cut = k.coat || 'oilskin';
@@ -163,13 +310,18 @@ export function crowCoat(ctx, rig, pose, inf) {
     // canvas powder apron: light, narrow, hung from a neck cord
     celPoly(ctx, rig, [R(-W * 0.22), R(-H * 0.6), R(W * 0.24), R(-H * 0.64), R(W * 0.3), 2, R(-W * 0.3), 2], CROW.canvasSh, 0.36, 0.24);
     if (rig.override) return;
-    ctx.fillStyle = rig.col(CROW.leatherDark); ctx.fillRect(R(-W * 0.24), R(-H * 0.64), R(W * 0.5), 3);
+    // the apron's neck cord IS the Powder Bosun's rank collar: a wide cloth field, since an ember band on his
+    // bare warm forearms would fail section 0.1 (his `sleeve` is skin)
+    if (k.collar) rankBand(ctx, rig, R(-W * 0.3), R(-H * 0.62), R(W * 0.6), rankH(rig, 5));
+    else { ctx.fillStyle = rig.col(CROW.leatherDark); ctx.fillRect(R(-W * 0.24), R(-H * 0.64), R(W * 0.5), 3); }
     ctx.fillStyle = tones(rig, CROW.canvasSh).deep; ctx.fillRect(R(-W * 0.2), R(-H * 0.26), R(W * 0.44), 2);
   } else if (cut === 'duster') {
     celPoly(ctx, rig, [-hw - 1, -H + 4, -hw + 2, -H - 2, hw - 2, -H - 2, hw + 1, -H + 4, hw + 2, 2, -hw - 2, 2], pal.primary, 0.36, 0.28);
     // insulated rubber gorget standing up round the throat + a row of storm buttons
     celRect(ctx, rig, -hw + 1, -H - 5, W - 2, 7, 2, CROW.pewterDark, 0.36, 0.3);
     if (rig.override) return;
+    // the Galewright's rank rides the gorget, the cuffs and the trouser lace - front and low, never near the rods
+    if (k.gorget) rankBand(ctx, rig, -hw + 2, -H - 5, W - 4, rankH(rig, 6));
     ctx.fillStyle = rig.col(CROW.brass);
     for (let i = 0; i < 3; i++) ctx.fillRect(R(W * 0.06), -H + 6 + i * 7, 3, 3);
   } else if (cut === 'plate') {
@@ -177,7 +329,7 @@ export function crowCoat(ctx, rig, pose, inf) {
     // riveted breastplate over the chest, two bands
     celPoly(ctx, rig, [R(-W * 0.42), -H + 2, R(W * 0.42), -H + 2, R(W * 0.46), R(-H * 0.3), 0, R(-H * 0.12), R(-W * 0.46), R(-H * 0.3)], CROW.pewterDark, 0.34, 0.34);
     if (rig.override) return;
-    ctx.fillStyle = rig.col(rig.build.clan || CROW.wine); ctx.fillRect(R(-W * 0.4), R(-H * 0.52), R(W * 0.8), 3);
+    rankBand(ctx, rig, R(-W * 0.4), R(-H * 0.52), R(W * 0.8), rankH(rig, 5));
     rimTop(ctx, rig, R(-W * 0.4), -H + 3, R(W * 0.4), -H + 3, CROW.pewter);
   } else {
     // oilskin: long storm coat with a lapel V and a short shoulder capelet over it
@@ -190,31 +342,45 @@ export function crowCoat(ctx, rig, pose, inf) {
   }
   crowChest(ctx, rig, W, H, t);
 }
-/** The kit that says "Ninth Wing" on every cut: the watch chevron and the brass wing badge above it. */
+/**
+ * The one mark that says "Ninth Wing" on every cut and both bosses: the brass wing badge, in the SAME chest position
+ * on all seven. It is grown to 7x4 here because the old 1.4-2.5px chest chevron is gone - that zigzag sat under
+ * section 0.7's band floor on every variant and was the reason the rank read went soft; rank is now carried by the
+ * big per-variant bands instead, and the badge is what is left holding the faction together.
+ */
 function crowChest(ctx, rig, W, H, t) {
   if (rig.override) return;
-  const clan = rig.build.clan || CROW.wine, hw = R(W / 2);
-  ctx.fillStyle = rig.col(clan);
-  ctx.beginPath(); ctx.moveTo(R(-W * 0.34), R(-H * 0.62)); ctx.lineTo(R(-W * 0.1), R(-H * 0.74)); ctx.lineTo(R(-W * 0.34), R(-H * 0.86)); ctx.lineTo(R(-W * 0.42), R(-H * 0.86)); ctx.lineTo(R(-W * 0.18), R(-H * 0.74)); ctx.lineTo(R(-W * 0.42), R(-H * 0.62)); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = rig.col(CROW.brass); ctx.fillRect(R(W * 0.2), R(-H * 0.76), 5, 3);
-  ctx.fillStyle = tones(rig, CROW.brass).deep; ctx.fillRect(R(W * 0.2), R(-H * 0.73), 5, 1);
+  const hw = R(W / 2);
+  ctx.fillStyle = rig.col(CROW.brass); ctx.fillRect(R(W * 0.2), R(-H * 0.78), 7, 4);
+  ctx.fillStyle = tones(rig, CROW.brass).deep; ctx.fillRect(R(W * 0.2), R(-H * 0.74), 7, 2);
   ctx.fillStyle = t.deep; ctx.fillRect(-hw + 1, R(-H * 0.14), W - 2, 1);
 }
-/** Trousers + a broad leather belt with a brass buckle and one hip pouch (hips hook). */
+/** Trousers + a broad leather belt with a brass buckle, one hip pouch, and the rank waist sash (hips hook). */
 export function crowHips(ctx, rig, pose, inf) {
-  const hip = inf.w, hw = R(hip / 2), pal = inf.pal;
+  const hip = inf.w, hw = R(hip / 2), pal = inf.pal, k = rig.build.crow || EMPTY;
   drawBelt(ctx, rig, hip, pal.secondary, CROW.leatherDark, pal.accent);
   if (rig.override) return;
+  // rank sash wound above the belt: on the widest hips in the faction this is the biggest single rank field on the
+  // deck. fillRect, not celRect, so it never leaks into the smear or hit-flash pass.
+  if (k.sash) { const sh = rankH(rig, 5); rankBand(ctx, rig, -hw, -5 - sh, hip, sh); }
   const t = tones(rig, CROW.leather);
   ctx.fillStyle = t.base; ctx.fillRect(-hw - 2, -3, 7, 8);
   ctx.fillStyle = t.sh; ctx.fillRect(-hw - 2, 3, 7, 2);
 }
-/** Sleeve with the wine WING ARMBAND above the elbow — the faction marker every variant keeps (armUpper hook). */
+/**
+ * Sleeve with the WING ARMBAND above the elbow (armUpper hook). It used to be one shared wine for the whole faction;
+ * it is now the variant's rank colour, which is the biggest single lever in the rank read - so `inf.pal.rank`, never
+ * a module constant, or the far arm's band would glow as bright as the near one (section 0.3).
+ */
 export function crowArmUpper(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, sleeve = inf.pal.sleeve || inf.pal.primary;
   celTaper(ctx, rig, 0, 0, 0, len, r * 1.12, r * 0.95, sleeve, 0.3);
-  if (rig.override) return;
-  ctx.fillStyle = rig.col(inf.far ? WINE_F : CROW.wine); ctx.fillRect(-r, R(len * 0.5), r * 2, 4);
+  // `crow.bareArm`: the Powder Bosun's sleeve IS his skin, and a warm band on warm tan fails section 0.1 - his
+  // rank rides cloth only (sash, brow band, smock collar).
+  if (rig.override || (rig.build.crow || EMPTY).bareArm) return;
+  const rank = inf.pal.rank || CROW.wine, h = rankH(rig, 4);
+  ctx.fillStyle = rig.col(rank); ctx.fillRect(-r, R(len * 0.5), r * 2, h);
+  ctx.fillStyle = tones(rig, rank).sh; ctx.fillRect(-r, R(len * 0.5) + h - 1, r * 2, 1);
   ctx.fillStyle = rig.col(inf.far ? farTone(CROW.brass) : CROW.brass); ctx.fillRect(-1, R(len * 0.5) + 1, 2, 2);
 }
 /** Bare forearm rolled out of the sleeve, with the sleeve turned back into a 3px cuff (armLower hook). */
@@ -222,9 +388,11 @@ export function crowArmLower(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, pal = inf.pal;
   celCapsule(ctx, rig, 0, 0, 0, len, r, pal.skin, 0.3);
   if (rig.override) return;
-  const cuff = tones(rig, pal.sleeve || pal.primary);
-  ctx.fillStyle = cuff.base; ctx.fillRect(R(-r) - 1, 0, r * 2 + 2, 4);
-  ctx.fillStyle = cuff.sh; ctx.fillRect(R(-r) - 1, 3, r * 2 + 2, 1);
+  // petty officer and up turn the cuff out in the rank colour; ratings keep a plain sleeve cuff
+  const h = rankH(rig, 4);
+  const cuff = tones(rig, (rig.build.crow || EMPTY).cuff ? (pal.rank || CROW.wine) : (pal.sleeve || pal.primary));
+  ctx.fillStyle = cuff.base; ctx.fillRect(R(-r) - 1, 0, r * 2 + 2, h);
+  ctx.fillStyle = cuff.sh; ctx.fillRect(R(-r) - 1, h - 1, r * 2 + 2, 1);
 }
 /** Fingerless flight glove: bare knuckles with a leather strap across the back of the hand (hand hook). */
 export function crowHand(ctx, rig, pose, inf) {
@@ -233,9 +401,19 @@ export function crowHand(ctx, rig, pose, inf) {
   ctx.fillStyle = rig.col(inf.far ? LEATHER_F : CROW.leather);
   ctx.fillRect(R(-inf.r * 0.5), R(-inf.r * 0.9), R(inf.r * 1.1), 3);
 }
+/**
+ * Officer lace: a stripe of rank down the outer trouser seam, on `crow.lace` rigs only. `inf.pal.rank` so the far leg
+ * darkens for free through farPalette (this is why the rank colour is a palette key and not a module constant).
+ */
+function crowLace(ctx, rig, inf, y0, len) {
+  if (rig.override || !(rig.build.crow || EMPTY).lace) return;
+  ctx.fillStyle = rig.col(inf.pal.rank || CROW.wine);
+  ctx.fillRect(R(-inf.r * 0.95), y0, rankH(rig, 3), len);
+}
 /** Thigh: tapered so it swells at the hip and narrows into the knee (legUpper hook). */
 export function crowLegUpper(ctx, rig, pose, inf) {
   celTaper(ctx, rig, 0, 0, 0, inf.len, inf.r * 1.1, inf.r * 0.96, inf.pal.secondary, 0.3);
+  crowLace(ctx, rig, inf, 2, inf.len - 3);
 }
 /** Shin with a strapped leather knee patch at the top so the leg reads as two bones, not one tube (legLower hook). */
 export function crowLegLower(ctx, rig, pose, inf) {
@@ -244,6 +422,7 @@ export function crowLegLower(ctx, rig, pose, inf) {
   if (rig.override) return;
   ctx.fillStyle = rig.col(inf.far ? LEATHER_F : CROW.leather); ctx.fillRect(R(-r) - 1, -1, r * 2 + 2, 4);
   ctx.fillStyle = rig.col(inf.far ? STRAP_F : CROW.strap); ctx.fillRect(R(-r) - 1, 3, r * 2 + 2, 1);
+  crowLace(ctx, rig, inf, 5, len - 6);
 }
 /** Flight boot: dark plum leather with a turned-down canvas cuff and a pewter toe cap (foot hook, ankle space). */
 export function crowBoot(ctx, rig, pose, inf) {

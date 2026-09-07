@@ -26,7 +26,8 @@ brass is still here; there is just a lot more sky behind it.
   Aether cyan `#4DF0E0` stays reserved for Concordat machinery, so on this board it reads as "old regime": the two
   Tin Footmen in the last wave and the summit glow far below.
 - Every faction keeps its universal tell. Brassbound: lens goes red. Sootborn: eyes flash white. **Stormcrow: the
-  sighting lens on the mask goes hot white, and blinks in the last frames of the wind-up.**
+  glass on the head — goggles, loupe or sealed sighting lens — goes hot white and blinks in the last frames of the
+  wind-up.** One unmistakable light per head, whatever the head is wearing.
 
 # 2. The faction: The Stormcrows (base + 5 variants)
 
@@ -36,8 +37,34 @@ here is unkillable, but nothing here stands still to be hit either.
 
 **Base rig** (`src/content/enemies/stormcrowRig.js`): a tall wedge. High-collared storm coat flaring into two tails
 (a secondary-motion chain, so they lag in the run), crossed canvas boarding straps, a folded **wing-pack** on the back
-that flares open on any hop or lunge, and a leather flight cap over a beaked mask with **one** big sky-glass lens.
-Every Stormcrow wears its watch's **rank chevron** on the chest in that variant's colour — the shared faction mark.
+that flares open on any hop or lunge, oiled canvas sleeves over warm skin, and a piece of glass on every head.
+
+**THE HIGHER THE RATE, THE MORE SEALED THE MASK.** The head is the rank ladder, and it runs bare face -> welded shut:
+
+| Rate | Variant | Head |
+|---|---|---|
+| 1 | Deck Crimper | knotted bandana, **goggles shoved up** onto the knot — a whole face |
+| 2 | Line Corsair | slouch hat, **goggles under the brim** — a face behind glass |
+| 3 | Powder Bosun | bald and bearded, **one eye behind a brass loupe** — half a face |
+| 4 | Galewright | **sealed keel visor**: pewter dome, storm cowl, long gun-metal beak, one big lens |
+| 5 | Ironwing Marine | **sealed iron muzzle**: crest, short grilled beak, one small hot-white sighting lens |
+
+The Powder Bosun is the hinge — one eye glassed, one eye human — so the step from face to mask happens exactly
+between him and the Galewright. The two sealed heads keep the eye row, the eye spacing, the brass lens rim and the
+copper filter can at the chin that the bare three have, so they read as the same species, welded shut.
+
+**Rank colour.** Every Stormcrow's rank is one warm ramp heated a step per rate — ash rust, brick red, ember orange,
+flame amber, signal gold (`WATCH` in `stormcrow.js`, mirrored into `palette.rank` so far limbs shade correctly) —
+and the marks that carry it multiply as the rate climbs and move UP the body: 1 carrier on the Crimper (the arm
+band), 2 on the Corsair (+ hatband), 3 on the Bosun (brow band, smock collar, waist sash — never on his bare arms),
+4 on the Galewright (brow band, gorget, armbands, trouser lace), 6 on the Marine (helm-crest edge, cuirass band,
+armbands, cuffs, lace, wing-plate boss). Rank colour is the ONLY high-chroma warm left on a rig — every scarf and
+the Crimper's bandana are neutral — so nothing on the deck competes with the mark that says who is in charge.
+The brass wing badge in the same chest position on all seven is what still says "Ninth Wing".
+
+**Flag rank** does not continue the ramp, it steps out of it: the two bosses wear the Wing's **red in a gold frame**
+(a `GOLD_DK` edge under every band, and gold hardware round it). Cloth alone = rated; cloth in a gold frame = flag
+rank — which also keeps the Marine's signal gold from reading as a boss.
 
 **Faction rules:**
 - **Jump attacks do 1.5x** (`traits.jumpAttackTakenMult`). A Stormcrow covers the deck, not the air above it; going
@@ -55,28 +82,37 @@ Every Stormcrow wears its watch's **rank chevron** on the chest in that variant'
 | Galewright | 90 | 12 | 1.00x | 500 |
 | Ironwing Marine | 190 | 16 | 0.70x | 1000 |
 
-**C1. Deck Crimper** — *the fodder.* Base coat, wine chevron, a 46px ash boat hook. Jabs at 50px (18f tell), a low
+**C1. Deck Crimper** — *the fodder.* Base coat, one ash-rust armband and nothing else (a dirty canvas rag for a
+bandana — the lowest rate wears no rank above the collar), a 46px ash boat hook. Jabs at 50px (18f tell), a low
 **sweep** that hooks both feet out (knockdown), and a **lunge** from mid range with the wing-pack popping for the
 step. Flanks on both lanes. *First:* Section 1, Wave 1.
 
-**C2. Line Corsair** — *the reason you keep moving.* Teal coat, mustard chevron, a stubby reel-gun. Holds 150px and
+**C2. Line Corsair** — *the reason you keep moving.* Teal coat, brick-red armband and hatband — the first rate
+whose colour reaches the head — a stubby reel-gun. Holds 150px and
 puts a **harpoon** down the lane (24f tell, sighting down the barrel). **Any player attack bats the harpoon back for
 14** — exactly like the Scrap Slinger's bolt, and exactly as necessary, because a Corsair at the far end of the deck
 is otherwise free damage. Butt-strokes anything that gets inside the gun. *First:* Section 1, Wave 2.
 
-**C3. Powder Bosun** — *the crowd control.* Grey-violet coat, copper chevron, scale 1.08, a four-link **chain shot**.
+**C3. Powder Bosun** — *the crowd control.* Grey-violet coat, ember-orange brow band, smock collar and waist sash
+(the widest rank field on the deck; nothing on his bare arms), scale 1.08, a four-link **chain shot**.
 The chain goes round in a full circle: 58px, **hits behind as well as in front**, 14 and a knockdown. From range he
 lobs a **powder keg** at where you stood 20 frames ago; it bounces once and goes off for 14 on *everyone*, his own
 side included. He only flinches on every second hit. *First:* Section 1, Wave 3.
 
-**C4. Galewright** — *the tell you have to respect.* Violet coat, a copper-wound **storm coil**. The coil charges for
-36 frames (the bulb brightens, the lens blinks white in the last 14) and then throws an arc **130px down the lane**:
+**C4. Galewright** — *the tell you have to respect.* Violet coat, sealed keel visor, amber rank, a copper-wound
+**storm coil**. The coil charges for 36 frames — the bulb brightens, and **the sighting lens grows and ramps violet
+-> hot white** with `rig.coil` before it blinks in the last 14 (the lens carries the charge now; there is no
+standing-on-end hair under a sealed helm) — and then throws an arc **130px down the lane**:
 12 damage and **30 frames of stunned**. It is slow and loud on purpose — the answer is to be somewhere else, which is
 what the **repel** (a short pressure wave, no real damage, big knockback) is for: it puts you back in the lane.
 Ignores attack tokens, circles, dodges. *First:* Section 2, Wave 1.
 
 **C5. Ironwing Marine** — *the wall.* Deep navy, scale 1.28, boarding axe, and a three-vane **wing-plate** strapped to
-the off hand. Super armour and no launch while the plate is up; **every 4th hit staggers him for 30 frames**, and a
+the off hand. The top of both ladders: sealed iron muzzle with a small hot-white sighting lens, and signal gold on
+six carriers, more rank than the other four together. He is a big head with a small eye where the Galewright is a
+small head with a big eye — that inversion, her long keel beak against his short grilled muzzle, and his crest
+against her swept cowl are what keep two pewter helms from reading as the same man. Super armour and no launch
+while the plate is up; **every 4th hit staggers him for 30 frames**, and a
 launcher during that stagger **strips the plate for good** (it blows apart in a shower of pewter). After that he
 flinches and launches like anybody else. Grabbable only by Pip. Shove (armoured, advancing) chains into a chop that
 puts you on the deck. *First:* Section 2, Wave 2 — he comes through the gas-cell netting from above.
@@ -102,8 +138,10 @@ puts you on the deck. *First:* Section 2, Wave 2 — he comes through the gas-ce
 # 4. Final boss: Admiral Odaline Kestrel, the Ninth Wing
 
 - **Concept:** the elegant villain again, but this one is a professional. Bicorne worn athwart, gold-frogged navy
-  coat, wine sash, storm cape, and a 66px **storm lance** with a coil head. Three phases, each stripping something
-  off her, ending with a woman and a lance on a burning bridge.
+  coat, a red flag-rank sash in a gold frame, storm cape, and a 66px **storm lance** with a coil head. Three phases,
+  each stripping something off her — the bicorne and cape, then the sash and epaulettes, until the last phase is
+  nothing but the red itself: a bare-headed woman in a red waistcoat with a torn red ribbon at her brow, a lance,
+  and a burning bridge. The ladder ends in the person.
 - **HP:** Phase 1 420, Phase 2 400, Phase 3 260 (one bar, three coloured segments).
 
 **Phase 1, THE ADMIRAL (420).**
