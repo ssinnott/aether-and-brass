@@ -1,6 +1,6 @@
 // In-game HUD (ARCHITECTURE.md section 10, GDD section 9): per-player portrait/name/health/meter/lives/score,
 // targeted enemy bar, boss bar, combo counter with grades.
-import { VIEW_W, VIEW_H, FLOOR_TOP, METER, UI } from '../constants.js';
+import { VIEW_W, VIEW_H, METER, UI } from '../constants.js';
 import { drawText, drawTextOutlined } from '../engine/text.js';
 import { drawRig } from '../art/rig.js';
 import { rrect } from '../art/shapes.js';

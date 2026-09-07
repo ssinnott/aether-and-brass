@@ -225,7 +225,9 @@ export class StageRunner {
       this.victoryTimer = 0;
       audio.play('stage_clear');
       this.hud.showBanner('STAGE CLEAR', 'THE SKY OPENS', VICTORY_FRAMES);
-      for (const p of this.world.players) if (p && !p.out) p.victory = true;
+      for (const p of this.world.players) if (p && !p.out) p.victory = true; // victorious players ignore hits (Fighter.takeHit)
+      // leftover escorts (summoned footmen) fall with the Engine so the pose hold is never a fight
+      for (const e of this.world.enemies) if (e.kind !== 'boss' && !e.dead) { e.hp = 0; e.dead = true; e.knockDown(5, (e.x < this.bossEntity.x ? -1 : 1) * 3); }
       this.world.arenaBounds = null;
     }
   }

@@ -247,7 +247,7 @@ export class Fighter extends Entity {
    * @param {{damage:number, type?:string, kbX?:number, kbY?:number, hitstun?:number, friendly?:boolean, sfx?:string}} hit
    */
   takeHit(hit, attacker) {
-    if (!this.alive || this.dead || this.state === ST.DEAD) return false;
+    if (!this.alive || this.dead || this.state === ST.DEAD || this.victory) return false;
     if (attacker && attacker.team === this.team && !hit.friendly) return false;
     if (this.parried && attacker && attacker.anim && this.parried.by === attacker && this.parried.instance === attacker.anim.instance) return false;
     if (this.invuln > 0 && !hit.unblockable) {

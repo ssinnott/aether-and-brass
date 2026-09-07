@@ -12,9 +12,10 @@ const OL = '#2B2B30';
 export const HAZARD_TYPES = {
   steamVent: { period: 180, tell: 20, active: 60, r: 26, every: 8, color: '#e8f0f4', hit: { damage: 8, type: 'launch', kbX: 2, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
   aetherVent: { period: 180, tell: 30, active: 40, r: 26, every: 8, color: '#4DF0E0', hit: { damage: 12, type: 'launch', kbX: 2, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
-  piston: { period: 240, tell: 30, active: 10, r: 30, every: 5, color: '#4a4e58', hit: { damage: 18, type: 'knockdown', kbX: 4, kbY: 5, hitstun: 24 }, tellSfx: 'hydraulic', sfx: 'piston_crush' },
+  // pistons / crossbars hit once per sweep (`every` >= active): the knocked-down body is not juggled by the same crush
+  piston: { period: 240, tell: 30, active: 10, r: 30, every: 10, color: '#4a4e58', hit: { damage: 18, type: 'knockdown', kbX: 4, kbY: 5, hitstun: 24 }, tellSfx: 'hydraulic', sfx: 'piston_crush' },
   hook: { period: 120, tell: 0, active: 120, r: 18, every: 4, color: '#9a9aa4', hit: { damage: 12, type: 'knockdown', kbX: 5, kbY: 4, hitstun: 22 }, sfx: null, swing: 70 },
-  crossbar: { period: 360, tell: 40, active: 12, r: 340, every: 6, color: '#3A3F4B', hit: { damage: 14, type: 'knockdown', kbX: 3, kbY: 5, hitstun: 22, z: 40 }, tellSfx: 'roar', sfx: 'hammer_slam', lane: 40 },
+  crossbar: { period: 360, tell: 40, active: 12, r: 340, every: 12, color: '#3A3F4B', hit: { damage: 14, type: 'knockdown', kbX: 3, kbY: 5, hitstun: 22, z: 40 }, tellSfx: 'roar', sfx: 'hammer_slam', lane: 40 },
 };
 
 /** A cyclic stage hazard placed at world (x, z). */
