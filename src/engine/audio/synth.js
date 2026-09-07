@@ -23,9 +23,18 @@ export function noiseBuffer(ctx) {
 
 export const clampF = (f) => Math.min(20000, Math.max(20, f));
 
+/**
+ * Tear a voice down once its source ends: stop() alone leaves the gain/filter chain attached to `dest`
+ * until GC notices; disconnecting explicitly keeps long sessions from accumulating dangling nodes.
+ */
+export function autoDisconnect(src, nodes) {
+  src.onended = () => { for (const n of nodes) { try { n.disconnect(); } catch { /* already gone */ } } src.onended = null; };
+}
+
 /** Attack / hold / exponential decay envelope on an AudioParam. Returns the end time. */
 export function env(param, when, { vol = 0.3, attack = 0.003, hold = 0, dur = 0.1, sustain = 0, release = 0 }) {
   const peak = Math.max(FLOOR, vol);
+  param.value = FLOOR; // the default (1) would leak the first sample: Chromium starts sources a sample before `when`
   param.setValueAtTime(FLOOR, when);
   param.linearRampToValueAtTime(peak, when + attack);
   if (hold > 0) param.setValueAtTime(peak, when + attack + hold);
@@ -60,17 +69,22 @@ export function osc(ctx, dest, when, o = {}) {
   s.type = type;
   rampFreq(s.frequency, when, f0, f1, glide, curve);
   if (detune) s.detune.setValueAtTime(detune, when);
+  let lfoNodes = null;
   if (vib) {
     const l = ctx.createOscillator(); l.type = 'sine'; l.frequency.value = vib.rate;
     const lg = ctx.createGain(); lg.gain.value = vib.depth;
     l.connect(lg).connect(s.detune); l.start(when); l.stop(when + dur + 0.05);
+    lfoNodes = [l, lg];
   }
   const g = ctx.createGain();
   env(g.gain, when, o);
   let head = s;
-  if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = clampF(lp); f.Q.value = q; head.connect(f); head = f; }
-  if (hp) { const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = clampF(hp); head.connect(f); head = f; }
+  const chain = [s, g];
+  if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = clampF(lp); f.Q.value = q; head.connect(f); head = f; chain.push(f); }
+  if (hp) { const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = clampF(hp); head.connect(f); head = f; chain.push(f); }
   head.connect(g).connect(dest);
+  if (lfoNodes) chain.push(...lfoNodes);
+  autoDisconnect(s, chain);
   s.start(when); s.stop(when + dur + 0.03);
   return when + dur;
 }
@@ -84,6 +98,7 @@ export function noise(ctx, dest, when, o = {}) {
   const g = ctx.createGain();
   env(g.gain, when, o);
   src.connect(flt).connect(g).connect(dest);
+  autoDisconnect(src, [src, flt, g]);
   noiseCursor = (noiseCursor + 0.173) % 1.2;
   src.start(when, noiseCursor); src.stop(when + dur + 0.03);
   return when + dur;
@@ -98,8 +113,10 @@ export function ring(ctx, dest, when, o = {}) {
   mod.connect(rm.gain);
   const g = ctx.createGain(); env(g.gain, when, o);
   let head = rm;
-  if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = clampF(lp); head.connect(f); head = f; }
+  const chain = [car, mod, rm, g];
+  if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = clampF(lp); head.connect(f); head = f; chain.push(f); }
   car.connect(rm); head.connect(g).connect(dest);
+  autoDisconnect(car, chain);
   car.start(when); mod.start(when); car.stop(when + dur + 0.03); mod.stop(when + dur + 0.03);
   return when + dur;
 }
@@ -114,8 +131,10 @@ export function am(ctx, dest, when, o = {}) {
   lfo.connect(lg).connect(vca.gain);
   const g = ctx.createGain(); env(g.gain, when, o);
   let head = vca;
-  if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = clampF(lp); head.connect(f); head = f; }
+  const chain = [car, lfo, vca, lg, g];
+  if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = clampF(lp); head.connect(f); head = f; chain.push(f); }
   car.connect(vca); head.connect(g).connect(dest);
+  autoDisconnect(car, chain);
   car.start(when); lfo.start(when); car.stop(when + dur + 0.03); lfo.stop(when + dur + 0.03);
   return when + dur;
 }
@@ -155,6 +174,7 @@ export function glass(ctx, dest, when, { freqs = [1320, 1980], detune = 6, dur =
   const lg = ctx.createGain(); lg.gain.value = 0.2; lfo.connect(lg).connect(vca.gain);
   lfo.start(when); lfo.stop(when + dur + 0.05);
   vca.connect(dest);
+  autoDisconnect(lfo, [lfo, lg, vca]);
   for (const f of freqs) {
     osc(ctx, vca, when, { type: 'sine', f0: f, dur, vol, attack, detune: -detune });
     osc(ctx, vca, when, { type: 'sine', f0: f, dur, vol: vol * 0.7, attack, detune: detune });

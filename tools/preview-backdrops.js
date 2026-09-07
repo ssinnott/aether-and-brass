@@ -119,6 +119,22 @@ render();
 window.__preview = {
   state, SECTIONS, selectSection, step, render,
   setCam(x) { state.cam.x = x; clampCam(); },
-  shot(sectionIndex, camX, frames = 0) { selectSection(sectionIndex, camX); step(frames); render(); return state.errors.slice(); },
+  shot(sectionIndex, camX, frames = 0, shake = 0) {
+    selectSection(sectionIndex, camX); step(frames);
+    if (shake) { state.cam.shakeX = shake; state.cam.shakeY = Math.round(-shake * 0.6); }
+    render();
+    return state.errors.slice();
+  },
+  /** Average ms per frame (update + drawBack + drawFront) over n frames, for each section. */
+  perf(n = 300) {
+    const out = {};
+    for (let i = 0; i < SECTIONS.length; i++) {
+      selectSection(i, SECTIONS[i].x0 + 200);
+      const t0 = performance.now();
+      for (let k = 0; k < n; k++) { step(1); render(); state.cam.x += 0.5; }
+      out[SECTIONS[i].backdrop] = Math.round(((performance.now() - t0) / n) * 100) / 100;
+    }
+    return out;
+  },
 };
 requestAnimationFrame(loop);

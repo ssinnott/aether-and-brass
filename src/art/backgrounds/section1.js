@@ -25,15 +25,20 @@ function paintFar(g, w, h, rnd) {
     g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill();
   }
   // the mountain and the Heart-Engine summit glow
-  radialGlow(g, 985, 44, 130, 'rgba(77,240,224,0.32)');
-  radialGlow(g, 985, 44, 50, 'rgba(120,255,240,0.45)');
-  pathPoly(g, [560, 202, 760, 120, 880, 70, 960, 46, 1010, 46, 1090, 80, 1200, 130, 1290, 202]);
+  // hazy moon behind the rain clouds
+  radialGlow(g, 300, 46, 70, 'rgba(180,190,220,0.22)');
+  g.fillStyle = 'rgba(214,220,236,0.55)'; g.beginPath(); g.arc(300, 46, 14, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(8,12,26,0.5)'; g.fillRect(270, 40, 80, 3); g.fillRect(284, 50, 50, 2);
+  // the mountain and the Heart-Engine summit glow (on screen for most of the docks)
+  radialGlow(g, 680, 44, 130, 'rgba(77,240,224,0.32)');
+  radialGlow(g, 680, 44, 50, 'rgba(120,255,240,0.45)');
+  pathPoly(g, [260, 202, 460, 120, 580, 70, 655, 46, 705, 46, 790, 80, 900, 130, 990, 202]);
   paint(g, '#101828', null);
   // summit engine tower: stepped silhouette with cyan slit windows
   g.fillStyle = '#0C1220';
-  g.fillRect(968, 30, 34, 20); g.fillRect(976, 18, 18, 14); g.fillRect(982, 8, 6, 12);
+  g.fillRect(663, 30, 34, 20); g.fillRect(671, 18, 18, 14); g.fillRect(677, 8, 6, 12);
   g.fillStyle = '#4DF0E0';
-  g.fillRect(974, 36, 2, 6); g.fillRect(982, 36, 2, 6); g.fillRect(992, 36, 2, 6); g.fillRect(984, 22, 2, 5);
+  g.fillRect(669, 36, 2, 6); g.fillRect(677, 36, 2, 6); g.fillRect(687, 36, 2, 6); g.fillRect(679, 22, 2, 5);
   // stacked terraces (three tiers, the nearer the lighter)
   skyline(g, -20, w + 40, 156, 22, 56, rnd, '#0F1528', { minW: 16, maxW: 40, chimneys: 0.2, step: 3, windows: { color: 'rgba(232,192,112,0.35)', sx: 6, sy: 9, chance: 0.35 } });
   skyline(g, -20, w + 40, 178, 24, 62, rnd, '#141A2C', { minW: 20, maxW: 52, chimneys: 0.35, step: 4, windows: { color: 'rgba(232,192,112,0.6)', sx: 7, sy: 9, chance: 0.45 } });
@@ -253,7 +258,7 @@ export function create(section) {
     drawFront(ctx, cam) {
       const sy = cam.shakeY || 0;
       blitAt(ctx, nearL, near.originX(cam), NEAR_Y + sy);
-      ctx.fillStyle = 'rgba(190,216,255,0.3)';
+      ctx.fillStyle = 'rgba(190,216,255,0.30)';
       for (let i = 0; i < RAIN_N; i++) {
         const x = Math.round(rain.x[i]), y = Math.round(rain.y[i]);
         ctx.fillRect(x, y, 1, 8);

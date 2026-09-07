@@ -40,7 +40,7 @@ export function makeLayer(w, h, paint, seed = 1) {
   const canvas = makeCanvas(w, h);
   const g = canvas.getContext('2d');
   g.imageSmoothingEnabled = false;
-  paint(g, canvas.width, canvas.height, makeRng(seed));
+  paint(g, canvas.width, canvas.height, makeRng(seed).next);
   return { canvas, w: canvas.width, h: canvas.height };
 }
 
