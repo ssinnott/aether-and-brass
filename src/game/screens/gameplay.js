@@ -57,9 +57,10 @@ export class GameplayScreen extends Screen {
   update() {
     super.update();
     const inp = this.game.input, world = this.world;
-    // P2 drop-in (any P2-only key)
+    // P2 drop-in (any P2-only key); the join key itself never doubles as a pause press
+    let joinedNow = false;
     if (!inp.joined(1) && inp.joinPressed(1) && this.players.length < 2) {
-      inp.setJoined(1, true);
+      inp.setJoined(1, true); joinedNow = true;
       const ci = this.game.options.chars[1] != null ? this.game.options.chars[1] : 1;
       this.addPlayer(ci, 1);
       this.game.audio.play('join');
@@ -67,7 +68,7 @@ export class GameplayScreen extends Screen {
     }
     // pause: Escape (global) or a joined player's start button
     let pause = inp.globalPressed('pause');
-    for (let i = 0; i < 2 && !pause; i++) if (inp.joined(i) && inp.pressed(i, 'start')) pause = true;
+    for (let i = 0; i < 2 && !pause; i++) if (inp.joined(i) && !(i === 1 && joinedNow) && inp.pressed(i, 'start')) pause = true;
     if (pause && this.game.factories.pause && !this.gameOverShown) { this.game.audio.play('pause'); this.game.push('pause'); return; }
     this.time++;
     world.update();

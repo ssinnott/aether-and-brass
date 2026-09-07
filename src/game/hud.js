@@ -8,7 +8,10 @@ import { rrect } from '../art/shapes.js';
 const STRIP_H = 40, BAR_W = 120, BAR_H = 8, METER_H = 5, PORTRAIT = 24;
 const GHOST_DELAY = 20, GHOST_SPEED = 0.6;
 const COMBO_COLORS = ['#c8c8c8', '#ffe45a', '#ff9a30', '#4DF0E0', '#ffffff'];
-const BOSS_BAR_W = 400, BOSS_BAR_Y = 346;
+/** Boss bar sits in rows 342..358 (RECONCILIATION floor band row): name plate at BOSS_BAR_Y - 3, bar rows +6..+14. */
+const BOSS_BAR_W = 400, BOSS_BAR_Y = 343;
+/** Combo counter anchor on each player's side of the screen (GDD 9), below the HUD strip. */
+const COMBO_X = [120, VIEW_W - 120], COMBO_Y = 52;
 
 /** Draws the HUD for a World's players. */
 export class Hud {
@@ -103,18 +106,17 @@ export class Hud {
     else if (b.phases) for (let i = 1; i < b.phases; i++) { ctx.fillStyle = '#120c14'; ctx.fillRect(x + Math.round(BOSS_BAR_W * i / b.phases), y + 6, 2, 8); }
   }
   drawCombo(ctx, p, i) {
-    const cam = this.world.camera;
+    // GDD 9: the counter lives on the player's side of the screen (P1 left, P2 right), so it never overprints damage
+    // numbers around the fighters and two counters never coincide in co-op; the grade word lands in the same spot.
+    const sx = COMBO_X[i] || COMBO_X[0], sy = COMBO_Y;
     if (p.combo >= 3) {
-      // behind the player (away from the facing direction) so it never overprints the target's damage numbers
-      // P2's counter sits a step higher so two counters never overprint when the players stand together
-      const sx = cam.toScreenX(p.x) - p.facing * 50, sy = Math.round(FLOOR_TOP + p.z - p.y - p.h - 26 - i * 22 + cam.shakeY);
       const tier = p.combo >= 60 ? 4 : p.combo >= 35 ? 3 : p.combo >= 20 ? 2 : p.combo >= 10 ? 1 : 0;
       const size = Math.max(2, Math.round(2 * p.comboScale + 0.3));
       drawTextOutlined(ctx, String(p.combo), sx, sy, { size, color: COMBO_COLORS[tier], outline: '#2a1410', thickness: 1, align: 'center' });
       drawText(ctx, 'HITS', sx, sy + size * 9, { size: 1, color: COMBO_COLORS[tier], align: 'center' });
       const g = comboWord(p.combo); if (g) drawText(ctx, g, sx, sy + size * 9 + 10, { size: 1, color: COMBO_COLORS[tier], align: 'center' });
     } else if (p.gradeTimer > 0 && p.grade) {
-      const sx = i === 0 ? 120 : VIEW_W - 120, sy = 52, a = Math.min(1, p.gradeTimer / 30);
+      const a = Math.min(1, p.gradeTimer / 30);
       ctx.globalAlpha = a;
       drawTextOutlined(ctx, p.grade.word + '!', sx, sy, { size: 2, color: p.grade.color, outline: '#2a1410', thickness: 1, align: 'center' });
       ctx.globalAlpha = 1;

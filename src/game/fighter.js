@@ -57,6 +57,8 @@ export class Fighter extends Entity {
     this.hitTargets = new Map(); this.hitInstance = -1; this.hitConfirmed = false;
     this.throwDamage = 0; this.thrownBy = null; this.thrownHit = new Set();
     this.hpBarTimer = 0; this.airActed = false; this.godmode = false; this.superTimer = 0;
+    /** Attack instance this fighter parried ({ by, instance }): the rest of that swing whiffs (Duelist riposte, GDD 3). */
+    this.parried = null;
     /** Armored fighters with this flag shrug off launch/knockdown hits too (shielded Warden, bosses). */
     this.unlaunchable = !!def.unlaunchable;
     this.play('idle');
@@ -226,7 +228,12 @@ export class Fighter extends Entity {
         o.vx = Math.cos(angle) * speed * this.facing; o.vy = Math.sin(angle) * speed;
         o.vz = count > 1 ? (i - (count - 1) / 2) * (spec.spreadZ || 0) : (spec.vz || 0);
       }
-      if (spec.onHit === 'reel') o.onHit = (t) => { if (t.kind !== 'prop' && !t.dead && t.grabbableBy && t.grabbableBy(this)) { t.x = this.x + this.facing * (this.def.grabOffset || 24) * this.scale; t.z = this.z; this.startGrab(t); } };
+      // reel: the tagged enemy is pulled into a grab (it is already in hitstun from the claw's own hit, hence ignoreHitstun)
+      if (spec.onHit === 'reel') o.onHit = (t) => {
+        if (t.kind === 'prop' || t.dead || !t.grabbableBy || !t.grabbableBy(this, { ignoreHitstun: true }) || this.grabTarget) return;
+        if (this.state !== ST.DASH_ATTACK && this.state !== ST.ATTACK && !this.actionable) return;
+        t.hurtTimer = 0; t.x = this.x + this.facing * (this.def.grabOffset || 24) * this.scale; t.z = this.z; this.startGrab(t);
+      };
       else if (typeof spec.onHit === 'function') o.onHit = (t, w, proj) => spec.onHit(t, w, proj, this);
       if (typeof spec.onExpire === 'function') o.onExpire = (w, proj, byHit) => spec.onExpire(w, proj, byHit, this);
       world.spawnProjectile(o);
@@ -242,6 +249,7 @@ export class Fighter extends Entity {
   takeHit(hit, attacker) {
     if (!this.alive || this.dead || this.state === ST.DEAD) return false;
     if (attacker && attacker.team === this.team && !hit.friendly) return false;
+    if (this.parried && attacker && attacker.anim && this.parried.by === attacker && this.parried.instance === attacker.anim.instance) return false;
     if (this.invuln > 0 && !hit.unblockable) {
       // dodging through an enemy's active frames: 4f hit-stop for both + meter (GDD 7), once per attack instance
       if (this.state === ST.DODGE && attacker && attacker.anim && this.dodgedInstance !== attacker.anim.instance) {
@@ -320,9 +328,14 @@ export class Fighter extends Entity {
   onKill(target) {}
 
   // ---------- grabs & throws ----------
-  /** True if this fighter can currently be grabbed by `by`. */
-  grabbableBy(by) {
-    if (!this.alive || this.dead || this.inHitstun || this.airborne || this.grabbedBy) return false;
+  /**
+   * True if this fighter can currently be grabbed by `by`. `ignoreHitstun` lets a grab follow the hit that opened it
+   * (Pip's Grapple Shot reels the enemy it just tagged, GDD 2.4).
+   */
+  grabbableBy(by, { ignoreHitstun = false } = {}) {
+    if (!this.alive || this.dead || this.airborne || this.grabbedBy) return false;
+    if (!ignoreHitstun && this.inHitstun) return false;
+    if (ignoreHitstun && this.state !== ST.HURT && this.inHitstun) return false;
     if (this.def.grabbable === false && !(by.def.grabAll && this.def.grabbableByGrappler !== false)) return false;
     if (this.armor && !by.def.grabAll && this.def.grabbable !== true) return false;
     return true;
@@ -426,7 +439,8 @@ export class Fighter extends Entity {
   /** Floating damage number; consecutive numbers are staggered so multi-hits stay legible. */
   damageText(dmg, color, size) {
     const j = this.textJitter = ((this.textJitter || 0) + 1) % 3;
-    floatText(this.x + (j - 1) * 9, this.y + this.h + 6 + j * 5, this.z, String(dmg), color, size);
+    const spread = 9 * Math.max(1, this.scale); // big rigs (bosses) take many hits per second: fan the numbers wider
+    floatText(this.x + (j - 1) * spread, this.y + this.h + 6 + j * 7, this.z, String(dmg), color, size);
   }
   /** Hook: an attack passed through this fighter's dodge i-frames (players gain meter). */
   onDodged(attacker) {}

@@ -27,7 +27,7 @@ export class Projectile extends Entity {
     this.life = o.life != null ? o.life : 90;
     this.style = o.style || 'bullet';
     this.r = o.r != null ? o.r : (STYLE_R[this.style] || 4);
-    this.hit = o.hit || null;
+    this.hit = o.hit ? { ...o.hit, projectile: true } : null; // flagged so parries (Duelist riposte) ignore ranged hits
     this.pierce = o.pierce || 0;
     this.maxDist = o.maxDist || 0;
     this.color = o.color || '#ffe070';

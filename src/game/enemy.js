@@ -354,9 +354,13 @@ export class Enemy extends Fighter {
   // ---------- reactions ----------
   takeHit(hit, attacker) {
     const ai = this.ai;
+    // Riposte (GDD 3 A5): a melee hit from a player is parried and answered; the rest of that swing whiffs (Fighter.parried).
+    // Supers (invulnerable cinematic attacks) and projectiles are not parried ("answers: grab, projectiles").
     if (ai.riposteChance && this.riposteTimer <= 0 && !this.dead && !this.inHitstun && !this.airborne && (this.state === ST.IDLE || this.state === ST.WALK)
-      && hit.type !== 'grab' && attacker && attacker.kind === 'player' && this.anim.has(ai.riposteAnim) && rng.chance(ai.riposteChance)) {
+      && hit.type !== 'grab' && attacker && attacker.kind === 'player' && attacker.state !== ST.SUPER && !hit.projectile
+      && this.anim.has(ai.riposteAnim) && rng.chance(ai.riposteChance)) {
       this.riposteTimer = ai.riposteCooldown; this.face(attacker); this.pendingAttack = null;
+      this.parried = { by: attacker, instance: attacker.anim.instance };
       this.currentAttack = { anim: ai.riposteAnim, range: 999 };
       this.setState(ST.ATTACK, ai.riposteAnim); this.invuln = Math.max(this.invuln, 6);
       attacker.hitstop = Math.max(attacker.hitstop, 8);
