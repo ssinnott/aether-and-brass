@@ -34,13 +34,14 @@ import { rad } from '../../engine/math.js';
 
 // GDD 2.4 hues, re-spaced for value (ART_STYLE section 0.1). Every extra key is part of the palette object so farPalette()
 // darkens it on the far side too (a far claw or far shin must never take a module constant).
-// skin: the brightest tone on the rig   hair: ginger braid   primary: FRAME, the dark anchor   sleeve: light brass arm cylinder
-// secondary: mid blue-slate thigh + shoulder joint   accent: brass claws + trims   metal: light steel shin rod / trims   dark: near-black foot plate
-// iron: recessed panel / stacks / lantern (darker than the frame)   bronze: dark brass (piston sleeves, demoted trims)
+// skin: the brightest tone on the rig   hair: ginger braid   primary: FRAME, the mid-dark anchor (dark enough to sit under
+// everything, light enough that the chassis still reads as a machine against a night backdrop instead of a black hole)
+// secondary: mid blue-slate thigh   accent: brass claws + trims   metal: light steel shin rod / ball joints / trims   dark: foot plate
+// iron: recessed panel / knee sleeves / stacks / lantern (the darkest band, always a joint or a recess)   bronze: dark brass (piston sleeves, demoted trims)
 // rod: pale brass forearm piston rod   glow: boiler fire
 const PAL = {
-  skin: '#FBE7CC', hair: '#6E3A1E', primary: '#333848', sleeve: '#C89A3A', secondary: '#6A7690', accent: '#D2A63E',
-  metal: '#C3CCDA', dark: '#2B303C', glow: '#E86A1E', iron: '#20242E', bronze: '#7A5824', rod: '#E8CE8C',
+  skin: '#FBE7CC', hair: '#6E3A1E', primary: '#464F63', sleeve: '#C89A3A', secondary: '#7C8AA4', accent: '#D2A63E',
+  metal: '#C3CCDA', dark: '#333A4A', glow: '#E86A1E', iron: '#2C3242', bronze: '#7A5824', rod: '#E8CE8C',
 };
 const HAT = '#D6483F', JACKET = '#7A3A34', GAUGE = '#59C3A0', STEAM = '#B9C6D0', HOT = '#FFD27A', BROW = '#4A2A16', LAMP = '#E0A038', INK = '#1B1820';
 const R = Math.round, TAU = Math.PI * 2;
@@ -100,7 +101,7 @@ function drawFaceP(ctx, rig, pose, inf) {
 /** Red pointed hat with one brass band, brim lifted clear of the brow row (head space, drawn after the face). */
 function drawHat(ctx, rig, pose, inf) {
   const r = inf.r, brim = R(-r * 0.85);
-  celPoly(ctx, rig, [R(-r * 1.15), brim + 2, R(-r * 0.9), brim - 3, R(-r * 0.55), -r - 12, R(r * 0.55), brim - 3, R(r * 1.15), brim + 2], HAT, 0.38, 0.28);
+  celPoly(ctx, rig, [R(-r * 1.15), brim + 2, R(-r * 0.9), brim - 3, R(-r * 0.55), -r - 10, R(r * 0.55), brim - 3, R(r * 1.15), brim + 2], HAT, 0.38, 0.28);
   if (rig.override) return;
   const tb = tones(rig, PAL.accent);
   ctx.fillStyle = tb.base; ctx.fillRect(R(-r * 0.95), brim - 2, R(r * 1.9), 3);
@@ -115,7 +116,7 @@ function drawSeat(ctx, rig) { ctx.beginPath(); ctx.rect(-7, -2, 14, 4); flat(ctx
 function drawTorso(ctx, rig, pose, inf) {
   const W = inf.w, H = inf.h, hw = R(W / 2);
   celRect(ctx, rig, -hw, -H, W, H + 2, 3, PAL.primary, 0.36, 0.28);
-  ctx.beginPath(); ctx.rect(-hw + 3, -H + 5, W - 6, H - 7); flat(ctx, rig, PAL.iron);
+  ctx.beginPath(); ctx.rect(-hw + 5, -H + 8, W - 10, H - 13); flat(ctx, rig, PAL.iron);
   celBall(ctx, rig, 0, -7, 6.5, PAL.bronze);
   celBall(ctx, rig, -2, -17, 5, PAL.bronze, false);
   if (rig.override) return;
@@ -123,7 +124,7 @@ function drawTorso(ctx, rig, pose, inf) {
   // one bronze collar band across the frame top; the panel keeps a single lit seam
   ctx.fillStyle = tb.base; ctx.fillRect(-hw + 1, -H + 1, W - 2, 3);
   ctx.fillStyle = tb.sh; ctx.fillRect(-hw + 1, -H + 3, W - 2, 1);
-  ctx.fillStyle = ti.hi; ctx.fillRect(-hw + 3, -H + 5, 1, H - 7);
+  ctx.fillStyle = ti.hi; ctx.fillRect(-hw + 5, -H + 8, 1, H - 13);
   // boiler fire window: dark slot, orange fire, hot core that pulses (rig.tick) and swells while venting
   const hot = rig.vent > 0 || (rig.tick % 16) < 8;
   ctx.fillStyle = rig.col('#241a1c'); ctx.fillRect(-4, -10, 8, 7);
@@ -135,18 +136,19 @@ function drawTorso(ctx, rig, pose, inf) {
   const fr = rig.meterFrac != null ? rig.meterFrac : 0.35;
   ctx.save(); ctx.translate(-2, -17); ctx.rotate(rad(-120 + 240 * fr)); ctx.fillStyle = rig.col(INK); ctx.fillRect(-1, -4, 2, 5); ctx.restore();
 }
-/** Frame crossbar with a bronze band and a dark iron hip block (hip space). */
+/** Frame crossbar with a light-steel band and a dark iron hip block (hip space). Both are kept shallow on purpose: a deep
+ *  hip swallowed the top half of each thigh and the legs lost their upper segment. */
 function drawHips(ctx, rig, pose, inf) {
   const hw = R(inf.w / 2);
-  celRect(ctx, rig, -hw, -4, inf.w, 9, 2, PAL.primary, 0.4, 0.25);
-  ctx.beginPath(); ctx.rect(-5, -6, 10, 12); flat(ctx, rig, PAL.iron);
+  celRect(ctx, rig, -hw, -5, inf.w, 8, 2, PAL.primary, 0.4, 0.25);
+  ctx.beginPath(); ctx.rect(-5, -6, 10, 9); flat(ctx, rig, PAL.iron);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(PAL.metal); ctx.fillRect(-hw + 2, -2, inf.w - 4, 3);
+  ctx.fillStyle = rig.col(PAL.metal); ctx.fillRect(-hw + 2, -3, inf.w - 4, 3);
   ctx.fillStyle = tones(rig, PAL.iron).hi; ctx.fillRect(-4, -5, 8, 1);
 }
-/** Mid blue-slate ball joint, the same machined metal as the piston legs: light enough against the dark frame to read as a
- *  joint rather than a hole, dark enough that the light brass upper arm pops off it. Kept small so it stays a joint. */
-function drawShoulder(ctx, rig, pose, inf) { celBall(ctx, rig, 0, 0, inf.r - 1.5, inf.pal.secondary); }
+/** Light-steel ball joint — the same machined metal as the shin rods, so the eye reads "this is where a limb starts".
+ *  Cool and bright against both the dark frame behind it and the warm brass upper arm in front; small enough to stay a joint. */
+function drawShoulder(ctx, rig, pose, inf) { celBall(ctx, rig, 0, 0, inf.r - 2.5, inf.pal.metal); }
 /** Upper arm: light brass cylinder with a dark bronze band at the elbow end (limb space, +x along the arm). */
 function drawArmUpper(ctx, rig, pose, inf) {
   const r = inf.r, L = inf.len;
@@ -154,33 +156,37 @@ function drawArmUpper(ctx, rig, pose, inf) {
   if (rig.override) return;
   ctx.fillStyle = rig.col(inf.pal.bronze); ctx.fillRect(L - 5, -r + 1, 4, r * 2 - 2);
 }
-/** Forearm: dark bronze piston sleeve at the elbow, pale brass rod out to the wrist (the lightest band of the arm). */
+/** Forearm: a short dark bronze piston sleeve at the elbow and a long pale brass rod out to the wrist. The rod is the longer
+ *  and lighter of the two on purpose — a piston reads as a limb, two equal blocks read as a scaffold. */
 function drawArmLower(ctx, rig, pose, inf) {
   const r = inf.r, L = inf.len;
-  celCapsule(ctx, rig, 6, 0, L + 1, 0, r * 0.6, inf.pal.rod, 0.3);
-  celRect(ctx, rig, -2, -r - 1, 10, r * 2 + 2, 2, inf.pal.bronze, 0.38, 0.25);
+  celCapsule(ctx, rig, 3, 0, L + 1, 0, r * 0.72, inf.pal.rod, 0.3);
+  celRect(ctx, rig, -2, -r, 7, r * 2, 2, inf.pal.bronze, 0.38, 0.25);
 }
 /** Two-prong brass claw (hand space, origin at the wrist). Dark bronze wrist block, brass prongs; opens by rig.claw. */
 function drawClaw(ctx, rig, pose, inf) {
   const pal = inf.pal;
   celRect(ctx, rig, -3, -5, 8, 10, 2, pal.bronze, 0.38, 0.25);
   if (rig.clawFired && !inf.far) { if (!rig.override) { ctx.fillStyle = rig.col(INK); ctx.fillRect(3, -3, 3, 6); } return; } // the claw is out on the chain
-  const open = rig.claw != null ? rig.claw : 0.3, g = 2 + 7 * open;
-  celPoly(ctx, rig, [3, -5, 10, -6 - g * 0.6, 19, -3 - g, 20, -1 - g, 14, -1 - g * 0.4, 8, -1], pal.accent, 0.4, 0.25);
-  celPoly(ctx, rig, [3, 5, 10, 6 + g * 0.6, 19, 3 + g, 20, 1 + g, 14, 1 + g * 0.4, 8, 1], pal.accent, 0.4, 0.25);
+  // 15 px prongs, not 20: at rest the claws hang beside the shins, and a long splayed fan there buried both piston legs
+  const open = rig.claw != null ? rig.claw : 0.3, g = 1.5 + 6 * open;
+  celPoly(ctx, rig, [3, -5, 8, -6 - g * 0.6, 14, -3 - g, 15, -1 - g, 11, -1 - g * 0.4, 7, -1], pal.accent, 0.4, 0.25);
+  celPoly(ctx, rig, [3, 5, 8, 6 + g * 0.6, 14, 3 + g, 15, 1 + g, 11, 1 + g * 0.4, 7, 1], pal.accent, 0.4, 0.25);
 }
-/** Thigh: mid blue-slate cylinder with a light steel collar at the hip (limb space) — the legs are the cool limb pair. */
+/** Thigh: the widest segment of the leg — mid blue-slate cylinder with a light steel collar at the hip (limb space).
+ *  Thigh wider than knee sleeve wider than shin rod gives the leg a taper, so it reads as a piston and not as a stack. */
 function drawLegUpper(ctx, rig, pose, inf) {
-  const r = inf.r, L = inf.len;
+  const r = inf.r + 1.5, L = inf.len;
   celRect(ctx, rig, -2, -r, L + 3, r * 2, 2, inf.pal.secondary, 0.38, 0.25);
   if (rig.override) return;
   ctx.fillStyle = rig.col(inf.pal.metal); ctx.fillRect(0, -r + 1, 3, r * 2 - 2);
 }
-/** Shin: light steel piston rod sliding out of a near-black knee sleeve (the dark band that articulates the leg). */
+/** Shin: a long light-steel piston rod sliding out of a short near-black knee sleeve. The rod is the brightest thing below
+ *  the hip line, so both legs are findable in one glance even with a claw hanging beside them. */
 function drawLegLower(ctx, rig, pose, inf) {
   const r = inf.r + 1, L = inf.len;
-  celCapsule(ctx, rig, 4, 0, L, 0, r * 0.6, inf.pal.metal, 0.3);
-  celRect(ctx, rig, -2, -r, 8, r * 2, 2, inf.pal.dark, 0.38, 0.25);
+  celCapsule(ctx, rig, 3, 0, L + 1, 0, r * 0.7, inf.pal.metal, 0.3);
+  celRect(ctx, rig, -2, -r, 6, r * 2, 2, inf.pal.iron, 0.38, 0.25);
 }
 /** Plate foot: near-black plate with a light steel toe cap and a 2 px sole (ankle space). */
 function drawPlateFoot(ctx, rig, pose, inf) {
@@ -228,7 +234,9 @@ const build = {
   contactShadow: 0.42, farShade: 0.55, farDesat: 0.32, thinR: 4,
   // 85 px tall scaffold: 26 x 30 frame, 15 + 14 piston arms with 7 px claws, 13 + 13 piston legs on 13 px plates; the gnome's
   // 18 px head sits 10 px above the frame (neck) so her body fits inside the cage; bulge 0 = machine limbs
-  proportions: { headR: 9, neck: 10, torsoW: 26, torsoH: 30, hip: 24, upperArm: 15, lowerArm: 14, armR: 5.5, handR: 7, upperLeg: 13, lowerLeg: 13, legR: 4.5, footL: 13, footH: 5, shoulderX: 5, hipX: 5, bulge: 0, neckR: 3 },
+  // shoulderX 11 (torso half-width is 13): the claw arms are mounted on the OUTSIDE of the chassis, near arm in front of the
+  // front plate and far arm behind the back plate, so neither one crosses the boiler or the gauge and the two never overlap
+  proportions: { headR: 9, neck: 10, torsoW: 26, torsoH: 30, hip: 24, upperArm: 15, lowerArm: 14, armR: 5.5, handR: 7, upperLeg: 13, lowerLeg: 13, legR: 4.5, footL: 13, footH: 5, shoulderX: 11, hipX: 5, bulge: 0, neckR: 3 },
   parts: { head: drawHead, face: drawFaceP, hat: drawHat, neck: drawSeat, torso: drawTorso, hips: drawHips, shoulder: drawShoulder, armUpper: drawArmUpper, armLower: drawArmLower, hand: drawClaw, legUpper: drawLegUpper, legLower: drawLegLower, foot: drawPlateFoot },
   accessories: [{ attach: 'back', draw: drawBackGear }, { attach: 'torso', draw: drawCageFront }],
 };
@@ -245,8 +253,10 @@ function G(dur, spec, extra) {
   pose.root = { x: full.root.x, y: R(-boot) + (spec.root ? spec.root[1] || 0 : 0), rot: full.root.rot };
   return { dur, pose, ...(extra || {}) };
 }
-/** Rest carry: claws hanging at the sides, near arm a little forward, far arm back so both claws show; feet planted wide. */
-const CARRY = { armR: [16, 14], armL: [-24, 10], legR: [8, 0], legL: [-8, 0] };
+/** Rest carry (ART_STYLE 0.6, open silhouette): elbows bent so the near claw rests FORWARD of the front plate and the far
+ *  claw swings BACK behind the hip, both at hip height. Straight-down arms parked the two claws on top of the piston legs
+ *  and buried them; this way the leg column from hip to foot plate is clear and the two arms read at a glance. */
+const CARRY = { armR: [16, 34], armL: [-26, 6], legR: [8, 0], legL: [-8, 0] };
 /** Guard: claws up in front of the chest, knees soft (run / recovery keys). */
 const READY = { armR: [70, 60], armL: [40, 70], legR: [14, 4], legL: [-14, 6] };
 /** Butt-stomp hit data (shared id = one hit per target across the hit + held frames). */
