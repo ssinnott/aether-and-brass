@@ -1,20 +1,22 @@
-// Enemy registry (ARCHITECTURE.md section 8 / 15): getEnemyDef(type, variant), ENEMY_LIST (10 variants + midboss + boss).
+// Enemy registry (ARCHITECTURE.md section 8 / 15): getEnemyDef(type, variant), ENEMY_LIST (15 variants + midboss + boss).
 // Type slugs come from the GDD faction names; the ARCHITECTURE aliases typeA/typeB are accepted too.
 import { BRASSBOUND } from './brassbound.js';
 import { SOOTBORN } from './sootborn.js';
+import { GLEANINGS } from './gleaning.js';
 import { midboss } from './midboss.js';
 import { boss } from './boss.js';
 
-const TYPE_ALIASES = { typeA: 'brassbound', typeB: 'sootborn', brass: 'brassbound', soot: 'sootborn', grubbik: 'midboss', hoister: 'midboss', vane: 'boss' };
+const TYPE_ALIASES = { typeA: 'brassbound', typeB: 'sootborn', typeC: 'gleaning', brass: 'brassbound', soot: 'sootborn', gleaner: 'gleaning', tide: 'gleaning', typed: 'gleaning', grubbik: 'midboss', hoister: 'midboss', vane: 'boss' };
 /** GDD display-name words -> variant slugs (so 'Tin Footman' / 'footman' / 'tin' all resolve). */
 const VARIANT_ALIASES = {
   brassbound: { tin: 'footman', grunt: 'footman', halberd: 'halberdier', brass: 'halberdier', copper: 'sapper', bomber: 'sapper', iron: 'warden', shield: 'warden', brute: 'warden', chrome: 'duelist', fencer: 'duelist' },
   sootborn: { soot: 'cutthroat', grunt: 'cutthroat', goblin: 'cutthroat', knife: 'cutthroat', scrap: 'slinger', sling: 'slinger', fire: 'firebrand', flame: 'firebrand', cinder: 'hulk', brute: 'hulk', gutter: 'wrangler', whip: 'wrangler' },
+  gleaning: { bounce: 'chaff', grunt: 'chaff', perch: 'winnow', ballast: 'winnow', shadow: 'thresher', dive: 'thresher', brute: 'thresher', thief: 'sickle', hook: 'sickle', caller: 'harvestman', canopy: 'harvestman' },
 };
 
 /** All enemy defs keyed by `${type}:${variant}`. */
 const DEFS = new Map();
-for (const d of [...BRASSBOUND, ...SOOTBORN]) DEFS.set(`${d.type}:${d.variant}`, d);
+for (const d of [...BRASSBOUND, ...SOOTBORN, ...GLEANINGS]) DEFS.set(`${d.type}:${d.variant}`, d);
 DEFS.set('midboss:grubbik', midboss);
 DEFS.set('boss:vane', boss);
 
@@ -26,7 +28,7 @@ export function resolveType(type) {
 
 /**
  * Look up an enemy definition. Unknown variants fall back to the type's first variant; unknown types to the Tin Footman.
- * @param {string} type 'brassbound' | 'sootborn' | 'midboss' | 'boss' (aliases: typeA, typeB, grubbik, vane)
+ * @param {string} type 'brassbound' | 'sootborn' | 'gleaning' | 'midboss' | 'boss' (aliases: typeA, typeB, typeC, grubbik, vane)
  * @param {string} [variant]
  */
 export function getEnemyDef(type, variant) {
@@ -43,10 +45,11 @@ export function getEnemyDef(type, variant) {
   return first || BRASSBOUND[0];
 }
 
-/** Registry list for window.__game.enemyList(): 10 variants + midboss + boss. */
+/** Registry list for window.__game.enemyList(): 15 variants + midboss + boss. */
 export const ENEMY_LIST = [
   ...BRASSBOUND.map((d) => ({ type: d.type, variant: d.variant, name: d.name, role: d.role })),
   ...SOOTBORN.map((d) => ({ type: d.type, variant: d.variant, name: d.name, role: d.role })),
+  ...GLEANINGS.map((d) => ({ type: d.type, variant: d.variant, name: d.name, role: d.role })),
   { type: 'midboss', variant: 'grubbik', name: midboss.name, role: 'boss' },
   { type: 'boss', variant: 'vane', name: boss.name, role: 'boss' },
 ];
@@ -55,10 +58,11 @@ export const ENEMY_LIST = [
 export const ENEMY_GALLERY = [
   ...BRASSBOUND.map((d) => ({ id: d.id, name: d.name, build: d.build, anims: d.anims })),
   ...SOOTBORN.map((d) => ({ id: d.id, name: d.name, build: d.build, anims: d.anims })),
+  ...GLEANINGS.map((d) => ({ id: d.id, name: d.name, build: d.build, anims: d.anims })),
   { id: 'midboss', name: 'THE HOISTER', build: midboss.build, anims: midboss.anims },
   { id: 'midboss2', name: 'GRUBBIK', build: midboss.phases[2].build, anims: midboss.phases[2].anims },
   { id: 'boss', name: 'REGENT ENGINE', build: boss.build, anims: boss.anims },
   { id: 'boss2', name: 'VANE', build: boss.phases[2].build, anims: boss.phases[2].anims },
 ];
 
-export { BRASSBOUND, SOOTBORN, midboss, boss };
+export { BRASSBOUND, SOOTBORN, GLEANINGS, midboss, boss };
