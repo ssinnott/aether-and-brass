@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Backdrop preview</title>
+<style>
+  html, body { margin: 0; background: #101014; color: #cfc8b8; font: 12px/1.4 monospace; }
+  #wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px; }
+  canvas { image-rendering: pixelated; background: #000; }
+  #hud { white-space: pre; }
+  #help { color: #8a8478; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="view" width="640" height="360"></canvas>
+  <div id="hud"></div>
+  <div id="help">keys: 1-4 section | left/right scroll 8px (shift: 64px) | up/down z-rigs | space toggle animation | . step frame | s shake | r reset | g toggle rig boxes<br>
+  url: ?section=2&cam=2400&frame=600&anim=0&scale=2&rigs=0</div>
+</div>
+<script type="module" src="./preview-backdrops.js"></script>
+</body>
+</html>
