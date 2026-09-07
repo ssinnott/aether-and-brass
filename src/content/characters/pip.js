@@ -243,8 +243,20 @@ const STOMP_HIT = { id: 'jumpAttack', x: -14, y: -44, w: 56, h: 72, z: 24, once:
 /** On its back on the floor (root rot -88: body-space +y runs toward the feet along the ground). */
 const FLOORED = { armR: [-30, -10], armL: [20, 20], torso: 4, head: -10, legR: [10, 8], legL: [-4, 6], root: [32, -13, -88], face: 'dazed' };
 const CLAW = 'claw', PISTON = 'piston';
-/** Steam Vent hit: light, ~20 px pushback, snuffs fire puddles the box touches. */
-const VENT_HIT = hit(6, 'light', 4, 0, 12, { extinguish: true });
+/** Steam Vent hit: light, 6 dmg, snuffs fire puddles the box touches. Ground friction is 0.82, so a kbX of 3.6
+ *  slides a light enemy 3.6 / (1 - 0.82) = 20 px, the pushback per hit the GDD asks for. */
+const VENT_HIT = hit(6, 'light', 3.6, 0, 12, { extinguish: true });
+/**
+ * One blast of the Steam Vent cone (GDD 2.4: 80 px, 40 deg). An AABB pair stands in for the cone: a tight box at the
+ * claws and a wider, taller plume out to 80 px (+20 px of body, as `frontBox` allows). Both boxes carry the SAME id, so
+ * one blast lands once per target no matter which half of the cone catches it, and the four blasts carry DIFFERENT ids,
+ * so each of them re-hits the same enemy: 4 x 6 exactly. Both boxes start at floor level and the far one reaches 86 px
+ * up, so anything standing (or freshly popped) between 0 and 100 px in front at the same z is caught.
+ */
+const ventBlast = (n) => [
+  { id: 'vent' + n, x: 2, y: -76, w: 38, h: 76, z: 22, once: true, ...VENT_HIT },
+  { id: 'vent' + n, x: 34, y: -86, w: 68, h: 86, z: 34, once: true, ...VENT_HIT },
+];
 /** Grapple Shot projectile: chained claw, reels the first enemy into her grab (projectile.js kind 'grapple'). */
 const GRAPPLE = { kind: 'grapple', style: 'claw', speed: 6, maxDist: 140, damage: 6, type: 'light', hitstun: 14, kbX: 0, onHit: 'reel', muzzle: false, offsetX: 30, offsetY: 52, r: 8, life: 60, color: PAL.accent, draw: drawHook };
 /** Wrecking Ball: swing keys start at animation time SWING_AT and turn SWING_DEG per frame (120 deg per 5f key, 3 turns = 45f). */
@@ -355,13 +367,13 @@ const anims = {
     G(5, { armR: [-30, -40], armL: [-40, -30], torso: -10, head: -4, root: [-3, 0], legR: [12, 8], legL: [-18, 10], face: 'angry' }, { event: 'vent', vent: 40, ease: 'in' }),
     G(5, { armR: [40, -60], armL: [30, -50], torso: 14, head: 4, root: [0, 2], squash: 1.1, stretch: 0.9, legR: [30, 30], legL: [-20, 26], face: 'grit' }, { ease: 'out' }),
     G(4, { armR: [92, -4], armL: [88, -2], torso: 20, head: 4, root: [2, 0], legR: [36, 10], legL: [-30, 30], face: 'shout' },
-      { hitbox: frontBox(80, VENT_HIT), sfx: 'steam_vent', fx: [{ kind: 'steam', x: 34, y: 50, count: 5 }, { kind: 'steam', x: 56, y: 44, count: 4 }, { kind: 'steam', x: 76, y: 40, count: 3 }], ease: 'out' }),
+      { hitboxes: ventBlast(1), sfx: 'steam_vent', fx: [{ kind: 'steam', x: 34, y: 50, count: 5 }, { kind: 'steam', x: 56, y: 44, count: 4 }, { kind: 'steam', x: 76, y: 40, count: 3 }], ease: 'out' }),
     G(4, { armR: [88, -2], armL: [84, 0], torso: 24, head: 6, root: [-1, 1], legR: [36, 10], legL: [-30, 30], face: 'shout' },
-      { hitbox: frontBox(80, VENT_HIT), sfx: 'steam', fx: [{ kind: 'steam', x: 40, y: 54, count: 5 }, { kind: 'steam', x: 62, y: 46, count: 4 }, { kind: 'steam', x: 82, y: 42, count: 3 }], ease: 'out' }),
+      { hitboxes: ventBlast(2), sfx: 'steam', fx: [{ kind: 'steam', x: 40, y: 54, count: 5 }, { kind: 'steam', x: 62, y: 46, count: 4 }, { kind: 'steam', x: 82, y: 42, count: 3 }], ease: 'out' }),
     G(4, { armR: [94, -4], armL: [90, -2], torso: 20, head: 4, root: [2, 0], legR: [36, 10], legL: [-30, 30], face: 'shout' },
-      { hitbox: frontBox(80, VENT_HIT), sfx: 'steam', fx: [{ kind: 'steam', x: 34, y: 48, count: 5 }, { kind: 'steam', x: 58, y: 40, count: 4 }, { kind: 'steam', x: 78, y: 36, count: 3 }], ease: 'out' }),
+      { hitboxes: ventBlast(3), sfx: 'steam', fx: [{ kind: 'steam', x: 34, y: 48, count: 5 }, { kind: 'steam', x: 58, y: 40, count: 4 }, { kind: 'steam', x: 78, y: 36, count: 3 }], ease: 'out' }),
     G(4, { armR: [88, -2], armL: [84, 0], torso: 24, head: 6, root: [-1, 1], legR: [36, 10], legL: [-30, 30], face: 'shout' },
-      { hitbox: frontBox(80, VENT_HIT), sfx: 'steam', fx: [{ kind: 'steam', x: 40, y: 52, count: 5 }, { kind: 'steam', x: 64, y: 44, count: 4 }, { kind: 'steam', x: 84, y: 40, count: 3 }], ease: 'out' }),
+      { hitboxes: ventBlast(4), sfx: 'steam', fx: [{ kind: 'steam', x: 40, y: 52, count: 5 }, { kind: 'steam', x: 64, y: 44, count: 4 }, { kind: 'steam', x: 84, y: 40, count: 3 }], ease: 'out' }),
     G(8, { armR: [70, 20], armL: [66, 20], torso: 14, head: 2, root: [0, 1], legR: [30, 10], legL: [-26, 24], face: 'grit' }, { ease: 'inout' }),
     G(4, { ...CARRY, torso: 6 }, { cancel: 'any', ease: 'out' }),
   ] },
@@ -531,8 +543,16 @@ function dropBall(f) {
   if (pr && !pr.removeMe) pr.removeMe = true;
 }
 const OPEN_STATES = new Set([ST.ATTACK, ST.DASH_ATTACK, ST.SPECIAL, ST.JUMP_ATTACK]);
+/**
+ * Frames a Grapple Shot reel-grab holds before it hurls on its own. A hand-made grab holds `grabHoldFrames` (60, GDD 7)
+ * because the player chose to grab and is expected to follow up; the reel-grab is the tail of a *dash attack* the player
+ * already committed to, so parking her for a full second of dead air (60f hold + 25f throw) leaves her helpless long
+ * after the move reads as over. If the player does engage (Crush / a directional throw) `grabHits` is non-zero and the
+ * normal 60f hold takes over again.
+ */
+const REEL_HOLD = 24;
 const hooks = {
-  onSpawn(f) { const rig = f.rig; rig.claw = 0.25; rig.vent = 0; rig.meterFrac = 0; rig.clawFired = false; f.pipHook = null; f.pipBall = null; f.pipProj = null; },
+  onSpawn(f) { const rig = f.rig; rig.claw = 0.25; rig.vent = 0; rig.meterFrac = 0; rig.clawFired = false; f.pipHook = null; f.pipBall = null; f.pipProj = null; f.pipReel = false; },
   onUpdate(f, world) {
     const rig = f.rig, s = f.state;
     if (rig.vent > 0) rig.vent--;
@@ -548,10 +568,15 @@ const hooks = {
     if (f.pipHook && (f.pipHook.removeMe || !f.pipHook.alive)) f.pipHook = null;
     rig.clawFired = !!f.pipHook;
     if (s === ST.SUPER) swingBall(f);
+    // Grapple Shot reel-grab: hurl on its own after REEL_HOLD unless the player has started crushing / throwing.
+    if (s === ST.GRAB) {
+      if (f.pipReel && f.grabTarget && !f.throwPending && !f.grabHits && f.grabTimer >= REEL_HOLD) f.throwTarget(1);
+    } else f.pipReel = false;
   },
   onStateEnter(f, state, prev) {
     if (prev === ST.SUPER && state !== ST.SUPER) dropBall(f);
-    if (state === ST.GRAB) f.rig.vent = Math.max(f.rig.vent, 12);
+    // the reel hands the enemy over from projectile.js the frame the hook is retired, so a live hook marks a reel-grab
+    if (state === ST.GRAB) { f.rig.vent = Math.max(f.rig.vent, 12); f.pipReel = !!f.pipHook; }
   },
   onAnimEvent(f, name, frame, world) {
     if (name === 'grapple') { f.pipHook = f.fireProjectile(GRAPPLE, world); return true; }

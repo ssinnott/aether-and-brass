@@ -4,6 +4,7 @@ import { createLoop } from './engine/loop.js';
 import { input } from './engine/input.js';
 import { rng } from './engine/rng.js';
 import { createCanvas } from './engine/canvas.js';
+import { touch } from './engine/touch.js';
 import { audio } from './engine/audio.js';
 import { particles } from './engine/particles.js';
 import { Game } from './game/game.js';
@@ -35,6 +36,7 @@ export function parseOptions(search = window.location.search) {
     skipTo: devOnly ? (q.get('skipTo') || '') : '',
     chars: chars.length ? chars : [0],
     nowaves: devOnly && flag('nowaves'),
+    touch: flag('touch'),
     spawn: devOnly ? spawn : [],
     bot: devOnly && flag('bot'),
     godmode: devOnly && flag('godmode'),
@@ -62,6 +64,7 @@ function boot() {
   const view = createCanvas(document.getElementById('game') || document.body);
   const ctx = view.ctx;
   input.init(view.displayCanvas);
+  touch.init(view, options.touch);
   audio.init();
 
   const game = new Game({ input, audio, rng, options });
@@ -83,6 +86,7 @@ function boot() {
 
   function update() {
     try {
+      touch.update();
       input.update();
       if (input.globalPressed('mute')) audio.toggleMute();
       if (input.globalPressed('debug')) showDebug = !showDebug;
@@ -106,6 +110,7 @@ function boot() {
   function render() {
     try {
       game.draw(ctx);
+      touch.draw(ctx);
       if (showDebug || hooks.errors.length) drawDebug();
     } catch (e) { recordError(e); }
     view.present();

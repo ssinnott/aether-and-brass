@@ -98,6 +98,9 @@ function keyHeld(codes) {
   return false;
 }
 
+/** Touch-control state, OR-ed into player 1's input each step (see engine/touch.js). */
+let touchActions = null;
+
 /** Input singleton (ARCHITECTURE.md section 3 / 16). Players are 0 and 1. */
 export const input = {
   bindings,
@@ -146,7 +149,12 @@ export const input = {
           if (v) kb = true;
         }
         pl.gpAny = readGamepad(p, pl.cur, pl);
-        pl.device = pl.gpAny ? 'gamepad' : kb ? 'keyboard' : pl.device;
+        let touched = false;
+        if (p === 0 && touchActions) {
+          for (const a of ACTIONS) if (touchActions[a]) { pl.cur[a] = true; touched = true; }
+          if (touchActions.run) pl.run = true;
+        }
+        pl.device = touched ? 'touch' : pl.gpAny ? 'gamepad' : kb ? 'keyboard' : pl.device;
         // "this player pressed one of their OWN keys" (used for P2 drop-in): keyboard edge on a non-shared key, or a gamepad edge
         for (const code of keysPressedPending) if (joinCodes[p].has(code)) { pl.joinNow = true; break; }
         if (pl.gpAny && !pl.gpAnyPrev) pl.joinNow = true;
@@ -197,6 +205,8 @@ export const input = {
   globalPressed(name) { return !!globalPressed[name]; },
   /** Test hook: override devices with { left:true, attack:true, run:true ... } until cleared. */
   setVirtual(player, actions) { players[player].virtual = actions ? { ...actions } : null; },
+  /** On-screen touch controls: merged into player 1 alongside the keyboard (engine/touch.js). */
+  setTouch(actions) { touchActions = actions || null; },
   /** Test hook: remove the virtual override. */
   clearVirtual(player) { players[player].virtual = null; },
   /** Last device that produced input for the player ('keyboard' | 'gamepad' | 'virtual' | 'none'). */

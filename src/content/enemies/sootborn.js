@@ -352,8 +352,12 @@ const cutthroat = def({
 });
 
 // ---------------------------------------------------------------- B2 Scrap Slinger: olive skin, mustard cap, sling; keeps 140px, 3 loops then a reflectable bolt, panics when crowded
+// GDD 4 B2: a 6 px bolt at 4 px/f for 8; ANY player attack bats it back for 12. The generic reflect gives a batted
+// projectile a lob (it assumes a bomb), which sails a flat sling bolt clean over the Slinger's head; `onReflect` flattens
+// it again so the bolt actually travels back down the lane and connects. Without this the Slinger is unpunishable at range.
 const boltSpec = { style: 'stone', speed: 4, damage: 8, type: 'medium', kbX: 5, kbY: 0, hitstun: 18, maxDist: 320, life: 120, offsetX: 18, offsetY: 46, color: '#9a9a90', r: 5, muzzle: false,
-  reflectable: true, damageOnReflect: 12, reflectSpeed: 7, draw: drawBolt };
+  reflectable: true, damageOnReflect: 12, reflectSpeed: 7, draw: drawBolt,
+  onReflect(p) { p.vy = 0; p.gravity = 0; p.maxDist = 320; p.startX = p.x; } };
 const SLING_CARRY = { armR: [14, 36], weapon: 0, armL: [-30, -18] };
 const slingerAnims = Object.assign(gobAnims(SLING_CARRY), {
   // sling: raise 6f, three overhead loops over 30f (weapon.rot 0 -> 1080), release the bolt, 24f recovery
@@ -379,6 +383,15 @@ const slingerAnims = Object.assign(gobAnims(SLING_CARRY), {
     FK(6, { ...SLING_CARRY, torso: HUNCH + 4, head: -7, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
   ] },
 });
+/** GDD 4 B2: a player inside 50 px panics it into a 30f stagger that is a *free punish*, then it runs. The core's
+ *  stagger only stops it acting, so flag the window punishable while it lasts (readable in the F1 overlay, and it makes
+ *  any punish rule apply to the opening the GDD promises). */
+const slingerHooks = {
+  onUpdate(f, world) {
+    BASE_HOOKS.onUpdate(f, world);
+    if (f.panicFlee && f.aiState === 'STAGGER') f.punishable = true;
+  },
+};
 const slinger = def({
   variant: 'slinger', name: 'SCRAP SLINGER', role: 'ranged', hp: 35, damage: 1, speed: 1.1, score: 150, drops: 'none',
   build: { ...BASE.build, clan: CLAN.slinger, palette: { ...GOB_PAL, skin: '#8FA35A', sleeve: '#8FA35A', secondary: '#8FA35A', hair: '#55622E' },
@@ -386,7 +399,7 @@ const slinger = def({
   anims: slingerAnims,
   ai: { attackRange: 30, attacks: [{ anim: 'bash', range: 36, weight: 1 }], ranged: { anim: 'sling', minRange: 100, maxRange: 300, cooldown: 150, zAlign: true, keep: 140 },
     panicRange: 50, panicFrames: 30, retreatBudget: 120, retreatChance: 0.2 },
-});
+}, slingerHooks);
 
 // ---------------------------------------------------------------- B3 Firebrand: singed skin, orange clan colour, fuel tank + nozzle, welding goggles; flame cone + burn + fire puddle; tank explodes 30f after death
 const FLAME_BOX = { ...frontBox(70, hit(5, 'light', 1, 0, 12)), once: false, rehit: 10, id: 'flame', element: 'fire', status: { burn: { frames: 60, every: 20, damage: 2 } } };
@@ -522,15 +535,39 @@ const wranglerAnims = Object.assign(gobAnims(WR_CARRY), {
     FK(6, { ...WR_CARRY, handL: 1000, torso: HUNCH + 4, head: -7, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
   ] },
 });
+/**
+ * Backstep budget (GDD 4 B5: "backsteps 40 px after any 2 whiffed player attacks", with a cooldown). The cooldown alone
+ * still lets him hop away for the whole fight, so he also tires: BACKSTEP_BUDGET hops without landing a whip and he has
+ * to plant his feet for BACKSTEP_REST frames. Landing a hit means he has re-established the spacing he wanted, so the
+ * budget refills. `backstepCooldown` is the core's own gate (enemy.js tryBackstep), so writing it is all this needs.
+ */
+const BACKSTEP_BUDGET = 3, BACKSTEP_REST = 210;
+const wranglerHooks = {
+  onUpdate(f, world) {
+    BASE_HOOKS.onUpdate(f, world);
+    const hopping = f.state === ST.DODGE;
+    if (hopping && !f.wrHopping && ++f.wrHops >= BACKSTEP_BUDGET) { f.wrHops = 0; f.backstepCooldown = BACKSTEP_REST; }
+    f.wrHopping = hopping;
+  },
+  onSpawn(f) { f.wrHops = 0; f.wrHopping = false; },
+  onHitDealt(f) { f.wrHops = 0; },
+};
 const wrangler = def({
   variant: 'wrangler', name: 'GUTTER WRANGLER', role: 'elite', hp: 60, damage: 1, speed: 1.5, score: 400, drops: 'score',
   build: { ...BASE.build, scale: 0.77, clan: CLAN.wrangler, palette: { ...GOB_PAL, skin: '#9EC96D', sleeve: '#C9BB95', secondary: '#9EC96D', hair: '#5A7A38', primary: CLAN.wrangler, dark: '#3A3040' },
     gob: { tunic: 'waistcoat', shirt: '#C9BB95', shorts: '#3A3040' }, weapon: { attach: 'handR', length: 56, draw: drawWhip, headAt: 30 },
     accessories: [{ attach: 'head', draw: drawTopHat }, { attach: 'head', draw: drawMonocle }, { attach: 'handL', draw: drawNet }] },
   anims: wranglerAnims,
-  ai: { attackRange: 56, zTolerance: 12, attacks: [{ anim: 'whip', range: 70, weight: 3 }], ranged: { anim: 'net', minRange: 80, maxRange: 220, cooldown: 240, zAlign: true, keep: 110 },
-    backstepAfterWhiffs: { whiffs: 2, dist: 40, iframes: 8, cooldown: 60 }, targetBy: 'highestCombo', retreatBudget: 60, attackCooldown: [30, 70], ignoresTokens: false },
-});
+  // GDD 4 B5 gives him NO standoff distance: he is a fast melee elite who wants to be in whip range, and his defence is
+  // the whiff backstep, not kiting. `ranged.keep: 110` had him park at 110-120 px — outside every hero's reach — and
+  // shuffle there for the whole fight, so nothing could ever touch him. `keep: 16` (below `attackRange`, so the melee
+  // fallback in thinkRanged always takes over first) makes him close and whip while the net keeps its own 240f cooldown,
+  // and a 24-frame retreat budget leaves him only a short give-ground shuffle between attacks instead of endless kiting.
+  ai: { attackRange: 56, zTolerance: 12, attacks: [{ anim: 'whip', range: 70, weight: 3 }],
+    ranged: { anim: 'net', minRange: 70, maxRange: 210, cooldown: 240, zAlign: true, keep: 16 },
+    backstepAfterWhiffs: { whiffs: 2, dist: 40, iframes: 8, cooldown: 90, range: 100 }, targetBy: 'highestCombo',
+    retreatChance: 0.1, retreatBudget: 24, attackCooldown: [30, 70], ignoresTokens: false },
+}, wranglerHooks);
 
 /** Sootborn variants in GDD order. */
 export const SOOTBORN = [cutthroat, slinger, firebrand, hulk, wrangler];

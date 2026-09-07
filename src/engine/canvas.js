@@ -25,34 +25,41 @@ export function createCanvas(mount) {
 
   const api = {
     ctx, canvas, displayCanvas: display, scale: 1, dpr: 1, offsetX: 0, offsetY: 0,
-    /** Recompute the integer scale factor and display canvas size from the window. */
+    /** Size the display canvas to the window, keeping the 16:9 game rect and crisp pixels. */
     resize() {
-      // Integer scale is chosen in DEVICE pixels so HiDPI screens get crisp, evenly sized game pixels.
       const dpr = Math.max(1, Math.min(4, window.devicePixelRatio || 1));
       const cw = Math.max(1, window.innerWidth || VIEW_W);
       const ch = Math.max(1, window.innerHeight || VIEW_H);
-      const w = Math.round(cw * dpr), h = Math.round(ch * dpr);
       api.dpr = dpr;
-      api.scale = Math.max(1, Math.floor(Math.min(w / VIEW_W, h / VIEW_H)));
-      display.width = w;
-      display.height = h;
-      display.style.width = cw + 'px';
-      display.style.height = ch + 'px';
-      api.offsetX = Math.floor((w - VIEW_W * api.scale) / 2);
-      api.offsetY = Math.floor((h - VIEW_H * api.scale) / 2);
+      // CSS pixels per game pixel that would exactly fit the window.
+      const fit = Math.min(cw / VIEW_W, ch / VIEW_H);
+      // Prefer a whole number of CSS pixels per game pixel, but only when that still fills most of
+      // the window: on a phone (fit < 1) the next whole step would overflow, and on a small window
+      // it would waste half the screen, so there we scale to fit instead.
+      const whole = Math.floor(fit);
+      const cssScale = whole >= 1 && whole / fit >= 0.8 ? whole : fit;
+      // The backing store keeps a whole number of device pixels per game pixel so the blit is exact.
+      api.scale = Math.max(1, Math.min(8, Math.round(cssScale * dpr)));
+      api.cssScale = cssScale;
+      display.width = VIEW_W * api.scale;
+      display.height = VIEW_H * api.scale;
+      display.style.width = Math.round(VIEW_W * cssScale) + 'px';
+      display.style.height = Math.round(VIEW_H * cssScale) + 'px';
+      // The canvas is exactly the game rect now; the page centres it, so there is no inner letterbox.
+      api.offsetX = 0;
+      api.offsetY = 0;
       dctx.imageSmoothingEnabled = false;
     },
-    /** Blit the internal canvas to the display canvas (letterboxed, pixelated). */
+    /** Blit the internal canvas to the display canvas (pixelated). */
     present() {
       dctx.imageSmoothingEnabled = false;
-      dctx.fillStyle = '#000';
-      dctx.fillRect(0, 0, display.width, display.height);
-      dctx.drawImage(canvas, 0, 0, VIEW_W, VIEW_H, api.offsetX, api.offsetY, VIEW_W * api.scale, VIEW_H * api.scale);
+      dctx.drawImage(canvas, 0, 0, VIEW_W, VIEW_H, 0, 0, display.width, display.height);
     },
-    /** Map a client (mouse) coordinate to internal canvas space. */
+    /** Map a client (pointer) coordinate to internal canvas space. */
     toInternal(clientX, clientY) {
       const r = display.getBoundingClientRect();
-      return { x: ((clientX - r.left) * api.dpr - api.offsetX) / api.scale, y: ((clientY - r.top) * api.dpr - api.offsetY) / api.scale };
+      if (!r.width || !r.height) return { x: 0, y: 0 };
+      return { x: (clientX - r.left) * (VIEW_W / r.width), y: (clientY - r.top) * (VIEW_H / r.height) };
     },
   };
   api.resize();
