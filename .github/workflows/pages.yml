@@ -1,13 +1,14 @@
 # Build the single-file game and publish it to GitHub Pages.
 #
-# One-time setup, and it can only be done by a repository admin in the browser: open
-# Settings -> Pages and set "Build and deployment" -> Source to "GitHub Actions". A workflow
-# cannot do it for you -- creating the Pages site needs admin rights that the built-in
-# GITHUB_TOKEN does not have, so actions/configure-pages with enablement: true fails here with
-# "Resource not accessible by integration".
+# Pages is enabled on this repository with Source = GitHub Actions, so a push to main
+# redeploys https://ssinnott.github.io/aether-and-brass/
 #
-# Once that switch is set, every push to a listed branch redeploys
-# https://ssinnott.github.io/aether-and-brass/
+# Every branch builds, but only main deploys: the github-pages environment restricts
+# deployments to the default branch, and a deploy from anywhere else is rejected with
+# 'Branch "..." is not allowed to deploy to github-pages due to environment protection rules'.
+# To publish from another branch, add it under
+# Settings -> Environments -> github-pages -> Deployment branches, then run this workflow by
+# hand from the Actions tab on that branch.
 name: Deploy to GitHub Pages
 
 on:
@@ -56,8 +57,12 @@ jobs:
         with:
           path: _site
 
+  # main deploys automatically; a manual run can deploy any branch the github-pages
+  # environment permits. Other branches build only, so a push does not fail on the
+  # environment's branch rule.
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

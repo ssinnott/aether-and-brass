@@ -96,21 +96,14 @@ Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&c
 ### Deployment
 
 `.github/workflows/pages.yml` builds the single-file game and publishes it to GitHub Pages on
-every push to `main`, serving it at `https://ssinnott.github.io/aether-and-brass/`.
+every push to `main`, serving it at `https://ssinnott.github.io/aether-and-brass/`. Pages is
+already switched on for the repository with **Source: GitHub Actions**.
 
-It needs Pages switched on once, by a repository admin in the browser:
-
-1. Open **Settings → Pages**.
-2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
-
-That step cannot be automated. Creating the Pages site requires admin rights the workflow's
-built-in `GITHUB_TOKEN` does not have, so `actions/configure-pages` with `enablement: true`
-fails with *Resource not accessible by integration*; only an admin (or a personal access token
-with `repo` scope) can create the site.
-
-The next push, or a manual run from the Actions tab, then publishes. If the deploy job reports
-that a branch is not allowed to deploy, either merge to `main` or add that branch under
-**Settings → Environments → github-pages → Deployment branches**.
+Every branch builds, but only `main` deploys: the `github-pages` environment restricts
+deployments to the default branch, so a deploy from anywhere else is rejected with *Branch
+"…" is not allowed to deploy to github-pages due to environment protection rules*. To publish
+from another branch, add it under **Settings → Environments → github-pages → Deployment
+branches**, then start the workflow by hand from the Actions tab with that branch selected.
 
 ### Documentation
 
