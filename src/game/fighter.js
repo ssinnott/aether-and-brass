@@ -61,7 +61,7 @@ import { buildRig, drawRig } from '../art/rig.js';
 import { burstHit, burstDust, floatText } from '../art/fx.js';
 import { audio } from '../engine/audio.js';
 import { clamp, sign } from '../engine/math.js';
-import { drawText } from '../engine/text.js';
+import { drawText, measureText } from '../engine/text.js';
 import { applyStatus, clearStatus, tickStatuses, tickFrozen, drawStatuses, statusTint } from './status.js';
 import { normalizeTraits } from './traits.js';
 import { grabMethods, BOUNCE_VY } from './grabs.js';
@@ -607,7 +607,14 @@ export class Fighter extends Entity {
       ctx.fillStyle = '#120c14'; ctx.fillRect(sx - w / 2 - 1, top - 1, w + 2, hh + 2);
       ctx.fillStyle = '#5a1a1a'; ctx.fillRect(sx - w / 2, top, w, hh);
       ctx.fillStyle = this.hp / this.maxHp > 0.3 ? UI.hp : UI.hpLow; ctx.fillRect(sx - w / 2, top, Math.round(w * this.hp / this.maxHp), hh);
-      if (this.def.elite) drawText(ctx, this.name, sx, top - 9, { size: 1, color: UI.paper, align: 'center' });
+      if (this.def.elite) {
+        // Two elites standing close would stamp their labels on the same row, so alternate the
+        // row by entity id and back the text with a plate to keep it readable over anything behind.
+        const ly = top - 9 - (this.id & 1) * 9;
+        const lw = measureText(this.name, 1) + 4;
+        ctx.fillStyle = 'rgba(18,12,20,0.75)'; ctx.fillRect(Math.round(sx - lw / 2), ly - 1, lw, 9);
+        drawText(ctx, this.name, sx, ly, { size: 1, color: UI.paper, align: 'center' });
+      }
     }
   }
   /** Debug: draw hurtboxes and current hitboxes. */
