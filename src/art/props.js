@@ -1,0 +1,290 @@
+// Breakable / static prop renderers (GDD section 6 props) in the ART_STYLE look: 1px near-black outline, three flat tones
+// per material (highlight cap on the lit top/left edge, shadow band on the lower ~35%), integer coordinates.
+// Pure draw hooks + size/hp data; game/items.js `Prop` owns the state (idle / rolling / breaking / fuse / falling).
+// Every entry: { w, h, hp, drops, draw(ctx, sx, sy, prop, frame), color, yOff?, roll?, rollHit?, explode?, jumpOnly?, valve?, pieces? }.
+import { rrect, circle, gear, line, pathPoly, paint } from './shapes.js';
+
+const OL = '#2B2B30';
+const BRASS = '#C9963A', IRON = '#3A3F4B', WOOD = '#9a7040', COPPER = '#B87333', GLOW = '#FFB347';
+const RAMP = { hi: 1.22, sh: 0.66 };
+const toneCache = new Map();
+/** Three-tone ramp for a hex colour (cached): { hi, base, sh }. Shadows drift cool, highlights warm. */
+export function tones(hex) {
+  let t = toneCache.get(hex);
+  if (t) return t;
+  const n = parseInt(hex.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const mk = (kr, kg, kb) => '#' + [r * kr, g * kg, b * kb].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+  t = { hi: mk(RAMP.hi, RAMP.hi * 0.98, RAMP.hi * 0.9), base: hex, sh: mk(RAMP.sh, RAMP.sh * 0.98, RAMP.sh * 1.15) };
+  toneCache.set(hex, t);
+  return t;
+}
+let flash = false;
+/** Colour through the hit-flash: white while the prop flashes. */
+const C = (hex) => (flash ? '#ffffff' : hex);
+
+/** Outlined box with a highlight cap (top + left 1px) and a shadow band on the lower `band` fraction. */
+function box(ctx, x, y, w, h, hex, r = 1, band = 0.35) {
+  const t = tones(hex);
+  rrect(ctx, x, y, w, h, r, C(t.base), OL, 1);
+  if (flash) return;
+  ctx.fillStyle = t.sh; ctx.fillRect(x + 1, y + h - Math.round(h * band), w - 2, Math.round(h * band) - 1);
+  ctx.fillStyle = t.hi; ctx.fillRect(x + 1, y + 1, w - 2, 1); ctx.fillRect(x + 1, y + 1, 1, h - 2);
+}
+/** Upright cylinder (barrel / drum): shadow on the right third, highlight stripe on the left. */
+function cyl(ctx, x, y, w, h, hex, r = 4) {
+  const t = tones(hex);
+  rrect(ctx, x, y, w, h, r, C(t.base), OL, 1);
+  if (flash) return;
+  ctx.fillStyle = t.sh; ctx.fillRect(x + w - Math.round(w * 0.32), y + 2, Math.round(w * 0.32) - 1, h - 4);
+  ctx.fillStyle = t.hi; ctx.fillRect(x + 2, y + 2, 2, h - 4);
+}
+/** Outlined polygon with an optional flat shadow polygon. */
+function poly(ctx, pts, hex, shadowPts = null) {
+  const t = tones(hex);
+  pathPoly(ctx, pts); paint(ctx, C(t.base), OL, 1);
+  if (flash || !shadowPts) return;
+  pathPoly(ctx, shadowPts); paint(ctx, t.sh, null, 0);
+}
+/** Flat detail fill (no ramp). */
+function flat(ctx, x, y, w, h, hex) { ctx.fillStyle = C(hex); ctx.fillRect(x, y, w, h); }
+function rivets(ctx, x0, y, x1, step, hex = BRASS) { ctx.fillStyle = C(tones(hex).hi); for (let x = x0; x <= x1; x += step) ctx.fillRect(x, y, 1, 1); }
+function glow(ctx, x, y, w, h, hex, a) { ctx.globalAlpha = a; ctx.fillStyle = hex; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; }
+
+// ---------------------------------------------------------------- Section 1: Sootfoot Docks
+function crate(ctx, sx, sy, p) {
+  const w = p.w, h = p.h, x = sx - w / 2, y = sy - h;
+  box(ctx, x, y, w, h, WOOD, 2);
+  if (flash) return;
+  const t = tones(WOOD);
+  // plank seams + diagonal brace + corner irons
+  ctx.fillStyle = t.sh; ctx.fillRect(x + 2, y + Math.round(h / 3), w - 4, 1); ctx.fillRect(x + 2, y + Math.round(h * 2 / 3), w - 4, 1);
+  ctx.strokeStyle = t.sh; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + 4, y + 4); ctx.lineTo(x + w - 4, y + h - 4); ctx.stroke();
+  ctx.strokeStyle = t.hi; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + 4, y + 3); ctx.lineTo(x + w - 5, y + h - 5); ctx.stroke();
+  ctx.fillStyle = IRON; ctx.fillRect(x + 1, y + 1, 4, 4); ctx.fillRect(x + w - 5, y + 1, 4, 4); ctx.fillRect(x + 1, y + h - 5, 4, 4); ctx.fillRect(x + w - 5, y + h - 5, 4, 4);
+  rivets(ctx, x + 2, y + 2, x + w - 4, w - 6);
+}
+function barrel(ctx, sx, sy, p) {
+  const w = p.w, h = p.h, x = sx - w / 2, y = sy - h;
+  ctx.save();
+  if (p.angle) { ctx.translate(sx, sy - h / 2); ctx.rotate(p.angle); ctx.translate(-sx, -(sy - h / 2)); }
+  cyl(ctx, x, y, w, h, '#7a5230', 5);
+  if (!flash) {
+    // hoops (brass, riveted) top and bottom, bung hole
+    flat(ctx, x + 1, y + 5, w - 2, 3, tones(BRASS).base); flat(ctx, x + 1, y + h - 8, w - 2, 3, tones(BRASS).base);
+    flat(ctx, x + 1, y + 5, w - 2, 1, tones(BRASS).hi); flat(ctx, x + 1, y + h - 8, w - 2, 1, tones(BRASS).hi);
+    ctx.fillStyle = tones('#7a5230').sh; ctx.fillRect(x + Math.round(w / 2) - 1, y + 10, 2, h - 20);
+    ctx.fillStyle = OL; ctx.fillRect(x + Math.round(w / 2) - 2, y + Math.round(h / 2) - 1, 4, 3);
+  }
+  ctx.restore();
+}
+function winch(ctx, sx, sy, p, frame) {
+  // A-frame base, cable drum, crank handle, chain running up-left to the mooring gantry.
+  box(ctx, sx - 22, sy - 10, 44, 10, IRON, 2);
+  poly(ctx, [sx - 16, sy - 10, sx - 8, sy - 36, sx + 8, sy - 36, sx + 16, sy - 10], '#4a5563', [sx - 8, sy - 26, sx + 8, sy - 26, sx + 12, sy - 12, sx - 12, sy - 12]);
+  const spin = p.state === 'rolling' ? frame * 0.3 : frame * 0.01;
+  gear(ctx, sx, sy - 24, 12, 10, C(tones(BRASS).base), OL, 1, spin, 4, C('#5a3a20'));
+  if (flash) return;
+  ctx.fillStyle = tones(BRASS).hi; ctx.fillRect(sx - 4, sy - 33, 8, 1);
+  line(ctx, sx + 10, sy - 24, sx + 20, sy - 34, '#3A3F4B', 3); circle(ctx, sx + 20, sy - 34, 3, tones(BRASS).base, OL, 1);
+  ctx.strokeStyle = '#5a5a62'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx - 10, sy - 26); ctx.lineTo(sx - 40, sy - 70); ctx.stroke();
+  ctx.fillStyle = '#9a9aa4'; for (let i = 0; i < 6; i++) ctx.fillRect(sx - 12 - i * 5, sy - 29 - i * 7, 2, 2);
+}
+
+// ---------------------------------------------------------------- Section 2: Foundry Row
+function mold(ctx, sx, sy, p, frame) {
+  // ingot mould trough with a glowing bar inside (light pulses)
+  poly(ctx, [sx - 22, sy, sx + 22, sy, sx + 17, sy - 16, sx - 17, sy - 16], '#4a4e58', [sx - 21, sy - 1, sx + 21, sy - 1, sx + 20, sy - 6, sx - 20, sy - 6]);
+  if (flash) return;
+  ctx.fillStyle = tones('#4a4e58').hi; ctx.fillRect(sx - 16, sy - 15, 32, 1);
+  const k = 0.6 + 0.4 * Math.sin(frame * 0.12);
+  flat(ctx, sx - 12, sy - 13, 24, 6, '#ff7a1f'); flat(ctx, sx - 10, sy - 13, 12, 2, '#FFD27A');
+  glow(ctx, sx - 16, sy - 20, 32, 14, GLOW, 0.18 * k);
+  ctx.fillStyle = IRON; ctx.fillRect(sx - 20, sy - 4, 40, 1);
+}
+function cart(ctx, sx, sy, p) {
+  const w = p.w, h = p.h, x = sx - w / 2;
+  ctx.save();
+  if (p.angle) { ctx.translate(sx, sy - 8); ctx.rotate(p.angle * 0.15); ctx.translate(-sx, -(sy - 8)); }
+  // hopper body (tapered), rim, coal lumps, axle + two wheels
+  poly(ctx, [x, sy - h + 8, x + w, sy - h + 8, x + w - 6, sy - 8, x + 6, sy - 8], IRON, [x + 5, sy - 18, x + w - 5, sy - 18, x + w - 7, sy - 9, x + 7, sy - 9]);
+  if (!flash) {
+    flat(ctx, x + 1, sy - h + 8, w - 2, 2, tones(IRON).hi);
+    rivets(ctx, x + 4, sy - h + 12, x + w - 5, 8, '#9aa6b2');
+    for (let i = 0; i < 6; i++) { const cx = x + 6 + i * ((w - 12) / 5), cy = sy - h + 5 - (i % 2) * 3; circle(ctx, cx, cy, 4, '#1a1418', OL, 1); ctx.fillStyle = '#3a3a44'; ctx.fillRect(cx - 2, cy - 3, 2, 1); }
+  }
+  const wheel = (cx) => { circle(ctx, cx, sy - 5, 6, C('#5a5a62'), OL, 1); if (!flash) { ctx.fillStyle = tones('#5a5a62').sh; ctx.fillRect(cx - 3, sy - 3, 6, 3); circle(ctx, cx, sy - 5, 2, tones(BRASS).base, OL, 1); } };
+  wheel(sx - 14); wheel(sx + 14);
+  ctx.restore();
+}
+function drum(ctx, sx, sy, p, frame) {
+  const w = p.w, h = p.h, x = sx - w / 2, y = sy - h;
+  if (p.state === 'fuse') {
+    // cracked, smoking drum about to blow: dark shell, orange seams pulsing faster as the fuse runs out
+    cyl(ctx, x, y + 6, w, h - 6, '#4a2020', 3);
+    const k = (Math.sin(p.t * (0.3 + p.t * 0.02)) + 1) / 2;
+    glow(ctx, x + 3, y + 10, w - 6, h - 14, '#ff7a1f', 0.35 + 0.5 * k);
+    ctx.fillStyle = '#FFD27A'; ctx.fillRect(x + 6, y + 14, 2, h - 24); ctx.fillRect(x + w - 9, y + 20, 2, h - 30);
+    return;
+  }
+  cyl(ctx, x, y, w, h, '#8a2e2e', 3);
+  if (flash) return;
+  flat(ctx, x + 1, y + 6, w - 2, 3, '#c8c0a0'); flat(ctx, x + 1, y + h - 12, w - 2, 3, '#c8c0a0');
+  ctx.fillStyle = tones('#c8c0a0').sh; ctx.fillRect(x + w - 8, y + 6, 6, 3); ctx.fillRect(x + w - 8, y + h - 12, 6, 3);
+  // hazard label: yellow plate with a flame mark
+  flat(ctx, x + 6, y + 14, w - 12, 12, '#ffe070'); ctx.fillStyle = OL; ctx.fillRect(x + Math.round(w / 2) - 2, y + 17, 4, 6); ctx.fillRect(x + Math.round(w / 2) - 1, y + 15, 2, 3);
+  ctx.fillStyle = tones('#8a2e2e').hi; ctx.fillRect(x + 4, y + 2, w - 8, 1);
+}
+function displayCase(ctx, sx, sy, p, frame) {
+  // wooden plinth, glass case with a brass frame, golden sprocket turning inside
+  box(ctx, sx - 16, sy - 14, 32, 14, '#5a3a20', 2);
+  box(ctx, sx - 14, sy - 46, 28, 32, BRASS, 1, 0.2);
+  if (flash) return;
+  ctx.fillStyle = 'rgba(160,220,240,0.35)'; ctx.fillRect(sx - 12, sy - 44, 24, 28);
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(sx - 11, sy - 43, 3, 24);
+  gear(ctx, sx, sy - 30, 7, 8, '#ffd84a', OL, 1, frame * 0.03, 2, '#fff4b0');
+  ctx.fillStyle = tones('#5a3a20').hi; ctx.fillRect(sx - 15, sy - 13, 30, 1);
+}
+function bucket(ctx, sx, sy, p, frame) {
+  // hanging bucket on a chain from the gantry: swings gently, the roast inside peeks out
+  const sw = Math.sin(frame * 0.05 + p.x * 0.01) * 3, top = sy - 72;
+  ctx.strokeStyle = '#5a5a62'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx, top); ctx.lineTo(sx + sw, sy - 34); ctx.stroke();
+  ctx.fillStyle = '#9a9aa4'; for (let i = 0; i < 5; i++) ctx.fillRect(sx + Math.round(sw * i / 5) - 1, top + 4 + i * 8, 2, 3);
+  const bx = sx + sw;
+  ctx.strokeStyle = C('#6a6a72'); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bx, sy - 30, 10, Math.PI, 0); ctx.stroke();
+  poly(ctx, [bx - 12, sy - 30, bx + 12, sy - 30, bx + 9, sy - 6, bx - 9, sy - 6], '#6a6a72', [bx + 4, sy - 29, bx + 11, sy - 29, bx + 8, sy - 7, bx + 4, sy - 7]);
+  if (flash) return;
+  flat(ctx, bx - 11, sy - 29, 22, 2, tones('#6a6a72').hi); flat(ctx, bx - 12, sy - 20, 24, 2, tones(BRASS).base);
+  circle(ctx, bx - 2, sy - 32, 5, '#c26a2a', OL, 1); circle(ctx, bx + 5, sy - 36, 2, '#f0e0c0', OL, 1);
+}
+
+// ---------------------------------------------------------------- Section 3: The Brass Funicular
+function trunk(ctx, sx, sy, p) {
+  const w = p.w, h = p.h, x = sx - w / 2, y = sy - h;
+  box(ctx, x, y + 6, w, h - 6, '#6a3a2a', 2);
+  rrect(ctx, x, y, w, 10, 4, C(tones('#7a4636').base), OL, 1);
+  if (flash) return;
+  ctx.fillStyle = tones('#7a4636').hi; ctx.fillRect(x + 2, y + 1, w - 4, 1);
+  flat(ctx, x + 1, y + 9, w - 2, 2, tones(BRASS).base); flat(ctx, x + 5, y + 2, 3, h - 4, tones(BRASS).sh); flat(ctx, x + w - 8, y + 2, 3, h - 4, tones(BRASS).sh);
+  rrect(ctx, sx - 4, y + 7, 8, 7, 1, tones(BRASS).base, OL, 1); ctx.fillStyle = OL; ctx.fillRect(sx - 1, y + 10, 2, 2);
+  ctx.fillStyle = '#e8d8b0'; ctx.fillRect(x + w - 16, y + 14, 8, 6); ctx.fillStyle = '#c04040'; ctx.fillRect(x + w - 15, y + 15, 6, 1);
+}
+function mailCart(ctx, sx, sy, p) {
+  // hand cart: slatted crate body, mail sacks piled on top, two spoked wheels + push handle
+  box(ctx, sx - 18, sy - 30, 36, 20, '#7a4a2e', 2);
+  if (!flash) { ctx.fillStyle = tones('#7a4a2e').sh; for (let i = 1; i < 4; i++) ctx.fillRect(sx - 16, sy - 30 + i * 5, 32, 1); }
+  rrect(ctx, sx - 12, sy - 40, 14, 12, 5, C(tones('#c8b070').base), OL, 1); rrect(ctx, sx - 2, sy - 42, 14, 14, 5, C(tones('#c8b070').base), OL, 1);
+  if (!flash) { ctx.fillStyle = tones('#c8b070').sh; ctx.fillRect(sx - 8, sy - 32, 8, 3); ctx.fillRect(sx + 2, sy - 32, 8, 3); ctx.fillStyle = '#5a3a20'; ctx.fillRect(sx - 8, sy - 38, 6, 1); ctx.fillRect(sx + 2, sy - 40, 6, 1); }
+  line(ctx, sx + 18, sy - 28, sx + 26, sy - 44, C(IRON), 3);
+  for (const cx of [sx - 10, sx + 10]) { circle(ctx, cx, sy - 6, 7, C('#3a3a44'), OL, 1); if (!flash) { ctx.strokeStyle = '#9aa6b2'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx - 5, sy - 6); ctx.lineTo(cx + 5, sy - 6); ctx.moveTo(cx, sy - 11); ctx.lineTo(cx, sy - 1); ctx.stroke(); circle(ctx, cx, sy - 6, 2, tones(BRASS).base, OL, 1); } }
+}
+function lantern(ctx, sx, sy, p, frame) {
+  // iron post with a foot plate and a brass lantern head; warm flicker
+  box(ctx, sx - 8, sy - 4, 16, 4, IRON, 1);
+  box(ctx, sx - 2, sy - 48, 4, 44, IRON, 1, 0);
+  if (!flash) { ctx.fillStyle = tones(IRON).sh; ctx.fillRect(sx + 1, sy - 46, 1, 40); }
+  box(ctx, sx - 7, sy - 64, 14, 16, BRASS, 2, 0.3);
+  poly(ctx, [sx - 8, sy - 64, sx + 8, sy - 64, sx, sy - 70], BRASS);
+  if (flash) return;
+  const k = 0.55 + 0.25 * Math.sin(frame * 0.2 + p.x);
+  glow(ctx, sx - 5, sy - 62, 10, 12, '#ffd070', k); glow(ctx, sx - 12, sy - 70, 24, 28, '#ffb040', 0.12 * k);
+  ctx.fillStyle = '#FFD27A'; ctx.fillRect(sx - 1, sy - 58, 2, 4);
+}
+
+// ---------------------------------------------------------------- Section 4: The Heart-Engine
+function urn(ctx, sx, sy, p) {
+  // ceramic urn: flared lip, belly, foot; brass band; a violet gear banner motif
+  poly(ctx, [sx - 7, sy - 40, sx + 7, sy - 40, sx + 14, sy - 26, sx + 11, sy - 6, sx + 8, sy, sx - 8, sy, sx - 11, sy - 6, sx - 14, sy - 26],
+    '#8a6a40', [sx + 4, sy - 38, sx + 7, sy - 38, sx + 13, sy - 26, sx + 10, sy - 6, sx + 7, sy - 1, sx + 4, sy - 1]);
+  if (flash) return;
+  rrect(ctx, sx - 9, sy - 44, 18, 5, 1, tones('#8a6a40').hi, OL, 1);
+  flat(ctx, sx - 12, sy - 27, 24, 3, tones(BRASS).base); flat(ctx, sx - 12, sy - 27, 24, 1, tones(BRASS).hi);
+  ctx.fillStyle = tones('#8a6a40').hi; ctx.fillRect(sx - 9, sy - 22, 2, 12);
+  gear(ctx, sx, sy - 16, 4, 6, '#5B2A86', OL, 1, 0, 1.5, '#8a6a40');
+}
+function cabinet(ctx, sx, sy, p) {
+  // tall gothic cabinet: two violet doors with brass handles, pointed cornice
+  box(ctx, sx - 17, sy - 48, 34, 48, '#3B3A46', 2);
+  poly(ctx, [sx - 19, sy - 48, sx + 19, sy - 48, sx, sy - 56], '#3B3A46');
+  if (flash) return;
+  rrect(ctx, sx - 14, sy - 44, 12, 38, 1, '#5B2A86', OL, 1); rrect(ctx, sx + 2, sy - 44, 12, 38, 1, '#5B2A86', OL, 1);
+  ctx.fillStyle = tones('#5B2A86').hi; ctx.fillRect(sx - 13, sy - 43, 10, 1); ctx.fillRect(sx + 3, sy - 43, 10, 1);
+  ctx.fillStyle = tones('#5B2A86').sh; ctx.fillRect(sx - 13, sy - 20, 10, 13); ctx.fillRect(sx + 3, sy - 20, 10, 13);
+  flat(ctx, sx - 5, sy - 27, 2, 5, tones(BRASS).base); flat(ctx, sx + 3, sy - 27, 2, 5, tones(BRASS).base);
+  poly(ctx, [sx - 10, sy - 40, sx - 6, sy - 40, sx - 8, sy - 34], '#4DF0E0'); poly(ctx, [sx + 6, sy - 40, sx + 10, sy - 40, sx + 8, sy - 34], '#FFB347');
+}
+function valve(ctx, sx, sy, p, frame) {
+  // wall pressure valve: vertical pipe, red hand-wheel, gauge with a needle in the red
+  box(ctx, sx - 4, sy - 44, 8, 44, BRASS, 1, 0);
+  if (!flash) { ctx.fillStyle = tones(BRASS).sh; ctx.fillRect(sx + 1, sy - 42, 2, 40); ctx.fillStyle = tones(BRASS).hi; ctx.fillRect(sx - 3, sy - 42, 1, 40); }
+  box(ctx, sx - 7, sy - 12, 14, 4, IRON, 1); box(ctx, sx - 7, sy - 34, 14, 4, IRON, 1);
+  const spin = p.state === 'idle' ? frame * 0.004 : frame * 0.2;
+  gear(ctx, sx, sy - 48, 11, 6, C('#c02020'), OL, 1, spin, 4, C(tones(BRASS).base));
+  if (flash) return;
+  circle(ctx, sx + 14, sy - 26, 5, '#e8e8e0', OL, 1);
+  ctx.fillStyle = '#c02020'; ctx.fillRect(sx + 15, sy - 30, 3, 2);
+  const a = -0.6 + Math.sin(frame * 0.15) * 0.15; line(ctx, sx + 14, sy - 26, sx + 14 + Math.cos(a) * 4, sy - 26 + Math.sin(a) * 4, OL, 1);
+  glow(ctx, sx - 1, sy - 56, 2, 4, '#ffffff', 0.4 + 0.3 * Math.sin(frame * 0.3));
+}
+function chandelier(ctx, sx, sy, p, frame) {
+  // hangs from the vault on a chain; drawn around its own `p.y` (falls after a jump attack)
+  const top = sy - 200, cy = sy - p.hangY;
+  if (p.state !== 'falling' && p.state !== 'breaking') { ctx.strokeStyle = '#5a5a62'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx, top); ctx.lineTo(sx, cy - 26); ctx.stroke(); ctx.fillStyle = '#9a9aa4'; for (let y = top + 4; y < cy - 28; y += 8) ctx.fillRect(sx - 1, y, 2, 3); }
+  ctx.save(); ctx.translate(sx, cy); if (p.state === 'falling') ctx.rotate(Math.sin(p.t * 0.5) * 0.08);
+  poly(ctx, [-30, 0, 30, 0, 22, 10, -22, 10], BRASS, [-20, 1, 28, 1, 22, 9, -20, 9]);
+  box(ctx, -3, -26, 6, 26, BRASS, 1, 0);
+  circle(ctx, 0, -28, 5, C(tones(BRASS).base), OL, 1);
+  if (!flash) {
+    ctx.fillStyle = tones(BRASS).hi; ctx.fillRect(-28, 1, 56, 1);
+    for (let i = -2; i <= 2; i++) {
+      const cx = i * 12; flat(ctx, cx - 1, -8, 2, 8, '#F4F1E8');
+      const k = 0.6 + 0.4 * Math.sin(frame * 0.25 + i); ctx.fillStyle = '#FFD27A'; ctx.fillRect(cx - 1, -11, 2, 3); glow(ctx, cx - 4, -14, 8, 8, '#ffb040', 0.35 * k);
+    }
+    ctx.fillStyle = '#4DF0E0'; for (let i = -2; i <= 2; i++) ctx.fillRect(i * 12 - 1, 4, 2, 3);
+  }
+  ctx.restore();
+}
+
+/** Generic break animation: the prop splits into four quads that tumble outward (t in 0..1). */
+export function drawPieces(ctx, sx, sy, p, t) {
+  const info = p.info, hex = info.color || WOOD, tn = tones(hex), w = p.w, h = p.h;
+  const e = t * (2 - t);
+  ctx.globalAlpha = 1 - t * t;
+  for (let i = 0; i < 4; i++) {
+    const dx = (i % 2 ? 1 : -1) * (w * 0.3 + e * 22), dy = -h * 0.5 - (i < 2 ? 1 : 0.4) * e * 26 + t * t * 40, rot = (i % 2 ? 1 : -1) * e * 1.6 + i;
+    ctx.save(); ctx.translate(sx + dx, sy + dy + (i < 2 ? -h * 0.2 : h * 0.2)); ctx.rotate(rot);
+    rrect(ctx, -w * 0.22, -h * 0.18, w * 0.44, h * 0.36, 1, i < 2 ? tn.hi : tn.base, OL, 1);
+    ctx.fillStyle = tn.sh; ctx.fillRect(-w * 0.22 + 1, h * 0.02, w * 0.44 - 2, h * 0.14);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** Prop catalogue. Sizes are hurtbox w/h in px (rigs stand ~72px). */
+export const PROP_TYPES = {
+  crate: { w: 34, h: 30, hp: 20, drops: ['brassCog', 'brassCog'], draw: crate, color: WOOD },
+  barrel: { w: 26, h: 36, hp: 24, drops: 'coalScrip', draw: barrel, color: '#7a5230', roll: 40, rollHit: 10 },
+  winch: { w: 44, h: 40, hp: 40, drops: 'aetherVial', draw: winch, color: '#4a5563' },
+  mold: { w: 44, h: 16, hp: 30, drops: 'brassCog', draw: mold, color: '#4a4e58' },
+  cart: { w: 48, h: 36, hp: 40, drops: 'meatPie', draw: cart, color: IRON, roll: 60, rollHit: 15 },
+  drum: { w: 26, h: 38, hp: 20, drops: 'aetherVial', draw: drum, color: '#8a2e2e', explode: { delay: 30, radius: 40, damage: 20 } },
+  case: { w: 30, h: 46, hp: 30, drops: 'goldenSprocket', draw: displayCase, color: '#5a3a20' },
+  bucket: { w: 26, h: 30, hp: 16, drops: 'roastBird', draw: bucket, color: '#6a6a72', yOff: 6 },
+  trunk: { w: 38, h: 26, hp: 24, drops: 'meatPie', draw: trunk, color: '#6a3a2a' },
+  mailcart: { w: 40, h: 42, hp: 36, drops: 'goldenSprocket', draw: mailCart, color: '#7a4a2e' },
+  lantern: { w: 16, h: 70, hp: 16, drops: 'coalScrip', draw: lantern, color: IRON },
+  urn: { w: 28, h: 44, hp: 20, drops: 'meatPie', draw: urn, color: '#8a6a40' },
+  cabinet: { w: 34, h: 56, hp: 40, drops: 'goldenSprocket', draw: cabinet, color: '#3B3A46' },
+  /** Boss-arena pressure valve: one hit while the Regent Engine is in phase 1 or 2 stuns it 60f (once each). */
+  valve: { w: 24, h: 56, hp: 1, drops: null, draw: valve, color: BRASS, valve: true, score: 0 },
+  /** Falls when hit by a jump attack: 30 to enemies within 90px, once. */
+  chandelier: { w: 60, h: 40, hp: 1, drops: null, draw: chandelier, color: BRASS, yOff: 70, jumpOnly: true, fall: { radius: 90, damage: 30 }, score: 0 },
+};
+
+/** Look up a prop type (falls back to crate). */
+export function getPropType(type) { return PROP_TYPES[type] || PROP_TYPES.crate; }
+/** Draw a prop through its renderer with the hit-flash state applied. */
+export function drawProp(ctx, sx, sy, p, frame) {
+  flash = p.flashTimer > 0;
+  p.info.draw(ctx, sx, sy, p, frame);
+  flash = false;
+}

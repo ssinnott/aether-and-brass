@@ -1,0 +1,17 @@
+{
+  "name": "aether-and-brass",
+  "version": "0.1.0",
+  "description": "Steampunk high-fantasy side-scrolling beat-em-up (Golden Axe / TMNT style) in vanilla JS + Canvas",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node tools/server.js",
+    "build": "node tools/build.js",
+    "test": "node tools/playtest.js",
+    "lint": "node --check src/main.js"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
