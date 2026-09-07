@@ -20,6 +20,12 @@ rules print pass or fail) are hidden by default — `--notes` prints them, `--js
 (5 exempt findings, all one rule — see [The exemption ledger](#the-exemption-ledger)). The 10 known-bad control
 subjects report **43 errors and 81 warnings**, and every single finding in a full run lands on one of them.
 
+So **a full run exits 1 today**, on purpose: the Stormcrow faction ships in the tree and is the control this suite
+was written to catch. A CI job that must be green right now should run
+`node tools/art-check.js --subject=brunhild,sael,rook,pip,brassbound,sootborn,midboss:grubbik,boss:vane`
+(the reference cast, exit 0) plus `node tools/art-invariants/selftest.js`, and treat the full run as the report on
+the Stormcrows until that art is fixed. Do not narrow a full run with `--only` — some rules are pairwise (§3).
+
 ---
 
 ## 1. Subjects
