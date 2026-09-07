@@ -15,6 +15,12 @@ import { clamp } from '../../engine/math.js';
 
 const GAME_OVER_DELAY = 150;
 const START_X = 100;
+/** Difficulty tuning (GDD 7): enemy HP / damage multipliers, tell speed, continues. */
+const DIFFICULTY = {
+  easy: { hpMult: 0.75, dmgMult: 0.6, tellScale: 1.3, continues: 5 },
+  normal: { hpMult: 1, dmgMult: 1, tellScale: 1, continues: 3 },
+  hard: { hpMult: 1.25, dmgMult: 1.4, tellScale: 0.85, continues: 2 },
+};
 
 /** The main in-game screen. */
 export class GameplayScreen extends Screen {
@@ -25,14 +31,17 @@ export class GameplayScreen extends Screen {
     const chars = (params.chars && params.chars.length ? params.chars : opt.chars) || [0];
     this.stage = params.stage || stage1;
     this.backdrop = null;
+    this.difficulty = DIFFICULTY[opt.difficulty] || DIFFICULTY.normal;
+    opt.tellScale = this.difficulty.tellScale;
     this.world = new World({ stageLength: this.stage.length, game, backdrop: null, options: opt });
     this.world.onEnemyKilled = () => { this.enemiesDefeated++; };
     this.enemiesDefeated = 0;
     this.players = [];
-    this.continues = params.continues != null ? params.continues : 3;
+    this.continues = params.continues != null ? params.continues : this.difficulty.continues;
     this.continuesUsed = 0;
     this.hud = new Hud(this.world, game);
     chars.slice(0, 2).forEach((ci, i) => this.addPlayer(ci, i));
+    if (this.players.length >= 2) game.input.setJoined(1, true);
     game.players = this.players;
     this.gameOverTimer = 0; this.gameOverShown = false;
     this.time = 0;
@@ -50,6 +59,8 @@ export class GameplayScreen extends Screen {
     const opt = this.game.options, cam = this.world.camera;
     const x = clamp(Math.max(cam.x, cam.left) + START_X + slot * 40, 20, this.stage.length - 20);
     const p = new Player(def, slot, { input: this.game.input, x, z: 70 + slot * 24, facing: 1, bot: !!opt.bot, godmode: !!opt.godmode });
+    const other = this.players[1 - slot];
+    if (other && other.def === def) { p.tint = '#1a1a2e'; p.tintAlpha = 0.3; }
     this.world.add(p);
     this.players[slot] = p;
     return p;
@@ -131,7 +142,9 @@ export class GameplayScreen extends Screen {
   // ---------- window.__game hooks ----------
   summary() {
     const w = this.world, b = w.boss;
+    const rs = this.runner && this.runner.summary ? this.runner.summary() : {};
     return {
+      ...rs,
       sectionIndex: w.sectionIndex, cameraX: w.camera.x, locked: w.camera.locked, wavesCleared: w.wavesCleared,
       players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out })),
       enemies: w.enemies.filter((e) => e.kind !== 'boss').map((e) => ({ name: e.name, type: e.def.type || '', variant: e.def.variant || '', hp: e.hp, state: e.state, x: e.x, z: e.z, ai: e.aiState })),
@@ -149,6 +162,9 @@ export class GameplayScreen extends Screen {
   spawnEnemyAt(type, variant, x, z, opts = {}) {
     const def = getEnemyDef(type, variant);
     const e = def.boss ? new Boss(def, { x, z, facing: opts.facing != null ? opts.facing : -1 }) : new Enemy(def, { x, z, ...opts });
+    const d = this.difficulty || DIFFICULTY.normal;
+    if (!def.boss && d.hpMult !== 1) { e.maxHp = Math.round(e.maxHp * d.hpMult); e.hp = e.maxHp; }
+    if (d.dmgMult !== 1) e.damageMult = (e.damageMult || 1) * d.dmgMult;
     this.world.add(e);
     return e;
   }
