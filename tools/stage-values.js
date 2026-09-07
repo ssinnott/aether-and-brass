@@ -85,7 +85,10 @@ const VIEW_W = 640, SCALE = 2; // display canvas is 1280x720 = the 640x360 inter
 const ANALYSIS = String.raw`
 window.__sv = (function () {
   var LOST = 10;           // Oklab dE (x100) below which an actor pixel reads as merged into the ground
-  var DIFF = 10;           // per-channel 0-255 difference that counts as "this pixel changed"
+  var DIFF = 3;            // per-channel 0-255 difference that counts as "this pixel changed". The three renders are
+                           // the same frame re-rendered with no world update, so anything but the actors is bit-identical
+                           // and the threshold can sit at the noise floor: a pixel the actor barely changes IS an actor
+                           // pixel that barely reads, and must stay in the sample.
   var EDGE = 2;            // px: an actor pixel this close to a non-actor pixel is a silhouette pixel
 
   function hsv(r, g, b) {
@@ -131,7 +134,7 @@ window.__sv = (function () {
       var p = y * w + x, i = p * 4;
       if (Math.abs(A[i] - B[i]) > DIFF || Math.abs(A[i + 1] - B[i + 1]) > DIFF || Math.abs(A[i + 2] - B[i + 2]) > DIFF) m[p] = 1;
     }
-    return despeckle(m, w, h);
+    return dropSmallBlobs(fillPinholes(despeckle(m, w, h), w, h), w, h, 200);
   }
   /** Drop lone pixels (a real actor pixel has neighbours; the render is a 2x nearest-neighbour blit so it always does). */
   function despeckle(m, w, h) {
@@ -142,6 +145,63 @@ window.__sv = (function () {
       if (n < 3) o[p] = 0;
     }
     return o;
+  }
+
+  /** Keep only mask components big enough to be an actor (or its shadow); drops stray single-sprite noise. */
+  function dropSmallBlobs(m, w, h, minPx) {
+    var out = new Uint8Array(w * h), seen = new Uint8Array(w * h);
+    for (var q = 0; q < m.length; q++) {
+      if (!m[q] || seen[q]) continue;
+      var blob = [], st = [q]; seen[q] = 1;
+      while (st.length) {
+        var r = st.pop(); blob.push(r);
+        var ry = (r / w) | 0, rx = r - ry * w;
+        var nb = [rx > 0 ? r - 1 : -1, rx < w - 1 ? r + 1 : -1, ry > 0 ? r - w : -1, ry < h - 1 ? r + w : -1];
+        for (var k = 0; k < 4; k++) { var n = nb[k]; if (n < 0 || !m[n] || seen[n]) continue; seen[n] = 1; st.push(n); }
+      }
+      if (blob.length >= minPx) for (var b = 0; b < blob.length; b++) out[blob[b]] = 1;
+    }
+    return out;
+  }
+
+  /**
+   * A pixel where the actor's colour happens to equal the backdrop's leaves a hole in the difference mask - exactly
+   * the pixels that matter most. Enclosed background blobs smaller than PINHOLE are therefore folded back into the
+   * actor. Real see-through gaps (between the legs, under an arm) connect to the image border and are left alone.
+   */
+  function fillPinholes(m, w, h) {
+    var PINHOLE = 400;                       // display px (the render is a 2x blit, so 100 art pixels)
+    var seen = new Uint8Array(w * h), stack = [];
+    for (var x0 = 0; x0 < w; x0++) { stack.push(x0); stack.push(x0 + (h - 1) * w); }
+    for (var y0 = 0; y0 < h; y0++) { stack.push(y0 * w); stack.push(y0 * w + w - 1); }
+    while (stack.length) {
+      var p = stack.pop();
+      if (seen[p] || m[p]) continue;
+      seen[p] = 1;
+      var y = (p / w) | 0, x = p - y * w;
+      if (x > 0) stack.push(p - 1);
+      if (x < w - 1) stack.push(p + 1);
+      if (y > 0) stack.push(p - w);
+      if (y < h - 1) stack.push(p + w);
+    }
+    // every unseen, unmasked pixel is inside something; keep the small pockets
+    var comp = new Int32Array(w * h).fill(-1), out = new Uint8Array(m);
+    for (var q = 0; q < m.length; q++) {
+      if (m[q] || seen[q] || comp[q] >= 0) continue;
+      var blob = [], st = [q]; comp[q] = q;
+      while (st.length) {
+        var r = st.pop(); blob.push(r);
+        var ry = (r / w) | 0, rx = r - ry * w;
+        var nb = [rx > 0 ? r - 1 : -1, rx < w - 1 ? r + 1 : -1, ry > 0 ? r - w : -1, ry < h - 1 ? r + w : -1];
+        for (var k = 0; k < 4; k++) {
+          var n = nb[k];
+          if (n < 0 || m[n] || seen[n] || comp[n] >= 0) continue;
+          comp[n] = q; st.push(n);
+        }
+      }
+      if (blob.length <= PINHOLE) for (var b = 0; b < blob.length; b++) out[blob[b]] = 1;
+    }
+    return out;
   }
 
   /**
@@ -204,7 +264,13 @@ window.__sv = (function () {
       var mx = Math.max(kr, kg, kb), mn = Math.min(kr, kg, kb);
       if (mx < 0.97 && mx > 0.2 && (mx - mn) < 0.06) sh[p] = 1;  // one scalar across all three channels = a multiply
     }
-    return sh;
+    var out = new Uint8Array(sh);
+    for (var y = 1; y < h - 1; y++) for (var x = 1; x < w - 1; x++) {
+      var q = y * w + x; if (!sh[q]) continue;
+      var n = sh[q - 1] + sh[q + 1] + sh[q - w] + sh[q + w] + sh[q - w - 1] + sh[q - w + 1] + sh[q + w - 1] + sh[q + w + 1];
+      if (n < 6) out[q] = 0;                                   // a real cast ellipse is solid; lone hits are body pixels
+    }
+    return out;
   }
 
   /**
@@ -255,7 +321,7 @@ window.__sv = (function () {
     return { px: d.data, w: canvas.width, h: canvas.height };
   }
   return { hsv: hsv, oklab: oklab, band: band, maskFromDiff: maskFromDiff, maskFromSaturation: maskFromSaturation,
-    localBackdrop: localBackdrop, separation: separation, classifyShadow: classifyShadow, grab: grab, stats: stats, LOST: LOST };
+    localBackdrop: localBackdrop, separation: separation, classifyShadow: classifyShadow, fillPinholes: fillPinholes, dropSmallBlobs: dropSmallBlobs, grab: grab, stats: stats, LOST: LOST };
 })();
 `;
 
