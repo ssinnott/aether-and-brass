@@ -51,6 +51,8 @@ export class Fighter extends Entity {
     this.hitTargets = new Map(); this.hitInstance = -1; this.hitConfirmed = false;
     this.throwDamage = 0; this.thrownBy = null; this.thrownHit = new Set();
     this.hpBarTimer = 0; this.airActed = false; this.godmode = false; this.superTimer = 0;
+    /** Armored fighters with this flag shrug off launch/knockdown hits too (shielded Warden, bosses). */
+    this.unlaunchable = !!def.unlaunchable;
     this.play('idle');
   }
 
@@ -172,8 +174,55 @@ export class Fighter extends Entity {
     }
     ev.length = 0;
   }
-  /** Animation event hook: (name, frame, world). */
-  onAnimEvent(name, frame, world) {}
+  /** Animation event hook: (name, frame, world). Handles the generic projectile/shockwave events for every fighter. */
+  onAnimEvent(name, frame, world) {
+    if (name === 'spawnProjectile') this.fireProjectile(frame && frame.projectile, world);
+    else if (name === 'shockwave') {
+      const r = (frame && frame.radius) || 40, off = (frame && frame.offset) || 0;
+      const hit = (frame && frame.hit) || { damage: 10, type: 'knockdown', kbX: 4, kbY: 4 };
+      world.spawnAreaHit(this, this.x + this.facing * off, this.z, r, hit);
+      world.addFx('ring', this.x + this.facing * off, 0, this.z, { r1: r, flat: true, color: (frame && frame.color) || '#ffd080' });
+      world.addFx('dust', this.x + this.facing * off, 0, this.z, { count: 6 });
+      if (world.camera) world.camera.shake((frame && frame.shake) || 4, 8);
+    }
+  }
+  /**
+   * Spawn a projectile described by a frame's `projectile` spec (see Player/enemy content for the fields).
+   * `spec.aimAt` lobs toward this.aimX/aimZ (set by the AI) with gravity over `spec.flight` frames.
+   */
+  fireProjectile(spec, world) {
+    if (!spec) return;
+    const count = spec.count || 1;
+    for (let i = 0; i < count; i++) {
+      const idx = spec.index != null ? spec.index : i;
+      const angle = ((spec.angle || 0) + (count > 1 ? (i - (count - 1) / 2) * (spec.spreadY || 0) : 0)) * Math.PI / 180;
+      const speed = spec.speed != null ? spec.speed : 6;
+      const o = {
+        owner: this, style: spec.style || 'bullet', color: spec.color, life: spec.life, gravity: spec.gravity || 0, pierce: spec.pierce || 0, maxDist: spec.maxDist,
+        hit: spec.noContactHit ? null : { damage: spec.damage || 6, type: spec.type || 'light', kbX: spec.kbX != null ? spec.kbX : 3, kbY: spec.kbY || 0, hitstun: spec.hitstun || 14, z: spec.zTol, friendly: spec.friendly },
+        explodeHit: spec.explodeHit || null, bounces: spec.bounces || 0, rest: !!spec.rest,
+        onExpire: spec.onExpire || null, radius: spec.radius || 40, facing: this.facing, chained: !!spec.chained, r: spec.r,
+      };
+      if (spec.fromSky) {
+        o.x = spec.aimAt ? (this.aimX != null ? this.aimX : this.x) : this.x + this.facing * ((spec.ahead || 40) + idx * (spec.spacing || 40));
+        o.y = spec.height || 200; o.z = spec.aimAt ? (this.aimZ != null ? this.aimZ : this.z) : this.z + (spec.zOffset || 0); o.vx = 0; o.vy = 0; o.gravity = spec.gravity || 0.5;
+      } else if (spec.aimAt) {
+        const T = spec.flight || 50, g = spec.gravity != null ? spec.gravity : 0.5;
+        o.x = this.x + this.facing * (spec.offsetX != null ? spec.offsetX : 20); o.y = this.y + (spec.offsetY != null ? spec.offsetY : 40); o.z = this.z;
+        const tx = this.aimX != null ? this.aimX : this.x + this.facing * 120, tz = this.aimZ != null ? this.aimZ : this.z;
+        o.vx = (tx - o.x) / T; o.vz = (tz - o.z) / T; o.vy = (0.5 * g * T * T - o.y) / T; o.gravity = g;
+      } else {
+        o.x = this.x + this.facing * (spec.offsetX != null ? spec.offsetX : 20); o.y = this.y + (spec.offsetY != null ? spec.offsetY : 40); o.z = this.z;
+        o.vx = Math.cos(angle) * speed * this.facing; o.vy = Math.sin(angle) * speed;
+        o.vz = count > 1 ? (i - (count - 1) / 2) * (spec.spreadZ || 0) : (spec.vz || 0);
+      }
+      if (spec.onHit === 'reel') o.onHit = (t) => { if (t.kind !== 'prop' && !t.dead && t.grabbableBy && t.grabbableBy(this)) { t.x = this.x + this.facing * (this.def.grabOffset || 24) * this.scale; t.z = this.z; this.startGrab(t); } };
+      else if (typeof spec.onHit === 'function') o.onHit = (t, w, proj) => spec.onHit(t, w, proj, this);
+      if (typeof spec.onExpire === 'function') o.onExpire = (w, proj, byHit) => spec.onExpire(w, proj, byHit, this);
+      world.spawnProjectile(o);
+      if (spec.muzzle !== false && !spec.fromSky) world.addFx('muzzle', o.x, o.y, o.z, { facing: this.facing });
+    }
+  }
 
   // ---------- taking hits ----------
   /**
@@ -211,7 +260,7 @@ export class Fighter extends Entity {
     if (cam && type === 'knockdown') cam.shake(4, 8);
     // reactions
     if (this.hp <= 0) { this.dead = true; this.knockDown(Math.max(hit.kbY || 0, KNOCKDOWN_POP_VY), (hit.kbX != null ? Math.max(2, hit.kbX) : 3) * face); this.onHurt(hit, attacker); return true; }
-    if (this.armor && type !== 'launch' && type !== 'knockdown' && !hit.breaksArmor) { this.vx += face * 0.5; this.onHurt(hit, attacker); audio.play('armor'); return true; }
+    if (this.armor && ((type !== 'launch' && type !== 'knockdown') || this.unlaunchable) && !hit.breaksArmor) { this.vx += face * 0.5; this.onHurt(hit, attacker); audio.play('armor'); return true; }
     if (air || this.state === ST.KNOCKDOWN) {
       this.juggleCount++;
       if (this.juggleCount >= FIGHTER_DEFAULTS.maxJuggles) { this.juggleImmune = true; this.knockDown(1, face * 3); }
@@ -290,7 +339,7 @@ export class Fighter extends Entity {
     if (!t || this.throwPending) return false;
     this.play('grabHit');
     this.grabHits++;
-    t.takeHitRaw(Math.round(mv.damage * (this.def.grabDamageMult || 1)), 'medium', this);
+    t.takeHitRaw(Math.round(mv.damage * (this.def.grabDamageMult || 1) * (t.def.throwDamageMult || 1)), 'medium', this);
     if (this.world) this.world.addFx('spark', t.x, t.y + t.h * 0.6, t.z, { type: 'heavy' });
     this.onHitConfirmed(t, { type: 'heavy', damage: mv.damage });
     if (t.dead) { t.knockDown(KNOCKDOWN_POP_VY, this.facing * 3); this.grabTarget = null; this.setState(ST.IDLE, 'idle'); return true; }
@@ -331,7 +380,7 @@ export class Fighter extends Entity {
   /** Become a thrown projectile body. */
   thrown(vx, vy, damage, thrower) {
     this.grabbedBy = null; this.thrownBy = thrower; this.thrownHit.clear();
-    this.takeHitRaw(damage, 'throw', thrower);
+    this.takeHitRaw(Math.round(damage * (this.def.throwDamageMult || 1)), 'throw', thrower);
     this.vx = vx; this.vy = vy; this.y = Math.max(this.y, 1);
     this.setState(ST.THROWN, 'knockdown');
   }

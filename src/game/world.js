@@ -32,6 +32,12 @@ export class World {
     this.wavesCleared = 0;
     this.sectionIndex = 0;
     this.attackTokens = { max: 2, holders: new Set() };
+    /** Optional narrower fighter bounds inside the camera lock (boss dais). */
+    this.arenaBounds = null;
+    /** Hook installed by the gameplay screen: (type, variant, x, z, opts) => Enemy (used by bosses / stage events). */
+    this.spawnEnemy = null;
+    /** Stage runner (when running a real stage). */
+    this.stage = null;
     this._fighters = [];
     this._enemies = [];
   }
@@ -147,8 +153,9 @@ export class World {
   /** World x bounds an entity is clamped to (ARCHITECTURE section 2). */
   boundsFor(e) {
     const cam = this.camera, m = CAMERA_MARGIN;
-    if (e.kind === 'player') return { x0: Math.max(cam.left, cam.x) + m, x1: Math.min(cam.right, cam.x + VIEW_W) - m };
-    if (cam.locked && e.entered !== false) return { x0: cam.left + m, x1: cam.right - m };
+    const ab = this.arenaBounds;
+    if (e.kind === 'player') return ab ? { x0: Math.max(ab.x0, cam.x) + m, x1: Math.min(ab.x1, cam.x + VIEW_W) - m } : { x0: Math.max(cam.left, cam.x) + m, x1: Math.min(cam.right, cam.x + VIEW_W) - m };
+    if (cam.locked && e.entered !== false) return ab ? { x0: ab.x0 + m, x1: ab.x1 - m } : { x0: cam.left + m, x1: cam.right - m };
     return { x0: 0, x1: this.stageLength };
   }
   /** Attack tokens: at most `max` enemies attack at once. */
@@ -166,6 +173,8 @@ export class World {
   }
   /** Reset for a new run. */
   clear() { this.entities.length = 0; this.players.length = 0; this.fx.length = 0; this.boss = null; this.attackTokens.holders.clear(); particles.clear(); }
+  /** Living enemies excluding bosses (wave bookkeeping). */
+  get waveEnemies() { return this._enemies.filter((e) => e.kind !== 'boss' && !e.fleeing); }
 }
 
 function depthCompare(a, b) {

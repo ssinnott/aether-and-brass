@@ -213,16 +213,6 @@ export class Player extends Fighter {
   onAnimEvent(name, frame, world) {
     switch (name) {
       case 'meterGain': this.addMeter(frame && frame.amount || METER.taunt); break;
-      case 'spawnProjectile': this.fireProjectile(frame && frame.projectile, world); break;
-      case 'shockwave': {
-        const r = (frame && frame.radius) || 40, off = (frame && frame.offset) || 0;
-        const hit = (frame && frame.hit) || { damage: 10, type: 'knockdown', kbX: 4, kbY: 4 };
-        world.spawnAreaHit(this, this.x + this.facing * off, this.z, r, hit);
-        world.addFx('ring', this.x + this.facing * off, 0, this.z, { r1: r, flat: true, color: '#ffd080' });
-        world.addFx('dust', this.x + this.facing * off, 0, this.z, { count: 6 });
-        if (world.camera) world.camera.shake(4, 8);
-        break;
-      }
       case 'lockOn': {
         const e = world.nearestEnemy(this.x, this.z, { maxDist: (frame && frame.radius) || 60 });
         if (e) { this.facing = sign(e.x - this.x) || this.facing; this.x += (e.x - this.facing * 30 - this.x) * 0.5; this.z += (e.z - this.z) * 0.5; }
@@ -240,7 +230,7 @@ export class Player extends Fighter {
       }
       case 'wreckThrow': this.releaseHeld(world, (frame && frame.damage) || 40, (frame && frame.vx) || 16); break;
       case 'dive': if (frame) { this.vy = frame.vy != null ? frame.vy : -3; } break;
-      default: break;
+      default: super.onAnimEvent(name, frame, world); break;
     }
   }
   releaseHeld(world, damage, vx = 14) {
@@ -249,31 +239,6 @@ export class Player extends Fighter {
     b.thrown(this.facing * vx, 6, damage, this);
     this.onHitConfirmed(b, { type: 'throw', damage });
     audio.play('throw');
-  }
-  /** Spawn a projectile described by a frame's `projectile` spec. */
-  fireProjectile(spec, world) {
-    if (!spec) return;
-    const count = spec.count || 1;
-    for (let i = 0; i < count; i++) {
-      const idx = spec.index != null ? spec.index : i;
-      const angle = ((spec.angle || 0) + (count > 1 ? (i - (count - 1) / 2) * (spec.spreadY || 0) : 0)) * Math.PI / 180;
-      const speed = spec.speed != null ? spec.speed : 6;
-      const o = {
-        owner: this, style: spec.style || 'bullet', color: spec.color, life: spec.life, gravity: spec.gravity || 0, pierce: spec.pierce || 0, maxDist: spec.maxDist,
-        hit: { damage: spec.damage || 6, type: spec.type || 'light', kbX: spec.kbX != null ? spec.kbX : 3, kbY: spec.kbY || 0, hitstun: spec.hitstun || 14, z: spec.zTol },
-        onExpire: spec.onExpire || null, radius: spec.radius || 40, facing: this.facing, chained: !!spec.chained, r: spec.r,
-      };
-      if (spec.fromSky) {
-        o.x = this.x + this.facing * ((spec.ahead || 40) + idx * (spec.spacing || 40)); o.y = spec.height || 200; o.z = this.z + (spec.zOffset || 0); o.vx = 0; o.vy = 0; o.gravity = spec.gravity || 0.5;
-      } else {
-        o.x = this.x + this.facing * (spec.offsetX != null ? spec.offsetX : 20); o.y = this.y + (spec.offsetY != null ? spec.offsetY : 40); o.z = this.z;
-        o.vx = Math.cos(angle) * speed * this.facing; o.vy = Math.sin(angle) * speed;
-        o.vz = count > 1 ? (i - (count - 1) / 2) * (spec.spreadZ || 0) : (spec.vz || 0);
-      }
-      if (spec.onHit === 'reel') o.onHit = (t, w, proj) => { if (t.grabbableBy && t.grabbableBy(this) || (t.kind !== 'prop' && !t.dead)) { if (t.kind !== 'prop') { t.x = this.x + this.facing * (this.def.grabOffset || 24) * this.scale; t.z = this.z; this.startGrab(t); } } };
-      world.spawnProjectile(o);
-      if (spec.muzzle !== false && !spec.fromSky) world.addFx('muzzle', o.x, o.y, o.z, { facing: this.facing });
-    }
   }
   onHitEffect(name, target, hit) {
     if (name === 'rebound') { this.vy = 5; this.airActed = false; this.airShotUsed = false; this.setState(ST.JUMP, 'fall', { fallback: 'jump' }); }

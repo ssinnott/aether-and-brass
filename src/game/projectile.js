@@ -4,8 +4,9 @@ import { Entity } from './entity.js';
 import { particles } from '../engine/particles.js';
 import { circle, rrect, pathPoly, paint, line } from '../art/shapes.js';
 import { jointScreen } from '../art/rig.js';
+import { audio } from '../engine/audio.js';
 
-const STYLE_R = { bullet: 3, bolt: 3, bomb: 6, cannonball: 8, claw: 8, explosion: 20, shell: 5, hat: 8 };
+const STYLE_R = { bullet: 3, bolt: 3, bomb: 6, cannonball: 8, claw: 8, explosion: 20, shell: 5, hat: 8, crate: 12, net: 10, watch: 6, stone: 4 };
 
 /**
  * @typedef {object} ProjectileOpts
@@ -39,6 +40,9 @@ export class Projectile extends Entity {
     this.shadowW = this.style === 'explosion' ? 0 : Math.max(8, this.r * 2);
     this.zSize = this.r * 2;
     this.chained = !!o.chained;             // draws a chain back to the owner (grapple)
+    this.bounces = o.bounces || 0;          // floor bounces before expiring (lobbed bombs)
+    this.rest = !!o.rest;                   // after the bounces, rest on the floor until life runs out (fuse)
+    this.explodeHit = o.explodeHit || null; // hit data used by the explosion when different from the contact hit
     this.retract = false;
     this.spin = 0;
   }
@@ -56,7 +60,12 @@ export class Projectile extends Entity {
     this.spin += 0.3;
     this.vy -= this.gravity;
     this.x += this.vx; this.y += this.vy; this.z += this.vz;
-    if (this.y < 0) { this.y = 0; this.expire(world, false); return; }
+    if (this.y < 0) {
+      this.y = 0;
+      if (this.bounces > 0 && this.vy < -0.5) { this.bounces--; this.vy = -this.vy * 0.45; this.vx *= 0.6; this.vz *= 0.6; particles.burst('dust', this.x, 0, this.z, 3, { speed: 1.2 }); }
+      else if (this.rest && this.life > 0) { this.vy = 0; this.gravity = 0; this.vx = 0; this.vz = 0; }
+      else { this.expire(world, false); return; }
+    }
     if (this.life <= 0) { this.expire(world, false); return; }
     if (this.maxDist && Math.abs(this.x - this.startX) >= this.maxDist) { this.expire(world, false); return; }
     const cam = world.camera;
@@ -71,7 +80,8 @@ export class Projectile extends Entity {
   expire(world, byHit) {
     if (this.removeMe) return;
     if (this.onExpire === 'explode') {
-      world.spawnAreaHit(this.owner, this.x, this.z, this.radius, this.hit, null, this.y);
+      world.spawnAreaHit(this.owner, this.x, this.z, this.radius, this.explodeHit || this.hit, null, this.y);
+      audio.play('explosion');
       world.addFx('ring', this.x, 0, this.z, { r1: this.radius, flat: true, color: '#ffb060' });
       particles.burst('ember', this.x, this.y + 4, this.z, 10, { speed: 3, up: 2 });
       particles.burst('smoke', this.x, this.y + 4, this.z, 6, { speed: 1.2, up: 1 });
@@ -106,6 +116,23 @@ export class Projectile extends Entity {
         pathPoly(ctx, [-6, -6, 8, -2, 2, 0, 8, 2, -6, 6, -2, 0]); paint(ctx, this.color, ol, 1.5);
         ctx.restore(); break;
       }
+      case 'crate': {
+        rrect(ctx, sx - this.r, sy - this.r * 2, this.r * 2, this.r * 2, 2, this.color === '#ffe070' ? '#9a7040' : this.color, ol, 1);
+        ctx.strokeStyle = '#5a3a20'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx - this.r + 2, sy - this.r * 2 + 2); ctx.lineTo(sx + this.r - 2, sy - 2); ctx.stroke();
+        break;
+      }
+      case 'net': {
+        ctx.save(); ctx.translate(sx, sy - this.r); ctx.rotate(this.spin);
+        ctx.strokeStyle = this.color; ctx.lineWidth = 1.5; ctx.beginPath();
+        for (let k = -2; k <= 2; k++) { ctx.moveTo(k * 4, -this.r); ctx.lineTo(k * 4, this.r); ctx.moveTo(-this.r, k * 4); ctx.lineTo(this.r, k * 4); }
+        ctx.stroke(); ctx.restore(); break;
+      }
+      case 'watch': {
+        circle(ctx, sx, sy - this.r, this.r, (this.life & 8) && this.life < 40 ? '#ffffff' : this.color, ol, 1);
+        line(ctx, sx, sy - this.r, sx + this.r * 0.6 * Math.cos(this.spin * 3), sy - this.r + this.r * 0.6 * Math.sin(this.spin * 3), ol, 1);
+        break;
+      }
+      case 'stone': { circle(ctx, sx, sy - this.r, this.r, this.color, ol, 1); break; }
       case 'hat': { ctx.save(); ctx.translate(sx, sy - this.r); ctx.rotate(this.spin * 2); rrect(ctx, -9, -2, 18, 4, 1, this.color, ol, 1); rrect(ctx, -5, -9, 10, 8, 1, this.color, ol, 1); ctx.restore(); break; }
       case 'explosion': default: break; // explosion FX are spawned on creation
     }

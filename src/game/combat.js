@@ -48,7 +48,7 @@ export function resolveHits(world) {
         const rec = a.hitTargets.get(t.id);
         if (hb.once !== false) { if (rec && rec.key === key) continue; }
         else if (rec && world.frame - rec.frame < (hb.rehit || 6)) continue;
-        if (!overlaps(box, a.z, t)) continue;
+        if (!overlaps(box, a.z + (hb.zOff || 0) * a.facing, t)) continue;
         if (hb.type === 'grab') {
           if (a.grabTarget || t.kind === 'prop' || !t.grabbableBy || !t.grabbableBy(a)) continue;
           a.hitTargets.set(t.id, { key, frame: world.frame });
