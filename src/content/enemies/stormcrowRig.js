@@ -41,7 +41,7 @@ export const CROW = {
 /** Far-side copies of the module constants (never darken twice: far parts pick these, near parts the originals). */
 export const farTone = (hex) => farShade(hex, 0.62, 0.25);
 const WINE_F = farTone(CROW.wine), LEATHER_F = farTone(CROW.leather), STRAP_F = farTone(CROW.strap),
-  PEWTER_F = farTone(CROW.pewter), BOOT_F = farTone(CROW.boot), ROPE_F = farTone(CROW.rope);
+  PEWTER_F = farTone(CROW.pewter), ROPE_F = farTone(CROW.rope);
 
 /** Base value ladder: light canvas sleeves over a slate coat, pale slate trousers, dark plum boots, brass fittings. */
 export const CROW_PAL = {

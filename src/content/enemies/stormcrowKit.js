@@ -17,7 +17,7 @@ import {
 
 const R = Math.round, TAU = Math.PI * 2;
 const WOOD = '#7A5230', WOOD_D = '#54371F', IRON = '#6E7684', KEG = '#6A4A32';
-const WOOD_F = farTone(WOOD), IRON_F = farTone(IRON);
+const WOOD_F = farTone(WOOD);
 
 // ---------------------------------------------------------------- headgear (head space, facing right)
 /** C1 Deck Crimper: a knotted bandana over the crown with two tails on a chain, goggles shoved up onto the knot. */
@@ -267,4 +267,4 @@ export const CROW_PARTS = {
 };
 /** Wing-pack + coat tails: the boss back kit (line troops each carry their own piece instead). */
 export const CROW_BACK = [{ attach: 'back', draw: crowWings }, { attach: 'back', draw: crowTails }];
-export { IRON, WOOD, KEG, IRON_F };
+export { IRON, WOOD, KEG };
