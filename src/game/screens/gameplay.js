@@ -9,7 +9,7 @@ import { Boss } from '../boss.js';
 import { Hud } from '../hud.js';
 import { StageRunner } from '../stage.js';
 import { getEnemyDef } from '../../content/enemies/index.js';
-import { stage1 } from '../../content/stage/stage1.js';
+import { getStage } from '../../content/stage/index.js';
 import { drawTextOutlined } from '../../engine/text.js';
 import { clamp } from '../../engine/math.js';
 
@@ -29,7 +29,7 @@ export class GameplayScreen extends Screen {
     super.enter(params);
     const game = this.game, opt = game.options;
     const chars = (params.chars && params.chars.length ? params.chars : opt.chars) || [0];
-    this.stage = params.stage || stage1;
+    this.stage = params.stage || getStage(opt.stage);
     this.backdrop = null;
     this.difficulty = DIFFICULTY[opt.difficulty] || DIFFICULTY.normal;
     opt.tellScale = this.difficulty.tellScale;

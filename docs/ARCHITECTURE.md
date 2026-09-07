@@ -1,9 +1,10 @@
 # Aether & Brass — Technical Architecture Contract
 
 This document is the binding technical contract for the game. Every module, agent and
-reviewer codes against it. If the GDD (`docs/GDD.md`) and this file disagree on a
-*technical* matter, this file wins; on a *design* matter (names, numbers, movesets,
-stage beats), the GDD wins.
+reviewer codes against it. If a design document and this file disagree on a *technical*
+matter, this file wins; on a *design* matter (names, numbers, movesets, stage beats), the
+design document wins — `docs/GDD.md` for stage 1 and the shared systems, `docs/STAGE2.md`
+for stage 2 (its faction, bosses, sections and audio).
 
 ## 0. Stack & non-negotiables
 
@@ -61,7 +62,9 @@ src/
     shapes.js              # primitive helpers: rrect, ellipse, poly, capsule, gear, rivetLine, outlineStroke...
     fx.js                  # hit sparks, shockwaves, slash arcs, muzzle flash, shadows
     backgrounds/           # one module per stage section backdrop + floor renderers
-      section1.js ... section4.js, floors.js, sky.js
+      index.js               # registry: createBackdrop(section, stage) by `section.backdrop` id
+      section1.js ... section4.js    # stage 1
+      storm1.js ... storm3.js        # stage 2
     props.js               # breakable/static prop renderers (crates, barrels, lamps, pipes, gears...)
     portraits.js           # character-select portraits & HUD icons drawn from rigs
   game/
@@ -84,12 +87,18 @@ src/
     characters/            # one file per playable character (rig build, palette, anims, moves)
       index.js, brass.js, ... (names from GDD)
     enemies/
-      index.js             # registry: getEnemyDef(type, variant)
-      typeA.js             # base rig/anims for type A + 5 variant overrides (file name from GDD)
-      typeB.js
-      midboss.js, boss.js
+      index.js             # registry: getEnemyDef(type, variant), ENEMY_LIST, ENEMY_GALLERY
+      common.js            # shared rig parts / animation + def builders for every faction
+      brassbound.js        # stage 1 type A: base rig/anims + 5 variant overrides
+      sootborn.js          # stage 1 type B
+      stormcrowRig.js      # stage 2 faction rig (parts, palette, base animation set)
+      stormcrow.js         # stage 2 type C: 5 variant overrides
+      midboss.js, boss.js          # stage 1 bosses
+      midboss2.js, boss2.js        # stage 2 bosses (reuse the Stormcrow rig)
     stage/
+      index.js             # STAGES registry + getStage(n): the boards the title screen offers
       stage1.js            # stage data (sections, waves, props, hazards) per section 7 format
+      stage2.js
 ```
 
 ## 2. Coordinate system (semi-isometric beat-em-up plane)
@@ -358,6 +367,11 @@ export const stage1 = {
   boss:    { atX: ..., def: 'boss', arena: { x0, x1 } },
 }
 ```
+Stages are registered in `content/stage/index.js` (`STAGES`, `getStage(n)`); `game.options.stage` is the
+**1-based stage number** the title screen's BOARD row and the `?stage=N` URL param write, and the gameplay /
+intro screens resolve it through `getStage`. Adding a board is a stage data file, its backdrop modules (with
+their ids added to `art/backgrounds/index.js`) and one entry in `STAGES`.
+
 `StageRunner` (`game/stage.js`): tracks the furthest camera position; on wave
 trigger, locks camera, spawns enemies at `side` just outside the lock bounds (with
 `delay` frames), watches the enemy count; when 0 and no pending spawns → unlock, show
@@ -410,7 +424,8 @@ Combo counter: near the player, big number + "HITS" + grade text when dropped.
 URL params: `?debug=1` (hitboxes, hurtboxes, AI state labels, FPS), `?autotest=1`
 (test mode: no audio context, no rAF loop, seeded rng, `window.__game` fully populated),
 `?seed=123`, `?skipTo=gameplay&chars=0,2&section=3` (jump straight into gameplay with
-chosen characters and section), `?godmode=1`, `?bot=1` (built-in autopilot that walks
+chosen characters and section), `?stage=2` (which board to play; honoured outside dev mode
+too), `?godmode=1`, `?bot=1` (built-in autopilot that walks
 right and attacks the nearest enemy — used for headless playthroughs).
 
 ```js
@@ -441,6 +456,8 @@ debug mode) — tests fail on any error.
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.
+  4b. `playthrough2`: the same run with `&stage=2` — every registered board must be completable
+     by the bot with zero runtime errors.
   5. `coop`: two players, same as 4 for 3000 frames.
   6. `enemies`: spawn every one of the 10 variants + midboss + boss via
      `?skipTo=gameplay&spawn=typeA:grunt`, screenshot each for a visual review sheet (`tools/screens/enemies.png` contact sheet).

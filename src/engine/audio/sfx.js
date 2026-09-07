@@ -221,6 +221,16 @@ export const SFX_DEFS = {
   hook_yank: (c, d, t, o) => { for (let i = 0; i < 6; i++) noise(c, d, t + i * 0.015, { dur: 0.012, vol: 0.2 * o.v, type: 'bandpass', f0: (2500 + (i % 2) * 800) * o.p, q: 4, attack: 0.001 }); osc(c, d, t + 0.05, { type: 'square', f0: 200 * o.p, f1: 120 * o.p, dur: 0.12, vol: 0.14 * o.v, attack: 0.01, lp: 1200 }); return osc(c, d, t + 0.14, { type: 'sine', f0: 100 * o.p, f1: 50 * o.p, dur: 0.08, vol: 0.3 * o.v, attack: 0.002 }); },
   cannon: (c, d, t, o) => { const e = echo(c, d, { time: 0.08, wet: 0.3, lowpass: 1200 }); return boom(c, e, t, { v: o.v, p: o.p, f0: 80, f1: 25, dur: 0.35, lp: 200, vol: 0.6 }); },
 
+  // Stormcrows (docs/STAGE2.md 2): people in masks on a windy deck. Voices come through the beak filtered and nasal
+  // (bandpassed square + triangle); their machinery is STATIC — crackle and a bright discharge, never a brass clank.
+  crow_hurt: (c, d, t, o) => { osc(c, d, t, { type: 'square', f0: 420 * o.p, f1: 300 * o.p, dur: 0.11, vol: 0.13 * o.v, attack: 0.004, lp: 1600, vib: { rate: 18, depth: 25 } }); return noise(c, d, t, { dur: 0.09, vol: 0.18 * o.v, type: 'bandpass', f0: 1400 * o.p, f1: 700 * o.p, q: 2.5, attack: 0.003 }); },
+  crow_death: (c, d, t, o) => { osc(c, d, t, { type: 'triangle', f0: 380 * o.p, f1: 130 * o.p, dur: 0.4, vol: 0.16 * o.v, attack: 0.006, lp: 2000, vib: { rate: 12, depth: 40 } }); noise(c, d, t + 0.1, { dur: 0.35, vol: 0.16 * o.v, type: 'bandpass', f0: 900 * o.p, f1: 300 * o.p, q: 1.6, attack: 0.02 }); return whoosh(c, d, t + 0.2, { v: o.v * 0.5, p: o.p, dur: 0.3, f0: 1800, f1: 400 }); },
+  crow_call: (c, d, t, o) => { [0, 0.08].forEach((dt, i) => osc(c, d, t + dt, { type: 'square', f0: (740 + i * 180) * o.p, f1: (620 + i * 180) * o.p, dur: 0.07, vol: 0.12 * o.v, attack: 0.003, lp: 2400 })); return noise(c, d, t + 0.02, { dur: 0.14, vol: 0.12 * o.v, type: 'bandpass', f0: 2200 * o.p, q: 3, attack: 0.01 }); },
+  harpoon: (c, d, t, o) => { noise(c, d, t, { dur: 0.03, vol: 0.4 * o.v, type: 'bandpass', f0: 1800 * o.p, q: 1.5, attack: 0.001 }); osc(c, d, t, { type: 'square', f0: 260 * o.p, f1: 150 * o.p, dur: 0.07, vol: 0.2 * o.v, attack: 0.001, lp: 1400 }); return whoosh(c, d, t + 0.02, { v: o.v * 0.6, p: o.p, dur: 0.22, f0: 500, f1: 2600 }); },
+  gale: (c, d, t, o) => { noise(c, d, t, { dur: 0.45, vol: 0.3 * o.v, type: 'bandpass', f0: 400 * o.p, f1: 2200 * o.p, q: 0.9, attack: 0.14, curve: 'exp' }); return osc(c, d, t, { type: 'triangle', f0: 150 * o.p, f1: 90 * o.p, dur: 0.4, vol: 0.1 * o.v, attack: 0.1, lp: 900 }); },
+  coil_charge: (c, d, t, o) => { am(c, d, t, { type: 'sawtooth', f0: 180 * o.p, f1: 900 * o.p, glide: 0.55, curve: 'lin', rate: 34, depth: 0.7, dur: 0.6, vol: 0.15 * o.v, attack: 0.06, hold: 0.42, lp: 2600 }); for (let i = 0; i < 8; i++) noise(c, d, t + 0.05 + i * 0.062, { dur: 0.012, vol: (0.06 + i * 0.014) * o.v, type: 'bandpass', f0: (3000 + (i * 271) % 1800) * o.p, q: 4, attack: 0.001 }); return t + 0.62; },
+  thunder_strike: (c, d, t, o) => { const e = echo(c, d, { time: 0.11, wet: 0.32, lowpass: 2400 }); noise(c, e, t, { dur: 0.05, vol: 0.55 * o.v, type: 'highpass', f0: 3000 * o.p, attack: 0.001 }); noise(c, e, t, { dur: 0.5, vol: 0.3 * o.v, type: 'bandpass', f0: 2600 * o.p, f1: 500 * o.p, q: 1.1, attack: 0.004 }); osc(c, e, t, { type: 'square', f0: 900 * o.p, f1: 120 * o.p, dur: 0.16, vol: 0.16 * o.v, attack: 0.001, lp: 3000 }); return boom(c, e, t + 0.04, { v: o.v * 0.9, p: o.p, f0: 70, f1: 24, dur: 0.45, lp: 260, vol: 0.5, click: false }); },
+
   // Pickups (clean sines)
   pickup_food: (c, d, t, o) => osc(c, d, t, { type: 'sine', f0: C5 * o.p, f1: E5 * o.p, glide: 0.08, dur: 0.22, vol: 0.2 * o.v, attack: 0.005, hold: 0.06 }),
   pickup_score: (c, d, t, o) => { [C6, E6, G6].forEach((f, i) => osc(c, d, t + i * 0.05, { type: 'sine', f0: f * o.p, dur: 0.16, vol: 0.16 * o.v, attack: 0.003, detune: i * 4 })); return t + 0.26; },
@@ -251,6 +261,7 @@ export const CANONICAL_SFX = [
   'hammer_swing', 'hammer_slam', 'rapier', 'rapier_arc', 'revolver', 'revolver_fan', 'piston', 'grapple', 'claw', 'steam_vent',
   'special_brunhild', 'special_sael', 'special_rook', 'special_pip', 'super_charge', 'super_brunhild', 'super_sael', 'super_rook', 'super_pip',
   'prop_break', 'explosion', 'explosion_big', 'fire', 'burn', 'steam', 'vent_tell', 'piston_crush', 'crate_drop', 'bomb_fuse', 'bomb_bat', 'net', 'whip', 'sling', 'bolt', 'chime', 'hydraulic', 'saw_whine', 'time_stop_tick', 'aether_step', 'valve_blow', 'hook_yank', 'cannon',
+  'crow_hurt', 'crow_death', 'crow_call', 'harpoon', 'gale', 'coil_charge', 'thunder_strike',
   'pickup_food', 'pickup_score', 'pickup_meter', 'pickup_life',
   'boss_intro', 'boss_phase', 'boss_defeat', 'roar',
 ];
@@ -259,4 +270,5 @@ export const CANONICAL_SFX = [
 export const JITTERED = new Set([
   'hit_light', 'hit_medium', 'hit_heavy', 'hit_launch', 'hit_knockdown', 'hit_grab', 'whiff', 'brass_hit', 'soot_hurt', 'soot_death', 'soot_flee',
   'hammer_swing', 'hammer_slam', 'rapier', 'rapier_arc', 'revolver', 'piston', 'claw', 'armor', 'land', 'land_heavy', 'prop_break', 'crate_drop', 'bomb_bat', 'whip', 'bolt', 'sling', 'net', 'stagger', 'throw', 'jump', 'dodge', 'aether_step', 'explosion',
+  'crow_hurt', 'crow_death', 'crow_call', 'harpoon', 'thunder_strike',
 ]);

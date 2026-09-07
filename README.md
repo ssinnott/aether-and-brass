@@ -1,14 +1,14 @@
 # Aether & Brass
 
 A steampunk high-fantasy side-scrolling beat-em-up in the spirit of *Golden Axe*, the *TMNT*
-arcade games and *TMNT: Shredder's Revenge*. One complete stage end to end, four playable
-heroes, two enemy factions with five variants each, a two-phase mid-boss and a three-phase
-final boss. Local two-player co-op on one keyboard or with gamepads.
+arcade games and *TMNT: Shredder's Revenge*. **Two complete boards** end to end, four playable
+heroes, three enemy factions with five variants each, two mid-bosses and two multi-phase final
+bosses. Local two-player co-op on one keyboard or with gamepads.
 
 Everything is drawn and synthesized in code: vanilla JavaScript, HTML5 Canvas 2D and WebAudio.
 No engine, no framework, and not a single image or audio file. Characters are procedural
 paper-doll rigs built from canvas primitives and animated by keyframed joint angles;
-backdrops are pre-rendered parallax layers; all 85 sound effects and 13 music tracks are
+backdrops are pre-rendered parallax layers; all 92 sound effects and 17 music tracks are
 synthesized from oscillators and noise at runtime.
 
 ## Play
@@ -63,11 +63,16 @@ take extra damage from throws, and gear-slip into a stagger on every fourth hit.
 **The Sootborn** — press-ganged goblin stokers: Soot Cutthroat, Scrap Slinger, Firebrand,
 Cinder Hulk, Gutter Wrangler. Fast, fragile, cowardly alone, and they burn easily.
 
-**Bosses** — Foreman Grubbik & the Hoister (a stolen cargo-loader that overheats and opens
-its cockpit), then Chancellor Aurelius Vane in the Regent Engine, stripped down across three
-phases until the man himself is exposed.
+**The Stormcrows** — the Concordat's Ninth Aeronaut Wing, flying black over the re-opened sky
+(board 2): Deck Crimper, Line Corsair, Powder Bosun, Galewright, Ironwing Marine. Beaked flight
+masks with one hot white sighting lens, wing-packs that flare when they move, and a habit of
+hopping backwards out of anything you whiff. Jump attacks hurt them 1.5x.
 
-## The stage: The Ascent of Calderwick
+**Bosses** — Foreman Grubbik & the Hoister and Chancellor Aurelius Vane in the Regent Engine on
+board 1; Quartermaster Skree & the Grapnel Winch and Admiral Odaline Kestrel of the Ninth Wing
+on board 2. Every one of them is stripped down phase by phase until the person inside is exposed.
+
+## Board 1: The Ascent of Calderwick
 
 Sootfoot Docks (rainy night moorings, swinging cargo hooks) → Foundry Row (molten channels,
 crushing pistons, the mid-boss in a conveyor-fed cargo bay) → The Brass Funicular (a fight on
@@ -76,6 +81,17 @@ cathedral where the sky opens again when you win).
 
 Fifteen enemy waves, breakable props with pickups, stage hazards that hurt everyone,
 ring-outs, a combo grading system, ranks, lives and continues.
+
+## Board 2: The Storm Above Calderwick
+
+The morning after Vane falls, the Ninth Aeronaut Wing blockades the sky nobody told them was
+free. The Mooring Spine (dawn storm above a cloud sea; no bulwark, so throw them off the edge)
+→ The Gas-Halls (the soft green interior of a captured freighter, and the quartermaster's
+grapnel winch at the end of it) → The Cold Sovereign (the flagship's weather deck, gun ports
+and lightning, up to the bridge where the Admiral is waiting).
+
+Pick the board on the title screen with **BOARD < 1 OF 2 >**, or link straight to it with
+`?stage=2`. Full design doc: `docs/STAGE2.md`.
 
 ## Development
 
@@ -86,12 +102,12 @@ node tools/sheet-capture.js out char=brunhild    # character contact sheets
 ```
 
 The suite boots the game, walks the character select, drives every hero's whole moveset,
-runs an autopilot bot through the entire stage to the results screen, plays co-op, spawns
+runs an autopilot bot through both boards to their results screens, plays co-op, spawns
 every enemy variant, and renders every sound effect and music track offline to check none
 are silent.
 
 Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,2`,
-`?skipTo=gallery`, `?bot=1`, `?godmode=1`, `?nowaves=1`, `?seed=N`.
+`?skipTo=gallery`, `?bot=1`, `?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=2`.
 
 ### Deployment
 
@@ -107,7 +123,8 @@ branches**, then start the workflow by hand from the Actions tab with that branc
 
 ### Documentation
 
-- `docs/GDD.md` — the game design document: world, cast, enemies, bosses, stage, combat rules.
+- `docs/GDD.md` — the game design document: world, cast, enemies, bosses, board 1, combat rules.
+- `docs/STAGE2.md` — board 2: the Stormcrows, both of its bosses, its sections and its audio.
 - `docs/ARCHITECTURE.md` — the technical contract: coordinate system, rig format, module APIs.
 - `docs/ART_STYLE.md` — binding character art and animation rules, including the readability pass.
 - `docs/RECONCILIATION.md` — where the design and technical docs disagree, this decides.

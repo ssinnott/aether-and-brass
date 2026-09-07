@@ -41,6 +41,9 @@ export function parseOptions(search = window.location.search) {
     bot: devOnly && flag('bot'),
     godmode: devOnly && flag('godmode'),
     section: devOnly ? (parseInt(q.get('section') || '0', 10) || 0) : 0,
+    // which board to play: 1-based stage number (see content/stage/index.js). Honoured outside dev mode too so a
+    // link can point straight at a board.
+    stage: q.has('stage') ? (parseInt(q.get('stage'), 10) || 1) : 1,
   };
 }
 

@@ -259,6 +259,51 @@ export function drawPieces(ctx, sx, sy, p, t) {
   ctx.globalAlpha = 1;
 }
 
+// ---------------------------------------------------------------- Stage 2 props (docs/STAGE2.md section 6)
+/** Powder keg: a squat iron-hooped barrel with a stencilled charge mark; it goes off 30f after it is broken. */
+function powderKeg(ctx, sx, sy, p) {
+  const w = p.w, h = p.h, x = sx - w / 2, y = sy - h;
+  ctx.save();
+  if (p.angle) { ctx.translate(sx, sy - h / 2); ctx.rotate(p.angle); ctx.translate(-sx, -(sy - h / 2)); }
+  cyl(ctx, x, y, w, h, '#4A3A2E', 4);
+  if (!flash) {
+    flat(ctx, x + 1, y + 4, w - 2, 3, tones(IRON).base); flat(ctx, x + 1, y + h - 7, w - 2, 3, tones(IRON).base);
+    flat(ctx, x + 1, y + 4, w - 2, 1, tones(IRON).hi); flat(ctx, x + 1, y + h - 7, w - 2, 1, tones(IRON).hi);
+    // charge mark: a violet lightning stencil
+    ctx.fillStyle = C('#9B7BFF');
+    ctx.beginPath(); ctx.moveTo(sx + 2, y + 10); ctx.lineTo(sx - 4, y + 19); ctx.lineTo(sx, y + 19); ctx.lineTo(sx - 3, y + 27);
+    ctx.lineTo(sx + 5, y + 17); ctx.lineTo(sx + 1, y + 17); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+/** Ballast bag: sand in oiled canvas on a rope loop — it splits and dumps a Meat Pie some quartermaster hid in it. */
+function ballastBag(ctx, sx, sy, p) {
+  const w = p.w, h = p.h, x = sx - w / 2, y = sy - h;
+  ctx.save();
+  if (p.angle) { ctx.translate(sx, sy - h / 2); ctx.rotate(p.angle); ctx.translate(-sx, -(sy - h / 2)); }
+  box(ctx, x + 1, y + 5, w - 2, h - 5, '#8A7A52', 6, 0.4);
+  if (!flash) {
+    ctx.strokeStyle = C('#B9A47E'); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x + 4, y + 8); ctx.lineTo(x + w - 4, y + 8); ctx.stroke();
+    ctx.beginPath(); ctx.arc(sx, y + 4, 5, Math.PI, 0); ctx.stroke();
+    ctx.fillStyle = tones('#8A7A52').sh; ctx.fillRect(x + 3, y + h - 8, w - 6, 3);
+  }
+  ctx.restore();
+}
+/** Signal locker: a tall brass-cornered chest of flags and rockets; the Wing kept the good pickups in it. */
+function signalLocker(ctx, sx, sy, p) {
+  const w = p.w, h = p.h, x = sx - w / 2, y = sy - h;
+  box(ctx, x, y, w, h, '#2E3446', 2, 0.35);
+  if (flash) return;
+  flat(ctx, x + 2, y + 2, w - 4, 2, tones('#2E3446').hi);
+  ctx.fillStyle = C(BRASS);
+  ctx.fillRect(x, y, 4, 4); ctx.fillRect(x + w - 4, y, 4, 4); ctx.fillRect(x, y + h - 4, 4, 4); ctx.fillRect(x + w - 4, y + h - 4, 4, 4);
+  ctx.fillRect(x + 2, y + Math.round(h * 0.45), w - 4, 3);
+  // rolled signal flags standing in the top
+  const cols = ['#C4913A', '#7C2B34', '#D6CBB2'];
+  for (let i = 0; i < 3; i++) { ctx.fillStyle = C(cols[i]); ctx.fillRect(x + 5 + i * 8, y + 6, 5, 12); }
+}
+
 /** Prop catalogue. Sizes are hurtbox w/h in px (rigs stand ~72px). */
 export const PROP_TYPES = {
   crate: { w: 34, h: 30, hp: 20, drops: ['brassCog', 'brassCog'], draw: crate, color: WOOD },
@@ -276,6 +321,12 @@ export const PROP_TYPES = {
   cabinet: { w: 34, h: 56, hp: 40, drops: 'goldenSprocket', draw: cabinet, color: '#3B3A46' },
   /** Boss-arena pressure valve: one hit while the Regent Engine is in phase 1 or 2 stuns it 60f (once each). */
   valve: { w: 24, h: 56, hp: 1, drops: null, draw: valve, color: BRASS, valve: true, score: 0 },
+  /** Stage 2: a powder keg goes off 30f after it breaks (20 damage, r 40) — bat one into a boarding party. */
+  keg: { w: 28, h: 34, hp: 18, drops: 'coalScrip', draw: powderKeg, color: '#4A3A2E', roll: 40, rollHit: 12, explode: { delay: 30, radius: 40, damage: 20 } },
+  /** Stage 2: ballast bags on the gas-hall catwalk. */
+  ballast: { w: 30, h: 30, hp: 16, drops: 'meatPie', draw: ballastBag, color: '#8A7A52' },
+  /** Stage 2: the flagship's signal lockers. */
+  locker: { w: 32, h: 50, hp: 34, drops: 'goldenSprocket', draw: signalLocker, color: '#2E3446' },
   /** Falls when hit by a jump attack: 30 to enemies within 90px, once. */
   chandelier: { w: 60, h: 40, hp: 1, drops: null, draw: chandelier, color: BRASS, yOff: 70, jumpOnly: true, fall: { radius: 90, damage: 30 }, score: 0 },
 };

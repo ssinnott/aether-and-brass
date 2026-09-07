@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios
+//   node tools/playtest.js boot combat     # run selected scenarios (boot select combat playthrough playthrough2 coop audio gallery)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 import path from 'node:path';
@@ -167,6 +167,31 @@ const scenarios = {
       assert(sawBoss, 'final boss appeared during playthrough');
       assert(s.screen === 'results', `results screen reached within ${MAX} frames (got ${s.screen}, frames=${frames}, x=${Math.round(s.cameraX)}, section=${s.sectionIndex})`);
       console.log(`   playthrough finished in ${frames} frames, wavesCleared=${s.wavesCleared}`);
+    });
+  },
+
+  // 4b. Full bot playthrough of the second board (Stage 2: The Storm Above Calderwick).
+  async playthrough2(server) {
+    await withPage(server, 'seed=7&skipTo=gameplay&stage=2&chars=0&bot=1&godmode=1', async (g) => {
+      const MAX = 40000, CHUNK = 600;
+      let frames = 0, lastSection = -1, sawMidboss = false, sawBoss = false, lastX = -1, stuckSince = 0;
+      while (frames < MAX) {
+        await g.step(CHUNK); frames += CHUNK;
+        const s = await g.summary();
+        if (s.sectionIndex !== lastSection) { lastSection = s.sectionIndex; await g.shot(`50-stage2-section-${s.sectionIndex}`); console.log(`   section ${s.sectionIndex} at frame ${frames} (x=${Math.round(s.cameraX)})`); }
+        if (s.boss && s.boss.kind === 'midboss' && !sawMidboss) { sawMidboss = true; await g.shot('51-stage2-midboss'); }
+        if (s.boss && s.boss.kind === 'boss' && !sawBoss) { sawBoss = true; await g.shot('52-stage2-boss'); }
+        if (Math.abs(s.cameraX - lastX) < 1 && !s.boss && !s.locked) stuckSince += CHUNK; else stuckSince = 0;
+        lastX = s.cameraX;
+        if (s.screen === 'results') { await g.shot('53-stage2-results'); break; }
+        if (s.screen === 'gameover') { assert(false, 'bot should not reach game over in godmode'); break; }
+        if (stuckSince > 6000) { await g.shot('crash-stuck-stage2'); assert(false, `bot stuck at x=${Math.round(s.cameraX)} for 6000 frames (screen=${s.screen}, enemies=${s.enemies.length})`); break; }
+      }
+      const s = await g.summary();
+      assert(sawMidboss, 'stage 2 mid-boss appeared during playthrough');
+      assert(sawBoss, 'stage 2 final boss appeared during playthrough');
+      assert(s.screen === 'results', `stage 2 results reached within ${MAX} frames (got ${s.screen}, frames=${frames}, x=${Math.round(s.cameraX)}, section=${s.sectionIndex})`);
+      console.log(`   stage 2 playthrough finished in ${frames} frames, wavesCleared=${s.wavesCleared}`);
     });
   },
 
