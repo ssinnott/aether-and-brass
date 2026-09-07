@@ -1,12 +1,15 @@
 # Aether & Brass
 
 A steampunk high-fantasy side-scrolling beat-em-up in the spirit of *Golden Axe*, the *TMNT*
-arcade games and *TMNT: Shredder's Revenge*. One complete stage, four heroes, two enemy
-factions with five variants each, a mid-boss and a three-phase final boss. Local two-player
-co-op on one keyboard or with gamepads.
+arcade games and *TMNT: Shredder's Revenge*. One complete stage end to end, four playable
+heroes, two enemy factions with five variants each, a two-phase mid-boss and a three-phase
+final boss. Local two-player co-op on one keyboard or with gamepads.
 
 Everything is drawn and synthesized in code: vanilla JavaScript, HTML5 Canvas 2D and WebAudio.
-No frameworks, no image or sound files, no build step needed to play.
+No engine, no framework, and not a single image or audio file. Characters are procedural
+paper-doll rigs built from canvas primitives and animated by keyframed joint angles;
+backdrops are pre-rendered parallax layers; all 85 sound effects and 13 music tracks are
+synthesized from oscillators and noise at runtime.
 
 ## Play
 
@@ -14,9 +17,9 @@ No frameworks, no image or sound files, no build step needed to play.
 npm run dev          # serves the repo at http://localhost:8080
 ```
 
-Then open <http://localhost:8080/> in a modern browser. Any static file server works
-(`python3 -m http.server 8080` too). `npm run build` writes a self-contained single file to
-`dist/index.html` that you can open directly or share.
+Then open <http://localhost:8080/> in a modern browser. Any static file server works.
+`npm run build` bundles everything into a self-contained `dist/index.html` you can open
+directly from disk or hand to someone as one file.
 
 ## Controls
 
@@ -31,37 +34,74 @@ Then open <http://localhost:8080/> in a modern browser. Any static file server w
 | Taunt   | T                    | I                     | B               | LB / L1 |
 | Start   | Enter                | Backspace             | Enter           | Start |
 
-- Run: double-tap left/right (or hold RT). Dash attack: attack while running.
-- Grab: attack next to an enemy that is not reeling. Throw: direction + attack while holding.
-- Special costs one meter bar (or a slice of health if the meter is empty). Super needs all three bars.
+- **Run**: double-tap left or right (or hold RT). **Dash attack**: attack while running.
+- **Grab**: attack next to an enemy that isn't reeling. **Throw**: direction + attack while holding.
+  Thrown bodies are weapons: they hurt whatever they land on.
+- **Special** costs one meter bar, or a slice of health when the meter is empty. **Super** needs all three bars.
+- **Dodge** rolls with invulnerability frames and cancels attack recovery.
 - Player 2 joins at any time by pressing any of their keys. Escape pauses, M mutes, F1 shows the debug overlay.
 
-## The cast
+## The heroes
 
-- **Brunhild Coalheart**, dwarf boilerwright with a steam hammer. Slow, armored, hits like a wall.
-- **Sael Windwright**, high-elf sky-courier with an electro-rapier. Double jump, air dash, teleport dash.
-- **Captain Rook Halloway**, human sky-captain with cutlass and clockwork revolver. Balanced, can parry.
-- **Pip Gearlock & The Rig**, gnome tinkerer in a seven-foot exo-rig. Grappler: reel them in, pick them up, throw them at their friends.
+| | Archetype | Signature |
+|---|---|---|
+| **Brunhild Coalheart** | Tank | Dwarf boilerwright with a steam hammer. Armor through combo hits, Piston Quake, and a piledriver that shakes the floor. |
+| **Sael Windwright** | Speed | High-elf sky-courier with an electro-rapier. Double jump, air dash, a teleporting Arc Dash and the Sky Lane super. |
+| **Captain Rook Halloway** | Balanced | Sky-captain with cutlass and clockwork revolver. Can parry with a well-timed roll; calls in a broadside from his airship. |
+| **Pip Gearlock & The Rig** | Grappler | Gnome tinkerer in an exo-rig. Grapple-shot reel, grab armor, and a Wrecking Ball super that swings an enemy at their friends. |
+
+## The enemies
+
+**The Brassbound** — clockwork soldiery: Tin Footman, Brass Halberdier, Copper Sapper,
+Iron Warden, Chrome Duelist. They telegraph with a red lens and a spinning wind-up key,
+take extra damage from throws, and gear-slip into a stagger on every fourth hit.
+
+**The Sootborn** — press-ganged goblin stokers: Soot Cutthroat, Scrap Slinger, Firebrand,
+Cinder Hulk, Gutter Wrangler. Fast, fragile, cowardly alone, and they burn easily.
+
+**Bosses** — Foreman Grubbik & the Hoister (a stolen cargo-loader that overheats and opens
+its cockpit), then Chancellor Aurelius Vane in the Regent Engine, stripped down across three
+phases until the man himself is exposed.
 
 ## The stage: The Ascent of Calderwick
 
-Sootfoot Docks (rainy night moorings) → Foundry Row (molten channels, crushing pistons, the
-Foreman's cargo-loader mid-boss) → The Brass Funicular (a fight on the roof of a climbing tram)
-→ The Heart-Engine (a boiler-cathedral where Chancellor Vane waits in the Regent Engine).
+Sootfoot Docks (rainy night moorings, swinging cargo hooks) → Foundry Row (molten channels,
+crushing pistons, the mid-boss in a conveyor-fed cargo bay) → The Brass Funicular (a fight on
+the roof of a climbing tram, throw enemies over the railings) → The Heart-Engine (a boiler
+cathedral where the sky opens again when you win).
 
-Enemies are the clockwork **Brassbound** (Tin Footman, Brass Halberdier, Copper Sapper, Iron
-Warden, Chrome Duelist) and the goblin **Sootborn** (Soot Cutthroat, Scrap Slinger, Firebrand,
-Cinder Hulk, Gutter Wrangler).
+Fifteen enemy waves, breakable props with pickups, stage hazards that hurt everyone,
+ring-outs, a combo grading system, ranks, lives and continues.
 
 ## Development
 
 ```
-npm test             # headless Playwright playthrough: boot, select, combat per character,
-                     # full bot playthrough to the results screen, co-op, enemy gallery, audio
-node tools/playtest.js playthrough    # run one scenario; screenshots land in tools/screens/
+npm test                              # full headless Playwright suite
+node tools/playtest.js playthrough    # one scenario; screenshots land in tools/screens/
+node tools/sheet-capture.js out char=brunhild    # character contact sheets
 ```
 
-Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,2`,
-`?skipTo=gallery` (every rig and animation), `?bot=1` (autopilot), `?godmode=1`, `?seed=N`.
+The suite boots the game, walks the character select, drives every hero's whole moveset,
+runs an autopilot bot through the entire stage to the results screen, plays co-op, spawns
+every enemy variant, and renders every sound effect and music track offline to check none
+are silent.
 
-Design and technical docs live in `docs/` (`GDD.md`, `ARCHITECTURE.md`, `RECONCILIATION.md`).
+Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,2`,
+`?skipTo=gallery`, `?bot=1`, `?godmode=1`, `?nowaves=1`, `?seed=N`.
+
+### Documentation
+
+- `docs/GDD.md` — the game design document: world, cast, enemies, bosses, stage, combat rules.
+- `docs/ARCHITECTURE.md` — the technical contract: coordinate system, rig format, module APIs.
+- `docs/ART_STYLE.md` — binding character art and animation rules, including the readability pass.
+- `docs/RECONCILIATION.md` — where the design and technical docs disagree, this decides.
+
+### Layout
+
+```
+src/engine/    loop, input, camera, canvas scaling, pixel font, particles, WebAudio synth
+src/art/       rig renderer, cel shading, secondary motion, FX, props, parallax backdrops
+src/game/      fighters, players, enemy AI, bosses, combat, world, stage runner, HUD, screens
+src/content/   characters, enemies and stage data (pure data + small draw hooks)
+tools/         dev server, single-file build, playtest harness, contact-sheet generator
+```
