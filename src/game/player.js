@@ -51,8 +51,8 @@ export class Player extends Fighter {
     it.x = ax.x; it.y = ax.y;
     it.attack = inp.buffered(p, 'attack', 8);
     it.jump = inp.buffered(p, 'jump', 6);
-    it.special = inp.pressed(p, 'special');
-    it.super = inp.pressed(p, 'super');
+    it.special = inp.buffered(p, 'special', 8);
+    it.super = inp.buffered(p, 'super', 8);
     it.dodge = inp.pressed(p, 'dodge');
     it.taunt = inp.pressed(p, 'taunt');
     it.run = inp.runHeld(p);
@@ -88,8 +88,8 @@ export class Player extends Fighter {
   thinkGround(world) {
     const it = this.intent;
     if (this.busy > 0) return;
-    if (it.super && this.meter >= METER.super) { this.startSuper(world); return; }
-    if (it.special) { this.trySpecial(world); return; }
+    if (it.super && this.meter >= METER.super) { this.consume('super'); this.startSuper(world); return; }
+    if (it.special) { this.consume('special'); this.trySpecial(world); return; }
     if (it.attack) {
       this.consume('attack');
       if (this.running && this.anim.has('dashAttack')) { this.startDashAttack(); return; }
@@ -113,14 +113,14 @@ export class Player extends Fighter {
     const it = this.intent, a = this.anim;
     const canCancel = !!a.cancel || a.done;
     if (!canCancel) return;
-    if (it.super && this.meter >= METER.super) { this.startSuper(world); return; }
+    if (it.super && this.meter >= METER.super) { this.consume('super'); this.startSuper(world); return; }
     if (it.attack && this.state === ST.ATTACK && this.comboStep > 0 && this.comboStep < this.comboLength && (this.hitConfirmed || this.def.freeChain !== false)) {
       this.consume('attack'); this.startAttack(this.comboStep + 1); return;
     }
     if (it.attack && this.state === ST.DASH_ATTACK && a.cancel === 'attack') { this.consume('attack'); this.startAttack(1); return; }
     if (it.dodge && this.dodgeCooldown <= 0) { this.startDodge(); return; }
     if (it.jump && (a.cancel === 'any' || a.cancel === 'jump')) { this.consume('jump'); this.jump(); return; }
-    if (it.special && a.cancel === 'any') { this.trySpecial(world); }
+    if (it.special && a.cancel === 'any') { this.consume('special'); this.trySpecial(world); }
   }
   thinkAir(world, canAttack) {
     const it = this.intent;

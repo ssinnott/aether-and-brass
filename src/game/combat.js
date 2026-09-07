@@ -44,7 +44,7 @@ export function resolveHits(world) {
       const key = hb.id != null ? hb.id : (a.anim.frameIndex + ':' + k);
       for (let j = 0; j < ents.length; j++) {
         const t = ents[j];
-        if (!isTarget(a, hb, t)) continue;
+        if (!isTarget(a, hb, t) || t.grabbedBy === a) continue;
         const rec = a.hitTargets.get(t.id);
         if (hb.once !== false) { if (rec && rec.key === key) continue; }
         else if (rec && world.frame - rec.frame < (hb.rehit || 6)) continue;
