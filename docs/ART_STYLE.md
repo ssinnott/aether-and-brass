@@ -306,21 +306,44 @@ is a flail.
 
 ## 11. Self-review checklist
 
+Most of this list is now **machine-checked**: `npm run art-check` (add `--render` for the pixel tier) runs the
+art-invariant suite in `tools/art-invariants/`, calibrated so that the stage-1 reference cast passes every rule.
+See **`docs/ART_INVARIANTS.md`** for the rule inventory, what it deliberately does not check and why, how the
+thresholds were derived, and how to add a rule or record an exemption. Each item below names the rule that covers
+it; *(eye)* means no honest measure was found and a human still has to look.
+
 - [ ] Silhouette test: the rig filled black is still recognisable (weapon, hat/hair, one signature accessory).
+      — `render/silhouette-distinctness` checks that faction siblings are not the same shape; *recognisable* is (eye).
 - [ ] 1 px outline everywhere, including where a limb crosses the torso; no double outlines, no outline-coloured seams.
+      — `palette/outline`, `geom/outline-stroke-contract`, `geom/outline-coloured-seam`.
 - [ ] Two tones on limbs, highlight caps only on torso / head / weapon head, light from the top-left in every pose.
+      — `palette/shading-knobs`, `geom/draw-hygiene` (the light vector is asserted back at `LIGHT_X/Y` after every hook).
 - [ ] §0 value test: every adjacent pair of parts differs in value or hue family (`mode=closeup&zoom=6`); sleeves are not the torso colour; boots separate from trousers and floor; far limbs 38 % darker; nothing under 2 px.
+      — `palette/sleeve-vs-primary`, `palette/value-ladder-adjacent`, `geom/far-palette-leak`, `geom/detail-floor`.
 - [ ] Squint test: the 1x idle / walk / attack-hit frames downscaled 0.5x still show a person with the weapon (head lifted off the floor).
+      — `render/squint-readability` measures surviving colour count only; the judgement itself is (eye).
 - [ ] Rest poses are open: nothing crosses the torso or the face in idle/walk; both hands and both boots visible; hit-frame fists below the chin.
+      — `geom/rest-pose-open` covers weapon clearance and the head in front of the hip; the rest is (eye).
 - [ ] Palette from the GDD; aether cyan only on Concordat machinery; faction read (warm hero / cold Brassbound / soot).
+      — `palette/aether-cyan-concordat`, `palette/faction-signature`, `palette/faction-variant-divergence`.
 - [ ] Face changes across idle → attack → hurt; beard/hair/scarf lags when the head snaps in `hurt`.
+      — `anim/face-expression-set`, `anim/attack-face-aggressive` (which skips rigs whose `pose.face` is provably
+      invisible — the Brassbound lenses and the Stormcrow masks both measure expressionless); the lag is `geom/chain-contract`.
 - [ ] Idle breathes (4 keys); walk 8 keys with a down/up bob; run has airborne keys.
+      — `anim/idle-breathes`, `anim/base-set-shape`, `anim/cycle-durations`, `anim/locomotion-shape`.
 - [ ] Every attack: anticipation → smear hit → hold → follow-through, `ease` on every key, hitbox on the hit key(s) only.
+      — `anim/attack-ease-coverage` (error), `anim/attack-beats` (warn), `anim/hitbox-placement`.
 - [ ] Jump/land/dodge use `squash`/`stretch`; dodge rolls around the body centre, not the feet.
+      — `anim/squash-stretch-beats`; the roll pivot is (eye).
 - [ ] hurt / knockdown / lying / getup / dead read at 1× on the docks backdrop (`mode=cast`, `bg=docks`).
+      — key counts and faces by `anim/base-set-shape` + `anim/face-expression-set`; the read is (eye).
 - [ ] Weapon lies along the floor in lying/dead (not floating above the body); two-handed weapons keep both hands
       on the handle (`grip: 1` **and** the grip point within the far arm's reach on every key — audit, do not eyeball).
+      — `geom/pose-audit` (SNAP / GRIP / FLOOR, promoted from `window.__sheet.audit()`); the lying weapon angle is (eye).
 - [ ] Hammer/blade head lands where the hitbox is: slam keys put the head on the floor line in front (`y ≈ -4`),
-      swipes at chest height inside `frontBox(reach)`, uppercuts through the `high` box.
+      swipes at chest height inside `frontBox(reach)`, uppercuts through the `high` box. — (eye).
 - [ ] Hit flash draws the whole silhouette white (every custom part returns after the flat fill when `rig.override`).
+      — `geom/flash-purity`, over every keyframe of every anim.
 - [ ] No per-frame allocation; bench within budget; `node --check` clean; `tools/playtest.js boot select combat gallery` green.
+      — `geom/draw-budget`, `render/bench-budget`, `render/sheets-and-playtest-green` (`node --check` over every file;
+      the playtest half is opt-in behind `ART_CHECK_PLAYTEST=1` and runs as its own CI job). Allocation is (eye).
