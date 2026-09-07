@@ -1,0 +1,270 @@
+// Stormcrow kit: the per-aeronaut gear that makes five freebooters read as five different people — headgear, back
+// pieces and weapons — plus the shared part table. Art only (ARCHITECTURE.md section 14); the rig, palette and base
+// animation set live in ./stormcrowRig.js.
+//
+// Headgear is the single biggest silhouette lever (docs/ART_STYLE.md section 0.6 / 11): a knotted bandana, a wide
+// slouch hat, a bald head and beard, a static-lifted shock of hair under a lens visor, and a crested storm-helm.
+// Every one of them carries a piece of glass — goggles, a loupe, a sighting tube, a helm lamp — and every one of
+// them ends by calling crowTell() on that glass, so the wind-up tell is the same violet light on all five heads.
+// Back pieces are the second lever: a rope coil, a line drum, a powder keg, two lightning rods and the wing-pack.
+import { celRect, celBall, celPoly, celCapsule, tones, rimTop } from '../../art/shading.js';
+import { getChain } from '../../art/secondary.js';
+import { rad } from '../../engine/math.js';
+import {
+  CROW, farTone, crowHead, crowFace, crowBeard, crowCoat, crowHips, crowArmUpper, crowArmLower, crowHand,
+  crowLegUpper, crowLegLower, crowBoot, crowTell, crowGoggles, crowWings, crowTails,
+} from './stormcrowRig.js';
+
+const R = Math.round, TAU = Math.PI * 2;
+const WOOD = '#7A5230', WOOD_D = '#54371F', IRON = '#6E7684', KEG = '#6A4A32';
+const WOOD_F = farTone(WOOD), IRON_F = farTone(IRON);
+
+// ---------------------------------------------------------------- headgear (head space, facing right)
+/** C1 Deck Crimper: a knotted bandana over the crown with two tails on a chain, goggles shoved up onto the knot. */
+function hatBandana(ctx, rig, r) {
+  const col = rig.build.crow.band || CROW.wine;
+  celPoly(ctx, rig, [-r - 2, R(-r * 0.82), -r - 1, R(-r * 1.12), R(-r * 0.5), R(-r * 1.44), R(r * 0.5), R(-r * 1.4), r + 2, R(-r * 1.0), r + 2, R(-r * 0.8)], col, 0.4, 0.28);
+  if (!rig.override) {
+    ctx.fillStyle = tones(rig, col).deep;
+    for (let x = -r; x < r; x += 5) ctx.fillRect(R(x), R(-r * 0.95), 3, 1);
+  }
+  // knot + one short tail off the back of the skull
+  const ch = getChain(rig, 'tail', 2, { joint: 'head', rest: [-1, 0.5], stiffness: 0.16, damping: 0.66, gain: 2.2, rotGain: 0.5, maxAng: 38 });
+  ctx.save(); ctx.translate(R(-r * 1.02), R(-r * 0.95));
+  celBall(ctx, rig, 0, 0, 3, col, false);
+  for (let i = 0; i < 2; i++) {
+    ctx.rotate(rad(ch.ang[i] - (i ? 14 : 36)));
+    celPoly(ctx, rig, [0, -2, -8, -3, -8, 2, 0, 3], col, 0.42, 0);
+    ctx.translate(-7, 0);
+  }
+  ctx.restore();
+  crowGoggles(ctx, rig, r, R(-r * 1.15));
+  crowTell(ctx, rig, r, R(r * 0.55), R(-r * 1.15));
+}
+/** C2 Line Corsair: a wide slouch hat, brim pinned up at the back, one long feather; goggles under the brim. */
+function hatSlouch(ctx, rig, r) {
+  crowGoggles(ctx, rig, r, R(-r * 0.92));
+  const col = CROW.leatherDark;
+  // feather first, behind the crown
+  celPoly(ctx, rig, [R(-r * 0.4), R(-r * 1.3), R(-r * 2.2), R(-r * 2.5), R(-r * 2.5), R(-r * 2.1), R(-r * 0.5), R(-r * 1.1)], CROW.canvas, 0.4, 0.3);
+  celPoly(ctx, rig, [R(-r * 0.9), R(-r * 1.5), R(-r * 0.2), R(-r * 2.1), R(r * 0.7), R(-r * 2.0), R(r * 1.0), R(-r * 1.42)], col, 0.38, 0.28);
+  // brim: swept forward and down, tacked up over the back of the crown
+  celPoly(ctx, rig, [R(-r * 2.0), R(-r * 1.24), R(-r * 0.3), R(-r * 1.6), R(r * 1.1), R(-r * 1.56), R(r * 2.3), R(-r * 1.16), R(r * 1.2), R(-r * 1.06), R(-r * 1.0), R(-r * 1.02)], col, 0.36, 0.3);
+  if (rig.override) return;
+  ctx.fillStyle = rig.col(rig.build.crow.band || CROW.wine); ctx.fillRect(R(-r * 0.85), R(-r * 1.56), R(r * 1.7), 3);
+  rimTop(ctx, rig, R(-r * 1.6), R(-r * 1.2), R(r * 1.6), R(-r * 1.36), CROW.strap);
+  crowTell(ctx, rig, r, R(r * 0.55), R(-r * 0.92));
+}
+/** C3 Powder Bosun: bald, a leather brow band and a brass powder-loupe screwed over the near eye. */
+function hatLoupe(ctx, rig, r) {
+  celRect(ctx, rig, R(-r) - 1, R(-r * 1.12), R(r * 2) + 2, 6, 2, CROW.leatherDark, 0.4, 0.24);
+  const cx = R(r * 0.5), cy = R(-r * 1.06);
+  celBall(ctx, rig, cx, cy, 5.4, CROW.brass, true);
+  ctx.beginPath(); ctx.arc(cx, cy, 3.4, 0, TAU); ctx.fillStyle = rig.col(rig.tell ? CROW.glassHot : '#5B7A6A'); ctx.fill();
+  if (rig.override) return;
+  ctx.fillStyle = rig.col('#FFFFFF'); ctx.fillRect(cx - 3, cy - 3, 2, 2);
+  ctx.fillStyle = rig.col(CROW.strap); ctx.fillRect(R(-r) - 1, R(-r * 1.12) + 2, R(r * 2) + 2, 2);
+  crowTell(ctx, rig, r, cx, cy);
+}
+/** C4 Galewright: hair standing on end with the charge, a brass band and a sighting tube swung up over the brow. */
+function hatVisor(ctx, rig, r) {
+  const hair = rig.palette.hair, k = 1 + (rig.coil || 0) * 0.5;
+  celPoly(ctx, rig, [R(-r * 1.1), R(-r * 0.45), R(-r * 1.5), R(-r * 1.5 * k), R(-r * 0.62), R(-r * 1.0), R(-r * 0.3), R(-r * 2.25 * k), R(r * 0.18), R(-r * 1.02), R(r * 0.62), R(-r * 1.85 * k), R(r * 1.05), R(-r * 0.84), R(r * 1.05), R(-r * 0.45)], hair, 0.4, 0.3);
+  celRect(ctx, rig, R(-r) - 1, R(-r * 0.98), R(r * 2) + 2, 5, 2, CROW.brass, 0.36, 0.34);
+  // monocular tube hinged up off the band, glass forward
+  celCapsule(ctx, rig, R(r * 0.1), R(-r * 1.05), R(r * 1.15), R(-r * 1.35), 3.4, CROW.copper, 0.3);
+  celBall(ctx, rig, R(r * 1.2), R(-r * 1.38), 3.6, rig.tell ? CROW.glassHot : CROW.glass, true);
+  if (rig.override) return;
+  ctx.fillStyle = tones(rig, CROW.brass).deep; ctx.fillRect(R(-r) - 1, R(-r * 0.98) + 3, R(r * 2) + 2, 2);
+  crowTell(ctx, rig, r, R(r * 1.2), R(-r * 1.38));
+}
+/** C5 Ironwing Marine: a crested storm-helm with cheek plates, a brow lamp and the beaked half-mask over the jaw. */
+function hatHelm(ctx, rig, r) {
+  const crest = rig.build.crow.band || CROW.wine;
+  // crest first (behind the dome), then the dome and cheek plates
+  celPoly(ctx, rig, [R(-r * 1.15), R(-r * 0.95), R(-r * 0.85), R(-r * 2.2), R(r * 0.1), R(-r * 2.5), R(r * 0.9), R(-r * 1.7), R(r * 0.7), R(-r * 1.0)], crest, 0.4, 0.3);
+  // dome + a neck guard hanging behind the skull; the face stays wide open under the brow
+  celPoly(ctx, rig, [R(-r * 1.3), R(r * 0.55), R(-r * 1.24), R(-r * 0.9), R(-r * 0.5), R(-r * 1.45), R(r * 0.5), R(-r * 1.4), r + 3, R(-r * 0.86), r + 3, R(-r * 0.56), R(-r * 0.55), R(-r * 0.62), R(-r * 0.72), R(r * 0.6)], CROW.pewter, 0.34, 0.34);
+  // beaked half-mask over nose and jaw: the eyes stay open above it
+  celPoly(ctx, rig, [R(r * 0.15), R(r * 0.05), R(r * 1.75), R(r * 0.3), R(r * 1.5), R(r * 0.62), R(r * 0.1), R(r * 0.85)], CROW.pewterDark, 0.36, 0.3);
+  if (rig.override) return;
+  ctx.fillStyle = tones(rig, CROW.pewterDark).deep; ctx.fillRect(R(r * 0.7), R(r * 0.34), R(r * 0.7), 2);
+  ctx.fillStyle = tones(rig, CROW.pewter).deep; ctx.fillRect(R(-r * 1.2), R(-r * 0.6), R(r * 0.5), R(r * 1.1));
+  rimTop(ctx, rig, R(-r * 1.0), R(-r * 1.05), R(r * 0.4), R(-r * 1.34), CROW.pewter);
+  const cx = R(r * 0.15), cy = R(-r * 1.2);
+  celBall(ctx, rig, cx, cy, 2.8, rig.tell ? CROW.glassHot : CROW.glass, false);
+  crowTell(ctx, rig, r, cx, cy);
+}
+const HATS = { bandana: hatBandana, slouch: hatSlouch, loupe: hatLoupe, visor: hatVisor, helm: hatHelm };
+/** Headgear dispatch (hat hook, drawn last in head space so the tell sits over everything). */
+export function crowHat(ctx, rig, pose, inf) {
+  const f = HATS[(rig.build.crow || 0).head];
+  if (f) f(ctx, rig, inf.r);
+}
+
+// ---------------------------------------------------------------- back pieces (torso space, back layer)
+/** C1: a coil of boarding line with the grapnel hooked through it, slung on the shoulder. */
+export function crowLines(ctx, rig) {
+  const p = rig.p, hw = R(p.torsoW / 2), x = -hw - 3, y = -R(p.torsoH * 0.5);
+  celBall(ctx, rig, x, y, 8, CROW.rope, true);
+  if (!rig.override) {
+    ctx.fillStyle = rig.col(CROW.coatDark); ctx.beginPath(); ctx.arc(x, y, 3, 0, TAU); ctx.fill();
+    ctx.fillStyle = tones(rig, CROW.rope).sh; ctx.fillRect(x - 7, y - 1, 14, 1); ctx.fillRect(x - 6, y + 3, 12, 1);
+  }
+  celPoly(ctx, rig, [x - 2, y - 12, x + 3, y - 13, x + 4, y - 6, x - 1, y - 6], CROW.pewter, 0.34, 0.3);
+  if (rig.override) return;
+  ctx.strokeStyle = rig.col(CROW.pewterDark); ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(x + 4, y - 12, 5, 1.2, 4.4); ctx.stroke();
+}
+/** C2: the harpoon reel — a wound line drum with the rope running forward to the gun. */
+export function crowReel(ctx, rig) {
+  const p = rig.p, hw = R(p.torsoW / 2), x = -hw - 4, y = -R(p.torsoH * 0.62);
+  celRect(ctx, rig, x - 4, y, 13, 18, 3, IRON, 0.36, 0.3);
+  celBall(ctx, rig, x + 2, y + 2, 6, CROW.rope, true);
+  if (rig.override) return;
+  const t = tones(rig, CROW.rope);
+  ctx.fillStyle = t.sh;
+  for (let i = 0; i < 3; i++) ctx.fillRect(x - 3, y + 4 + i * 4, 11, 1);
+  ctx.strokeStyle = rig.col(CROW.rope); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x + 8, y + 4); ctx.quadraticCurveTo(0, y - 4, R(p.torsoW * 0.5), R(-p.torsoH * 0.3)); ctx.stroke();
+  ctx.fillStyle = rig.col(CROW.brass); ctx.fillRect(x - 4, y + 14, 13, 3);
+}
+/** C3: a half-keg of powder strapped across the back with two iron hoops and a slow match. */
+export function crowKeg(ctx, rig) {
+  const p = rig.p, hw = R(p.torsoW / 2), x = -hw - 5, y = -R(p.torsoH * 0.86);
+  celRect(ctx, rig, x - 4, y, 16, R(p.torsoH * 0.72), 6, KEG, 0.4, 0.28);
+  if (rig.override) return;
+  const t = tones(rig, IRON);
+  ctx.fillStyle = t.base; ctx.fillRect(x - 4, y + 3, 16, 3); ctx.fillRect(x - 4, y + R(p.torsoH * 0.52), 16, 3);
+  ctx.fillStyle = t.sh; ctx.fillRect(x - 4, y + 5, 16, 1);
+  ctx.strokeStyle = rig.col(CROW.rope); ctx.lineWidth = 2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x + 8, y + 1); ctx.quadraticCurveTo(x + 16, y - 8, x + 10, y - 12); ctx.stroke();
+  ctx.fillStyle = rig.col('#FF9A30'); ctx.fillRect(x + 8, y - 14, 3, 3);
+}
+/** C3 front: the charge bandolier across the chest (torso accessory, front layer). */
+export function crowBandolier(ctx, rig) {
+  const p = rig.p, hw = R(p.torsoW / 2), H = p.torsoH;
+  ctx.save();
+  ctx.strokeStyle = rig.col(CROW.leather); ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(-hw + 1, -H + 3); ctx.lineTo(hw + 1, R(-H * 0.16)); ctx.stroke();
+  if (!rig.override) {
+    ctx.strokeStyle = rig.col(tones(rig, CROW.leather).sh); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-hw + 1, -H + 6); ctx.lineTo(hw + 1, R(-H * 0.16) + 3); ctx.stroke();
+    for (let i = 0; i < 3; i++) {
+      const u = 0.24 + i * 0.24, cx = R(-hw + 1 + (hw * 2) * u), cy = R(-H + 3 + (H * 0.84) * u);
+      ctx.fillStyle = rig.col(CROW.brass); ctx.fillRect(cx - 2, cy - 1, 4, 6);
+      ctx.fillStyle = tones(rig, CROW.brass).deep; ctx.fillRect(cx - 2, cy + 3, 4, 2);
+    }
+  }
+  ctx.restore();
+}
+/** C4: the storm battery — a copper canister with two ribbed lightning rods that bead violet as `rig.coil` climbs. */
+export function crowRods(ctx, rig) {
+  const p = rig.p, hw = R(p.torsoW / 2), x = -hw - 3, y = -R(p.torsoH * 0.55), k = rig.coil || 0;
+  celCapsule(ctx, rig, x, y - 2, x, y + 14, 5, CROW.copper, 0.3);
+  for (let i = 0; i < 2; i++) {
+    const dx = i ? 6 : -4, top = y - 26 - i * 7;
+    celCapsule(ctx, rig, x + dx, y, x + dx + (i ? 9 : -7), top, 2.6, CROW.pewterDark, 0.3);
+    if (rig.override) continue;
+    ctx.fillStyle = rig.col(k > 0.05 ? CROW.sparkPale : CROW.spark);
+    ctx.fillRect(x + dx + (i ? 7 : -9), top - 3, 5, 5);
+  }
+  if (rig.override) return;
+  const t = tones(rig, CROW.copper);
+  ctx.fillStyle = t.hi; ctx.fillRect(x - 4, y + 2, 9, 2);
+  ctx.fillStyle = t.deep; ctx.fillRect(x - 4, y + 8, 9, 2);
+  if (k <= 0.05) return;
+  ctx.strokeStyle = rig.col(CROW.spark); ctx.lineWidth = 1.5;
+  for (let i = 0; i < 2; i++) {
+    const a = rig.tick * 0.5 + i * 3;
+    ctx.beginPath(); ctx.moveTo(x + 2, y - 26);
+    ctx.lineTo(x + 2 + Math.cos(a) * (7 + k * 7), y - 26 + Math.sin(a) * (7 + k * 7)); ctx.stroke();
+  }
+}
+
+// ---------------------------------------------------------------- weapons (hand space: +x along the forearm)
+/** Boat hook: an ash pole with a whipped grip, a pewter spike and a proper backward-curling hook (Deck Crimper). */
+export function drawBoatHook(ctx, rig, pose, inf) {
+  const far = inf && inf.far;
+  celCapsule(ctx, rig, -14, 0, 36, 0, 3, far ? WOOD_F : WOOD, 0.3);
+  celPoly(ctx, rig, [34, -3, 48, -4, 55, 0, 48, 4, 34, 3], CROW.pewter, 0.36, 0.32);
+  celPoly(ctx, rig, [40, -3, 41, -14, 47, -16, 50, -11, 45, -10, 44, -2], CROW.pewter, 0.34, 0.3);
+  if (rig.override) return;
+  ctx.fillStyle = rig.col(CROW.rope); ctx.fillRect(-8, -3, 10, 6); ctx.fillRect(24, -3, 4, 6);
+  ctx.fillStyle = tones(rig, far ? WOOD_F : WOOD).deep; ctx.fillRect(2, -1, 22, 2);
+}
+/** Line gun: a stubby harpoon launcher with a wooden stock and a reel drum; the harpoon seats until `rig.fired`. */
+export function drawLineGun(ctx, rig) {
+  celPoly(ctx, rig, [-12, -2, -4, -6, 16, -6, 18, 6, -4, 6, -10, 3], WOOD, 0.38, 0.3);
+  celRect(ctx, rig, 2, -6, 20, 8, 2, IRON, 0.36, 0.32);
+  celBall(ctx, rig, 4, 5, 5, CROW.brass, true);
+  if (!rig.fired) celPoly(ctx, rig, [18, -3, 38, -3, 44, 0, 38, 3, 18, 3], CROW.pewter, 0.34, 0.3);
+  if (rig.override) return;
+  ctx.fillStyle = rig.col(CROW.rope); ctx.fillRect(2, 3, 10, 2);
+  ctx.fillStyle = tones(rig, IRON).deep; ctx.fillRect(6, -4, 14, 2);
+}
+/** Chain shot: a leather grip, four swinging links and two iron balls (Powder Bosun). */
+export function drawChainShot(ctx, rig, pose) {
+  celRect(ctx, rig, -6, -3.5, 14, 7, 2, CROW.leather, 0.4, 0.2);
+  if (rig.override) return;
+  ctx.fillStyle = rig.col(CROW.brass); ctx.fillRect(-6, -3, 3, 6);
+  const swing = (pose.weapon && pose.weapon.rot) || 0;
+  ctx.strokeStyle = rig.col(CROW.pewterDark); ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(8, 0);
+  for (let i = 1; i <= 4; i++) ctx.lineTo(8 + i * 8, Math.sin(i * 1.2 + swing * 0.03 + rig.tick * 0.5) * (1 + i * 0.8));
+  ctx.stroke();
+  for (const d of [34, 43]) celBall(ctx, rig, d, Math.sin(d * 0.16 + swing * 0.03 + rig.tick * 0.5) * 3, 5.5, IRON, true);
+}
+/** Storm coil: a rod of copper rings ending in a glass bulb that brightens and arcs with `rig.coil` (Galewright). */
+export function drawCoilRod(ctx, rig) {
+  const k = rig.coil || 0;
+  celCapsule(ctx, rig, -9, 0, 26, 0, 3, CROW.pewterDark, 0.3);
+  for (let i = 0; i < 4; i++) celBall(ctx, rig, 7 + i * 5, 0, 3.4, CROW.copper, false);
+  celBall(ctx, rig, 33, 0, 5 + k * 2.5, k > 0.05 ? CROW.sparkPale : CROW.glass, true);
+  if (rig.override || k <= 0.05) return;
+  ctx.strokeStyle = rig.col(CROW.spark); ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    const a = rig.tick * 0.6 + i * 2.1;
+    ctx.beginPath(); ctx.moveTo(33, 0);
+    ctx.lineTo(33 + Math.cos(a) * (8 + k * 8), Math.sin(a) * (8 + k * 8));
+    ctx.stroke();
+  }
+}
+/** Boarding axe: a short haft with a bearded crescent head and a back spike (Ironwing Marine, Skree). */
+export function drawBoardingAxe(ctx, rig, pose, inf) {
+  const far = inf && inf.far;
+  celCapsule(ctx, rig, -9, 0, 26, 0, 3, far ? WOOD_F : WOOD, 0.3);
+  celPoly(ctx, rig, [22, -15, 33, -14, 39, -4, 36, 7, 28, 12, 22, 6, 25, -3], CROW.pewter, 0.34, 0.34);
+  celPoly(ctx, rig, [22, -3, 12, -9, 12, 3], CROW.pewterDark, 0.34, 0.3);
+  if (rig.override) return;
+  ctx.fillStyle = tones(rig, CROW.pewter).deep; ctx.fillRect(26, 1, 9, 2);
+  ctx.fillStyle = rig.col(CROW.rope); ctx.fillRect(-6, -3, 8, 6);
+  rimTop(ctx, rig, 25, -13, 35, -5, CROW.pewter);
+}
+/**
+ * Wing-plate shield on the off hand (handL accessory): a fan of three feathered pewter vanes on a canvas backing,
+ * lit violet on a wind-up (`rig.tell`) and gone for good once a launcher strips it (`rig.shieldStripped`).
+ */
+export function drawWingShield(ctx, rig) {
+  if (rig.shieldStripped) return;
+  const hot = rig.tell;
+  celPoly(ctx, rig, [-5, -22, 7, -19, 13, -6, 12, 8, 5, 21, -5, 22, -8, 0], CROW.leatherDark, 0.34, 0.3);
+  for (let i = 0; i < 3; i++) {
+    const y = -18 + i * 13;
+    celPoly(ctx, rig, [-1, y, 9, y + 2, 11, y + 9, -1, y + 11], hot ? CROW.sparkPale : CROW.pewter, 0.34, 0.34);
+    if (!rig.override) { ctx.fillStyle = tones(rig, hot ? CROW.sparkPale : CROW.pewter).deep; ctx.fillRect(1, y + 5, 8, 2); }
+  }
+  if (rig.override) return;
+  ctx.fillStyle = rig.col(rig.build.clan || CROW.wine); ctx.fillRect(0, -3, 7, 7);
+  ctx.fillStyle = rig.col(CROW.brass); ctx.fillRect(1, -1, 4, 3);
+}
+
+/** Complete Stormcrow part table (everything else falls back to the shared humanoid defaults in art/rig.js). */
+export const CROW_PARTS = {
+  head: crowHead, face: crowFace, beard: crowBeard, hat: crowHat, torso: crowCoat, hips: crowHips,
+  armUpper: crowArmUpper, armLower: crowArmLower, hand: crowHand,
+  legUpper: crowLegUpper, legLower: crowLegLower, foot: crowBoot,
+};
+/** Wing-pack + coat tails: the boss back kit (line troops each carry their own piece instead). */
+export const CROW_BACK = [{ attach: 'back', draw: crowWings }, { attach: 'back', draw: crowTails }];
+export { IRON, WOOD, KEG, IRON_F };

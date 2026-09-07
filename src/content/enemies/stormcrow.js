@@ -1,9 +1,12 @@
 // Stage 2 enemy faction: THE STORMCROWS (docs/STAGE2.md section 2) — the Concordat's Ninth Aeronaut Wing, flying
-// black over the re-opened sky. Rig, palette and base animation set come from ./stormcrowRig.js; this file is the
-// five variants, their telegraphed attacks, projectiles and AI tables (data + small hooks only, ARCHITECTURE 14).
+// black over the re-opened sky. Rig, palette and base animation set come from ./stormcrowRig.js, the per-aeronaut
+// gear from ./stormcrowKit.js; this file is the five variants, their hand-keyed attacks, projectiles and AI tables.
 //
-// Type identity: aeronauts. They fight the way people fight on a windy deck — they give ground, they hop back out of
-// a whiffed swing, they keep their feet. Nothing here is armoured except the Ironwing Marine's wing-plate.
+// Type identity: SKY PRIVATEERS. Not a regiment — a press-ganged crew of freebooters in their own weather-beaten
+// kit, and the art says so: five silhouettes, five headgears, five back pieces, five sleeve colours, five stances.
+// What holds them together is the kit language (wine Wing armband, brass badge, goggles or a lens on every head,
+// violet static as the only energy colour) and the way they fight: they give ground, they hop back out of a
+// whiffed swing, they keep their feet.
 // Faction rules:
 //  - JUMP ATTACKS DO 1.5x. A Stormcrow covers the deck, not the air above it: go over the top.
 //  - At most 2 attack at once (tokenGroup 'stormcrow'); the rest circle on the other z lane.
@@ -11,24 +14,27 @@
 //
 // | Variant          | HP  | Dmg | Speed | Read                                                          |
 // |------------------|-----|-----|-------|----------------------------------------------------------------|
-// | Deck Crimper     |  45 |   6 | 1.20x | boat-hook jab, low sweep that trips; the fodder                 |
-// | Line Corsair     |  40 |   9 | 1.15x | harpoon on a line at range; ANY attack bats the harpoon back    |
-// | Powder Bosun     |  85 |  14 | 0.85x | chain shot (hits behind), lobbed powder keg that hurts everyone |
-// | Galewright       |  90 |  12 | 1.00x | storm coil: a long charge, then a stunning arc down the lane    |
-// | Ironwing Marine  | 190 |  16 | 0.70x | wing-plate: super armour until a launcher strips it             |
-import { frontBox, enemyAttack, makeEnemyDef } from './common.js';
+// | Deck Crimper     |  45 |   6 | 1.20x | bandana + boat hook; jab, low sweep that trips; the fodder      |
+// | Line Corsair     |  40 |   9 | 1.15x | slouch hat, line drum; ANY attack bats the harpoon back         |
+// | Powder Bosun     |  85 |  14 | 0.85x | bald, bearded, keg on his back; chain shot, lobbed powder       |
+// | Galewright       |  90 |  12 | 1.00x | lens visor, lightning rods; a long charge, then a stunning arc  |
+// | Ironwing Marine  | 190 |  16 | 0.70x | crested helm, wing-plate: super armour until a launcher strips  |
+import { frontBox, areaBox, makeEnemyDef } from './common.js';
+import { CROW, CROW_PAL, CROW_PROPS, crowScarf, crowTails, crowWings, makeCrowBase, crowStrike } from './stormcrowRig.js';
 import {
-  CROW, CROW_PAL, CROW_PROPS, CROW_PARTS, CROW_BACK, makeCrowBase,
+  CROW_PARTS, crowLines, crowReel, crowKeg, crowBandolier, crowRods,
   drawBoatHook, drawLineGun, drawChainShot, drawCoilRod, drawBoardingAxe, drawWingShield,
-} from './stormcrowRig.js';
+} from './stormcrowKit.js';
 import { pathPoly, paint, line } from '../../art/shapes.js';
 import { particles } from '../../engine/particles.js';
 import { audio } from '../../engine/audio.js';
 import { ST } from '../../constants.js';
 
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
-/** Regiment colours: every Stormcrow wears its watch's chevron on the coat. */
-export const WATCH = { crimper: '#7C2B34', corsair: '#2F6E7A', bosun: '#A8632A', galewright: '#5B3E8C', marine: '#3C5A88' };
+const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
+/** drawFace options for the one variant with a beard over his mouth (ART_STYLE section 6). */
+const BEARDED = { noMouth: true };
+/** Regiment colours: every Stormcrow wears its watch's chevron on the coat and its colour in its headgear. */
+export const WATCH = { crimper: '#8E2F38', corsair: '#2F6E7A', bosun: '#A8632A', galewright: '#5B3E8C', marine: '#3C5A88' };
 
 // ---------------------------------------------------------------- projectiles
 /** Harpoon on a reel line: a pewter dart trailing rope back the way it came (pale once batted back). */
@@ -64,7 +70,7 @@ const BASE = {
   type: 'stormcrow', faction: 'stormcrow', walkSpeed: 1.7,
   build: {
     scale: 0.95, palette: CROW_PAL, outline: CROW.outline, outlineWidth: 1, proportions: CROW_PROPS,
-    parts: CROW_PARTS, accessories: CROW_BACK, smearColor: '#DCE6F4', clan: WATCH.crimper,
+    parts: CROW_PARTS, smearColor: '#DCE6F4', clan: WATCH.crimper,
   },
   sfx: { hurt: 'crow_hurt', death: 'crow_death' },
   ai: {
@@ -73,11 +79,11 @@ const BASE = {
     backstepAfterWhiffs: { whiffs: 2, dist: 46, iframes: 8, cooldown: 70, range: 110 },
   },
 };
-/** Rig flags the art reads: the wing vanes flare on any hop / lunge, the mask lenses light on tell frames. */
+/** Rig flags the art reads: the wing vanes flare on any hop / lunge, the goggle glass lights on tell frames. */
 const BASE_HOOKS = {
   onUpdate(f) {
     const n = f.anim.name;
-    f.rig.wings = f.state === ST.DODGE || f.airborne || n === 'lunge' || n === 'gale';
+    f.rig.wings = f.state === ST.DODGE || f.airborne || n === 'lunge' || n === 'gale' || n === 'shove';
   },
 };
 /** Assemble a Stormcrow variant: faction traits + hooks on top of makeEnemyDef. */
@@ -87,43 +93,91 @@ function def(v, hooks) {
   d.hooks = { ...BASE_HOOKS, ...(hooks || {}) };
   return d;
 }
-/** Base set + parametric telegraphed attacks (common.js enemyAttack: tell -> active -> punishable recovery). */
-function crowAnims(carry, attacks, o = {}) {
-  const anims = makeCrowBase(carry, o);
-  for (const name of Object.keys(attacks)) anims[name] = enemyAttack(attacks[name], carry);
-  if (o.extra) Object.assign(anims, o.extra);
+/** Base set (stance + carry) + the variant's hand-keyed attacks. */
+function crowAnims(carry, stance, attacks) {
+  const anims = makeCrowBase(carry, stance);
+  Object.assign(anims, attacks);
   anims.flee = anims.run;
   return anims;
 }
 
-// ---------------------------------------------------------------- C1 Deck Crimper: boat hook, jab + tripping sweep
+// ---------------------------------------------------------------- C1 Deck Crimper: bandana, cut-down jerkin, boat hook
+// The youngest hand on the deck: bare-armed, eager, leaning into everything. Back piece: a coil of boarding line.
 const CRIMP_CARRY = { armR: [26, 26], weapon: -20, armL: [-26, -16] };
-const crimperAnims = crowAnims(CRIMP_CARRY, {
-  // jab: 18f hook raised (mask lens hot) -> 8f thrust -> 20f punish window
-  jab: { style: 'thrust', tell: 18, active: 8, recovery: 20, reach: 50, dmg: 6, type: 'light', kbX: 4, hitstun: 16,
-    tellSfx: 'crow_call', sfx: 'whiff', fx: [{ kind: 'spark', x: 48, y: 42, count: 2 }] },
-  // sweep: he drops the pole to shin height and hooks both feet out (trips = knockdown)
-  sweep: { style: 'swing', tell: 22, active: 10, recovery: 26, reach: 54, dmg: 8, type: 'knockdown', kbX: 3, kbY: 4, hitstun: 22,
-    low: true, tellSfx: 'crow_call', sfx: 'whiff', fx: [{ kind: 'dust', x: 34, y: 0, count: 4 }] },
-  // lunge: the pack-charge from mid range; the wing-pack pops for a step of thrust
-  lunge: { style: 'charge', tell: 16, active: 10, recovery: 24, reach: 46, dmg: 7, type: 'medium', kbX: 5, hitstun: 18,
-    move: { x: 6 }, tellSfx: 'crow_call', sfx: 'whiff', fx: [{ kind: 'dust', x: -10, y: 0, count: 3 }] },
+const CRIMP_STANCE = { lean: 7, head: -3, legR: [10, 6], legL: [-10, 8] };
+const crimperAnims = crowAnims(CRIMP_CARRY, CRIMP_STANCE, {
+  // jab: 18f of the hook cocking back past the ear (goggles lit) -> 8f thrust -> 3f hold -> 20f punish window
+  jab: crowStrike({
+    tell: 18, active: 8, recovery: 20, carry: CRIMP_CARRY, lean: 7, tellSfx: 'crow_call', sfx: 'whiff',
+    hitbox: frontBox(50, hit(6, 'light', 4, 0, 16)), fx: [{ kind: 'spark', x: 48, y: 42, count: 2 }],
+    w1: { armR: [-24, 70], weapon: -43, armL: [36, 26], torso: -4, head: -4, root: [-3, 0], legR: [12, 10], legL: [-16, 12], face: 'angry' },
+    w2: { armR: [-40, 86], weapon: -51, armL: [48, 30], torso: -12, head: -2, root: [-6, 1], legR: [8, 10], legL: [-20, 14], squash: 0.97, stretch: 1.03, face: 'angry' },
+    h: { armR: [64, -6], weapon: -5, armL: [-42, 22], torso: 22, head: 4, root: [6, 1], legR: [44, 10], legL: [-32, 34], face: 'shout', squash: 1.04, stretch: 0.97 },
+    smear: { from: 56, to: 10, a: 0.35, r: 58 },
+    hold: { armR: [67, -4], weapon: 6, armL: [-44, 22], torso: 25, head: 5, root: [7, 1], legR: [44, 10], legL: [-32, 34], face: 'shout' },
+    r: { armR: [51, 8], weapon: -6, armL: [-32, 18], torso: 17, head: 2, root: [4, 1], legR: [38, 10], legL: [-28, 30], face: 'grit' },
+  }),
+  // sweep: 22f raising the pole over the shoulder -> he rakes it along the deck at shin height (trips = knockdown)
+  sweep: crowStrike({
+    tell: 22, active: 10, recovery: 26, carry: CRIMP_CARRY, lean: 7, tellSfx: 'crow_call', sfx: 'whiff',
+    hitbox: frontBox(54, hit(8, 'knockdown', 3, 4, 22), { low: true }), fx: [{ kind: 'dust', x: 34, y: 0, count: 4 }],
+    w1: { armR: [-136, -18], weapon: 34, armL: [40, 20], torso: -12, head: -8, root: [-3, 0], legR: [10, 8], legL: [-16, 12], face: 'angry' },
+    w2: { armR: [-166, -8], weapon: 46, armL: [52, 26], torso: -20, head: -6, root: [-6, 1], legR: [6, 8], legL: [-20, 14], squash: 0.96, stretch: 1.04, face: 'angry' },
+    h: { armR: [-2, 6], weapon: -48, armL: [-32, 22], torso: 30, head: 10, root: [5, 3], legR: [52, 22], legL: [-38, 46], face: 'shout', squash: 1.07, stretch: 0.94 },
+    smear: { from: -76, to: 56, a: 0.5, r: 64 },
+    hold: { armR: [4, 6], weapon: -38, armL: [-34, 22], torso: 32, head: 10, root: [6, 3], legR: [52, 22], legL: [-38, 46], face: 'shout' },
+    r: { armR: [-2, 10], weapon: -48, armL: [-26, 16], torso: 22, head: 6, root: [4, 2], legR: [42, 18], legL: [-32, 40], face: 'grit' },
+  }),
+  // lunge: the pack charge from mid range — he crouches, then throws himself down the deck behind the spike
+  lunge: crowStrike({
+    tell: 16, active: 10, recovery: 24, carry: CRIMP_CARRY, lean: 7, tellSfx: 'crow_call', sfx: 'whiff',
+    hitbox: frontBox(46, hit(7, 'medium', 5, 0, 18)), move: { x: 6 }, fx: [{ kind: 'dust', x: -10, y: 0, count: 3 }],
+    w1: { armR: [-10, 40], weapon: -44, armL: [30, 30], torso: 16, head: -8, root: [-2, 2], legR: [26, 30], legL: [-14, 26], squash: 1.06, stretch: 0.95, face: 'angry' },
+    w2: { armR: [-20, 44], weapon: -58, armL: [38, 34], torso: 8, head: -10, root: [-5, 3], legR: [22, 36], legL: [-18, 32], squash: 1.09, stretch: 0.92, face: 'angry' },
+    h: { armR: [50, -10], weapon: -8, armL: [-60, 20], torso: 42, head: -6, root: [6, 5], legR: [56, 10], legL: [-46, 50], face: 'shout', squash: 0.96, stretch: 1.04 },
+    smear: { from: 58, to: 8, a: 0.4, r: 56 },
+    hold: { armR: [56, -8], weapon: 0, armL: [-52, 20], torso: 38, head: -4, root: [6, 4], legR: [40, 20], legL: [-30, 40], face: 'shout' },
+    r: { armR: [44, 6], weapon: -6, armL: [-30, 16], torso: 26, head: -2, root: [4, 2], legR: [34, 10], legL: [-24, 26], face: 'grit' },
+  }),
 });
 const crimper = def({
   variant: 'crimper', name: 'DECK CRIMPER', role: 'rusher', hp: 45, damage: 1, speed: 1.2, score: 150, drops: 'none',
-  build: { ...BASE.build, clan: WATCH.crimper, weapon: { attach: 'handR', length: 46, draw: drawBoatHook, headAt: 42 } },
+  build: { ...BASE.build, clan: WATCH.crimper,
+    palette: { ...CROW_PAL, hair: '#4A3226' },
+    crow: { head: 'bandana', coat: 'jerkin', hair: 'crop', band: '#B4483A', scarf: '#B07A22', scarfLen: 2 },
+    weapon: { attach: 'handR', length: 50, draw: drawBoatHook, headAt: 44 },
+    accessories: [{ attach: 'back', draw: crowLines }, { attach: 'torso', draw: crowScarf }] },
   anims: crimperAnims,
   ai: { attackRange: 44, attacks: [{ anim: 'jab', range: 56, weight: 4 }, { anim: 'sweep', range: 50, weight: 2 }, { anim: 'lunge', range: 110, minRange: 64, weight: 2 }], attackCooldown: [34, 72] },
 });
 
-// ---------------------------------------------------------------- C2 Line Corsair: harpoon at range, panics up close
+// ---------------------------------------------------------------- C2 Line Corsair: slouch hat, teal oilskin, harpoon gun
+// Tall and lanky, weight on the back foot, a tarred queue down his back and the reel drum riding his shoulder.
 const CORSAIR_CARRY = { armR: [22, 30], weapon: -30, armL: [-24, -20], grip: 0 };
-const corsairAnims = crowAnims(CORSAIR_CARRY, {
-  // harpoon: 24f shoulder the gun and sight down the lane -> fire -> 26f reel (the punish window)
-  harpoon: { style: 'shot', tell: 24, active: 6, recovery: 26, noHitbox: true, event: 'spawnProjectile', projectile: HARPOON,
-    tellSfx: 'coil_charge', sfx: 'harpoon', fx: [{ kind: 'spark', x: 40, y: 48, count: 3 }] },
+const CORSAIR_STANCE = { lean: 0, head: 1, legR: [6, 4], legL: [-12, 10] };
+const corsairAnims = crowAnims(CORSAIR_CARRY, CORSAIR_STANCE, {
+  // harpoon: 24f shouldering the gun and sighting down the lane -> the shot (with a recoil hold) -> 26f reeling in
+  harpoon: crowStrike({
+    tell: 24, active: 6, recovery: 26, carry: CORSAIR_CARRY, lean: 0, tellSfx: 'coil_charge', sfx: 'harpoon',
+    event: 'spawnProjectile', projectile: HARPOON, fx: [{ kind: 'spark', x: 40, y: 48, count: 3 }],
+    w1: { armR: [66, -18], weapon: -44, armL: [56, 40], torso: -2, head: 2, root: [-2, 0], legR: [12, 8], legL: [-16, 10], face: 'angry' },
+    w2: { armR: [86, -8], weapon: -10, armL: [72, 46], torso: 2, head: 3, root: [-4, 0], legR: [10, 8], legL: [-18, 12], face: 'angry', squash: 0.98, stretch: 1.02 },
+    h: { armR: [92, -4], weapon: 4, armL: [76, 44], torso: 6, head: 4, root: [-5, 0], legR: [14, 6], legL: [-20, 14], face: 'shout', squash: 0.97, stretch: 1.03 },
+    smear: { from: 10, to: -4, a: 0.3, r: 46 },
+    hold: { armR: [82, 6], weapon: -6, armL: [64, 40], torso: -4, head: 0, root: [-8, 0], legR: [16, 6], legL: [-22, 16], face: 'shout' },
+    r: { armR: [40, 30], weapon: -8, armL: [-18, 10], torso: 6, head: 0, root: [-2, 1], legR: [12, 6], legL: [-16, 12], face: 'grit' },
+  }),
   // butt-stroke: the panicky answer when a hero is inside the gun's minimum range
-  butt: { style: 'bash', tell: 12, active: 7, recovery: 20, reach: 34, dmg: 6, type: 'light', kbX: 4, hitstun: 14, sfx: 'whiff' },
+  butt: crowStrike({
+    tell: 12, active: 7, recovery: 20, carry: CORSAIR_CARRY, lean: 0, sfx: 'whiff',
+    hitbox: frontBox(34, hit(6, 'light', 4, 0, 14)),
+    w1: { armR: [-28, 92], weapon: -4, armL: [32, 20], torso: -8, head: -4, root: [-2, 1], legR: [10, 8], legL: [-12, 10], face: 'angry' },
+    w2: { armR: [-46, 104], weapon: -16, armL: [42, 24], torso: -14, head: -2, root: [-4, 1], legR: [8, 8], legL: [-14, 12], squash: 0.97, stretch: 1.03, face: 'angry' },
+    h: { armR: [34, 66], weapon: 10, armL: [-30, 12], torso: 20, head: 6, root: [5, 0], legR: [38, 10], legL: [-26, 22], face: 'shout', squash: 1.04, stretch: 0.97 },
+    smear: { from: 46, to: -30, a: 0.4, r: 42 },
+    hold: { armR: [40, 62], weapon: 16, armL: [-32, 12], torso: 22, head: 6, root: [5, 0], legR: [38, 10], legL: [-26, 22], face: 'shout' },
+    r: { armR: [36, 54], weapon: 14, armL: [-26, 10], torso: 14, head: 2, root: [3, 1], legR: [30, 10], legL: [-22, 20], face: 'grit' },
+  }),
 });
 /** The harpoon is drawn seated in the gun until the shot frame fires it. */
 const corsairHooks = {
@@ -134,29 +188,55 @@ const corsairHooks = {
 };
 const corsair = def({
   variant: 'corsair', name: 'LINE CORSAIR', role: 'ranged', hp: 40, damage: 1, speed: 1.15, score: 200, drops: 'none',
-  build: { ...BASE.build, clan: WATCH.corsair, palette: { ...CROW_PAL, primary: '#3A6376', sleeve: '#3A6376', secondary: '#26404E' },
-    weapon: { attach: 'handR', length: 38, draw: drawLineGun, headAt: 30 } },
+  build: { ...BASE.build, scale: 0.93, clan: WATCH.corsair,
+    palette: { ...CROW_PAL, primary: '#3E6B6E', sleeve: '#C9B79A', secondary: '#7E8AA0', hair: '#33241F' },
+    proportions: { ...CROW_PROPS, headR: 8, torsoW: 19, torsoH: 26, hip: 16, upperLeg: 18, lowerLeg: 17, upperArm: 15, lowerArm: 14, armR: 3.8, legR: 4.6 },
+    crow: { head: 'slouch', coat: 'oilskin', hair: 'queue', band: WATCH.corsair, scarf: '#8E2F38', scarfLen: 2, tailLen: 26 },
+    weapon: { attach: 'handR', length: 40, draw: drawLineGun, headAt: 32 },
+    accessories: [{ attach: 'back', draw: crowReel }, { attach: 'back', draw: crowTails }, { attach: 'torso', draw: crowScarf }] },
   anims: corsairAnims,
   ai: { attackRange: 32, attacks: [{ anim: 'butt', range: 40, weight: 1 }],
     ranged: { anim: 'harpoon', minRange: 110, maxRange: 330, cooldown: 160, zAlign: true, keep: 150 },
     retreatBudget: 140, retreatChance: 0.2, evadeChance: 0.25, evadeCooldown: 120 },
 }, corsairHooks);
 
-// ---------------------------------------------------------------- C3 Powder Bosun: chain shot + lobbed keg
+// ---------------------------------------------------------------- C3 Powder Bosun: bald, bearded, powder smock + keg
+// Barrel-chested and short-legged, planted wide; the only one with bare arms to the shoulder and a beard.
 const BOSUN_CARRY = { armR: [30, 22], weapon: 10, armL: [-22, -14] };
-const bosunAnims = crowAnims(BOSUN_CARRY, {
-  // chain shot: 26f wind-up over the head -> a full circle that hits BOTH sides -> 30f punish
-  chain: { style: 'spin', tell: 26, active: 12, recovery: 30, reach: 58, dmg: 14, type: 'heavy', kbX: 6, kbY: 2, hitstun: 24,
-    behind: true, tellSfx: 'crow_call', sfx: 'whiff',
-    fx: [{ kind: 'slash', x: 0, y: 42, radius: 46, angle: 0, sweep: 200 }] },
-  // powder keg: 30f haul it off the belt and light it -> lob at where the hero was 20f ago -> 28f punish
-  keg: { style: 'swing', tell: 30, active: 8, recovery: 28, noHitbox: true, aimEvent: 'aim', event: 'spawnProjectile', projectile: KEG,
-    tellSfx: 'bomb_fuse', sfx: 'throw' },
+const BOSUN_STANCE = { lean: 9, head: -1, legR: [14, 6], legL: [-14, 8] };
+const bosunAnims = crowAnims(BOSUN_CARRY, BOSUN_STANCE, {
+  // chain shot: 26f winding the chain up over his head -> a full circle that hits BOTH sides -> 30f punish
+  chain: crowStrike({
+    tell: 26, active: 12, recovery: 30, carry: BOSUN_CARRY, lean: 9, tellSfx: 'crow_call', sfx: 'whiff',
+    hitbox: frontBox(58, hit(14, 'heavy', 6, 2, 24), { behind: true }),
+    fx: [{ kind: 'slash', x: 0, y: 42, radius: 46, angle: 0, sweep: 200 }],
+    w1: { armR: [-60, -20], weapon: -80, armL: [-40, 20], torso: -6, head: -6, root: [0, 0, -8], legR: [14, 6], legL: [-14, 8], face: 'angry' },
+    w2: { armR: [-150, -10], weapon: -200, armL: [-118, 12], torso: -2, head: -10, root: [0, -1, -14], legR: [12, 8], legL: [-16, 10], squash: 0.98, stretch: 1.02, face: 'angry' },
+    h: { armR: [110, -10], weapon: -420, armL: [108, -8], torso: 10, head: 4, root: [3, -2, 14], legR: [24, 10], legL: [-24, 12], face: 'shout', squash: 1.04, stretch: 0.97 },
+    smear: { from: -200, to: 60, a: 0.55, r: 72 },
+    hold: { armR: [118, -6], weapon: -470, armL: [114, -6], torso: 14, head: 6, root: [4, -1, 16], legR: [24, 10], legL: [-24, 12], face: 'shout' },
+    r: { armR: [94, 2], weapon: -480, armL: [-38, 12], torso: 12, head: 2, root: [2, 1, 0], legR: [22, 10], legL: [-22, 12], face: 'grit' },
+  }),
+  // powder keg: 30f hauling it off the belt and lighting the match -> lobbed at where the hero was -> 28f punish
+  keg: crowStrike({
+    tell: 30, active: 8, recovery: 28, carry: BOSUN_CARRY, lean: 9, tellSfx: 'bomb_fuse', sfx: 'throw',
+    aimEvent: 'aim', event: 'spawnProjectile', projectile: KEG,
+    w1: { armR: [-34, 62], weapon: -35, armL: [-46, 58], torso: 12, head: 8, root: [-2, 2], legR: [18, 14], legL: [-16, 14], face: 'angry' },
+    w2: { armR: [112, 92], weapon: 130, armL: [100, 82], torso: -4, head: -6, root: [-5, 1], legR: [12, 10], legL: [-18, 12], squash: 0.97, stretch: 1.03, face: 'grit' },
+    h: { armR: [138, 4], weapon: 80, armL: [126, 14], torso: -12, head: -12, root: [3, 2], legR: [22, 6], legL: [-20, 12], face: 'shout', squash: 0.95, stretch: 1.06 },
+    smear: { from: -110, to: -40, a: 0.4, r: 54 },
+    hold: { armR: [108, 8], weapon: 55, armL: [96, 16], torso: -6, head: -8, root: [4, 2], legR: [22, 6], legL: [-20, 12], face: 'shout' },
+    r: { armR: [34, 22], weapon: 0, armL: [22, 12], torso: 14, head: 4, root: [2, 1], legR: [18, 8], legL: [-18, 10], face: 'grit' },
+  }),
 });
 const bosun = def({
   variant: 'bosun', name: 'POWDER BOSUN', role: 'bruiser', hp: 85, damage: 1, speed: 0.85, score: 300, drops: 'none',
-  build: { ...BASE.build, scale: 1.08, clan: WATCH.bosun, palette: { ...CROW_PAL, primary: '#4E4759', sleeve: '#4E4759', secondary: '#33303E' },
-    weapon: { attach: 'handR', length: 46, draw: drawChainShot, headAt: 38 } },
+  build: { ...BASE.build, scale: 1.15, clan: WATCH.bosun,
+    palette: { ...CROW_PAL, primary: '#5A5560', sleeve: CROW.skin, secondary: '#7C8496', hair: '#A79C88' },
+    proportions: { ...CROW_PROPS, headR: 9.5, neckR: 4, torsoW: 27, torsoH: 25, hip: 23, upperLeg: 13, lowerLeg: 12, legR: 6, armR: 5, handR: 5.4, footL: 13, footH: 6, bulge: 0.6 },
+    crow: { head: 'loupe', coat: 'smock', hair: 'bald', beard: true, band: WATCH.bosun, faceOpts: BEARDED },
+    weapon: { attach: 'handR', length: 48, draw: drawChainShot, headAt: 40 },
+    accessories: [{ attach: 'back', draw: crowKeg }, { attach: 'torso', draw: crowBandolier }] },
   anims: bosunAnims,
   // heavy enough to shrug off every other hit, but he still launches and still goes down to a throw
   traits: { flinchEvery: 2, weight: 1.3 },
@@ -165,24 +245,41 @@ const bosun = def({
     retreatBudget: 70, retreatChance: 0.15, attackCooldown: [48, 90] },
 });
 
-// ---------------------------------------------------------------- C4 Galewright: storm coil, charge then a stunning arc
+// ---------------------------------------------------------------- C4 Galewright: lens visor, duster, storm coil
+// Thin, upright, stiff-backed; hair standing on end with the charge and two lightning rods over her shoulder.
 const GALE_CARRY = { armR: [24, 24], weapon: -24, armL: [-26, -18], grip: 0 };
+const GALE_STANCE = { lean: -2, head: 1, legR: [6, 3], legL: [-8, 5] };
 /** The arc: a lane-wide bolt that staggers. It is slow and loud on purpose — the answer is to be somewhere else. */
 const GALE_BOX = { ...frontBox(130, hit(12, 'heavy', 5, 0, 24, { status: { stunned: { frames: 30 } } })), z: 20 };
-const galewrightAnims = crowAnims(GALE_CARRY, {
-  // gale: 36f charge (grip climbs, the bulb throws arcs, the lenses blink white in the last frames) -> 10f bolt -> 36f punish
-  gale: { style: 'raise', tell: 36, active: 10, recovery: 36, hitbox: GALE_BOX, tellSfx: 'coil_charge', sfx: 'thunder_strike',
-    fx: [{ kind: 'spark', x: 60, y: 46, count: 6 }] },
+const galewrightAnims = crowAnims(GALE_CARRY, GALE_STANCE, {
+  // gale: 36f charge (the bulb arcs, the hair lifts, the visor blinks white in the last frames) -> the bolt -> 36f punish
+  gale: crowStrike({
+    tell: 36, active: 10, recovery: 36, carry: GALE_CARRY, lean: -2, tellSfx: 'coil_charge', sfx: 'thunder_strike',
+    hitbox: GALE_BOX, fx: [{ kind: 'spark', x: 60, y: 46, count: 6 }],
+    w1: { armR: [-148, -20], weapon: 6, armL: [-56, -30], torso: -6, head: -10, root: [0, 1], legR: [10, 6], legL: [-16, 10], face: 'angry' },
+    w2: { armR: [-172, -8], weapon: -14, armL: [-78, -40], torso: -14, head: -14, root: [0, -1], legR: [8, 6], legL: [-18, 12], squash: 0.97, stretch: 1.04, face: 'grit' },
+    h: { armR: [71, -8], weapon: 5, armL: [-40, 20], torso: 22, head: 6, root: [5, 1], legR: [40, 10], legL: [-30, 32], face: 'shout', squash: 1.05, stretch: 0.96 },
+    smear: { from: -76, to: 5, a: 0.5, r: 66 },
+    hold: { armR: [71, -6], weapon: 14, armL: [-42, 20], torso: 25, head: 7, root: [6, 1], legR: [40, 10], legL: [-30, 32], face: 'shout' },
+    r: { armR: [49, 10], weapon: 2, armL: [-32, 14], torso: 15, head: 2, root: [3, 1], legR: [32, 10], legL: [-26, 26], face: 'grit' },
+  }),
   // repel: a close-range pressure wave; no damage worth the name, but it puts a hero back in the arc's lane
-  repel: { style: 'vent', tell: 16, active: 8, recovery: 22, area: 52, dmg: 5, type: 'medium', kbX: 9, kbY: 3, hitstun: 18,
-    sfx: 'gale', fx: [{ kind: 'ring', x: 0, y: 30, r0: 6, r1: 60, color: CROW.spark }] },
+  repel: crowStrike({
+    tell: 16, active: 8, recovery: 22, carry: GALE_CARRY, lean: -2, sfx: 'gale',
+    hitbox: areaBox(52, hit(5, 'medium', 9, 3, 18)), fx: [{ kind: 'ring', x: 0, y: 30, r0: 6, r1: 60, color: CROW.spark }],
+    w1: { armR: [28, 72], weapon: 0, armL: [28, 72], torso: -10, head: -6, root: [-3, 2], legR: [10, 10], legL: [-14, 10], face: 'angry' },
+    w2: { armR: [16, 88], weapon: -4, armL: [16, 88], torso: -18, head: -4, root: [-5, 3], legR: [8, 14], legL: [-14, 14], squash: 1.06, stretch: 0.94, face: 'angry' },
+    h: { armR: [81, 0], weapon: 5, armL: [69, 0], torso: 14, head: 4, root: [2, 0], legR: [34, 10], legL: [-30, 30], face: 'shout', squash: 0.94, stretch: 1.07 },
+    smear: { from: 4, to: -5, a: 0.4, r: 48 },
+    hold: { armR: [81, 2], weapon: 13, armL: [69, 2], torso: 16, head: 5, root: [3, 0], legR: [34, 10], legL: [-30, 30], face: 'shout' },
+    r: { armR: [68, 10], weapon: 4, armL: [56, 10], torso: 8, head: 0, root: [2, 1], legR: [26, 10], legL: [-24, 24], face: 'grit' },
+  }),
 });
-/** Charge state for the art: pose.grip is keyed by the tell frames, so the bulb brightens with the wind-up. */
+/** Charge state for the art: rig.coil drives the bulb, the rod beads and how far the hair stands up. */
 const galeHooks = {
   onUpdate(f, world) {
     BASE_HOOKS.onUpdate(f, world);
     const a = f.anim, gale = a.name === 'gale', charging = gale && a.frameIndex <= 1;
-    // rig.coil (0..1) drives the bulb: it climbs across the two tell frames and stays lit through the bolt
     f.rig.coil = gale ? (charging ? Math.min(1, (a.frameIndex + a.frameTime / Math.max(1, a.frame.dur)) / 2) : 1) : 0;
     f.rig.wings = f.rig.wings || charging;
     if (charging && world && (world.frame & 3) === 0) particles.burst('spark', f.x + f.facing * 22, 48, f.z, 1, { speed: 1.2, up: 0.6, color: CROW.spark });
@@ -190,24 +287,45 @@ const galeHooks = {
 };
 const galewright = def({
   variant: 'galewright', name: 'GALEWRIGHT', role: 'elite', hp: 90, damage: 1, speed: 1, score: 500, drops: 'meter',
-  build: { ...BASE.build, clan: WATCH.galewright, palette: { ...CROW_PAL, primary: '#4A3F68', sleeve: '#4A3F68', secondary: '#2F2848', glow: CROW.spark },
-    weapon: { attach: 'handR', length: 40, draw: drawCoilRod, headAt: 34 } },
+  build: { ...BASE.build, scale: 0.92, clan: WATCH.galewright,
+    palette: { ...CROW_PAL, primary: '#4A3F68', sleeve: '#B9AECB', secondary: '#8A8296', hair: '#9A86C0', glow: CROW.spark },
+    proportions: { ...CROW_PROPS, headR: 8, torsoW: 19, torsoH: 28, hip: 16, neck: 4, upperLeg: 17, lowerLeg: 16, armR: 3.6, legR: 4.6 },
+    crow: { head: 'visor', coat: 'duster', hair: 'loose', band: WATCH.galewright, scarf: '#C9BEA6', scarfLen: 3, tailLen: 28 },
+    weapon: { attach: 'handR', length: 42, draw: drawCoilRod, headAt: 34 },
+    accessories: [{ attach: 'back', draw: crowRods }, { attach: 'back', draw: crowTails }, { attach: 'torso', draw: crowScarf }] },
   anims: galewrightAnims,
   ai: { attackRange: 46, zTolerance: 14, ignoresTokens: true, hoverCircle: true,
     attacks: [{ anim: 'gale', range: 150, minRange: 60, weight: 4 }, { anim: 'repel', range: 52, weight: 3 }],
     attackCooldown: [70, 110], evadeChance: 0.3, evadeCooldown: 110, tellWarnFrames: 14 },
 }, galeHooks);
 
-// ---------------------------------------------------------------- C5 Ironwing Marine: wing-plate shield, boarding axe
+// ---------------------------------------------------------------- C5 Ironwing Marine: crested helm, wing-plate, axe
+// The only one still in uniform, and the only one still armoured: broad, planted, half-masked behind the plate.
 const MARINE_CARRY = { armR: [28, 20], weapon: -10, armL: [10, 70] };
-const marineAnims = crowAnims(MARINE_CARRY, {
-  // shield charge: 30f behind the wing-plate -> a shoving advance -> 26f punish (and the plate is still up)
-  shove: { style: 'charge', tell: 30, active: 12, recovery: 26, reach: 46, dmg: 16, type: 'medium', kbX: 7, hitstun: 22,
-    move: { x: 4.5 }, armor: true, tellSfx: 'crow_call', sfx: 'armor' },
+const MARINE_STANCE = { lean: 6, head: -2, legR: [14, 4], legL: [-14, 8], holdOffArm: true, stagger: { armL: [-30, 20] } };
+const marineAnims = crowAnims(MARINE_CARRY, MARINE_STANCE, {
+  // shield charge: 30f set behind the wing-plate -> a shoving advance -> 26f punish (and the plate is still up)
+  shove: crowStrike({
+    tell: 30, active: 12, recovery: 26, carry: MARINE_CARRY, lean: 6, tellSfx: 'crow_call', sfx: 'armor', armor: true,
+    hitbox: frontBox(46, hit(16, 'medium', 7, 0, 22)), move: { x: 4.5 },
+    w1: { armR: [-20, 30], weapon: -24, armL: [16, 78], torso: 16, head: -6, root: [-3, 1], legR: [22, 16], legL: [-18, 18], face: 'angry' },
+    w2: { armR: [-32, 38], weapon: -36, armL: [8, 88], torso: 8, head: -8, root: [-7, 2], legR: [16, 24], legL: [-24, 24], squash: 1.05, stretch: 0.95, face: 'grit' },
+    h: { armR: [-42, 30], weapon: -18, armL: [34, 58], torso: 44, head: -10, root: [7, 3], legR: [54, 18], legL: [-44, 52], face: 'shout', squash: 0.96, stretch: 1.05 },
+    hold: { armR: [-38, 28], weapon: -20, armL: [40, 54], torso: 40, head: -8, root: [7, 3], legR: [44, 24], legL: [-34, 44], face: 'shout' },
+    r: { armR: [-24, 26], weapon: -22, armL: [24, 64], torso: 26, head: -4, root: [4, 2], legR: [32, 14], legL: [-26, 30], face: 'grit' },
+  }),
   // axe chop: the follow-up the shove chains into; the last hit puts a hero on the deck
-  chop: { style: 'slam', tell: 24, active: 10, recovery: 30, reach: 52, dmg: 18, type: 'knockdown', kbX: 5, kbY: 5, hitstun: 26,
-    tellSfx: 'crow_call', sfx: 'hammer_slam', fx: [{ kind: 'slash', x: 44, y: 40, radius: 26, angle: 40, sweep: 90 }] },
-}, { holdOffArm: true, stagger: { armL: [-30, 20] } });
+  chop: crowStrike({
+    tell: 24, active: 10, recovery: 30, carry: MARINE_CARRY, lean: 6, tellSfx: 'crow_call', sfx: 'hammer_slam',
+    hitbox: frontBox(52, hit(18, 'knockdown', 5, 5, 26)), fx: [{ kind: 'slash', x: 44, y: 40, radius: 26, angle: 40, sweep: 90 }],
+    w1: { armR: [-138, -28], weapon: 4, armL: [12, 72], torso: -10, head: -8, root: [-2, 0], legR: [14, 8], legL: [-16, 10], face: 'angry' },
+    w2: { armR: [-172, -10], weapon: -20, armL: [4, 80], torso: -18, head: -12, root: [-5, 2], legR: [10, 8], legL: [-18, 12], squash: 0.96, stretch: 1.05, face: 'grit' },
+    h: { armR: [22, 14], weapon: 5, armL: [-10, 58], torso: 34, head: 8, root: [6, 3], legR: [46, 26], legL: [-32, 36], face: 'shout', squash: 1.08, stretch: 0.93 },
+    smear: { from: -70, to: 20, a: 0.55, r: 60 },
+    hold: { armR: [23, 16], weapon: 18, armL: [-12, 58], torso: 37, head: 9, root: [7, 3], legR: [46, 26], legL: [-32, 36], face: 'shout' },
+    r: { armR: [22, 20], weapon: 6, armL: [0, 62], torso: 24, head: 4, root: [4, 2], legR: [38, 18], legL: [-28, 30], face: 'grit' },
+  }),
+});
 /** The wing-plate is a rig flag, so stripping it is visible for the rest of the fight. */
 const marineHooks = {
   onShieldStripped(f, world) {
@@ -218,9 +336,12 @@ const marineHooks = {
 };
 const marine = def({
   variant: 'marine', name: 'IRONWING MARINE', role: 'elite', hp: 190, damage: 1, speed: 0.7, score: 1000, drops: 'food_small',
-  build: { ...BASE.build, scale: 1.28, clan: WATCH.marine, palette: { ...CROW_PAL, primary: '#36486B', sleeve: '#36486B', secondary: '#212C46', metal: '#AEB9C6' },
-    weapon: { attach: 'handR', length: 40, draw: drawBoardingAxe, headAt: 30 },
-    accessories: [...CROW_BACK, { attach: 'handL', draw: drawWingShield }] },
+  build: { ...BASE.build, scale: 1.31, clan: WATCH.marine,
+    palette: { ...CROW_PAL, primary: '#36486B', sleeve: '#BFAE90', secondary: '#6E7A90', metal: '#AEB9C6', hair: '#2A2018' },
+    proportions: { ...CROW_PROPS, headR: 9, torsoW: 24, torsoH: 25, hip: 20, upperLeg: 15, lowerLeg: 14, legR: 5.6, armR: 4.6, handR: 5.2, footL: 13, footH: 6, bulge: 0.35 },
+    crow: { head: 'helm', coat: 'plate', hair: 'crop', band: WATCH.marine },
+    weapon: { attach: 'handR', length: 42, draw: drawBoardingAxe, headAt: 32 },
+    accessories: [{ attach: 'back', draw: crowWings }, { attach: 'handL', draw: drawWingShield }] },
   anims: marineAnims,
   elite: true, grabbable: false, grabbableByGrappler: true, lyingFrames: 55,
   ai: { attackRange: 50, zTolerance: 16, ignoresTokens: true, attackCooldown: [50, 90],
