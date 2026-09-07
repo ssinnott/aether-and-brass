@@ -109,6 +109,33 @@ window.__sv = (function () {
       b: 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
     };
   }
+  /**
+   * Chroma-weighted circular hue statistics in the Oklab (a,b) plane.
+   * Hue only means anything where there is chroma, so every sample is weighted by its own chroma and samples
+   * under MINC contribute nothing: a neutral grey has no hue to average in. R is the resultant length --
+   * 1.0 means every pixel shares one hue, 0.0 means the hue is spread evenly round the wheel.
+   */
+  var MINC = 0.02;         // Oklab chroma below which a pixel is treated as neutral
+  function hueAcc() {
+    return { x: 0, y: 0, w: 0, n: 0 };
+  }
+  function hueAdd(acc, o) {
+    var c = Math.sqrt(o.a * o.a + o.b * o.b);
+    if (c < MINC) return;
+    acc.x += o.a; acc.y += o.b; acc.w += c; acc.n++;
+  }
+  function hueOf(acc) {
+    if (!acc.w) return { deg: null, R: 0, chroma: 0, n: 0 };
+    var deg = Math.atan2(acc.y, acc.x) * 180 / Math.PI;
+    return { deg: (deg + 360) % 360, R: Math.sqrt(acc.x * acc.x + acc.y * acc.y) / acc.w, chroma: acc.w / acc.n, n: acc.n };
+  }
+  /** Shortest angular distance between two hue angles, in degrees (null-safe). */
+  function hueGap(a, b) {
+    if (a == null || b == null) return null;
+    var d = Math.abs(a - b) % 360;
+    return d > 180 ? 360 - d : d;
+  }
+
   function stats(a) {
     if (!a.length) return { n: 0, mean: 0, p10: 0, p50: 0, p90: 0 };
     var s = Float64Array.from(a); s.sort();
@@ -284,6 +311,7 @@ window.__sv = (function () {
    */
   function separation(A, back, m, w, h, skip) {
     var dV = [], dS = [], dE = [], edge = [], av = [], as = [], bv = [], bs2 = [], dL = [], dC = [];
+    var hA = hueAcc(), hB = hueAcc(), dH = [];
     for (var y = 1; y < h - 1; y++) for (var x = 1; x < w - 1; x++) {
       var p = y * w + x; if (!m[p] || (skip && skip[p])) continue;
       var i = p * 4;
@@ -294,6 +322,12 @@ window.__sv = (function () {
       av.push(ca.v); as.push(ca.s); bv.push(cb.v); bs2.push(cb.s);
       dV.push(ca.v - cb.v); dS.push(ca.s - cb.s); dE.push(e);
       dL.push(Math.abs(l) * 100); dC.push(Math.sqrt(aa * aa + bb * bb) * 100);
+      hueAdd(hA, oa); hueAdd(hB, ob);
+      // per-pixel hue gap: how far this actor pixel's hue sits from the hue of the ground it covers
+      var ca2 = Math.sqrt(oa.a * oa.a + oa.b * oa.b), cb2 = Math.sqrt(ob.a * ob.a + ob.b * ob.b);
+      if (ca2 >= MINC && cb2 >= MINC) {
+        dH.push(hueGap(Math.atan2(oa.b, oa.a) * 180 / Math.PI + 360, Math.atan2(ob.b, ob.a) * 180 / Math.PI + 360));
+      }
       var isEdge = false;
       for (var dy = -EDGE; dy <= EDGE && !isEdge; dy++) for (var dx = -EDGE; dx <= EDGE; dx++) {
         var yy = y + dy, xx = x + dx; if (yy < 0 || yy >= h || xx < 0 || xx >= w) continue;
@@ -312,6 +346,11 @@ window.__sv = (function () {
       edgeDE: mean(edge), dL: mean(dL), dC: mean(dC),
       lostPct: dE.length ? (100 * lost / dE.length) : 0,
       lostThreshold: LOST,
+      actorHue: hueOf(hA), bgHue: hueOf(hB),
+      actorValSpread: stats(av), bgValSpread: stats(bv),
+      actorSatSpread: stats(as),
+      hueGap: hueGap(hueOf(hA).deg, hueOf(hB).deg),
+      hueGapPx: mean(dH), hueGapPxN: dH.length,
     };
   }
 
@@ -321,7 +360,7 @@ window.__sv = (function () {
     return { px: d.data, w: canvas.width, h: canvas.height };
   }
   return { hsv: hsv, oklab: oklab, band: band, maskFromDiff: maskFromDiff, maskFromSaturation: maskFromSaturation,
-    localBackdrop: localBackdrop, separation: separation, classifyShadow: classifyShadow, fillPinholes: fillPinholes, dropSmallBlobs: dropSmallBlobs, grab: grab, stats: stats, LOST: LOST };
+    localBackdrop: localBackdrop, separation: separation, classifyShadow: classifyShadow, fillPinholes: fillPinholes, dropSmallBlobs: dropSmallBlobs, hueOf: hueOf, hueGap: hueGap, grab: grab, stats: stats, LOST: LOST };
 })();
 `;
 
@@ -512,8 +551,9 @@ for (const ref of CFG.refs) {
 
 // ---------------------------------------------------------------- report
 const pc = (n) => (n * 100).toFixed(0).padStart(3) + '%';
-const f1 = (n) => n.toFixed(1).padStart(5);
+const f1 = (n) => (n == null || Number.isNaN(n) ? '    -' : n.toFixed(1).padStart(5));
 const sgn = (n) => (n >= 0 ? '+' : '') + (n * 100).toFixed(0);
+const deg = (n) => (n == null ? '   -' : Math.round(n).toString().padStart(4));
 
 if (CFG.json) {
   console.log(JSON.stringify({ ...results, pageErrors }, null, 2));
@@ -527,18 +567,19 @@ if (CFG.json) {
   console.log('\n=== ACTOR / STAGE SEPARATION (actor pixels vs the backdrop directly behind them) ======================');
   console.log('  dE = Oklab distance x100 (all-pixel mean) | edge = dE on silhouette pixels | p10 = the 10th percentile');
   console.log(`  lost% = share of actor pixels under dE ${results.separation[0] ? results.separation[0].exact.lostThreshold : 10} (they merge into the ground)`);
+  console.log('  actH/bgH = chroma-weighted mean Oklab hue angle of the actors and of the ground behind them | dHue = the gap between them');
   console.log('');
-  console.log('BOARD SECTION                     FACTION      actV  bgV   dV    actS  bgS   dS      dE   edge   p10  lost%');
+  console.log('BOARD SECTION                     FACTION      actV  bgV   dV    actS  bgS   dS      dE   edge   p10  lost%   actH   bgH  dHue');
   for (const s of results.separation) {
     const e = s.exact;
-    console.log(`  ${s.stage}   ${(s.section + ' ' + s.name).padEnd(28)} ${s.faction.padEnd(11)} ${pc(e.actorVal)} ${pc(e.bgVal)} ${sgn(e.dVal).padStart(4)}  ${pc(e.actorSat)} ${pc(e.bgSat)} ${sgn(e.dSat).padStart(4)}   ${f1(e.dE)} ${f1(e.edgeDE)} ${f1(e.dEp10)} ${f1(e.lostPct)}`);
+    console.log(`  ${s.stage}   ${(s.section + ' ' + s.name).padEnd(28)} ${s.faction.padEnd(11)} ${pc(e.actorVal)} ${pc(e.bgVal)} ${sgn(e.dVal).padStart(4)}  ${pc(e.actorSat)} ${pc(e.bgSat)} ${sgn(e.dSat).padStart(4)}   ${f1(e.dE)} ${f1(e.edgeDE)} ${f1(e.dEp10)} ${f1(e.lostPct)}  ${deg(e.actorHue && e.actorHue.deg)} ${deg(e.bgHue && e.bgHue.deg)} ${f1(e.hueGap)}`);
   }
   console.log('\n=== WORST FIRST (least separation) ===================================================================');
   const ranked = results.separation.slice().sort((a, b) => a.exact.dE - b.exact.dE);
-  console.log('RANK  BOARD SECTION                     FACTION       dE   edge   p10  lost%   dV     dS');
+  console.log('RANK  BOARD SECTION                     FACTION       dE   edge   p10  lost%   dV     dS   dHue');
   ranked.forEach((s, i) => {
     const e = s.exact;
-    console.log(`  ${String(i + 1).padStart(2)}    ${s.stage}   ${(s.section + ' ' + s.name).padEnd(28)} ${s.faction.padEnd(11)} ${f1(e.dE)} ${f1(e.edgeDE)} ${f1(e.dEp10)} ${f1(e.lostPct)}  ${sgn(e.dVal).padStart(4)}  ${sgn(e.dSat).padStart(4)}`);
+    console.log(`  ${String(i + 1).padStart(2)}    ${s.stage}   ${(s.section + ' ' + s.name).padEnd(28)} ${s.faction.padEnd(11)} ${f1(e.dE)} ${f1(e.edgeDE)} ${f1(e.dEp10)} ${f1(e.lostPct)}  ${sgn(e.dVal).padStart(4)}  ${sgn(e.dSat).padStart(4)}  ${f1(e.hueGap)}`);
   });
   for (const r of results.reference) {
     console.log(`\n=== REFERENCE ${path.basename(r.file)} (${r.size[0]}x${r.size[1]}) ==============================`);
