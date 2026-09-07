@@ -99,7 +99,7 @@ Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&c
 every push to `main`, serving it at `https://ssinnott.github.io/aether-and-brass/`. Pages is
 already switched on for the repository with **Source: GitHub Actions**.
 
-Every branch builds, but only `main` deploys: the `github-pages` environment restricts
+Every push and pull request builds, but only `main` deploys: the `github-pages` environment restricts
 deployments to the default branch, so a deploy from anywhere else is rejected with *Branch
 "…" is not allowed to deploy to github-pages due to environment protection rules*. To publish
 from another branch, add it under **Settings → Environments → github-pages → Deployment

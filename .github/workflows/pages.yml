@@ -3,7 +3,7 @@
 # Pages is enabled on this repository with Source = GitHub Actions, so a push to main
 # redeploys https://ssinnott.github.io/aether-and-brass/
 #
-# Every branch builds, but only main deploys: the github-pages environment restricts
+# Every push and pull request builds, but only main deploys: the github-pages environment restricts
 # deployments to the default branch, and a deploy from anywhere else is rejected with
 # 'Branch "..." is not allowed to deploy to github-pages due to environment protection rules'.
 # To publish from another branch, add it under
@@ -15,7 +15,11 @@ on:
   push:
     branches:
       - main
-      - claude/github-pages-retry-4w8te7
+  # Pull requests build only (the deploy job is gated below), so a PR proves the site still
+  # builds before it can reach main.
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 # Allow the workflow to publish a Pages deployment.
