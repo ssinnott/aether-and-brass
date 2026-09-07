@@ -175,18 +175,12 @@ function drawPauldron(ctx, rig) {
   celPath(ctx, rig, PAL.accent, cx, cy, ro, 0.38, 0.3);
   if (!rig.override) { ctx.fillStyle = tones(rig, PAL.accent).deep; ctx.fillRect(R(cx) - 1, R(cy) - 1, 3, 3); }
 }
-/** Select-screen portrait. */
+/** Bust portrait (select cards / HUD): the real rig's head and shoulders in the idle carry, so it matches the sprite. */
+let portraitRig = null;
+const PORTRAIT_POSE = P({ armR: [24, -10], weapon: -99, armL: [-36, -30], legR: [8, 0], legL: [-8, 0], torso: 2, head: -2, face: 'angry' });
 function portrait(ctx, x, y, s) {
-  const cx = x + s / 2, cy = y + s / 2;
-  ctx.fillStyle = '#1a1018'; ctx.beginPath(); ctx.arc(cx, cy - 1, 10, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = PAL.skin; ctx.beginPath(); ctx.arc(cx, cy - 1, 9, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = PAL.hair; ctx.fillRect(cx - 8, cy + 2, 16, 10); ctx.fillRect(cx - 9, cy - 9, 18, 4);
-  ctx.fillStyle = LEATHER; ctx.fillRect(cx - 9, cy - 7, 18, 3);
-  ctx.fillStyle = PAL.accent; ctx.fillRect(cx - 6, cy - 9, 5, 5); ctx.fillRect(cx + 1, cy - 9, 5, 5);
-  ctx.fillStyle = LENS; ctx.fillRect(cx - 5, cy - 8, 3, 3); ctx.fillRect(cx + 2, cy - 8, 3, 3);
-  ctx.fillStyle = '#f8f4ec'; ctx.fillRect(cx - 5, cy - 2, 3, 2); ctx.fillRect(cx + 2, cy - 2, 3, 2);
-  ctx.fillStyle = '#1a1018'; ctx.fillRect(cx - 4, cy - 2, 1, 2); ctx.fillRect(cx + 3, cy - 2, 1, 2);
-  ctx.fillStyle = '#7A2E12'; ctx.fillRect(cx - 5, cy - 4, 3, 1); ctx.fillRect(cx + 2, cy - 4, 3, 1);
+  if (!portraitRig) portraitRig = buildRig(build);
+  drawHeadPortrait(ctx, portraitRig, PORTRAIT_POSE, x, y, s, { bg: null, fill: 0.62, cy: 0.5 });
 }
 
 const build = {
@@ -246,15 +240,17 @@ const anims = {
     F(4, { ...CARRY, legR: [0, 12], legL: [8, 22], armL: [-24, -14], torso: 6, root: [0, 1], armR: [24, -12], weapon: -103 }, { ease: 'inout' }),
     F(4, { ...CARRY, legR: [18, -2], legL: [-10, 12], footR: -6, armL: [-8, -10], torso: 5, root: [0, -1], armR: [24, -10], weapon: -103, head: -1 }, { ease: 'in' }),
   ] },
+  // run: 8 keys x 3f, lean 20-22. contact (front foot planted, root +4) -> down (support leg under the body, root +3, squash)
+  // -> pass (push-off, both feet off, root -2) -> reach (front leg reaching, airborne) x2; feet checked with the pose audit
   run: { loop: true, frames: [
-    F(3, { ...READY, legR: [52, 14], legL: [-40, 56], armR: [90, -128], weapon: -106, torso: 20, head: -4, root: [0, -2], face: 'angry' }, { ease: 'out' }),
-    F(3, { ...READY, legR: [40, 30], legL: [-30, 70], armR: [88, -126], weapon: -104, torso: 22, head: -4, root: [0, 1], squash: 1.04, stretch: 0.96, face: 'angry' }, { ease: 'out' }),
-    F(3, { ...READY, legR: [10, 40], legL: [10, 30], armR: [86, -124], weapon: -102, torso: 21, head: -3, root: [0, 2], face: 'angry' }, { ease: 'inout' }),
-    F(3, { ...READY, legR: [-24, 50], legL: [40, 8], armR: [88, -126], weapon: -104, torso: 20, head: -4, root: [0, -1], face: 'angry' }, { ease: 'in' }),
-    F(3, { ...READY, legR: [-40, 56], legL: [52, 14], armR: [90, -128], weapon: -106, torso: 20, head: -4, root: [0, -2], face: 'angry' }, { ease: 'out' }),
-    F(3, { ...READY, legR: [-30, 70], legL: [40, 30], armR: [88, -126], weapon: -104, torso: 22, head: -4, root: [0, 1], squash: 1.04, stretch: 0.96, face: 'angry' }, { ease: 'out' }),
-    F(3, { ...READY, legR: [10, 30], legL: [10, 40], armR: [86, -124], weapon: -102, torso: 21, head: -3, root: [0, 2], face: 'angry' }, { ease: 'inout' }),
-    F(3, { ...READY, legR: [40, 8], legL: [-24, 50], armR: [88, -126], weapon: -104, torso: 20, head: -4, root: [0, -1], face: 'angry' }, { ease: 'in' }),
+    F(3, { ...READY, legR: [34, -2], legL: [-34, 46], armR: [90, -128], weapon: -106, torso: 20, head: -4, root: [0, 4], face: 'angry' }, { ease: 'out' }),
+    F(3, { ...READY, legR: [12, 12], legL: [-16, 64], armR: [88, -126], weapon: -104, torso: 22, head: -4, root: [0, 3], squash: 1.04, stretch: 0.96, face: 'angry' }, { ease: 'out' }),
+    F(3, { ...READY, legR: [-10, 30], legL: [22, 4], armR: [86, -124], weapon: -102, torso: 21, head: -3, root: [0, -2], face: 'angry' }, { ease: 'inout' }),
+    F(3, { ...READY, legR: [-34, 46], legL: [44, -14], armR: [88, -126], weapon: -104, torso: 20, head: -4, root: [0, 0], face: 'angry' }, { ease: 'in' }),
+    F(3, { ...READY, legR: [-34, 46], legL: [34, -2], armR: [90, -128], weapon: -106, torso: 20, head: -4, root: [0, 4], face: 'angry' }, { ease: 'out' }),
+    F(3, { ...READY, legR: [-16, 64], legL: [12, 12], armR: [88, -126], weapon: -104, torso: 22, head: -4, root: [0, 3], squash: 1.04, stretch: 0.96, face: 'angry' }, { ease: 'out' }),
+    F(3, { ...READY, legR: [22, 4], legL: [-10, 30], armR: [86, -124], weapon: -102, torso: 21, head: -3, root: [0, -2], face: 'angry' }, { ease: 'inout' }),
+    F(3, { ...READY, legR: [44, -14], legL: [-34, 46], armR: [88, -126], weapon: -104, torso: 20, head: -4, root: [0, 0], face: 'angry' }, { ease: 'in' }),
   ] },
   jump: { loop: false, frames: [
     F(3, { ...CARRY, legR: [30, 40], legL: [-20, 44], torso: 14, root: [0, 4], squash: 1.1, stretch: 0.9, armL: [-30, 30], armR: [30, -10], weapon: -90 }, { ease: 'out' }),
@@ -293,20 +289,21 @@ const anims = {
     F(4, { ...CARRY, torso: 6, face: 'angry' }, { cancel: 'attack', ease: 'out' }),
   ] },
   attack3: { loop: false, frames: [
-    F(4, { grip: 1, armR: [-120, -60], weapon: -56, armL: [-10, -150], torso: -18, head: -10, root: [-2, 1], legR: [6, 4], legL: [-20, 14], face: 'angry' }, { sfx: SW, armor: true, ease: 'in' }),
-    F(3, { grip: 1, armR: [-130, -66], weapon: -60, armL: [-30, -150], torso: -26, head: -12, root: [-3, -1], squash: 0.96, stretch: 1.05, legR: [4, 2], legL: [-24, 18], face: 'shout' }, { armor: true, ease: 'out' }),
+    F(4, { grip: 1, armR: [-120, -60], weapon: -56, armL: [-10, -150], torso: -18, head: -10, root: [-2, 1], legR: [6, 4], legL: [-20, 14], face: 'angry' }, { sfx: SW, armor: 1, ease: 'in' }),
+    F(3, { grip: 1, armR: [-130, -66], weapon: -60, armL: [-30, -150], torso: -26, head: -12, root: [-3, -1], squash: 0.96, stretch: 1.05, legR: [4, 2], legL: [-24, 18], face: 'shout' }, { armor: 1, ease: 'out' }),
+    // hit: the head lands on the floor line in front; groundBounce pops an airborne / falling body off the floor once (GDD 2.1)
     F(3, { grip: 1, armR: [84, -100], weapon: -20, armL: [100, 10], torso: 40, head: 8, root: [6, 2], squash: 1.1, stretch: 0.9, legR: [44, 30], legL: [-30, 34], face: 'shout' },
-      { hitbox: frontBox(40, hit(15, 'knockdown', 3, 4, 20)), smear: { from: -175, to: 60, a: 0.55 }, sfx: 'hammer_slam', armor: true,
+      { hitbox: frontBox(40, hit(15, 'knockdown', 3, 4, 20, { groundBounce: true })), smear: { from: -175, to: 60, a: 0.55 }, sfx: 'hammer_slam', armor: 1,
         fx: [{ kind: 'dust', x: 30, y: 0, count: 6 }, { kind: 'ring', x: 34, y: 0, r0: 4, r1: 26, flat: true, color: '#ffd080' }], ease: 'overshoot' }),
     F(3, { grip: 1, armR: [86, -98], weapon: -18, armL: [102, 12], torso: 42, head: 8, root: [6, 2], squash: 1.08, stretch: 0.92, legR: [44, 30], legL: [-30, 34], face: 'grit' }, { ease: 'out' }),
     F(10, { grip: 1, armR: [106, -100], weapon: -10, armL: [90, 20], torso: 30, head: 6, root: [5, 2], legR: [38, 22], legL: [-28, 28], face: 'grit' }, { cancel: 'attack', ease: 'inout' }),
     F(4, { ...CARRY, torso: 8, root: [2, 1], face: 'angry' }, { cancel: 'attack', ease: 'out' }),
   ] },
   attack4: { loop: false, frames: [
-    F(4, { grip: 1, armR: [-84, 100], weapon: 110, armL: [40, 20], torso: 24, head: 6, root: [0, 2], squash: 1.08, stretch: 0.92, legR: [30, 40], legL: [-14, 34], face: 'angry' }, { sfx: 'steam', armor: true, ease: 'in' }),
-    F(3, { grip: 1, armR: [-90, 104], weapon: 114, armL: [46, 24], torso: 28, head: 8, root: [-1, 3], squash: 1.12, stretch: 0.88, legR: [32, 44], legL: [-16, 38], face: 'grit' }, { armor: true, ease: 'out' }),
+    F(4, { grip: 1, armR: [-84, 100], weapon: 110, armL: [40, 20], torso: 24, head: 6, root: [0, 2], squash: 1.08, stretch: 0.92, legR: [30, 40], legL: [-14, 34], face: 'angry' }, { sfx: 'steam', armor: 1, ease: 'in' }),
+    F(3, { grip: 1, armR: [-90, 104], weapon: 114, armL: [46, 24], torso: 28, head: 8, root: [-1, 3], squash: 1.12, stretch: 0.88, legR: [32, 44], legL: [-16, 38], face: 'grit' }, { armor: 1, ease: 'out' }),
     F(4, { grip: 1, armR: [160, 8], weapon: -2, armL: [-40, 20], torso: -16, head: -10, root: [5, -6], squash: 0.94, stretch: 1.08, legR: [26, 4], legL: [-30, 36], face: 'shout' },
-      { hitbox: frontBox(40, hit(20, 'launch', 2, 8, 20), { high: true }), smear: { from: 130, to: -80, a: 0.55 }, sfx: 'steam', armor: true,
+      { hitbox: frontBox(40, hit(20, 'launch', 2, 8, 20), { high: true }), smear: { from: 130, to: -80, a: 0.55 }, sfx: 'steam', armor: 1,
         fx: [{ kind: 'ring', x: 26, y: 40, r0: 2, r1: 24, color: '#ffb060' }, { kind: 'steam', x: 26, y: 40, count: 3 }], ease: 'overshoot' }),
     F(3, { grip: 1, armR: [164, 10], weapon: -4, armL: [-44, 20], torso: -18, head: -12, root: [5, -6], squash: 0.96, stretch: 1.05, legR: [26, 4], legL: [-30, 36], face: 'shout' }, { ease: 'out' }),
     F(12, { grip: 1, armR: [130, 58], weapon: 20, armL: [-34, 20], torso: -10, head: -6, root: [4, -1], legR: [20, 10], legL: [-26, 30], face: 'angry' }, { cancel: 'any', ease: 'inout' }),
@@ -325,36 +322,41 @@ const anims = {
     F(10, { grip: 1, armR: [90, -100], weapon: -26, armL: [86, 20], legR: [20, 30], legL: [-15, 30], torso: 18, root: [0, 1], face: 'grit' }, { ease: 'inout' }),
     F(6, { ...CARRY, torso: 4 }, { cancel: 'any', ease: 'out' }),
   ] },
+  // ---- shoulder charge: 4f crouch, 14f charge with the hammer held high and 3-hit armor, ~120 px knockback (GDD 2.1) ----
   dashAttack: { loop: false, frames: [
-    F(4, { armR: [-30, -150], weapon: 30, armL: [-50, 20], torso: 26, head: -6, root: [-2, 2], squash: 1.05, stretch: 0.95, legR: [26, 12], legL: [-24, 14], face: 'angry' }, { sfx: 'steam', armor: true, ease: 'in' }),
+    F(4, { armR: [-30, -150], weapon: 30, armL: [-50, 20], torso: 26, head: -6, root: [-2, 2], squash: 1.05, stretch: 0.95, legR: [26, 12], legL: [-24, 14], face: 'angry' }, { sfx: 'steam', armor: 3, ease: 'in' }),
     F(14, { armR: [-40, -150], weapon: 30, armL: [-70, 30], torso: 48, head: -14, root: [6, 2], legR: [60, 20], legL: [-50, 60], face: 'shout' },
-      { hitbox: frontBox(40, hit(18, 'knockdown', 24, 3, 20)), move: { x: 8 }, armor: true, fx: [{ kind: 'dust', x: -10, y: 0 }, { kind: 'steam', x: -16, y: 44, count: 2 }] }),
+      { hitbox: frontBox(40, hit(18, 'knockdown', 6.5, 4, 20)), move: { x: 8 }, armor: 3, fx: [{ kind: 'dust', x: -10, y: 0 }, { kind: 'steam', x: -16, y: 44, count: 2 }] }),
     F(10, { armR: [-30, -150], weapon: 30, armL: [-40, 30], torso: 36, head: -8, root: [6, 2], legR: [-40, 60], legL: [50, 20], face: 'grit' }, { ease: 'out' }),
     F(4, { ...CARRY, torso: 8 }, { cancel: 'any', ease: 'out' }),
   ] },
 
-  // ---- Piston Quake: two-handed overhead slam into the ground, r 60 (8f startup / 4f active / 12f recovery, invulnerable) ----
+  // ---- Piston Quake: two-handed overhead slam into the ground, r 60, knockdown to grounded enemies only ----
+  // 8f startup (4 in + 4 out) / 4f active / 12f recovery (3 hold + 6 follow-through + 3 return); invulnerable through the active frames
   special: { loop: false, frames: [
     F(4, { grip: 1, armR: [-120, -60], weapon: -56, armL: [-30, -170], torso: -14, head: -8, root: [-2, 1], legR: [10, 6], legL: [-18, 10], face: 'angry' }, { sfx: SW, invuln: true, ease: 'in' }),
     F(4, { grip: 1, armR: [-134, -70], weapon: -62, armL: [-60, -160], torso: -26, head: -14, root: [-3, -2], squash: 0.94, stretch: 1.08, legR: [6, 2], legL: [-22, 16], face: 'shout' }, { invuln: true, ease: 'out' }),
     F(4, { grip: 1, armR: [92, -100], weapon: 6, armL: [106, 8], torso: 44, head: 8, root: [6, 3], squash: 1.14, stretch: 0.86, legR: [48, 34], legL: [-34, 40], face: 'shout' },
-      { hitbox: areaBox(60, hit(25, 'knockdown', 5, 4, 24)), invuln: true, sfx: 'hammer_slam', smear: { from: -175, to: 62, a: 0.6 },
+      { hitbox: areaBox(60, hit(25, 'knockdown', 5, 4, 24, { groundedOnly: true, otg: true })), invuln: true, sfx: 'hammer_slam', smear: { from: -175, to: 62, a: 0.6 },
         fx: [{ kind: 'ring', x: 0, y: 0, r1: 60, flat: true, color: '#ffb060' }, { kind: 'dust', x: 0, y: 0, count: 8 }, { kind: 'steam', x: 34, y: 6, count: 4 }], ease: 'overshoot' }),
-    F(6, { grip: 1, armR: [94, -98], weapon: 8, armL: [104, 12], torso: 42, head: 6, root: [6, 3], squash: 1.1, stretch: 0.9, legR: [48, 34], legL: [-34, 40], face: 'grit' }, { ease: 'out' }),
+    F(3, { grip: 1, armR: [94, -98], weapon: 8, armL: [104, 12], torso: 42, head: 6, root: [6, 3], squash: 1.1, stretch: 0.9, legR: [48, 34], legL: [-34, 40], face: 'grit' }, { ease: 'out' }),
     F(6, { grip: 1, armR: [106, -100], weapon: -8, armL: [90, 20], torso: 26, head: 4, root: [4, 2], legR: [36, 22], legL: [-26, 26], face: 'grit' }, { ease: 'inout' }),
-    F(4, { ...CARRY, torso: 6 }, { cancel: 'any', ease: 'out' }),
+    F(3, { ...CARRY, torso: 6 }, { cancel: 'any', ease: 'out' }),
   ] },
-  // ---- Overpressure: hammer thrust straight up, boiler blows three expanding rings (r 60/100/140) ----
+  // ---- Overpressure: hammer thrust straight up, boiler blows three expanding rings (r 60 / 100 / 140 for 30 + 30 + 40), 45f ----
+  // 5 wind-up + 4 thrust + (6 ring + 4 rise) x 2 + 6 ring + 6 settle + 4 return = 45; the SUPER state is invulnerable throughout
   super: (() => {
-    const ring = (r, dmg, dur = 6) => F(dur, { grip: 1, armR: [148, 56], weapon: 18, armL: [-40, 30], torso: -8, head: -12, root: [0, 2], squash: 1.08, stretch: 0.94, legR: [24, 12], legL: [-24, 12], face: 'shout' },
-      { hitbox: areaBox(r, hit(dmg, 'knockdown', 6, 5, 24), { y: -90, h: 90 }), sfx: 'steam', ease: 'out',
+    // rings 1-2 barely push (kbX 1 / 2) so a body knocked down by ring 1 is still inside rings 2 and 3; otg: a body that already
+    // landed (a straggler walking into ring 1 late re-freezes her while the first victims keep falling) is popped up again
+    const ring = (r, dmg, kbX, dur = 6) => F(dur, { grip: 1, armR: [148, 56], weapon: 18, armL: [-40, 30], torso: -8, head: -12, root: [0, 2], squash: 1.08, stretch: 0.94, legR: [24, 12], legL: [-24, 12], face: 'shout' },
+      { hitbox: areaBox(r, hit(dmg, 'knockdown', kbX, 4, 24, { otg: true }), { y: -90, h: 90 }), sfx: 'steam', ease: 'out',
         fx: [{ kind: 'ring', x: 0, y: 0, r1: r, flat: true, color: '#e8f0f4' }, { kind: 'ring', x: 0, y: 30, r1: r * 0.8, color: '#ffb060' }, { kind: 'steam', x: -12, y: 60, count: 6 }] });
     const rise = (dur) => F(dur, { grip: 1, armR: [144, 52], weapon: 14, armL: [-30, 30], torso: -4, head: -8, root: [0, 1], squash: 0.96, stretch: 1.05, legR: [16, 6], legL: [-16, 6], face: 'grit' }, { ease: 'in' });
     return { loop: false, frames: [
       F(5, { grip: 1, armR: [-84, 100], weapon: 110, armL: [30, 30], torso: 20, head: 6, root: [0, 2], squash: 1.1, stretch: 0.9, legR: [26, 30], legL: [-20, 30], face: 'angry' }, { sfx: 'super_brunhild', ease: 'in' }),
       F(4, { grip: 1, armR: [144, 54], weapon: 16, armL: [-30, 30], torso: -6, head: -10, root: [0, 0], squash: 0.94, stretch: 1.08, legR: [14, 4], legL: [-14, 4], face: 'shout' }, { smear: { from: 110, to: -95, a: 0.5 }, ease: 'overshoot' }),
-      ring(60, 30), rise(4), ring(100, 30), rise(4), ring(140, 40),
-      F(10, { grip: 1, armR: [136, 50], weapon: 12, armL: [-30, 20], torso: 0, head: -6, root: [0, 1], face: 'happy' }, { ease: 'inout' }),
+      ring(60, 30, 1), rise(4), ring(100, 30, 2), rise(4), ring(140, 40, 7),
+      F(6, { grip: 1, armR: [136, 50], weapon: 12, armL: [-30, 20], torso: 0, head: -6, root: [0, 1], face: 'happy' }, { ease: 'inout' }),
       F(4, { ...CARRY, torso: 6 }, { ease: 'out' }),
     ] };
   })(),
@@ -368,7 +370,7 @@ const anims = {
   ] },
   taunt: { loop: false, frames: [
     F(8, { armR: [80, 30], weapon: 80, armL: [-12, 20], torso: 6, head: 2, legR: [12, 4], legL: [-12, 4], face: 'neutral' }, { ease: 'out' }),
-    F(18, { armR: [78, 34], weapon: 84, armL: [-30, -80], torso: 8, head: -8, legR: [10, 2], legL: [-14, 6], root: [1, 1], face: 'happy' }, { ease: 'inout' }),
+    F(18, { armR: [78, 34], weapon: 84, armL: [-30, -80], torso: 8, head: -8, legR: [10, 2], legL: [-14, 6], root: [1, 1], face: 'happy' }, { sfx: 'steam', fx: [{ kind: 'steam', x: -16, y: 62, count: 3 }], ease: 'inout' }),
     F(18, { armR: [80, 32], weapon: 82, armL: [-34, -76], torso: 10, head: -4, legR: [10, 2], legL: [-14, 6], root: [1, 2], face: 'happy' }, { ease: 'inout' }),
     F(16, { armR: [78, 34], weapon: 84, armL: [-30, -80], torso: 8, head: -8, legR: [10, 2], legL: [-14, 6], root: [1, 1], face: 'happy' }, { event: 'meterGain', ease: 'inout' }),
   ] },
@@ -396,11 +398,13 @@ const anims = {
     F(10, { grip: 1, armR: [132, 50], weapon: 28, armL: [-34, 20], torso: -8, head: -6, root: [6, 0], legR: [20, 8], legL: [-26, 30], face: 'angry' }, { ease: 'out' }),
     F(4, { ...CARRY, torso: 6 }, { ease: 'out' }),
   ] },
-  // back throw: piledriver — lift overhead, slam down behind
+  // back throw: piledriver — hoist the hammer straight up (both hands), then slam its head onto the floor behind her
+  // (pose audit: head at (-42, -3), grip reachable, face clear of the near arm); the body is released mid-slam (releaseAt 8)
   throwBack: { loop: false, frames: [
-    F(5, { grip: 1, armR: [-180, 50], weapon: 14, armL: [-150, -10], torso: -24, head: -10, root: [-3, 1], squash: 0.95, stretch: 1.06, legR: [10, 4], legL: [-10, 4], face: 'angry' }, { ease: 'in' }),
-    F(6, { grip: 1, armR: [-96, 70], weapon: -34, armL: [-170, -20], torso: -44, head: -12, root: [-8, 2], squash: 1.12, stretch: 0.88, legR: [-30, 40], legL: [30, 40], face: 'shout' }, { sfx: 'throw', ease: 'overshoot' }),
-    F(10, { grip: 1, armR: [-106, 70], weapon: -30, armL: [-160, -10], torso: -34, head: -8, root: [-7, 2], legR: [-24, 30], legL: [26, 30], face: 'grit' }, { ease: 'out' }),
+    F(5, { grip: 1, armR: [-165, 10], weapon: 10, armL: [-150, -10], torso: -22, head: -10, root: [-3, 1], squash: 0.95, stretch: 1.06, legR: [10, 4], legL: [-10, 4], face: 'angry' }, { ease: 'in' }),
+    F(6, { grip: 1, armR: [-60, 20], weapon: -60, armL: [-120, -20], torso: -30, head: -8, root: [-6, 2], squash: 1.12, stretch: 0.88, legR: [-26, 36], legL: [30, 34], face: 'shout' },
+      { sfx: 'throw', smear: { from: -90, to: -230, a: 0.5 }, fx: [{ kind: 'dust', x: -42, y: 0, count: 6 }], ease: 'overshoot' }),
+    F(10, { grip: 1, armR: [-62, 22], weapon: -58, armL: [-120, -20], torso: -32, head: -6, root: [-6, 2], legR: [-26, 36], legL: [30, 34], face: 'grit' }, { ease: 'out' }),
     F(4, { ...CARRY, torso: 6 }, { ease: 'out' }),
   ] },
 
@@ -430,12 +434,20 @@ const anims = {
   dead: { loop: false, frames: [
     F(60, { ...FLOORED, torso: 8, head: -14, legR: [6, 4], legL: [-6, 6], root: [30, -9, -90] }),
   ] },
+  // win (GDD 6 results poses): a hop with the hammer raised, then she reaches back and opens the boiler valve — and gets
+  // the steam in the face (eyes shut, head snapped back, beard chain swings)
   win: { loop: true, frames: [
     F(6, { armR: [-160, -10], weapon: -20, armL: [-20, 10], torso: -4, head: -6, root: [0, 3], squash: 1.08, stretch: 0.92, legR: [12, 10], legL: [-12, 10], face: 'happy' }, { ease: 'out' }),
     F(10, { armR: [-176, -20], weapon: -30, armL: [-40, -60], torso: -8, head: -12, root: [0, -8], squash: 0.96, stretch: 1.06, legR: [30, -50], legL: [-10, -30], face: 'happy' }, { ease: 'out' }),
     F(6, { armR: [-170, -16], weapon: -26, armL: [-30, -40], torso: -6, head: -10, root: [0, -3], legR: [20, -20], legL: [-10, -10], face: 'happy' }, { ease: 'in' }),
     F(4, { armR: [-160, -10], weapon: -20, armL: [-20, 10], torso: -4, head: -6, root: [0, 4], squash: 1.1, stretch: 0.9, legR: [14, 14], legL: [-14, 14], face: 'happy' }, { ease: 'out' }),
-    F(14, { armR: [-164, -12], weapon: -22, armL: [-24, 8], torso: -5, head: -8, root: [0, 1], legR: [10, 4], legL: [-10, 4], face: 'happy' }, { ease: 'inout' }),
+    F(12, { armR: [-164, -12], weapon: -22, armL: [-24, 8], torso: -5, head: -8, root: [0, 1], legR: [10, 4], legL: [-10, 4], face: 'happy' }, { ease: 'inout' }),
+    // reach back to the valve
+    F(10, { armR: [40, -30], weapon: -110, armL: [-140, 20], torso: -8, head: 8, root: [0, 1], legR: [10, 4], legL: [-10, 4], face: 'neutral' }, { ease: 'inout' }),
+    // valve opens: the boiler blasts, she flinches away from it with her eyes shut
+    F(14, { armR: [46, -34], weapon: -112, armL: [-144, 24], torso: 10, head: -26, root: [2, 2], squash: 1.05, stretch: 0.95, legR: [14, 6], legL: [-12, 6], face: 'closed' },
+      { sfx: 'steam', fx: [{ kind: 'steam', x: -20, y: 62, count: 8 }, { kind: 'steam', x: -4, y: 66, count: 4 }], ease: 'out' }),
+    F(12, { armR: [30, -20], weapon: -104, armL: [-60, -40], torso: 2, head: -8, root: [0, 1], legR: [10, 4], legL: [-10, 4], face: 'happy' }, { ease: 'inout' }),
   ] },
 };
 
@@ -444,12 +456,17 @@ export const brunhild = {
   id: 'brunhild', name: 'BRUNHILD', fullName: 'Brunhild Coalheart', title: 'THE BOILERWRIGHT', archetype: 'TANK',
   stats: { power: 5, speed: 2, health: 5, range: 3, technique: 2 },
   maxHp: hpFor(5), walkSpeed: speedFor(2), runSpeed: speedFor(2) * 1.7, jumpVy: JUMP_VY, reach: 40, grabReach: 20, grabOffset: 26,
-  damageTaken: 0.85, freeChain: true,
+  freeChain: true,
+  // Heavy Frame (GDD 2.1): 15 % less damage taken; knockdown / launch hits under 10 dmg (Sootborn lights) become heavy flinches
+  // instead of knocking her down; `armor: 1` on combo hits 3-4 absorbs one hit each (armorHits is the default for `armor: true`)
+  traits: { damageTakenMult: 0.85, ignoreKnockdownBelow: 10, armorHits: 1, grabReach: 20 },
   build,
   anims,
   moves: {
     special: { name: 'PISTON QUAKE', cost: METER.special }, super: { name: 'OVERPRESSURE', cost: METER.super, damage: 100 },
-    throwFwd: { damage: 20, vx: 12, vy: 5 }, throwBack: { damage: 22, vx: 6, vy: 4, shockwave: { r: 40, damage: 10 } }, grabHit: { damage: 8, hits: 3 },
+    // forward: hammer-golf swing released on the smear key (frame 5), ~200 px flight (measured 203); back: piledriver released
+    // mid-slam (frame 8) — a short, hard drop right behind her (vx 3 still counts as a thrown body) plus the 40 px shockwave
+    throwFwd: { damage: 20, vx: 9, vy: 5, releaseAt: 5 }, throwBack: { damage: 22, vx: 3, vy: 3, releaseAt: 8, shockwave: { r: 40, damage: 10 } }, grabHit: { damage: 8, hits: 3 },
   },
   sfx: { special: 'special_brunhild', super: 'super_brunhild', swing: 'hammer_swing' },
   portrait,
