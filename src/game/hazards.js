@@ -85,6 +85,8 @@ export class Hazard extends Entity {
     world.add(new Projectile({ owner: null, team: TEAM.NONE, x: cam.x + VIEW_W / 2, y: 30, z: 0, r: this.info.r, life: 2, style: 'explosion', hit: this.info.hit, pierce: 99 }));
   }
   draw(ctx, cam) {
+    const st = this.world && this.world.stage;
+    if (st && st.transition && st.transition.kind === 'lift') return; // the dock hazards stay behind while the lift descends
     const sx = cam.toScreenX(this.x), sy = Math.round(FLOOR_TOP + this.z + cam.shakeY);
     const info = this.info, f = this.world ? this.world.frame : 0, ph = this.phase;
     switch (this.type) {

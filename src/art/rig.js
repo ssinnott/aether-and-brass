@@ -9,14 +9,23 @@
 // snap (false = no integer snapping), smearColor, hairStyle ('short'|'bald'), jaw, face { noMouth, eyeY, pupil, brow }.
 // New proportions: bulge (0..1 limb taper, default 0.5), neckR. New weapon fields: twoHanded + grip (px along the
 // weapon where the far hand goes, negative = behind the near hand toward the pommel; the far arm is solved with 2-bone
-// IK when pose.grip > 0 and its fist is drawn on the handle at the joint it actually reached).
+// IK when pose.grip > 0 and its fist is drawn on the handle at the joint it actually reached), headAt (px from the near
+// hand to the weapon-head centre, used by the tools/sheet.js pose audit).
 // New part hooks: parts.beard (after the face, in head space), parts.hair (replaces the default hair cap), parts.neck,
 // parts.shoulder (at the shoulder joint, torso space, over the upper arm), parts.smear.
+// Readability knobs (all optional, defaults tuned for the 2x display): farShade (0.62) + farDesat (0.25) build
+// rig.paletteFar (far limbs ~40 % darker and greyer); contactShadow (true = alpha 0.3, or a number, or false) draws a
+// 1 px translucent dark capsule under every limb (near limbs over the torso, far limbs over the back layer) so a limb
+// separates from what it crosses; thinR (4) is the radius below which cel parts get two tones instead of three,
+// hiMin (6) the smallest clipped shape that still gets a highlight cap, flatR (2.5) the flat-tone floor, tones: 2
+// drops highlight caps altogether (rimRect / rimTop then carry the light); palette.sleeve colours the upper arms + cuffs
+// separately from palette.primary (torso) so arms read against the body. Pose key `weaponBack` (stepped 0/1) draws the
+// weapon in the back layer (rested on the shoulder, slung) — the near arm then draws no weapon in front.
 // rig.tick counts drawRig calls (procedural effects: chimney puffs, lens flicker); rig.chainFrame is an alias.
 import { rad } from '../engine/math.js';
-import { PALETTES, shadePalette } from './palettes.js';
+import { PALETTES, farPalette } from './palettes.js';
 import { SCRATCH_POSE, copyPose } from './poses.js';
-import { LIGHT_X, LIGHT_Y, RAMP, tones, celCapsule } from './shading.js';
+import { LIGHT_X, LIGHT_Y, RAMP, tones, celCapsule, contactCapsule } from './shading.js';
 import { drawLimbSegs, drawCuff, drawFist, drawBoot, drawTorsoShape, drawBelt, drawNeck, drawSkull, drawFace, drawStick } from './rigParts.js';
 import { stepChain, resetChain } from './secondary.js';
 
@@ -26,7 +35,10 @@ export const DEFAULT_PROPORTIONS = Object.freeze({
   armR: 4.5, legR: 5.5, footH: 5, shoulderX: 2, hipX: 4, bulge: 0.5, neckR: 3.5,
 });
 
-const FAR_SHADE = 0.78;
+/** Far-limb darkening (brightness factor) and desaturation; build.farShade / build.farDesat override. */
+const FAR_SHADE = 0.62, FAR_DESAT = 0.25;
+/** Default contact-shadow alpha (build.contactShadow: true | false | number). */
+const CONTACT_ALPHA = 0.3;
 // Flash / tint offscreen: must contain every rig pose (Regent Engine at scale 2.4 spans x -205..165, y -267..162 around the feet;
 // dodge rolls rotate the body below the feet line), otherwise hit flashes render as clipped silhouettes.
 const OFF_W = 480, OFF_H = 480, OFF_OX = 240, OFF_OY = 300;
@@ -54,8 +66,18 @@ export function buildRig(build = {}) {
   const p = { ...DEFAULT_PROPORTIONS, ...(build.proportions || {}) };
   const palette = { ...PALETTES.hero, ...(build.palette || {}) };
   const hipY = -(p.upperLeg + p.lowerLeg + p.footH - 2);
+  if (!palette.sleeve) palette.sleeve = palette.primary;
+  const cs = build.contactShadow;
   const rig = {
-    build, scale: build.scale || 1, p, palette, paletteFar: shadePalette(palette, FAR_SHADE),
+    build, scale: build.scale || 1, p, palette,
+    paletteFar: farPalette(palette, build.farShade != null ? build.farShade : FAR_SHADE, build.farDesat != null ? build.farDesat : FAR_DESAT),
+    /** Contact-shadow alpha under near limbs (0 = off). */
+    contactAlpha: cs === false ? 0 : typeof cs === 'number' ? cs : CONTACT_ALPHA,
+    /** Shading budget (see shading.js): thinR = radius below which cel parts get 2 tones; hiMin = smallest half-extent
+     *  of a clipped shape that gets a highlight cap; flatR = radius below which a part is one flat tone; tonesN = 2
+     *  (build.tones: 2) drops every highlight cap so the only light marks are explicit rimRect / rimTop rims. */
+    thinR: build.thinR != null ? build.thinR : null, hiMin: build.hiMin != null ? build.hiMin : null, flatR: build.flatR != null ? build.flatR : null,
+    tonesN: build.tones === 2 ? 2 : 3,
     outline: build.outline || '#1a1018', ow: build.outlineWidth != null ? build.outlineWidth : 1,
     parts: build.parts || {}, accessories: build.accessories || [], weapon: build.weapon || null,
     hipY, height: (-(hipY) + p.torsoH - 2 + p.neck + p.headR * 2), width: p.torsoW,
@@ -183,6 +205,7 @@ function drawLeg(ctx, rig, pose, side) {
   const J = rig.joints, p = rig.p, pal = side === 'N' ? rig.palette : rig.paletteFar, far = side === 'F';
   const hip = J['hip' + side], knee = J['knee' + side], ankle = J['ankle' + side], ang = J['leg' + side];
   const hooks = rig.parts;
+  contactCapsule(ctx, rig, hip.x, hip.y, knee.x, knee.y, p.legR); contactCapsule(ctx, rig, knee.x, knee.y, ankle.x, ankle.y, p.legR - 0.5);
   if (hooks.legUpper || hooks.legLower) {
     if (hooks.legUpper) { enter(ctx, rig, hip.x, hip.y, -ang.upper); hooks.legUpper(ctx, rig, pose, info(rig, 'legUpper', far, pal, p.upperLeg, p.legR, pal.secondary)); leave(ctx, rig); }
     else celCapsule(ctx, rig, hip.x, hip.y, knee.x, knee.y, p.legR, pal.secondary);
@@ -201,21 +224,23 @@ function drawLeg(ctx, rig, pose, side) {
 function drawArm(ctx, rig, pose, side, withWeapon) {
   const J = rig.joints, p = rig.p, pal = side === 'N' ? rig.palette : rig.paletteFar, far = side === 'F';
   const sh = J['shoulder' + side], el = J['elbow' + side], wr = J['wrist' + side], hd = J['hand' + side], ang = J['arm' + side];
-  const hooks = rig.parts;
+  const hooks = rig.parts, sleeve = pal.sleeve || pal.primary;
+  contactCapsule(ctx, rig, sh.x, sh.y, el.x, el.y, p.armR); contactCapsule(ctx, rig, el.x, el.y, hd.x, hd.y, p.armR + 0.5);
   if (hooks.armUpper || hooks.armLower) {
-    if (hooks.armUpper) { enter(ctx, rig, sh.x, sh.y, -ang.upper); hooks.armUpper(ctx, rig, pose, info(rig, 'armUpper', far, pal, p.upperArm, p.armR, pal.primary)); leave(ctx, rig); }
-    else celCapsule(ctx, rig, sh.x, sh.y, el.x, el.y, p.armR, pal.primary);
+    if (hooks.armUpper) { enter(ctx, rig, sh.x, sh.y, -ang.upper); hooks.armUpper(ctx, rig, pose, info(rig, 'armUpper', far, pal, p.upperArm, p.armR, sleeve)); leave(ctx, rig); }
+    else celCapsule(ctx, rig, sh.x, sh.y, el.x, el.y, p.armR, sleeve);
     if (hooks.armLower) { enter(ctx, rig, el.x, el.y, -ang.lower); hooks.armLower(ctx, rig, pose, info(rig, 'armLower', far, pal, p.lowerArm, p.armR - 0.5, pal.skin)); leave(ctx, rig); }
     else celCapsule(ctx, rig, el.x, el.y, wr.x, wr.y, p.armR + 0.5, pal.skin);
   } else {
-    drawLimbSegs(ctx, rig, sh, el, wr, p.armR, p.armR + 0.5, pal.primary, pal.skin, true, p.bulge);
-    drawCuff(ctx, rig, el, wr, p.armR + 0.5, pal.primary);
+    drawLimbSegs(ctx, rig, sh, el, wr, p.armR, p.armR + 0.5, sleeve, pal.skin, true, p.bulge);
+    drawCuff(ctx, rig, el, wr, p.armR + 0.5, sleeve);
   }
   if (hooks.shoulder) { enter(ctx, rig, sh.x, sh.y, J.torsoAngle); hooks.shoulder(ctx, rig, pose, info(rig, 'shoulder', far, pal, 0, p.armR + 1, pal.accent)); leave(ctx, rig); }
   // hand space: +x along the forearm direction (plus hand.rot); weapons draw along +x.
-  const weaponHere = withWeapon && rig.weapon && ((rig.weapon.attach !== 'handL') === (side === 'N'));
+  // pose.weaponBack: the weapon was already drawn in the back layer (drawWeaponBack), so the hand draws bare.
+  const weaponHere = withWeapon && rig.weapon && !(pose.weaponBack > 0.5) && ((rig.weapon.attach !== 'handL') === (side === 'N'));
   // the far hand of a two-handed weapon is drawn on the handle (over the weapon) by the weapon arm instead
-  const twoHanded = rig.weapon && rig.weapon.twoHanded && pose.grip > 0.5;
+  const twoHanded = rig.weapon && rig.weapon.twoHanded && pose.grip > 0.5 && !(pose.weaponBack > 0.5);
   const handAng = -ang.hand + 90;
   enter(ctx, rig, hd.x, hd.y, handAng);
   if (weaponHere && twoHanded) {
@@ -320,8 +345,21 @@ function drawSmear(ctx, rig, pose) {
   ctx.globalAlpha = prev;
 }
 
+/** Weapon drawn behind the body (pose.weaponBack): same hand space as the near-arm draw, before every body part. */
+function drawWeaponBack(ctx, rig, pose) {
+  if (!rig.weapon || !(pose.weaponBack > 0.5)) return;
+  const J = rig.joints, near = rig.weapon.attach !== 'handL';
+  const hd = near ? J.handN : J.handF, handAng = -(near ? J.armN.hand : J.armF.hand) + 90;
+  enter(ctx, rig, hd.x, hd.y, handAng + pose.weapon.rot);
+  if (rig.weapon.draw) rig.weapon.draw(ctx, rig, pose);
+  else if (rig.parts.weapon) rig.parts.weapon(ctx, rig, pose, info(rig, 'weapon', false, rig.palette, rig.weapon.length || 30, 0, rig.palette.metal));
+  else drawStick(ctx, rig, rig.weapon.length || 30, rig.palette.metal, rig.palette.dark);
+  leave(ctx, rig);
+}
+
 function drawBody(ctx, rig, pose) {
   drawAccessories(ctx, rig, pose, 'back');
+  drawWeaponBack(ctx, rig, pose);
   drawLeg(ctx, rig, pose, 'F');
   drawArm(ctx, rig, pose, 'F', true);
   drawTorso(ctx, rig, pose);

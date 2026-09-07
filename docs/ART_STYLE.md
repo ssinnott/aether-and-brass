@@ -47,7 +47,17 @@ the joint, shins and forearms narrow — and `neckR` for thick or thin necks.
 * **Outline:** 1 px, colour `build.outline` (heroes `#1E1A22`, Brassbound `#1A1E24`, Sootborn `#1E1A14`). Draw it via the
   helpers (`outlinePath`) — a stroke 2·ow wide *under* the fill so exactly 1 px shows. Internal seams are 1 px of the
   `sh`/`deep` tone, not outline colour.
-* **Far limbs:** the rig passes `rig.paletteFar` (0.78 ×) to far parts; do not darken twice.
+* **Far limbs:** the rig passes `rig.paletteFar` (`farPalette`: 0.62 × brightness, 25 % desaturated, slightly cool) to far
+  parts; do not darken twice. `build.farShade` / `build.farDesat` override.
+* **Value rule (readability pass):** every pair of *adjacent* parts differs by ≥ 25 % luminance **or** a hue-family
+  change — skin = light warm, cloth = mid, metal = distinctly light or dark. Upper arms and cuffs take `palette.sleeve`
+  (defaults to `primary`): give it a light shirt colour so the arms read against the torso. Trousers, boots and the
+  floor must not share a value (a mid leather boot with a light steel toe, not iron on iron).
+* **Two-tone rule:** cel parts narrower than ~8 px (`r < 4`, `shading.js THIN_R`) get base + shadow only; highlight
+  bands live on big shapes (torso, head, weapon head). `build.thinR` overrides.
+* **Contact shadow:** the renderer draws a 1 px translucent dark capsule under the near arm and near leg
+  (`build.contactShadow`, alpha 0.3) so a limb crossing the torso separates from it. Weapons and accessories do not get
+  one — keep them from crossing the torso in rest poses instead.
 * **Hit flash:** while `rig.override` is set, draw only outline + flat fill and return early (see every Brunhild part).
 
 ## 4. Palette usage
@@ -98,6 +108,9 @@ function drawGoggles(ctx, rig) {
 weapon: { attach: 'handR', length: 40, draw: drawHammer, twoHanded: true, grip: 18 }
 ```
 
+**Detail floor:** anything under 2 px at 1x is noise, not detail — no 1 px rivets, gauge needles, studs or wrap
+stripes; one buckle per boot, one seam per garment, bands ≥ 3 px, one shape per material rather than stacked clumps.
+
 Rules: integer coordinates (`R = Math.round`) for every detail rect; silhouettes first, details after the
 `rig.override` early return; no per-frame allocation (no arrays/objects/strings inside draw — `tones()` caches, the
 palette constants are module-level); `rig.col(hex)` for any raw colour so the flash still works; procedural motion uses
@@ -134,8 +147,11 @@ prints exactly these numbers for every key of the loaded rig (`GRIP` / `FLOOR` f
 
 `pose.face` is an expression index (`FACE = { neutral, angry, hurt, happy, shout, dazed, grit, closed }`); `P()` and
 frames accept the names (`face: 'shout'` on a frame overrides the pose). `drawFace(ctx, rig, r, pose.face, opts)` draws
-whites + pupils, stepped 1 px brows and a mouth; `opts.noMouth` for beards (draw the beard in `parts.beard`, after the
-face), `opts.eyeY`, `opts.pupil`, `opts.brow`. Every attack hit frame is `shout` or `grit`; hurt/knockdown/lying use
+whites + pupils, stepped brows and a mouth; `opts.noMouth` for beards (draw the beard in `parts.beard`, after the
+face), `opts.eyeY`, `opts.pupil`, `opts.brow`. **Features scale with the head:** `headR >= 9.5` (or `opts.big`) gets
+5x4 / 4x4 whites, 2x2 pupils and 2 px brows; smaller heads keep 4x3 whites and 1 px brows. Keep hats and goggles above
+the brow line (`cy <= -0.9 r`); a beard is ONE mass (two chain segments at most) in a colour distinct from the garment
+beneath it. Every attack hit frame is `shout` or `grit`; hurt/knockdown/lying use
 `hurt` → `dazed`; win/taunt `happy`; dodge `closed`. Brassbound have no face: draw the lens in `parts.face` and colour it
 from the pose (`pose.face === FACE.angry` → red tell). Sootborn eyes track the player: shift the pupil by the sign of
 the target direction the AI writes into the def (`eyeTrack`) — keep it inside `parts.face`.
@@ -171,8 +187,8 @@ sweep in root-space degrees, 0 = forward, -90 = up; `a` fades toward the next fr
 
 | state | keys | pattern |
 |---|---|---|
-| idle | 4, 50–56f loop | breathing: torso 1→4°, head ±2°, root y 0→1, weapon/arm drift 2°; puffs/flicker via `rig.tick` |
-| walk | 8, 32f | contact / down / pass / up ×2; `root y` +2 on down, −1 on up; `squash 1.03` on down; head −1..+2 |
+| idle | 4, 50–56f loop | breathing: torso 1→4°, head ±2°, root y 0→1, weapon/arm drift 2°; puffs/flicker via `rig.tick`. **Open rest pose:** weapon rested on the shoulder (`weaponBack: 1` draws it behind the body) or held low at the side; off-hand free; no limb or weapon crosses the torso or the head |
+| walk | 8, 32f | contact / down / pass / up ×2; `root y` +2 on down, −1 on up; `squash 1.03` on down; head −1..+2; same open carry as idle (two-handed carries are for run and attacks) |
 | run | 8, 24f | lean 20°, stride ±50°, both feet off the ground on the pass keys, `face: angry` |
 | jump / fall / land | 3 / 2 / 2 | crouch (`squash 1.1`) → stretch (`0.94/1.08`) → tuck; land `squash 1.16` for 3f then settle |
 | attack N | 5–6 | **anticipation** (`ease: in`, 3–4f, weapon opposite the swing) → **smear** hit key (`ease: overshoot`, 3f, `smear`, hitbox) → **hit hold** (2–3f, pose +4°) → **follow-through** (`ease: inout`, 6–12f, `cancel`) → return (4f) |
@@ -236,6 +252,9 @@ is a flail.
 - [ ] Silhouette test: the rig filled black is still recognisable (weapon, hat/hair, one signature accessory).
 - [ ] 1 px outline everywhere, no double outlines where parts overlap, no outline-coloured seams.
 - [ ] Three tones per material, light from the top-left in every pose (check a raised arm and a lying pose).
+- [ ] Value test: every adjacent pair of parts differs in value or hue family (`mode=closeup&zoom=6`); sleeves are not the torso colour.
+- [ ] Squint test: the 1x idle / walk / attack-hit frames downscaled 0.5x still show a person with the weapon.
+- [ ] Rest poses are open: nothing crosses the torso or the face in idle/walk; both hands and both boots visible.
 - [ ] Palette from the GDD; aether cyan only on Concordat machinery; faction read (warm hero / cold Brassbound / soot).
 - [ ] Face changes across idle → attack → hurt; beard/hair/scarf lags when the head snaps in `hurt`.
 - [ ] Idle breathes (4 keys); walk 8 keys with a down/up bob; run has airborne keys.

@@ -9,6 +9,26 @@ import { pathTaperedCapsule } from './shapes.js';
 export const LIGHT_X = -0.7071, LIGHT_Y = -0.7071;
 /** Default ramp factors (build.shading may override { hi, sh, rim }). */
 export const RAMP = Object.freeze({ hi: 1.22, sh: 0.66, rim: 1.55 });
+/**
+ * Readability rule: parts narrower than this radius (px at 1x; i.e. limbs < ~8 px wide) get TWO tones (base + shadow),
+ * no highlight — a third band on a 5 px limb reads as noise, not form. Override per rig with build.thinR.
+ * Shading budget knobs stored on the rig by buildRig: thinR, hiMin, flatR, tonesN (build.tones: 2 = no highlights at
+ * all; light marks are then explicit 1 px rims via rimRect / rimTop on big shapes only).
+ */
+export const THIN_R = 4;
+/** Below this radius a part is a single flat tone (plus outline). Override per rig with build.flatR. */
+export const FLAT_R = 2.5;
+/** Smallest half-extent (px) of a clipped shape (celPath / celRect / celPoly) that still gets a highlight cap; build.hiMin. */
+export const HI_MIN = 6;
+function thinR(rig) { return rig.thinR != null ? rig.thinR : THIN_R; }
+/**
+ * Highlight gate: false on a `build.tones: 2` rig (base + shadow only, light marks come from explicit rims), and for
+ * any shape whose half-extent is below rig.hiMin (clipped shapes) — capsules/balls compare against thinR instead.
+ */
+export function wantHi(rig, ext) { return rig.tonesN !== 2 && ext >= (rig.hiMin != null ? rig.hiMin : HI_MIN); }
+/** Shadow gate: below rig.flatR a limb-like part is one flat tone plus its outline. */
+export function wantSh(rig, r) { return r >= (rig.flatR != null ? rig.flatR : FLAT_R); }
+function wantHiR(rig, r) { return rig.tonesN !== 2 && r >= thinR(rig); }
 
 function c255(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
 /** Shade a colour: shadows go cooler / bluer, highlights warmer (pixel-art hue shift). */
@@ -50,12 +70,12 @@ export function celPath(ctx, rig, hex, cx, cy, ext, sh = 0.36, hi = 0.35) {
   outlinePath(ctx, rig);
   const t = tones(rig, hex);
   ctx.fillStyle = rig.col(t.base); ctx.fill();
-  if (rig.override || !rig.shading) return;
+  if (rig.override || !rig.shading || !wantSh(rig, ext)) return;
   ctx.save(); ctx.clip();
   ctx.translate(cx, cy); ctx.rotate(Math.atan2(rig.light.y, rig.light.x)); // +x points at the light
   const E = ext + 3;
   ctx.fillStyle = t.sh; ctx.fillRect(-E, -E, E - ext + ext * 2 * sh, E * 2);
-  if (hi > 0) { ctx.fillStyle = t.hi; ctx.fillRect(ext - ext * hi, -E, E, E * 2); }
+  if (hi > 0 && wantHi(rig, ext)) { ctx.fillStyle = t.hi; ctx.fillRect(ext - ext * hi, -E, E, E * 2); }
   ctx.restore();
 }
 
@@ -65,12 +85,12 @@ export function celCapsule(ctx, rig, x0, y0, x1, y1, r, hex, hiFrac = 0.3) {
   outlinePath(ctx, rig);
   const t = tones(rig, hex);
   ctx.fillStyle = rig.col(t.base); ctx.fill();
-  if (rig.override || !rig.shading || r < 2.5) return;
+  if (rig.override || !rig.shading || !wantSh(rig, r)) return;
   const lx = rig.light.x, ly = rig.light.y;
   const rs = r * 0.6, off = r - rs; // thinner capsule shifted away from the light stays inside the silhouette
   pathCap(ctx, x0 - lx * off, y0 - ly * off, x1 - lx * off, y1 - ly * off, rs);
   ctx.fillStyle = t.sh; ctx.fill();
-  if (hiFrac > 0) {
+  if (hiFrac > 0 && wantHiR(rig, r)) {
     const rh = Math.max(0.7, r * hiFrac * 0.5), offh = r - rh - 0.6;
     pathCap(ctx, x0 + lx * offh, y0 + ly * offh, x1 + lx * offh, y1 + ly * offh, rh);
     ctx.fillStyle = t.hi; ctx.fill();
@@ -83,12 +103,13 @@ export function celTaper(ctx, rig, x0, y0, x1, y1, r0, r1, hex, hiFrac = 0.3) {
   outlinePath(ctx, rig);
   const t = tones(rig, hex);
   ctx.fillStyle = rig.col(t.base); ctx.fill();
-  if (rig.override || !rig.shading || Math.max(r0, r1) < 2.5) return;
+  const rm = Math.max(r0, r1);
+  if (rig.override || !rig.shading || !wantSh(rig, rm)) return;
   const lx = rig.light.x, ly = rig.light.y, k = 0.6;
   const o0 = r0 - r0 * k, o1 = r1 - r1 * k;
   pathTaperedCapsule(ctx, x0 - lx * o0, y0 - ly * o0, x1 - lx * o1, y1 - ly * o1, r0 * k, r1 * k);
   ctx.fillStyle = t.sh; ctx.fill();
-  if (hiFrac > 0) {
+  if (hiFrac > 0 && wantHiR(rig, rm)) {
     const rh0 = Math.max(0.7, r0 * hiFrac * 0.5), rh1 = Math.max(0.7, r1 * hiFrac * 0.5);
     const h0 = r0 - rh0 - 0.6, h1 = r1 - rh1 - 0.6;
     pathTaperedCapsule(ctx, x0 + lx * h0, y0 + ly * h0, x1 + lx * h1, y1 + ly * h1, rh0, rh1);
@@ -102,12 +123,12 @@ export function celBall(ctx, rig, cx, cy, r, hex, hi = true) {
   outlinePath(ctx, rig);
   const t = tones(rig, hex);
   ctx.fillStyle = rig.col(t.base); ctx.fill();
-  if (rig.override || !rig.shading || r < 2.5) return;
+  if (rig.override || !rig.shading || !wantSh(rig, r)) return;
   const lx = rig.light.x, ly = rig.light.y;
   const rs = r * 0.72, off = r - rs;
   ctx.beginPath(); ctx.arc(cx - lx * off, cy - ly * off, rs, 0, Math.PI * 2);
   ctx.fillStyle = t.sh; ctx.fill();
-  if (hi) { ctx.fillStyle = t.hi; ctx.fillRect(Math.round(cx + lx * r * 0.5) - 1, Math.round(cy + ly * r * 0.5) - 1, 2, 2); }
+  if (hi && wantHiR(rig, r)) { ctx.fillStyle = t.hi; ctx.fillRect(Math.round(cx + lx * r * 0.5) - 1, Math.round(cy + ly * r * 0.5) - 1, 2, 2); }
 }
 
 /** Rounded rect: outline, base, shadow band on the far side, highlight toward the light (clipped). */
@@ -139,10 +160,34 @@ export function rimRect(ctx, rig, x, y, w, h, hex) {
   if (lx > 0.3) ctx.fillRect(x + w - 1, y + 1, 1, h - 2);
 }
 
+/**
+ * Single 1 px rim light along the top (lit) edge of a BIG shape, as a straight run (x0,y0)->(x1,y1) in part space,
+ * inset 1 px from the outline (shoulder line, boot top, weapon-head edge). The only highlight a `tones: 2` rig draws.
+ */
+export function rimTop(ctx, rig, x0, y0, x1, y1, hex) {
+  if (rig.override || !rig.shading) return;
+  ctx.strokeStyle = tones(rig, hex).rim; ctx.lineWidth = 1; ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.moveTo(x0, y0 + 0.5); ctx.lineTo(x1, y1 + 0.5); ctx.stroke();
+}
+
 /** Flat 1px-outlined fill without shading (details: buckles, straps, rivets). */
 export function flat(ctx, rig, hex, outline = true) {
   if (outline) outlinePath(ctx, rig);
   ctx.fillStyle = rig.col(hex); ctx.fill();
+}
+
+/**
+ * Contact shadow: a translucent dark capsule offset ~1 px away from the light, drawn UNDER a near limb so the limb
+ * separates from whatever it crosses (torso, apron, far limb). Alpha from rig.contactAlpha (build.contactShadow).
+ */
+export function contactCapsule(ctx, rig, x0, y0, x1, y1, r) {
+  if (rig.override || !rig.contactAlpha) return;
+  const ox = -rig.light.x * 1.2, oy = -rig.light.y * 1.2;
+  const a = ctx.globalAlpha;
+  ctx.globalAlpha = a * rig.contactAlpha;
+  pathCap(ctx, x0 + ox, y0 + oy, x1 + ox, y1 + oy, r + rig.ow);
+  ctx.fillStyle = rig.outline; ctx.fill();
+  ctx.globalAlpha = a;
 }
 
 // tiny path helpers kept local so shading.js has no dependency on shapes.js

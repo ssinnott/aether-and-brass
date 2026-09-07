@@ -153,7 +153,11 @@ export class Prop extends Entity {
   canBeHitBy(attacker) {
     const info = this.info;
     if (info.jumpOnly && !(attacker && (attacker.state === ST.JUMP_ATTACK || (attacker.kind === 'projectile' && attacker.owner && attacker.owner.state === ST.JUMP_ATTACK)))) return false;
-    if (info.valve) { const b = this.world && this.world.boss; if (!b || b.bossKind !== 'boss' || b.defeated || b.phaseIndex > 1) return false; }
+    if (info.valve) {
+      const b = this.world && this.world.boss, striker = attacker && attacker.kind === 'projectile' ? attacker.owner : attacker;
+      if (!b || b.bossKind !== 'boss' || b.defeated || b.phaseIndex > 1) return false;
+      if (!striker || striker.team !== TEAM.PLAYER) return false; // the Engine's own stomps must not waste the valves
+    }
     return true;
   }
   /** Damage the prop. Returns true when the hit counted. */

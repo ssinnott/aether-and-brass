@@ -1,7 +1,7 @@
 // Default part renderers for rig.js, drawn as chunky cel-shaded pixel-sprite shapes (1px outline, 3-tone bands,
 // top-left light). Every function draws in the part's local space set up by rig.js and allocates nothing.
 // Content may import these to compose custom parts (e.g. draw the default boot and add a strap).
-import { celCapsule, celTaper, celBall, celRect, celPoly, celPath, tones, flat, pathRR, rimRect } from './shading.js';
+import { celCapsule, celTaper, celBall, celRect, celPoly, celPath, tones, flat, pathRR, rimRect, rimTop } from './shading.js';
 import { FACE } from './poses.js';
 
 const R = Math.round;
@@ -33,12 +33,8 @@ export function drawCuff(ctx, rig, b, c, r, hex) {
 export function drawFist(ctx, rig, r, skin, opts = null) {
   const w = R(r * 2.2), h = R(r * 2), x0 = R(-r * 0.6), y0 = R(-r);
   celRect(ctx, rig, x0, y0, w, h, R(r * 0.8), skin, 0.4, 0.25);
-  // thumb: small ball on the lit side, knuckle notches
+  // thumb: small ball on the lit side (the 1px knuckle notches were dropped in the readability pass)
   celBall(ctx, rig, x0 + R(r * 0.9), y0, R(r * 0.55), skin, false);
-  if (!rig.override) {
-    ctx.fillStyle = tones(rig, skin).sh;
-    ctx.fillRect(x0 + w - 3, y0 + 2, 1, 1); ctx.fillRect(x0 + w - 3, y0 + h - 3, 1, 1);
-  }
   if (opts && opts.glove) { ctx.fillStyle = rig.col(opts.glove); ctx.fillRect(x0 - 1, y0, 2, h); }
 }
 
@@ -51,11 +47,8 @@ export function drawBoot(ctx, rig, footL, footH, hex, accent = null) {
   const t = tones(rig, hex);
   // sole (2px, darkest) + 1px heel step
   ctx.fillStyle = t.deep; ctx.fillRect(-heel, sole - 1, toe + heel, 2); ctx.fillRect(-heel, sole - 3, 3, 2);
-  // strap + buckle across the instep
-  ctx.fillStyle = t.deep; ctx.fillRect(-heel + 1, top + 2, heel * 0.6 + heel - 2, 2);
-  ctx.fillStyle = rig.col(accent || rig.palette.accent); ctx.fillRect(R(heel * 0.6) - 3, top + 1, 3, 3);
-  // rim on the lit top edge
-  ctx.fillStyle = t.rim; ctx.fillRect(-heel + 1, top, R((heel * 0.6 + heel) * 0.6), 1);
+  // one buckle on the instep (readability pass: the 2px strap and 1px rim were noise at 1x — anything < 2px goes)
+  if (footH >= 5) { ctx.fillStyle = rig.col(accent || rig.palette.accent); ctx.fillRect(R(heel * 0.6) - 3, top + 1, 3, 3); }
 }
 
 /** Shaped torso silhouette (torso space: origin at the hip centre, y up negative). Shoulders wide, waist narrow. */
@@ -98,10 +91,12 @@ export function drawSkull(ctx, rig, r, skin, hair, opts = null) {
   celPath(ctx, rig, skin, 0, 0, r, 0.3, 0.3);
   // ear
   celBall(ctx, rig, -r * 0.55, r * 0.15, R(r * 0.26), skin, false);
-  // nose (profile bump)
-  ctx.beginPath(); ctx.moveTo(r * 0.7, r * 0.05); ctx.lineTo(r * 1.15, r * 0.3); ctx.lineTo(r * 0.7, r * 0.45); ctx.closePath();
-  flat(ctx, rig, skin);
-  if (!rig.override) { ctx.fillStyle = tones(rig, skin).sh; ctx.fillRect(R(r * 0.75), R(r * 0.4), 3, 1); }
+  // nose (profile bump); opts.noNose for rigs that draw their own (Brunhild's big wedge sits below the eye row)
+  if (!(opts && opts.noNose)) {
+    ctx.beginPath(); ctx.moveTo(r * 0.7, r * 0.05); ctx.lineTo(r * 1.15, r * 0.3); ctx.lineTo(r * 0.7, r * 0.45); ctx.closePath();
+    flat(ctx, rig, skin);
+    if (!rig.override) { ctx.fillStyle = tones(rig, skin).sh; ctx.fillRect(R(r * 0.75), R(r * 0.4), 3, 1); }
+  }
   if (hair && !(opts && opts.noHair)) drawHairCap(ctx, rig, r, hair, opts && opts.hairStyle);
 }
 
@@ -126,33 +121,37 @@ export function drawHairCap(ctx, rig, r, hair, style = 'short') {
  * Head space, rig faces right; the near eye sits at +x. `opts.noMouth` for bearded rigs, `opts.eyeY` to move the eye line.
  */
 export function drawFace(ctx, rig, r, face, opts = null) {
+  // readability pass: features scale with the head. Heads of radius >= 9.5 (or opts.big) get 5x4 / 4x4 eye whites with
+  // 2x2 pupils and 2px brows; smaller heads keep the 4x3 / 3x3 whites, 1x2 pupils and 1px brows.
+  const big = opts && opts.big != null ? !!opts.big : r >= 9.5;
   const ink = rig.col(rig.outline), white = rig.col('#f8f4ec'), ey = R(-r * 0.15) + (opts && opts.eyeY || 0);
-  const ex = R(r * 0.45), fx = R(-r * 0.12), pupil = rig.col(opts && opts.pupil || '#1a1418');
+  const ex = R(r * 0.45), fx = R(-r * 0.12) - (big ? 1 : 0), pupil = rig.col(opts && opts.pupil || '#1a1418');
   const angry = face === FACE.angry || face === FACE.shout || face === FACE.grit;
   const closed = face === FACE.closed || face === FACE.happy;
+  const ew = big ? 5 : 4, fw = big ? 4 : 3, eh = big ? 4 : 3, pw = big ? 2 : 1, bt = big ? 2 : 1;
   if (face === FACE.dazed) {
     ctx.fillStyle = ink;
     for (let i = 0; i < 3; i++) { ctx.fillRect(ex - 1 + i, ey - 1 + i, 1, 1); ctx.fillRect(ex + 1 - i, ey - 1 + i, 1, 1); ctx.fillRect(fx - 1 + i, ey - 1 + i, 1, 1); ctx.fillRect(fx + 1 - i, ey - 1 + i, 1, 1); }
   } else if (closed) {
     ctx.fillStyle = ink;
-    if (face === FACE.happy) { ctx.fillRect(ex - 1, ey, 1, 1); ctx.fillRect(ex, ey - 1, 2, 1); ctx.fillRect(ex + 2, ey, 1, 1); ctx.fillRect(fx - 1, ey, 1, 1); ctx.fillRect(fx, ey - 1, 1, 1); ctx.fillRect(fx + 1, ey, 1, 1); }
-    else { ctx.fillRect(ex - 1, ey, 4, 1); ctx.fillRect(fx - 1, ey, 3, 1); }
+    if (face === FACE.happy) { ctx.fillRect(ex - 1, ey, 1, bt); ctx.fillRect(ex, ey - 1, ew - 2, bt); ctx.fillRect(ex + ew - 2, ey, 1, bt); ctx.fillRect(fx - 1, ey, 1, bt); ctx.fillRect(fx, ey - 1, fw - 2, bt); ctx.fillRect(fx + fw - 2, ey, 1, bt); }
+    else { ctx.fillRect(ex - 1, ey, ew, bt); ctx.fillRect(fx - 1, ey, fw, bt); }
   } else {
     // whites + pupils (pupils look toward facing; hurt = wide eyes with small pupils)
     const wide = face === FACE.hurt ? 1 : 0;
-    ctx.fillStyle = white; ctx.fillRect(ex - 1, ey - 1 - wide, 4, 3 + wide); ctx.fillRect(fx - 1, ey - 1 - wide, 3, 3 + wide);
+    ctx.fillStyle = white; ctx.fillRect(ex - 1, ey - 1 - wide, ew, eh + wide); ctx.fillRect(fx - 1, ey - 1 - wide, fw, eh + wide);
     ctx.fillStyle = pupil;
-    if (face === FACE.hurt) { ctx.fillRect(ex + 1, ey, 1, 1); ctx.fillRect(fx, ey, 1, 1); }
-    else { ctx.fillRect(ex + 1, ey - (angry ? 0 : 1), 1, 2); ctx.fillRect(fx, ey - (angry ? 0 : 1), 1, 2); }
-    if (angry) { ctx.fillStyle = ink; ctx.fillRect(ex - 1, ey - 1, 4, 1); ctx.fillRect(fx - 1, ey - 1, 3, 1); } // lids pressed down
+    if (face === FACE.hurt) { ctx.fillRect(ex + 1, ey, pw, 1); ctx.fillRect(fx, ey, pw, 1); }
+    else { ctx.fillRect(ex + 1, ey - (angry ? 0 : 1), pw, 2); ctx.fillRect(fx, ey - (angry ? 0 : 1), pw, 2); }
+    if (angry) { ctx.fillStyle = ink; ctx.fillRect(ex - 1, ey - 1, ew, 1); ctx.fillRect(fx - 1, ey - 1, fw, 1); } // lids pressed down
   }
-  // brows (1px, stepped)
+  // brows (stepped)
   ctx.fillStyle = rig.col(opts && opts.brow || rig.palette.hair || ink);
-  const by = ey - 3;
-  if (angry) { ctx.fillRect(ex - 2, by - 1, 2, 1); ctx.fillRect(ex, by, 2, 1); ctx.fillRect(ex + 2, by + 1, 1, 1); ctx.fillRect(fx - 1, by, 2, 1); ctx.fillRect(fx + 1, by + 1, 1, 1); }
-  else if (face === FACE.hurt) { ctx.fillRect(ex - 2, by, 2, 1); ctx.fillRect(ex, by - 1, 3, 1); ctx.fillRect(fx - 1, by, 1, 1); ctx.fillRect(fx, by - 1, 2, 1); }
-  else if (face === FACE.happy) { ctx.fillRect(ex - 2, by - 1, 4, 1); ctx.fillRect(fx - 1, by - 1, 3, 1); }
-  else { ctx.fillRect(ex - 2, by, 4, 1); ctx.fillRect(fx - 1, by, 3, 1); }
+  const by = ey - 3 - (big ? 1 : 0);
+  if (angry) { ctx.fillRect(ex - 2, by - 1, 2, bt); ctx.fillRect(ex, by, 2, bt); ctx.fillRect(ex + 2, by + 1, ew - 3, bt); ctx.fillRect(fx - 1, by, 2, bt); ctx.fillRect(fx + 1, by + 1, fw - 2, bt); }
+  else if (face === FACE.hurt) { ctx.fillRect(ex - 2, by, 2, bt); ctx.fillRect(ex, by - 1, ew - 2, bt); ctx.fillRect(fx - 1, by, 1, bt); ctx.fillRect(fx, by - 1, fw - 1, bt); }
+  else if (face === FACE.happy) { ctx.fillRect(ex - 2, by - 1, ew, bt); ctx.fillRect(fx - 1, by - 1, fw, bt); }
+  else { ctx.fillRect(ex - 2, by, ew, bt); ctx.fillRect(fx - 1, by, fw, bt); }
   if (opts && opts.noMouth) return;
   drawMouth(ctx, rig, r, face, opts);
 }
@@ -177,4 +176,4 @@ export function drawStick(ctx, rig, len, hex, gripHex) {
   for (let x = -3; x < 6; x += 3) ctx.fillRect(x, -2, 2, 4);
 }
 
-export { pathRR, rimRect };
+export { pathRR, rimRect, rimTop };

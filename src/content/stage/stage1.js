@@ -128,7 +128,7 @@ export const stage1 = {
       hazards: [
         { type: 'aetherVent', x: 4900, z: 110, period: 120, active: 40, tell: 30, offset: 80 },
         { type: 'aetherVent', x: 5260, z: 40, period: 120, active: 40, tell: 30, offset: 80 },
-        { type: 'aetherVent', x: 5560, z: 100, period: 120, active: 40, tell: 30, offset: 80 },
+        { type: 'aetherVent', x: 5480, z: 100, period: 120, active: 40, tell: 30, offset: 80 },
       ],
       /** the dais: the band shrinks 20px per boss phase as steam vents open along its edges (5 dmg every 20f inside) */
       zones: [{ type: 'daisVents', x0: 5560, x1: 6000 }],

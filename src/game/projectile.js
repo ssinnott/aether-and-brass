@@ -166,9 +166,11 @@ export class Projectile extends Entity {
     this.team = attacker.team; this.owner = attacker;
     this.hitTargets.clear();
     const spd = this.reflectSpeed || Math.max(5, Math.abs(this.vx) * 1.4);
-    this.facing = attacker.facing; this.vx = attacker.facing * spd; this.vy = Math.max(this.vy, 2.5); this.vz = 0;
+    this.facing = attacker.facing; this.vx = attacker.facing * spd; this.vz = 0;
     this.gravity = this.gravity || (this.motion === 'lob' || this.motion === 'fuse' ? 0.3 : 0);
     this.rest = false; this.bounces = 0; this.startX = this.x; this.maxDist = this.maxDist || 150;
+    // lofted bombs get enough lift to actually fly `maxDist` before touching down (GDD 3 A3: batted 150px)
+    this.vy = Math.max(this.vy, this.gravity > 0 ? this.gravity * (this.maxDist / spd) / 2 : 2.5);
     this.life = Math.max(this.life, 60); this.retract = false; this.returning = false;
     const base = this.hit || this.explodeHit || { damage: 8, type: 'medium', kbX: 5, kbY: 2, hitstun: 18 };
     this.hit = { ...base, projectile: true, ranged: true, friendly: true, damage: this.damageOnReflect || Math.round((base.damage || 8) * 1.5), reflected: true };

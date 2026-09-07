@@ -44,7 +44,7 @@ export class Player extends Fighter {
     this.dodgeCooldown = 0; this.dodgeDx = 0; this.dodgeDz = 0; this.airDash = false; this.lastDodgeFrame = -100;
     this.jumpsLeft = 0; this.airDashesLeft = 0; this.airShotUsed = false;
     this.out = false; this.respawnTimer = 0;
-    this.lastTarget = null; this.heldBody = null; this.victory = false;
+    this.lastTarget = null; this.heldBody = null; this.heldProj = null; this.victory = false;
     this.crowdInst = -1; this.crowdHits = 0; this.crowdClearUntil = -1; this.tauntAcc = 0;
     this.intent = { x: 0, y: 0, attack: false, jump: false, special: false, super: false, dodge: false, taunt: false, run: false, start: false };
     const taunt = def.anims && def.anims.taunt;
@@ -200,8 +200,9 @@ export class Player extends Fighter {
     audio.play('hit_grab');
   }
   thinkSuper() {
-    const b = this.heldBody;
+    const b = this.heldBody, pr = this.heldProj;
     if (b && b.grabbedBy === this) { b.x = this.x + this.facing * 34; b.z = this.z; b.y = 30; b.facing = -this.facing; }
+    if (pr && !pr.removeMe) { pr.x = this.x + this.facing * 34; pr.z = this.z; pr.y = 30; pr.life = 600; }
   }
 
   // ---------- actions ----------
@@ -255,7 +256,7 @@ export class Player extends Fighter {
     audio.play('super_charge'); audio.play(this.def.sfx && this.def.sfx.super || 'super_' + this.def.id);
   }
   startSuper(world) {
-    this.meter = 0; this.running = false; this.hitConfirmed = false; this.blinkHit.clear(); this.heldBody = null;
+    this.meter = 0; this.running = false; this.hitConfirmed = false; this.blinkHit.clear(); this.heldBody = null; this.heldProj = null;
     this.setState(ST.SUPER, 'super');
     this.invuln = Math.max(this.invuln, this.anim.length + 4);
     this.beginSuper(world);
@@ -282,7 +283,7 @@ export class Player extends Fighter {
 
   // ---------- hooks ----------
   onActionDone(world) {
-    if (this.state === ST.SUPER && this.heldBody) { this.releaseHeld(world, 40); }
+    if (this.state === ST.SUPER && (this.heldBody || this.heldProj)) { this.releaseHeld(world, 40); }
     if (this.state === ST.DODGE) this.airDash = false;
     this.comboStep = 0;
     super.onActionDone(world);
@@ -309,17 +310,27 @@ export class Player extends Fighter {
     switch (name) {
       case 'blink': this.teleportTo({ behind: false, unique: true, range: (frame && frame.radius) || 400, offset: 26, color: '#8FE3FF', sfx: false }, world); break;
       case 'wreckGrab': {
+        // Wrecking Ball (GDD 2.4): grab the nearest enemy, else (frame.rubble !== false) swing a rubble ball projectile instead
         const e = world.nearestEnemy(this.x, this.z, { maxDist: (frame && frame.radius) || 80 });
         if (e && !e.dead && e.traits.grabbable !== false) { this.heldBody = e; this.grabTarget = e; e.grabbedBy = this; e.vx = e.vy = e.vz = 0; e.setState(ST.GRABBED, 'hurtAir'); e.anim.setStaticPose(e.anim.pose); }
+        else if (!frame || frame.rubble !== false) {
+          this.heldProj = world.spawnProjectile({ style: 'rubble', speed: 0, life: 600, noContactHit: true, r: 10, color: '#6a6a70', muzzle: false, offsetX: 34, offsetY: 30 }, this);
+          world.addFx('dust', this.x + this.facing * 34, 0, this.z, { count: 6 });
+        }
         break;
       }
-      case 'wreckThrow': this.releaseHeld(world, (frame && frame.damage) || 40, (frame && frame.vx) || 16); break;
+      case 'wreckThrow': this.releaseHeld(world, (frame && frame.damage) || 40, (frame && frame.vx) || 16, frame); break;
       case 'dive': if (frame) { this.vy = frame.vy != null ? frame.vy : -3; } break;
       default: super.onAnimEvent(name, frame, world); break;
     }
   }
-  releaseHeld(world, damage, vx = 14) {
-    const b = this.heldBody; this.heldBody = null; this.grabTarget = null;
+  releaseHeld(world, damage, vx = 14, frame = null) {
+    const b = this.heldBody, pr = this.heldProj; this.heldBody = null; this.grabTarget = null; this.heldProj = null;
+    if (pr && !pr.removeMe) { // hurl the rubble ball: a knockdown projectile that flies `maxDist` (300px) and hits everything on the way
+      pr.vx = this.facing * vx; pr.vy = 2; pr.gravity = 0.25; pr.facing = this.facing; pr.startX = pr.x; pr.maxDist = (frame && frame.maxDist) || 300; pr.life = 90; pr.pierce = 99;
+      pr.hit = { damage, type: 'knockdown', kbX: 6, kbY: 5, hitstun: 24, projectile: true, ranged: true };
+      audio.play('throw');
+    }
     if (!b || b.grabbedBy !== this) return;
     b.thrown(this.facing * vx, 6, damage, this);
     this.onHitConfirmed(b, { type: 'throw', damage });

@@ -2,13 +2,11 @@
 // side / sky spawns with delays, reinforcements, timed waves for locked sections, props / hazards / zones, GO arrow,
 // scripted transitions (lift, funicular boarding, docking), mid-boss and boss triggers with intro cutscene / spotlight /
 // name plates, the defeat spectacle and results after a 240f pose hold.
-import { VIEW_W, FLOOR_TOP, ST, UI } from '../constants.js';
+import { VIEW_W, ST } from '../constants.js';
 import { createBackdrop, backdropsReady } from '../art/backgrounds/index.js';
 import { Prop } from './items.js';
 import { Hazard, Zone } from './hazards.js';
-import { Transition, drawNamePlate, drawSpotlight, VictorySpectacle } from './transitions.js';
-import { drawTextOutlined } from '../engine/text.js';
-import { pathPoly, paint } from '../art/shapes.js';
+import { Transition, drawSpotlight, VictorySpectacle } from './transitions.js';
 import { clamp } from '../engine/math.js';
 import { audio } from '../engine/audio.js';
 import { particles } from '../engine/particles.js';
@@ -315,17 +313,11 @@ export class StageRunner {
     }
   }
 
-  /** Transition overlays, boss intro spotlight / name plate, GO arrow (blinking) after a wave clear. */
+  /** Transition overlays and the boss intro spotlight (the HUD draws the GO arrow from `goTimer`). */
   draw(ctx) {
     const cam = this.world.camera;
     if (this.spotlightT >= 0 && this.bossEntity && this.midbossState === 'active') drawSpotlight(ctx, cam, this.bossEntity, this.spotlightT);
     if (this.transition) this.transition.draw(ctx);
-    if (this.plate) drawNamePlate(ctx, this.plate);
-    if (this.goTimer <= 0 || cam.locked || this.transition) return;
-    if ((this.goTimer % 30) >= 20) return;
-    const x = VIEW_W - 70, y = FLOOR_TOP - 60;
-    drawTextOutlined(ctx, 'GO', x, y, { size: 3, color: UI.brass, outline: '#3a2010', thickness: 1, align: 'center' });
-    pathPoly(ctx, [x + 30, y + 2, x + 52, y + 12, x + 30, y + 22]); paint(ctx, UI.brass, '#3a2010', 2);
   }
 
   /** window.__game.summary() contribution. */

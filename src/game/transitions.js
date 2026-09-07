@@ -68,7 +68,7 @@ export class Transition {
     }
     if (this.kind === 'lift') {
       // freight-lift shaft walls scroll up behind the fighters (fade in during the ride); one Meat Pie rides along
-      this.addLayer(-5, (ctx, c, l) => drawShaft(ctx, c, l), cam.x);
+      this.addLayer(-5, (ctx, c, l) => drawShaft(ctx, c, l), cam.x).alpha = 0; // fades in once the lift starts dropping
       const px = w.players.reduce((a, p) => a + (p ? p.x : 0), 0) / Math.max(1, w.players.length);
       w.add(new Pickup('meatPie', Math.min(this.gateX - 40, px + 60), 100, { pop: true }));
     }
@@ -229,20 +229,21 @@ function drawShaft(ctx, cam, l) {
   ctx.fillStyle = '#ffd070'; ctx.fillRect(VIEW_W - 60, ly, 4, 6); ctx.globalAlpha = a * 0.25; ctx.fillStyle = '#ffb040'; ctx.beginPath(); ctx.arc(VIEW_W - 58, ly + 3, 30, 0, Math.PI * 2); ctx.fill();
   ctx.globalAlpha = 1;
 }
-/** Summit landing: a brass-edged platform over the first 100px of the Heart-Engine floor with three risers. */
+/** Summit landing: three brass-edged marble steps rising out of the funicular dock onto the Heart-Engine floor. */
 function drawStairs(ctx, cam, x0) {
   const sx = cam.toScreenX(x0), y0 = FLOOR_TOP + cam.shakeY;
-  if (sx > VIEW_W || sx + 110 < 0) return;
-  const marble = tones('#B9B2A5'), brass = tones(BRASS);
+  if (sx > VIEW_W || sx + 120 < 0) return;
+  const marble = tones('#B9B2A5'), brass = tones(BRASS), dark = tones('#6a6660');
   for (let i = 0; i < 3; i++) {
-    const x = sx + i * 36, w = 110 - i * 36;
-    ctx.globalAlpha = 0.9; ctx.fillStyle = i % 2 ? marble.base : marble.hi; ctx.fillRect(x, y0, w, Z_MAX);
-    ctx.globalAlpha = 1; ctx.fillStyle = brass.base; ctx.fillRect(x + w - 4, y0, 4, Z_MAX); ctx.fillStyle = brass.hi; ctx.fillRect(x + w - 4, y0, 1, Z_MAX);
-    ctx.fillStyle = marble.sh; ctx.fillRect(x + w - 8, y0, 4, Z_MAX);
+    const x = sx + i * 34, w = 110 - i * 34, top = y0 + i * 6;
+    ctx.fillStyle = i % 2 ? marble.base : marble.hi; ctx.fillRect(x, top, w, Z_MAX - i * 6);
+    ctx.fillStyle = dark.sh; ctx.fillRect(x, top, w, 1);                 // riser lip
+    ctx.fillStyle = marble.sh; ctx.fillRect(x + w - 10, top, 10, Z_MAX - i * 6);
+    ctx.fillStyle = brass.base; ctx.fillRect(x + w - 4, top, 4, Z_MAX - i * 6); ctx.fillStyle = brass.hi; ctx.fillRect(x + w - 4, top, 1, Z_MAX - i * 6);
+    ctx.fillStyle = OL; ctx.fillRect(x + w - 1, top, 1, Z_MAX - i * 6);
   }
-  ctx.globalAlpha = 1;
+  ctx.fillStyle = brass.base; ctx.fillRect(sx, y0, 110, 3); ctx.fillStyle = brass.hi; ctx.fillRect(sx, y0, 110, 1);
 }
-
 /** Boss name plate: a riveted brass plaque behind the HUD banner text. */
 export function drawNamePlate(ctx, plate) {
   const t = plate.timer / plate.life, a = t < 0.1 ? t / 0.1 : t > 0.85 ? (1 - t) / 0.15 : 1;

@@ -59,6 +59,9 @@ export function resolveHits(world) {
       const key = hb.id != null ? hb.id : (a.anim.frameIndex + ':' + k);
       for (let j = 0; j < ents.length; j++) {
         const t = ents[j];
+        // hitbox.extinguish: fire puddles (and projectiles flagged extinguishable) inside the box are snuffed out (Pip's Steam Vent, GDD 2.4)
+        if (hb.extinguish && t.kind === 'projectile' && !t.removeMe && (t.motion === 'puddle' || t.extinguishable) && Math.abs(t.z - a.z) <= box.z + t.r
+          && box.x0 < t.x + t.r && box.x1 > t.x - t.r) { t.removeMe = true; world.addFx('steam', t.x, 6, t.z, { count: 6 }); continue; }
         if (!isTarget(a, hb, t) || t.grabbedBy === a) continue;
         const rec = a.hitTargets.get(t.id);
         if (hb.once !== false) { if (rec && rec.key === key) continue; }

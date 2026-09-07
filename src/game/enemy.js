@@ -10,8 +10,9 @@
 //                                                                         position N frames ago (Sapper 24) | keepDistance px (ranged.keep shorthand)
 //  ignoresTokens false | maxAttackers N (cap for this faction, e.g. 2 Footmen / Sootborn) | tokenGroup 'name' (custom token pool)
 //  staggerEvery N + staggerFrames 30  every Nth hit taken staggers (Brassbound gear slip) — also traits.staggerEveryNthHit
-//  shield true | { hitsToStagger: 4, staggerFrames: 30, stripOnLauncher: true, frontOnly: false }  super armor + no launch while shielded;
-//                Nth hit staggers, a launcher during the stagger strips the shield for good (rig.shieldStripped); frontOnly = armor only from the front
+//  shield true | { hitsToStagger: 4, staggerFrames: 30, stripOnLauncher: true, frontOnly: false, dropProp: 'crate' }  super armor + no launch while
+//                shielded; Nth hit staggers, a launcher during the stagger strips the shield for good (rig.shieldStripped, hooks.onShieldStripped(f, world),
+//                dropProp = prop type left on the floor); frontOnly = armor only from the front
 //  launchStun N   armored brute: a launcher stuns for N frames instead of launching (Cinder Hulk 45)
 //  flee N / fleeHp N + fleeDistance 100   run away when hp < N (Cutthroat) | fleeLast true  last enemy at <= fleeHpFrac (0.3): fleeChance (0.5) flees off-screen
 //  panicRange / panicWhenClose px + panicFrames 30   a player inside the range -> stagger then run (Slinger)
@@ -21,7 +22,9 @@
 //  stallEvery N + stallFrames 70 + stallDamageMult 3 + stallGrabbable true   every Nth attack ends in a punishable stall (Hoister overheat)
 //  punishDamageMult 1 + punishGrabbable false   applied while the current frame has `punish: true` (recovery frames)
 //  tellScale 1 | attackSpeed 1   speed of tell / active frames (difficulty: world.options.tellScale) | tellWarnFrames 10 (rig.tellWarn)
-//  targetBy 'nearest'|'highestCombo'|'lowestHp' | grabHoldHits 3 | blinkOnDamage N (teleport away after N damage in one combo, bosses)
+//  targetBy 'nearest'|'highestCombo'|'lowestHp' | grabHoldHits 3 + grabHitEvery 18 (frames between hold squeezes: Hook Yank crush 25)
+//  blinkOnDamage N + blinkAnim 'aetherStep' + blinkChain 'caneFlurry' (teleport away after N damage in one combo, bosses)
+//  rig.look = { x, y } (-1..1 toward the target) is refreshed every step for part hooks (Sootborn eyes track the nearest player)
 //  valveStun true (bosses: pressure valves may stun) | stunDamageMult 1.5 + stunGrabbable (boss stun windows)
 //  Frame events handled here: aim (lob target), summon (frame.summon [{ type, variant }]), crateDrop, timeStop (frame.freeze; a dodge in the last
 //  tellWarnFrames of the tell escapes), teleportBehind. Enemy content may also use every def.hooks / traits / frame field of fighter.js.
@@ -39,7 +42,8 @@ export const AI_DEFAULTS = Object.freeze({
   attackRange: 40, zTolerance: 12, retreatChance: 0.25, attackCooldown: [40, 90], aggression: 0.5, attacks: [], ranged: null,
   staggerEvery: 0, staggerFrames: 30, firstAttackDelay: 45, flank: false, hoverCircle: false, fleeLast: false, fleeHp: 0, fleeDistance: 100,
   retreatBudget: 90, evadeChance: 0, evadeCooldown: 90, riposteChance: 0, riposteCooldown: 150, riposteAnim: 'riposte', panicRange: 0, panicFrames: 30,
-  ignoresTokens: false, shield: false, launchStun: 0, stallEvery: 0, stallFrames: 70, stallDamageMult: 3, stallGrabbable: true, grabHoldHits: 3,
+  ignoresTokens: false, shield: false, launchStun: 0, stallEvery: 0, stallFrames: 70, stallDamageMult: 3, stallGrabbable: true, grabHoldHits: 3, grabHitEvery: 18,
+  blinkOnDamage: 0, blinkAnim: 'aetherStep', blinkChain: 'caneFlurry',
   backstepAfterWhiffs: null, riposteStance: null, punishDamageMult: 1, punishGrabbable: false, tellScale: 1, attackSpeed: 1, tellWarnFrames: 10, targetBy: 'nearest',
 });
 /** Per-role defaults layered under def.ai (ARCHITECTURE 8 roles). */
@@ -58,7 +62,7 @@ export function normalizeAi(def) {
   if (ai.ranged && ai.keepDistance && ai.ranged.keep == null) ai.ranged = { ...ai.ranged, keep: ai.keepDistance };
   if (ai.shield) {
     const s = typeof ai.shield === 'object' ? ai.shield : {};
-    ai.shield = { hitsToStagger: s.hitsToStagger || ai.staggerEvery || 4, staggerFrames: s.staggerFrames || ai.staggerFrames || 30, stripOnLauncher: s.stripOnLauncher !== false, frontOnly: !!s.frontOnly };
+    ai.shield = { hitsToStagger: s.hitsToStagger || ai.staggerEvery || 4, staggerFrames: s.staggerFrames || ai.staggerFrames || 30, stripOnLauncher: s.stripOnLauncher !== false, frontOnly: !!s.frontOnly, dropProp: s.dropProp || null };
     if (!ai.staggerEvery) ai.staggerEvery = ai.shield.hitsToStagger;
     ai.staggerFrames = ai.shield.staggerFrames;
   }
@@ -93,13 +97,14 @@ export class Enemy extends Fighter {
     this.inStance = false; this.stanceTimer = 0; this.stanceCooldown = 0; this.playerAttacks = 0; this.lastPlayerAttack = -1; this.noAttackTimer = 0;
     // target position history (ranged.aimDelay)
     this.histX = new Float32Array(HIST); this.histZ = new Float32Array(HIST); this.histI = 0; this.histN = 0;
-    this.rig.keyAngle = 0; this.rig.tell = false; this.rig.tellWarn = false;
+    this.rig.keyAngle = 0; this.rig.tell = false; this.rig.tellWarn = false; this.rig.look = { x: 0, y: 0 };
     if (fromSky) { this.y = 170; this.vy = 0; this.entered = true; this.aiState = 'APPROACH'; this.setState(ST.JUMP, 'fall', { fallback: 'jump' }); }
   }
   /** Shield / role flags that live in the traits the core reads. */
   applyAiTraits() {
     const ai = this.ai;
     if (ai.shield) { this.traits.superArmor = true; this.traits.noLaunch = true; this.unlaunchable = true; if (ai.shield.frontOnly) this.traits.armorFrontOnly = true; }
+    this.armor = this.traits.superArmor;
   }
 
   // ---------- per-step ----------
@@ -141,6 +146,8 @@ export class Enemy extends Fighter {
     const t = this.target;
     if (!t) { this.stand(); return; }
     this.recordHistory(t);
+    const look = this.rig.look || (this.rig.look = { x: 0, y: 0 });
+    look.x = clamp((t.x - this.x) * this.facing / 80, -1, 1); look.y = clamp((this.z - t.z) / 60, -1, 1);
     if (this.inStance) { this.face(t); this.stand(); return; }
     if (this.tryEvade(world, t) || this.tryPanic(world, t) || this.tryBackstep(world, t) || this.tryStance(world, t)) return;
     this.separate(world);
@@ -318,7 +325,7 @@ export class Enemy extends Fighter {
   thinkGrab(world) {
     if (!this.grabTarget || this.throwPending) return;
     if (this.anim.name === 'grab' && !this.anim.done) return;
-    if (++this.grabHitTimer >= 18) { this.grabHitTimer = 0; this.grabHit(); }
+    if (++this.grabHitTimer >= this.ai.grabHitEvery) { this.grabHitTimer = 0; this.grabHit(); }
   }
   endStagger() {
     this.stalled = false; this.punishable = false; this.punishMult = 1; this.punishGrab = false;
@@ -515,7 +522,11 @@ export class Enemy extends Fighter {
     } else if (!this.dead && shieldUp && ai.shield.stripOnLauncher && this.staggerTimer > 0 && hit.type === 'launch') {
       this.shieldStripped = true; this.rig.shieldStripped = true; this.flags.shieldStripped = true; audio.play('prop_break');
       this.traits.superArmor = false; this.traits.noLaunch = false; this.traits.armorFrontOnly = false;
-      if (world) world.addFx('ring', this.x, 30, this.z, { r0: 6, r1: 50, color: '#4DF0E0' });
+      if (world) {
+        world.addFx('ring', this.x, 30, this.z, { r0: 6, r1: 50, color: '#4DF0E0' });
+        if (ai.shield.dropProp) world.add(new Prop(ai.shield.dropProp, this.x - this.facing * 24, clamp(this.z + 6, world.floorBand.z0, world.floorBand.z1), { drops: 'none' }));
+      }
+      this.callHook('onShieldStripped', world);
     }
     const fleeFrac = this.traits.fleeHpFrac || 0.3, fleeChance = this.traits.fleeChance || 0.5;
     if (!this.dead && ai.fleeHp && this.hp < ai.fleeHp && !this.fled && attacker) {

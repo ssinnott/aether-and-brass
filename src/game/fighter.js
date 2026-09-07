@@ -39,8 +39,11 @@
 // ================================ FRAME FIELDS honoured by the core ==================================================
 //  hitbox { x, y, w, h, z, type: light|medium|heavy|launch|knockdown|grab|throw, damage, kbX, kbY, hitstun, once, rehit, multiHit: N,
 //           friendly, hitsBehind (mirrored copy), maxTargets, pierceDamage (damage for the 2nd+ target), reaction: flinch|stagger|launch|knockdown,
-//           stagger, status: { burn: {...} }, element: 'fire', groundedOnly, otg, unblockable, breaksArmor, onHit: 'rebound'|name, sfx }
+//           stagger, status: { burn: {...} }, element: 'fire', groundedOnly, otg, unblockable, breaksArmor, onHit: 'rebound'|name, sfx,
+//           groundBounce: true|vy (an airborne / knocked-down target bounces off the floor once more: Brunhild slam, Rook hip toss),
+//           extinguish: true (removes fire puddles the box touches: Pip's Steam Vent) }
 //  hitboxes [..] | move { x, z, y|vy } | armor: true|N | invuln: true | fx [{ kind, x, y, ... }] | sfx | cancel | event | tell: true
+//  hurtboxScale 0..1   shrink the hurtbox height on this frame (Rook's slide passes under projectiles)
 //  spawn { projectile: name|spec, x, y, z, count, aimAt }   spawn a projectile (name -> def.projectiles[name]) on frame entry
 //  area { radius, damage, type, kbX, kbY, hitstun, x (offset), y, teams, friendly, status, shake, color, groundedOnly }  area hit on entry
 //  teleport { toNearestEnemy: true, behind: true, range, offset, unique }   Aether Step / Sael blink on entry
@@ -50,6 +53,7 @@
 // ================================ DEF FIELDS ========================================================================
 //  projectiles { name: spec } | hurtParts [{ name, y: [y0, y1], x: [x0, x1], damageMult, flag, when(f) }] | deathSpawn [{ projectile, dx, dz }]
 //  explodeOnDeath { delay, radius, damage, friendly } | onSpawn/onUpdate/onDeath (legacy aliases of the hooks)
+//  moves { throwFwd / throwBack: { damage, vx, vy, releaseAt, shockwave: { r, damage }, selfVy, bounce: true|vy }, grabHit: { damage, hits } }
 import { ST, TEAM, GRAVITY, FLOOR_TOP, Z_MIN, Z_MAX, HITSTOP, FIGHTER_DEFAULTS, LAUNCH_VY, JUGGLE_VY, KNOCKDOWN_POP_VY, JUMP_VY, UI } from '../constants.js';
 import { Entity } from './entity.js';
 import { AnimPlayer } from './animation.js';
@@ -60,6 +64,7 @@ import { clamp, sign } from '../engine/math.js';
 import { drawText } from '../engine/text.js';
 import { applyStatus, clearStatus, tickStatuses, tickFrozen, drawStatuses, statusTint } from './status.js';
 import { normalizeTraits } from './traits.js';
+import { grabMethods, BOUNCE_VY } from './grabs.js';
 
 export { normalizeTraits };
 
@@ -78,7 +83,7 @@ const LOOP_ACTION_LIMIT = 60;
 const PLAYER_GETUP_INVULN = 30;
 /** Hit-stop granted to both sides when an attack passes through a dodge's i-frames (GDD 7). */
 const DODGE_THROUGH_HITSTOP = 4;
-const THROW_BODY_HIT = { damage: 15, type: 'knockdown', kbX: 4, kbY: 4, hitstun: 20, friendly: true, sfx: 'hit_heavy' };
+const THROW_BODY_HIT = { damage: 15, type: 'knockdown', kbX: 4, kbY: 4, hitstun: 20, friendly: true, body: true, sfx: 'hit_heavy' };
 const NO_HITBOXES = Object.freeze([]);
 const REACTION_TYPE = { flinch: 'light', stagger: 'medium', launch: 'launch', knockdown: 'knockdown' };
 
@@ -108,6 +113,8 @@ export class Fighter extends Entity {
     this.grabTarget = null; this.grabbedBy = null; this.grabHits = 0; this.grabTimer = 0; this.throwPending = null;
     this.hitTargets = new Map(); this.hitInstance = -1; this.hitConfirmed = false;
     this.throwDamage = 0; this.thrownBy = null; this.thrownHit = new Set();
+    /** Pending ground bounce ({ vy }) armed by hit.groundBounce / throw bounce; `bounced` = already used once this fall. */
+    this.bounceOnLand = null; this.bounced = false;
     this.hpBarTimer = 0; this.airActed = false; this.godmode = false; this.superTimer = 0; this.noGravity = 0;
     /** Attack instance this fighter parried ({ by, instance }): the rest of that swing whiffs (Duelist riposte, GDD 3). */
     this.parried = null;
@@ -266,7 +273,18 @@ export class Fighter extends Entity {
 
   onLand(world) {
     const s = this.state;
+    // ground bounce (GDD 2.1 / 2.3): a knocked-down body armed by hit.groundBounce pops up once more instead of lying down
+    if (AIR_FALL_STATES.has(s) && this.bounceOnLand && !this.dead && !this.bounced) {
+      const b = this.bounceOnLand; this.bounceOnLand = null; this.bounced = true;
+      this.vy = b.vy || BOUNCE_VY; this.vx *= 0.5; this.y = 0.01; this.juggleImmune = false;
+      burstDust(this.x, this.z, 5, 1.6); audio.play('land_heavy');
+      if (world.camera) world.camera.shake(3, 6);
+      this.setState(ST.KNOCKDOWN, 'hurtAir', { fallback: 'knockdown' });
+      this.callHook('onLanded', world, s);
+      return;
+    }
     this.juggleCount = 0; this.juggleGravity = 0; this.juggleImmune = false; this.airActed = false; this.noGravity = 0;
+    this.bounceOnLand = null; this.bounced = false;
     this.callHook('onLanded', world, s);
     if (AIR_FALL_STATES.has(s)) {
       this.vx *= 0.3;
@@ -377,6 +395,12 @@ export class Fighter extends Entity {
       return false;
     }
     if (this.parried && attacker && attacker.anim && this.parried.by === attacker && this.parried.instance === attacker.anim.instance) return false;
+    // traits.parry (Rook): a melee attack that would connect during the roll's first `frames` is parried — checked BEFORE the dodge's own
+    // i-frames so the parry window (1-6) actually overlaps the roll's i-frames (2-12)
+    const pr = this.traits.parry;
+    if (pr && this.state === ST.DODGE && !this.airDash && this.stateTimer <= (pr.frames || 6) && attacker && attacker.anim && attacker.team !== this.team && !hit.projectile && hit.type !== 'grab' && !hit.unparryable && !attacker.dead) {
+      this.parry(attacker, hit); return false;
+    }
     if (this.invuln > 0 && !hit.unblockable) {
       // dodging through an enemy's active frames: 4f hit-stop for both + meter (GDD 7), once per attack instance
       if (this.state === ST.DODGE && attacker && attacker.anim && this.dodgedInstance !== attacker.anim.instance) {
@@ -385,10 +409,6 @@ export class Fighter extends Entity {
         this.onDodged(attacker);
       }
       return false;
-    }
-    const pr = this.traits.parry;
-    if (pr && this.state === ST.DODGE && !this.airDash && this.stateTimer <= (pr.frames || 6) && attacker && attacker.anim && attacker.team !== this.team && !hit.projectile && hit.type !== 'grab' && !hit.unparryable) {
-      this.parry(attacker, hit); return false;
     }
     if (this.state === ST.LYING && !hit.otg) return false;
     if (this.juggleImmune && this.airborne) return false;
@@ -401,13 +421,16 @@ export class Fighter extends Entity {
     const face = attacker ? (sign(this.x - attacker.x) || attacker.facing) : -this.facing;
     if ((type === 'knockdown' || type === 'launch') && tr.ignoreKnockdownBelow && (hit.damage || 0) < tr.ignoreKnockdownBelow && !air) type = 'heavy';
     // armor: super armor / frame armor (front-only variants), flinchEvery, launch / knockdown pass unless noLaunch
+    // armor is evaluated fresh here (not this.armor from the last update): hits landing during hit-stop must still spend frame armor
     const f = this.anim.frame, frameArmor = !!(f && f.armor && this.armorInstance === this.anim.instance && this.armorHits > 0);
+    this.armor = !this.armorSuppressed && (tr.superArmor || frameArmor || this.state === ST.SUPER);
     let armored = this.armor && !hit.breaksArmor;
     if (armored && tr.armorFrontOnly && attacker && -face !== this.facing) armored = false;
     if (!armored && tr.flinchEvery > 1 && !hit.breaksArmor && !this.armorSuppressed && (this.hitCount + 1) % tr.flinchEvery !== 0) armored = true;
     if (armored && (type === 'launch' || type === 'knockdown') && !this.unlaunchable) armored = false;
     let dmg = (hit.damage || 0) * (attacker && attacker.damageMult || 1) * tr.damageTakenMult;
     if (hit.element === 'fire' || hit.fire) dmg *= tr.fireDamageMult;
+    if (hit.body || hit.type === 'throw') dmg *= tr.throwDamageTakenMult; // thrown bodies count as throws (Brassbound 1.5x, GDD 3)
     if (attacker && attacker.kind === 'player' && attacker.airborne) dmg *= tr.jumpAttackTakenMult;
     if (part && part.damageMult) dmg *= part.damageMult;
     if (this.punishable && this.punishMult > 1) dmg *= this.punishMult;
@@ -422,7 +445,7 @@ export class Fighter extends Entity {
     this.flashTimer = 4;
     this.lastHitBy = attacker || this.lastHitBy;
     // a hit on a fighter holding someone frees the held target (GDD 7 "assist"; also clears a stale grabTarget)
-    if (this.grabTarget && this.state === ST.GRAB) this.releaseGrab(false);
+    if (this.grabTarget && this.state === ST.GRAB) { const held = this.grabTarget; this.releaseGrab(false); if (attacker && attacker !== held && held.team === attacker.team) { if (attacker.addMeter) attacker.addMeter(10); if (held.addMeter) held.addMeter(10); } }
     const finisher = attacker && attacker.state === ST.SUPER && (type === 'knockdown' || type === 'launch' || hit.finisher);
     const stop = finisher ? HITSTOP.superFinisher : HITSTOP[type] != null ? HITSTOP[type] : HITSTOP.light;
     this.hitstop = Math.max(this.hitstop, stop);
@@ -437,10 +460,14 @@ export class Fighter extends Entity {
     if (cam && (type === 'heavy' || type === 'launch')) cam.shake(3, 6);
     if (cam && type === 'knockdown') cam.shake(4, 8);
     if (hit.status) for (const n in hit.status) this.applyStatus(n, hit.status[n] || {}, attacker);
+    if (hit.groundBounce && !this.bounced && (air || this.state === ST.KNOCKDOWN || type === 'knockdown' || type === 'launch')) this.bounceOnLand = { vy: typeof hit.groundBounce === 'number' ? hit.groundBounce : BOUNCE_VY };
     const kw = 1 / (tr.weight || 1), kbX = (hit.kbX != null ? hit.kbX : null);
     // reactions
     if (this.hp <= 0) { this.die(); this.knockDown(Math.max(hit.kbY || 0, KNOCKDOWN_POP_VY), (kbX != null ? Math.max(2, kbX) : 3) * face * kw); this.onHurt(hit, attacker); return true; }
-    if (armored) { if (frameArmor && !tr.superArmor) this.armorHits--; this.vx += face * 0.5; this.onHurt(hit, attacker); audio.play('armor'); return true; }
+    if (armored) {
+      if (frameArmor && !tr.superArmor && --this.armorHits <= 0 && this.state !== ST.SUPER) this.armor = false;
+      this.vx += face * 0.5; this.onHurt(hit, attacker); audio.play('armor'); return true;
+    }
     if (air || this.state === ST.KNOCKDOWN) {
       this.juggleCount++;
       // up to maxJuggles (4) air hits; the next one is a hard knockdown and the body is immune until it lands (RECONCILIATION physics row)
@@ -508,104 +535,7 @@ export class Fighter extends Entity {
   /** Hook when I kill something. */
   onKill(target) { this.callHook('onKill', target); }
 
-  // ---------- grabs & throws ----------
-  /**
-   * True if this fighter can currently be grabbed by `by`. `ignoreHitstun` lets a grab follow the hit that opened it
-   * (Pip's Grapple Shot reels the enemy it just tagged, GDD 2.4). Boss punish windows (punishGrab) allow grabs regardless of armor.
-   */
-  grabbableBy(by, { ignoreHitstun = false } = {}) {
-    if (!this.alive || this.dead || this.airborne || this.grabbedBy) return false;
-    if (!ignoreHitstun && this.inHitstun) return false;
-    if (ignoreHitstun && this.state !== ST.HURT && this.inHitstun) return false;
-    if (this.punishable && this.punishGrab) return true;
-    const g = this.traits.grabbable, bt = by.traits || {};
-    if (typeof g === 'function') return !!g(by, this);
-    if (g === false && !(bt.grabAll && this.traits.grabbableByGrappler !== false)) return false;
-    if (this.armor && !bt.grabAll && g !== true) return false;
-    return true;
-  }
-  /** Start holding `target`. */
-  startGrab(target) {
-    this.grabTarget = target; this.grabHits = 0; this.grabTimer = 0; this.throwPending = null;
-    target.grabbedBy = this; target.vx = target.vy = target.vz = 0;
-    target.setState(ST.GRABBED, 'hurt');
-    target.anim.setStaticPose(target.anim.pose);
-    this.setState(ST.GRAB, 'grab');
-    this.invuln = Math.max(this.invuln, 8);
-    audio.play('hit_grab');
-    this.callHook('onGrab', target); target.callHook('onGrabbed', this);
-  }
-  updateGrab(world) {
-    const t = this.grabTarget;
-    if (t && t.grabbedBy === this && t.alive && !t.dead) {
-      const off = (this.def.grabOffset || 24) * this.scale;
-      t.x = this.x + this.facing * off; t.z = this.z; t.y = this.def.grabLift || 0; t.facing = -this.facing;
-    }
-    if (this.throwPending) {
-      if (this.stateTimer >= this.throwPending.at) { const tp = this.throwPending; this.throwPending = null; this.doThrow(tp); }
-      return;
-    }
-    if (!t || !t.alive || t.dead || t.grabbedBy !== this) {
-      this.grabTarget = null;
-      const a = this.anim, throwing = a.name === 'throw' || a.name === 'throwBack';
-      if (!throwing || a.done) this.setState(ST.IDLE, 'idle');
-      return;
-    }
-    this.grabTimer++;
-    if ((this.anim.name === 'grab' || this.anim.name === 'grabHit') && this.anim.done) this.play('grabHold');
-    if (this.grabTimer > (this.def.grabHoldFrames || FIGHTER_DEFAULTS.grabHoldFrames)) this.throwTarget(1);
-  }
-  /** Hold hit: damage the held target; auto-throws after the move's max hits. */
-  grabHit() {
-    // enemies without a grabHit move squeeze for 5 per hit, `ai.grabHoldHits` times (GDD 4: Cinder Hulk 4 x 5)
-    const t = this.grabTarget, mv = (this.def.moves && this.def.moves.grabHit) || { damage: this.kind === 'player' ? 8 : 5, hits: (this.ai && this.ai.grabHoldHits) || 3 };
-    if (!t || this.throwPending) return false;
-    this.play('grabHit');
-    this.grabHits++;
-    t.takeHitRaw(Math.round(mv.damage * this.traits.grabDamageMult * t.traits.throwDamageTakenMult), 'medium', this);
-    if (this.world) this.world.addFx('spark', t.x, t.y + t.h * 0.6, t.z, { type: 'heavy' });
-    this.onHitConfirmed(t, { type: 'heavy', damage: mv.damage });
-    if (t.dead) { t.knockDown(KNOCKDOWN_POP_VY, this.facing * 3); this.grabTarget = null; this.setState(ST.IDLE, 'idle'); return true; }
-    if (this.grabHits >= (mv.hits || 3)) this.throwTarget(1);
-    return true;
-  }
-  /** Begin a throw (dir +1 forward, -1 back). The target is released a few frames into the throw animation. */
-  throwTarget(dir = 1) {
-    const mv = (this.def.moves && (dir > 0 ? this.def.moves.throwFwd : this.def.moves.throwBack)) || { damage: 15, vx: 9, vy: 5 };
-    const anim = dir < 0 && this.anim.has('throwBack') ? 'throwBack' : 'throw';
-    this.play(anim);
-    this.stateTimer = 0;
-    this.throwPending = { dir, at: mv.releaseAt != null ? mv.releaseAt : 5, mv };
-  }
-  doThrow({ dir, mv }) {
-    const t = this.grabTarget;
-    if (!t) { this.setState(ST.IDLE, 'idle'); return; }
-    this.grabTarget = null;
-    const dmg = Math.round((mv.damage || 15) * this.traits.grabDamageMult * this.traits.throwDamageMult);
-    if (dir < 0) { t.x = this.x - this.facing * 20; }
-    t.thrown(this.facing * dir * (mv.vx || 9), mv.vy != null ? mv.vy : 5, dmg, this);
-    if (mv.shockwave && this.world) {
-      this.world.areaHit(this.x + this.facing * dir * 20, this.z, mv.shockwave.r || 40, { damage: mv.shockwave.damage || 10, type: 'knockdown', kbX: 4, kbY: 4 }, this, { exclude: t, shake: 4 });
-    }
-    audio.play('throw');
-    this.onHitConfirmed(t, { type: 'throw', damage: dmg });
-    if (mv.selfVy) { this.vy = mv.selfVy; this.y = 0.01; }
-    this.callHook('onThrow', t, dir);
-  }
-  /** Let go without a throw (grab broken). */
-  releaseGrab(hurt = true) {
-    const t = this.grabTarget;
-    this.grabTarget = null; this.throwPending = null;
-    if (t && t.grabbedBy === this) { t.grabbedBy = null; if (hurt) { t.hurtTimer = 12; t.setState(ST.HURT, 'hurt'); } else t.setState(ST.IDLE, 'idle'); }
-    if (this.state === ST.GRAB) this.setState(ST.IDLE, 'idle');
-  }
-  /** Become a thrown projectile body. */
-  thrown(vx, vy, damage, thrower) {
-    this.grabbedBy = null; this.thrownBy = thrower; this.thrownHit.clear();
-    this.takeHitRaw(Math.round(damage * this.traits.throwDamageTakenMult), 'throw', thrower);
-    this.vx = vx; this.vy = vy; this.y = Math.max(this.y, 1);
-    this.setState(ST.THROWN, 'knockdown');
-  }
+  // ---------- grabs & throws: see grabs.js (grabbableBy, startGrab, updateGrab, grabHit, throwTarget, doThrow, releaseGrab, thrown) ----------
   /** Damage without a state change (hold hits, throws, burns). opts: { noStop, fire, silent }. */
   takeHitRaw(damage, type = 'medium', attacker = null, opts = {}) {
     if (!this.alive || this.dead) return;
@@ -639,8 +569,9 @@ export class Fighter extends Entity {
   // ---------- rendering ----------
   hurtbox() {
     if (!this.alive || this.state === ST.DEAD) return null;
-    const lying = this.state === ST.LYING;
-    const h = lying ? Math.round(this.h * 0.3) : this.h;
+    const lying = this.state === ST.LYING, fr = this.anim.frame;
+    const k = fr && fr.hurtboxScale != null ? fr.hurtboxScale : 1;
+    const h = lying ? Math.round(this.h * 0.3) : Math.round(this.h * k);
     return { x0: this.x - this.w / 2, x1: this.x + this.w / 2, y0: this.y, y1: this.y + h, z0: this.z - this.zSize / 2, z1: this.z + this.zSize / 2 };
   }
   /** Hittable boxes: the whole body, or the active `def.hurtParts` (each box carries `.part` for damage multipliers). */
@@ -701,6 +632,8 @@ export class Fighter extends Entity {
     return extra ? list.concat(extra) : list;
   }
 }
+
+Object.assign(Fighter.prototype, grabMethods);
 
 /** Convert a local hitbox (feet origin, y negative up, +x toward facing) to a world AABB. */
 export function worldHitbox(owner, hb) {

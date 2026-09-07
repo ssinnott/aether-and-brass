@@ -21,6 +21,8 @@ export const DEFAULT_POSE = Object.freeze({
   grip: 0,
   /** Facial expression index (see FACE); stepped, never interpolated. */
   face: 0,
+  /** 1 = the weapon is drawn in the back layer (behind the body: rested on the shoulder / slung); stepped, never interpolated. */
+  weaponBack: 0,
   /** Weapon smear arc in root space: from/to angles in degrees (0 = forward, -90 = up), a = alpha, r = radius (0 = auto). from/to step, a/r lerp. */
   smear: Object.freeze({ from: 0, to: 0, a: 0, r: 0 }),
 });
@@ -32,7 +34,7 @@ export function faceIndex(v) { return typeof v === 'number' ? v : (v != null && 
 
 const KEYS = Object.keys(DEFAULT_POSE);
 /** Keys whose numbers are held (stepped) rather than interpolated. */
-const STEP = Object.freeze({ face: true, from: true, to: true });
+const STEP = Object.freeze({ face: true, from: true, to: true, weaponBack: true });
 
 /** Allocate a fresh, fully populated pose object. */
 export function makePose(partial = null) {
@@ -73,7 +75,7 @@ export function lerpPose(a, b, t, out = SCRATCH_POSE) {
     const d = DEFAULT_POSE[k];
     const av = a ? a[k] : undefined, bv = b ? b[k] : undefined;
     if (typeof d === 'number') {
-      if (STEP[k]) { out[k] = av != null ? faceIndex(av) : d; continue; }
+      if (STEP[k]) { out[k] = av != null ? (k === 'face' ? faceIndex(av) : av) : d; continue; }
       const x = av != null ? av : d, y = bv != null ? bv : d;
       out[k] = x + (y - x) * t;
       continue;

@@ -27,6 +27,22 @@ export function shadePalette(p, f) {
   for (const k of Object.keys(p)) o[k] = typeof p[k] === 'string' && p[k][0] === '#' ? shade(p[k], f) : p[k];
   return o;
 }
+/**
+ * Darken AND desaturate a colour (far-side limbs): brightness x f, then pulled `desat` (0..1) toward its own grey,
+ * with a slight cool cast so far parts sit behind the near ones instead of merging with them.
+ */
+export function farShade(hex, f, desat = 0.25) {
+  const [r, g, b] = hexToRgb(hex);
+  const L = (r * 0.3 + g * 0.59 + b * 0.11) * f;
+  const rr = r * f, gg = g * f, bb = b * f;
+  return rgbToHex(rr + (L - rr) * desat, gg + (L - gg) * desat, bb + (L - bb) * desat + 6);
+}
+/** Far-limb palette: every colour through farShade (readability pass: far limbs ~35-40 % darker and greyer). */
+export function farPalette(p, f = 0.62, desat = 0.25) {
+  const o = {};
+  for (const k of Object.keys(p)) o[k] = typeof p[k] === 'string' && p[k][0] === '#' ? farShade(p[k], f, desat) : p[k];
+  return o;
+}
 
 /** Shared named palettes. Characters/enemies may spread their own; these are starting points. */
 export const PALETTES = {

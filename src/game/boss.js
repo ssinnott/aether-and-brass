@@ -6,7 +6,8 @@
 //    summonAt [0.66, 0.33] + summon [{ type, variant }] (or a 'summonEscort' attack anim)   escorts at hp fractions
 //    bandShrink 20        shrink the floor band by px on each edge when the phase starts (GDD 5.2 dais)
 //    cutIn { frames, draw(ctx, boss, world, t) }   cutscene shown when the phase begins (world.cutscene / game.cutscene)
-//    ai.valveStun, ai.stunDamageMult, ai.stunGrabbable   pressure valves (world.stunBoss) }
+//    ai.valveStun, ai.stunDamageMult, ai.stunGrabbable   pressure valves (world.stunBoss)
+//    ai.blinkOnDamage 60 + blinkAnim 'aetherStep' + blinkChain 'caneFlurry'   teleport away after N damage in one combo (Vane phase 3) }
 //  def.introCutscene { frames, draw(ctx, boss, world, t) } plays on the boss' first update.
 import { ST, UI } from '../constants.js';
 import { Enemy, normalizeAi } from './enemy.js';
@@ -182,9 +183,9 @@ export class Boss extends Enemy {
     const ai = this.ai, pd = this.phaseDef, world = this.world;
     if (ai.blinkOnDamage && attacker) {
       this.comboDamage += hit.damage || 0; this.comboDamageTimer = COMBO_WINDOW;
-      if (this.comboDamage >= ai.blinkOnDamage && !this.airborne && this.anim.has('aetherStep') && this.state !== ST.ATTACK) {
+      if (this.comboDamage >= ai.blinkOnDamage && !this.airborne && this.anim.has(ai.blinkAnim) && this.state !== ST.ATTACK) {
         this.comboDamage = 0;
-        this.startAttack({ anim: 'aetherStep', range: 999, chain: 'caneFlurry' }, attacker);
+        this.startAttack({ anim: ai.blinkAnim, range: 999, chain: ai.blinkChain }, attacker);
       }
     }
     if (pd.vent && pd.vent.everyHp && this.ventTimer <= 0 && Math.floor((this.maxHp - this.hp) / pd.vent.everyHp) > this.ventCount) { this.ventCount++; this.openVent(); }

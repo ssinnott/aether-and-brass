@@ -213,7 +213,7 @@ async function modeCast() {
 
 /**
  * Pose audit (window.__sheet.audit()): for every keyframe print the far-shoulder -> grip distance on two-handed keys
- * (must be <= upperArm + lowerArm + 2, else GRIP), the weapon-head centre (32 px along the weapon from the near hand,
+ * (must be <= upperArm + lowerArm + 2, else GRIP), the weapon-head centre (`weapon.headAt` px along the weapon from the near hand, default 32,
  * root space after root offset/rotation) and the lowest boot sole (must be within 2 px of the floor on ground keys,
  * else FLOOR). See docs/ART_STYLE.md section 5. Returns the lines; also logs them.
  */
@@ -224,7 +224,8 @@ function audit(def) {
     const pose = makePose(fr.pose), J = computeJoints(rig, pose);
     const rr = rad(pose.root.rot), c = Math.cos(rr), s = Math.sin(rr), a = rad(J.weaponAngle);
     const scr = (x, y) => ({ x: x * c - y * s + pose.root.x, y: x * s + y * c + pose.root.y });
-    const head = scr(J.handN.x + Math.sin(a) * 32, J.handN.y + Math.cos(a) * 32);
+    const hAt = rig.weapon && rig.weapon.headAt != null ? rig.weapon.headAt : 32;
+    const head = scr(J.handN.x + Math.sin(a) * hAt, J.handN.y + Math.cos(a) * hAt);
     const boot = Math.max(scr(J.ankleN.x, J.ankleN.y + p.footH * 0.5).y, scr(J.ankleF.x, J.ankleF.y + p.footH * 0.5).y);
     const d = pose.grip > 0 ? Math.hypot(J.grip.x - J.shoulderF.x, J.grip.y - J.shoulderF.y) : 0;
     const flags = (pose.grip > 0 && d > reach + 2 ? ' GRIP' : '') + (!air.test(name) && Math.abs(boot) > 2.5 ? ' FLOOR' : '');
