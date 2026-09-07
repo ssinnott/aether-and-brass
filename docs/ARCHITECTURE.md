@@ -113,7 +113,7 @@ src/
   ~`0.6x` horizontal speed. Entities are clamped to the floor band and to the camera's
   current lock bounds (`camera.left + 8 .. camera.right - 8`) — enemies may exist
   off-screen while entering.
-- Gravity `GRAVITY = 0.55` px/frame²; a jump sets `vy = 9.5` (≈ 82 px apex) unless the
+- Gravity `GRAVITY = 0.5` px/frame² (RECONCILIATION); a jump sets `vy = 9.5` (≈ 90 px apex) unless the
   GDD specifies per-character values. Landing when `y <= 0`.
 
 ## 3. Engine modules — required exports
@@ -137,6 +137,10 @@ export const input = {
   consume(player, action),
   axis(player) -> { x: -1|0|1, y: -1|0|1 },
   anyPressed() -> bool,               // for title screen "press any key"
+  joinPressed(player) -> bool,        // player pressed one of their OWN keys/buttons this step (P2 drop-in; shared arrows never count for P2)
+  setJoined(player, bool) / joined(player),   // while P2 is not joined, P1 also accepts the solo alias keys (RECONCILIATION table)
+  runHeld(player) -> bool,            // gamepad RT held (run without double-tap); virtual { run:true }
+  globalPressed('pause'|'mute'|'debug') -> bool,
   setVirtual(player, actionsObject),  // test hook: { left:true, attack:true ... } overrides devices until cleared
   clearVirtual(player),
   bindings,                           // exported default keyboard maps (from GDD section 8)
@@ -296,7 +300,7 @@ States (string constants in `constants.js` `ST`): `IDLE, WALK, RUN, JUMP, ATTACK
 Required fields: `hp, maxHp, team (TEAM.PLAYER|TEAM.ENEMY), def (content definition), rig, anim (AnimPlayer), state, stateTimer, invuln (frames), hitstop (frames), armor (bool, elites ignore hitstun), juggleCount, lastHitBy, grabTarget/grabbedBy, flashTimer, dead`.
 
 Rules implemented ONCE in `Fighter` (players and enemies both inherit):
-- `takeHit(hit, attacker)` applies damage, hitstop to both (`light:4, heavy:7, launch:8, knockdown:10` frames), flash, knockback (`vx = kbX * attacker.facing`, `vy = kbY`), state → `HURT` (ground, `hitstun` frames), `HURT_AIR` if airborne, `KNOCKDOWN` if `type` is `launch`/`knockdown` or if `juggleCount >= 3` or if hp <= 0. Spawns hit spark + damage text. Returns false if invulnerable / already dead / friendly (no friendly fire between players; enemies never hurt enemies unless `hit.friendly`).
+- `takeHit(hit, attacker)` applies damage, hitstop to both (`HITSTOP` in constants.js: `light:3, medium:5, heavy:8, launch:8, knockdown:8, grab:6, throw:6, superFinisher:14`, per RECONCILIATION), flash, knockback (`vx = kbX * attacker.facing`, `vy = kbY`), state → `HURT` (ground, `hitstun` frames), `HURT_AIR` if airborne, `KNOCKDOWN` if `type` is `launch`/`knockdown` or if `juggleCount >= 3` or if hp <= 0. Spawns hit spark + damage text. Returns false if invulnerable / already dead / friendly (no friendly fire between players; enemies never hurt enemies unless `hit.friendly`).
 - `KNOCKDOWN` flight: gravity applies; on landing → `LYING` for `def.lyingFrames` (default 40; dead → stay & fade out), then `GETUP` (invuln 20 frames), then `IDLE`. Juggle: a `KNOCKDOWN` fighter still in the air with `y > 0` can be hit again (juggle), which resets `vy` to `hit.kbY * 0.8`; `juggleCount++`; after 4 juggles the target becomes hit-immune until it lands (anti-infinite).
 - `hitstop`: while `> 0` the fighter's own update is frozen (anim and physics) but it still draws; camera shake on heavy hits.
 - Wall/edge bounce: when a knocked-down fighter hits the camera lock edge with `|vx| > 4`, it bounces back (`vx *= -0.5`) — feels great, cheap.
@@ -311,7 +315,7 @@ Input → intent → state transitions (implements GDD section 7 combat rules):
 - `special` → `SPECIAL` (costs 1 meter bar, or 8% HP per GDD); `super` (separate button) with a full 300 meter → `SUPER` (screen freeze + portrait cut-in, invuln, big hitbox/multi-hit).
 - `dodge` → `DODGE` (i-frames per GDD, short hop backward or roll through).
 - `taunt` → `TAUNT` (builds meter, interruptible).
-- Meter: `meter (0..100)`; gain on hit dealt (`+4` light, `+8` heavy), on taunt completion (`+25`), on damage taken (`+2`). Reset per life.
+- Meter: `meter (0..METER.max = 300)`, three bars of 100 (`METER` in constants.js; special costs one bar, super the full meter, HP fallback per RECONCILIATION); gain on hit dealt (`+4` light, `+8` heavy), on taunt completion (`+25`), on damage taken (`+2`). Reset per life.
 - Combo counter: increments on every hit dealt while the "combo timer" (60 frames since last hit) is alive; on drop, HUD shows grade per GDD.
 - Lives/continues per GDD; on death respawn after 90 frames with invuln 120 frames if lives remain; else show `CONTINUE?` (handled by gameplay screen).
 
@@ -473,3 +477,4 @@ P1 toward and steps toward the nearest enemy — used by the enemy test), `summa
 
 ## 16. Input bindings
 The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Space T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V Space B until P2 joins; gamepads 0/1 → P1/P2). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
+`engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.soloAliases`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). P2 drop-in: poll `input.joinPressed(1)` and call `input.setJoined(1, true)`; the title screen resets it.

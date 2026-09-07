@@ -21,7 +21,7 @@ export class SelectScreen extends Screen {
     });
     this.p = [
       { joined: true, cursor: 0, confirmed: false },
-      { joined: false, cursor: Math.min(1, Math.max(0, this.chars.length - 1)), confirmed: false },
+      { joined: this.game.input.joined(1), cursor: Math.min(1, Math.max(0, this.chars.length - 1)), confirmed: false },
     ];
     this.starting = false;
   }
@@ -32,7 +32,7 @@ export class SelectScreen extends Screen {
     for (let i = 0; i < 2; i++) {
       const ps = this.p[i];
       if (!ps.joined) {
-        if (inp.anyPressedBy(i)) { ps.joined = true; this.game.audio.play('menu_confirm'); }
+        if (inp.joinPressed(i)) { ps.joined = true; inp.setJoined(i, true); this.game.audio.play('join'); }
         continue;
       }
       if (ps.confirmed) {
@@ -79,7 +79,7 @@ export class SelectScreen extends Screen {
       if (sel1) drawText(ctx, this.p[0].confirmed ? 'P1 READY' : 'P1', x + boxW / 2, y0 + 6, { size: 1, color: UI.p1, align: 'center' });
       if (sel2) drawText(ctx, this.p[1].confirmed ? 'P2 READY' : 'P2', x + boxW / 2, y0 + (sel1 ? 16 : 6), { size: 1, color: UI.p2, align: 'center' });
     }
-    if (!this.p[1].joined && (this.frame % 60) < 40) drawText(ctx, 'P2: PRESS ANY KEY TO JOIN', 320, 268, { size: 1, color: UI.p2, align: 'center' });
+    if (!this.p[1].joined && (this.frame % 60) < 40) drawText(ctx, 'P2: PRESS J/K/U/L/O/I OR BACKSPACE TO JOIN', 320, 268, { size: 1, color: UI.p2, align: 'center' });
     drawText(ctx, 'LEFT/RIGHT: CHOOSE   ATTACK: CONFIRM   DODGE: BACK', 320, 300, { size: 1, color: UI.steel, align: 'center' });
   }
 }

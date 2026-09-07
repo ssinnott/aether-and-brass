@@ -16,6 +16,7 @@ export class TitleScreen extends Screen {
     super.enter(params);
     this.game.audio.music.play('title');
     particles.clear();
+    this.game.input.setJoined(1, false); // new session: P1 solo aliases (arrows, Z X C V Space B) active until P2 joins
   }
   update() {
     super.update();
@@ -73,7 +74,8 @@ export class TitleScreen extends Screen {
     pathPoly(ctx, [340, 118 + bob, 440, 118 + bob, 440, 121 + bob, 340, 121 + bob]); paint(ctx, UI.brass, null, 0);
     drawText(ctx, 'A STEAMPUNK BEAT-EM-UP', 320, 196, { size: 1, color: UI.paper, align: 'center' });
     if ((f % 60) < 40) drawTextOutlined(ctx, 'PRESS ATTACK', 320, 228, { size: 2, color: '#ffffff', outline: '#3a2010', thickness: 1, align: 'center' });
-    drawText(ctx, 'P1: WASD + F/G/H/R/T   P2: ARROWS + K/L/;/O/P   ENTER: START', 320, 264, { size: 1, color: UI.steel, align: 'center' });
+    drawText(ctx, 'P1: WASD + F/G/R/H/SPACE/T   P2: ARROWS + J/K/U/L/O/I   ENTER: START', 320, 264, { size: 1, color: UI.steel, align: 'center' });
+    drawText(ctx, 'ATTACK JUMP DODGE SPECIAL SUPER TAUNT   ESC: PAUSE  M: MUTE', 320, 276, { size: 1, color: UI.brassDark, align: 'center' });
     drawText(ctx, '2026 AETHER WORKS', 320, 346, { size: 1, color: UI.brassDark, align: 'center', shadow: false });
   }
 }

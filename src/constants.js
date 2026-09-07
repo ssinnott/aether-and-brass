@@ -13,9 +13,13 @@ export const FLOOR_TOP = 200;
 /** Floor band depth limits (z). */
 export const Z_MIN = 0;
 export const Z_MAX = 140;
-/** Gravity in px/frame^2 and default jump velocity. */
-export const GRAVITY = 0.55;
+/** Gravity in px/frame^2 and default jump velocity (docs/RECONCILIATION.md physics row). */
+export const GRAVITY = 0.5;
 export const JUMP_VY = 9.5;
+/** Launcher / juggle re-hit / knockdown pop vertical velocities (RECONCILIATION). */
+export const LAUNCH_VY = 8;
+export const JUGGLE_VY = 5;
+export const KNOCKDOWN_POP_VY = 4;
 /** Vertical (z) movement is this fraction of horizontal walk speed. */
 export const Z_SPEED_FACTOR = 0.6;
 /** Camera clamp margin for entities inside lock bounds. */
@@ -36,8 +40,8 @@ export const ST = Object.freeze({
   GRAB: 'GRAB', GRABBED: 'GRABBED', THROWN: 'THROWN', DEAD: 'DEAD',
 });
 
-/** Hitstop frames applied to both attacker and target per hit type. */
-export const HITSTOP = Object.freeze({ light: 4, heavy: 7, launch: 8, knockdown: 10, grab: 6 });
+/** Hitstop frames applied to both attacker and target per hit type (RECONCILIATION hit-stop row). */
+export const HITSTOP = Object.freeze({ light: 3, medium: 5, heavy: 8, launch: 8, knockdown: 8, grab: 6, throw: 6, superFinisher: 14 });
 
 /** Misc fighter defaults referenced by the contract. */
 export const FIGHTER_DEFAULTS = Object.freeze({
@@ -45,8 +49,8 @@ export const FIGHTER_DEFAULTS = Object.freeze({
   comboTimer: 60, respawnDelay: 90, respawnInvuln: 120, hitstunLight: 14, hitstunHeavy: 22,
 });
 
-/** Meter economy (section 5). */
-export const METER = Object.freeze({ max: 100, light: 4, heavy: 8, taunt: 25, damaged: 2 });
+/** Meter economy: 3 bars x 100 (RECONCILIATION). special = 1 bar, super = full; HP fallback 8% max HP when no bar is full and HP > 15%. */
+export const METER = Object.freeze({ max: 300, bar: 100, special: 100, super: 300, hpCostFrac: 0.08, hpCostMinFrac: 0.15, light: 4, heavy: 8, taunt: 25, damaged: 2 });
 
 /** UI colours shared by HUD / screens. */
 export const UI = Object.freeze({
