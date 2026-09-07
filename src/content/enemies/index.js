@@ -1,20 +1,23 @@
-// Enemy registry (ARCHITECTURE.md section 8 / 15): getEnemyDef(type, variant), ENEMY_LIST (10 variants + midboss + boss).
+// Enemy registry (ARCHITECTURE.md section 8 / 15): getEnemyDef(type, variant), ENEMY_LIST (15 variants + midboss + boss).
 // Type slugs come from the GDD faction names; the ARCHITECTURE aliases typeA/typeB are accepted too.
 import { BRASSBOUND } from './brassbound.js';
 import { SOOTBORN } from './sootborn.js';
+import { CHANDLERS } from './chandler.js';
 import { midboss } from './midboss.js';
 import { boss } from './boss.js';
 
-const TYPE_ALIASES = { typeA: 'brassbound', typeB: 'sootborn', brass: 'brassbound', soot: 'sootborn', grubbik: 'midboss', hoister: 'midboss', vane: 'boss' };
+const TYPE_ALIASES = { typeA: 'brassbound', typeB: 'sootborn', brass: 'brassbound', soot: 'sootborn', grubbik: 'midboss', hoister: 'midboss', vane: 'boss',
+  typee: 'chandler', chandlery: 'chandler', company: 'chandler' };
 /** GDD display-name words -> variant slugs (so 'Tin Footman' / 'footman' / 'tin' all resolve). */
 const VARIANT_ALIASES = {
   brassbound: { tin: 'footman', grunt: 'footman', halberd: 'halberdier', brass: 'halberdier', copper: 'sapper', bomber: 'sapper', iron: 'warden', shield: 'warden', brute: 'warden', chrome: 'duelist', fencer: 'duelist' },
+  chandler: { wick: 'wickboy', boy: 'wickboy', ledger: 'tallyman', chalk: 'tallyman', lime: 'limeburner', kiln: 'limeburner', officer: 'purser', dram: 'purser', cart: 'resurrectionist', tongs: 'resurrectionist', resurrection: 'resurrectionist' },
   sootborn: { soot: 'cutthroat', grunt: 'cutthroat', goblin: 'cutthroat', knife: 'cutthroat', scrap: 'slinger', sling: 'slinger', fire: 'firebrand', flame: 'firebrand', cinder: 'hulk', brute: 'hulk', gutter: 'wrangler', whip: 'wrangler' },
 };
 
 /** All enemy defs keyed by `${type}:${variant}`. */
 const DEFS = new Map();
-for (const d of [...BRASSBOUND, ...SOOTBORN]) DEFS.set(`${d.type}:${d.variant}`, d);
+for (const d of [...BRASSBOUND, ...SOOTBORN, ...CHANDLERS]) DEFS.set(`${d.type}:${d.variant}`, d);
 DEFS.set('midboss:grubbik', midboss);
 DEFS.set('boss:vane', boss);
 
@@ -43,10 +46,11 @@ export function getEnemyDef(type, variant) {
   return first || BRASSBOUND[0];
 }
 
-/** Registry list for window.__game.enemyList(): 10 variants + midboss + boss. */
+/** Registry list for window.__game.enemyList(): 15 variants + midboss + boss. */
 export const ENEMY_LIST = [
   ...BRASSBOUND.map((d) => ({ type: d.type, variant: d.variant, name: d.name, role: d.role })),
   ...SOOTBORN.map((d) => ({ type: d.type, variant: d.variant, name: d.name, role: d.role })),
+  ...CHANDLERS.map((d) => ({ type: d.type, variant: d.variant, name: d.name, role: d.role })),
   { type: 'midboss', variant: 'grubbik', name: midboss.name, role: 'boss' },
   { type: 'boss', variant: 'vane', name: boss.name, role: 'boss' },
 ];
@@ -55,10 +59,11 @@ export const ENEMY_LIST = [
 export const ENEMY_GALLERY = [
   ...BRASSBOUND.map((d) => ({ id: d.id, name: d.name, build: d.build, anims: d.anims })),
   ...SOOTBORN.map((d) => ({ id: d.id, name: d.name, build: d.build, anims: d.anims })),
+  ...CHANDLERS.map((d) => ({ id: d.id, name: d.name, build: d.build, anims: d.anims })),
   { id: 'midboss', name: 'THE HOISTER', build: midboss.build, anims: midboss.anims },
   { id: 'midboss2', name: 'GRUBBIK', build: midboss.phases[2].build, anims: midboss.phases[2].anims },
   { id: 'boss', name: 'REGENT ENGINE', build: boss.build, anims: boss.anims },
   { id: 'boss2', name: 'VANE', build: boss.phases[2].build, anims: boss.phases[2].anims },
 ];
 
-export { BRASSBOUND, SOOTBORN, midboss, boss };
+export { BRASSBOUND, SOOTBORN, CHANDLERS, midboss, boss };
