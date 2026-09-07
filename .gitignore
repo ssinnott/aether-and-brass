@@ -4,3 +4,4 @@ tools/screens/
 *.log
 .DS_Store
 .claude/worktrees/
+_site/
