@@ -458,20 +458,5 @@ P1 toward and steps toward the nearest enemy — used by the enemy test), `summa
 `{ kind:'midboss'|'boss', name, hp, maxHp, phase, state }` or `null`.
 `summary().sectionIndex` = index of the section containing the camera center.
 
-## 16. Default input bindings (technical default; GDD section 8 must match these)
-Each player's keys live on their own half of the keyboard so two people can share it.
-
-| Action  | P1 keyboard (left half) | P2 keyboard (right half)        | Gamepad (standard mapping) |
-|---------|-------------------------|---------------------------------|----------------------------|
-| move    | W A S D                 | Arrow keys                      | D-pad / left stick         |
-| attack  | F                       | K  (alias: Numpad1)             | button 0 (A / Cross)       |
-| jump    | G                       | L  (alias: Numpad2)             | button 1 (B / Circle)      |
-| special | H                       | ;  (alias: Numpad3)             | button 2 (X / Square)      |
-| dodge   | R                       | O  (alias: Numpad4)             | button 5 (RB / R1)         |
-| taunt   | T                       | P  (alias: Numpad5)             | button 3 (Y / Triangle)    |
-| start   | Enter                   | Backspace (alias: Numpad0)      | button 9 (Start)           |
-
-Global keys: `Escape` or `Enter` = pause/unpause (either player), `M` = mute, `F1` =
-toggle debug overlay. P2 joins on the character-select screen by pressing any P2 key.
-`preventDefault()` on every bound key so the page never scrolls. Gamepad index `i`
-merges into player `i`.
+## 16. Input bindings
+The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Space T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V Space B until P2 joins; gamepads 0/1 → P1/P2). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.

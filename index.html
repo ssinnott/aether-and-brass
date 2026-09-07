@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aether &amp; Brass</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; width: 100%; height: 100%; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas#game { display: block; image-rendering: pixelated; image-rendering: crisp-edges; outline: none; }
+  #errors { position: fixed; left: 0; top: 0; max-width: 100%; margin: 0; padding: 6px 8px; box-sizing: border-box;
+            background: rgba(120, 0, 0, .9); color: #fff; font: 12px/1.4 monospace; white-space: pre-wrap; z-index: 10; display: none; }
+</style>
+</head>
+<body>
+<canvas id="game" width="640" height="360" tabindex="0"></canvas>
+<pre id="errors"></pre>
+<script>
+  // Installed BEFORE the module graph loads so that import/parse failures are captured too.
+  // src/main.js extends this object with the full debug API (ARCHITECTURE.md section 12/15).
+  (function () {
+    var hooks = window.__game = { ready: false, errors: [] };
+    var box = document.getElementById('errors');
+    function record(msg) {
+      hooks.errors.push(String(msg));
+      if (box) { box.style.display = 'block'; box.textContent = hooks.errors.slice(-8).join('\n'); }
+    }
+    window.addEventListener('error', function (e) {
+      var m = e.message || (e.error && e.error.message) || 'unknown error';
+      if (e.filename) m += ' (' + e.filename.replace(/^.*\//, '') + ':' + e.lineno + ')';
+      record(m);
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e.reason; record('unhandled rejection: ' + (r && r.message ? r.message : r));
+    });
+    hooks._record = record;
+  })();
+</script>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
