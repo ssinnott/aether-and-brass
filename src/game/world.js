@@ -1,11 +1,13 @@
-// World: entity list, spawn/despawn, update order, depth-sorted draw with shadows first, FX, attack tokens, camera bounds.
-import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MAX, CAMERA_MARGIN, TEAM, ST } from '../constants.js';
+// World: entity list, spawn/despawn, update order, depth-sorted draw with shadows first, FX, attack tokens (per faction group),
+// camera bounds, floor band (boss arena shrink), area hits, spec-based projectile spawning, cutscenes, boss stun (pressure valves).
+import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MIN, Z_MAX, CAMERA_MARGIN, TEAM, ST } from '../constants.js';
 import { Camera } from '../engine/camera.js';
 import { particles } from '../engine/particles.js';
 import { resolveHits } from './combat.js';
-import { Projectile } from './projectile.js';
+import { Projectile, projectileOptsFromSpec } from './projectile.js';
 import { spawnDrops } from './items.js';
 import { drawHitSpark, drawRing, drawSlash, drawMuzzleFlash, burstDust, burstSteam } from '../art/fx.js';
+import { audio } from '../engine/audio.js';
 
 const FX_LIFE = { spark: 10, slash: 10, ring: 16, muzzle: 6, flash: 8 };
 const FIGHTER_KINDS = new Set(['player', 'enemy', 'boss']);
@@ -31,15 +33,21 @@ export class World {
     this.boss = null;
     this.wavesCleared = 0;
     this.sectionIndex = 0;
-    this.attackTokens = { max: 2, holders: new Set() };
+    /** Attack tokens: at most `max` enemies attack at once overall; `groups` caps a faction / ai.tokenGroup (Sootborn 2). */
+    this.attackTokens = { max: 2, holders: new Set(), groups: {} };
     /** Optional narrower fighter bounds inside the camera lock (boss dais). */
     this.arenaBounds = null;
+    /** Floor band in z every fighter is clamped to (boss arenas shrink it: `shrinkBand`). */
+    this.floorBand = { z0: Z_MIN, z1: Z_MAX };
     /** Hook installed by the gameplay screen: (type, variant, x, z, opts) => Enemy (used by bosses / stage events). */
     this.spawnEnemy = null;
     /** Stage runner (when running a real stage). */
     this.stage = null;
+    /** Cutscene: entities freeze while `cutsceneTimer` > 0; `cutsceneDraw(ctx, world, t)` draws over the scene. */
+    this.cutsceneTimer = 0; this.cutsceneDraw = null; this.cutsceneLen = 0;
     this._fighters = [];
     this._enemies = [];
+    this._valves = new Set();
   }
   /** Add an entity. */
   add(e) {
@@ -47,6 +55,7 @@ export class World {
     this.entities.push(e);
     if (e.kind === 'player' && !this.players.includes(e)) this.players.push(e);
     if (e.kind === 'boss') this.boss = e;
+    if (e.kind === 'prop' && (e.stunsBoss || (e.info && e.info.stunsBoss) || /valve/i.test(e.type || ''))) this._valves.add(e);
     return e;
   }
   /** Remove an entity immediately. */
@@ -68,10 +77,20 @@ export class World {
   }
   /** Freeze the world for n frames (super cut-in); `focus` keeps drawing on top. */
   freezeFrames(n, focus = null) { this.freeze = Math.max(this.freeze, n); this.freezeFocus = focus; }
+  /**
+   * Cutscene: freeze gameplay for `frames` and draw `drawFn(ctx, world, t01)` over the scene (boss entrances, phase cut-ins).
+   * Prefers `game.cutscene(frames, drawFn)` when the shell implements it.
+   */
+  cutscene(frames, drawFn = null) {
+    if (this.game && typeof this.game.cutscene === 'function') { this.game.cutscene(frames, drawFn); return; }
+    this.cutsceneTimer = Math.max(this.cutsceneTimer, frames | 0); this.cutsceneLen = this.cutsceneTimer; this.cutsceneDraw = drawFn;
+  }
+  get inCutscene() { return this.cutsceneTimer > 0; }
 
   /** Fixed step. */
   update() {
     this.frame++;
+    if (this.cutsceneTimer > 0) { this.cutsceneTimer--; this.camera.update(); this._tickFx(); particles.update(); if (this.cutsceneTimer === 0) this.cutsceneDraw = null; return; }
     if (this.freeze > 0) { this.freeze--; this.camera.update(); this._tickFx(); if (this.freeze === 0) this.freezeFocus = null; return; }
     this._refreshLists();
     const list = this.entities.slice();
@@ -79,7 +98,8 @@ export class World {
     resolveHits(this);
     this._tickFx();
     particles.update();
-    for (const h of this.attackTokens.holders) if (!h.alive || h.removeMe) this.attackTokens.holders.delete(h);
+    for (const h of this.attackTokens.holders) if (!h.alive || h.removeMe) this.releaseToken(h);
+    this._checkValves();
     this.camera.follow(this.players);
     this.camera.update();
     if (this.backdrop && this.backdrop.update) this.backdrop.update(this.frame, this.camera);
@@ -89,12 +109,32 @@ export class World {
     this._refreshLists();
   }
   _tickFx() { let n = 0; for (const f of this.fx) { f.t++; if (f.t < f.life) this.fx[n++] = f; } this.fx.length = n; }
+  /** Pressure valves (GDD 5.2): a flagged prop that breaks stuns the boss once (props flag themselves with `stunsBoss` or a 'valve' type). */
+  _checkValves() {
+    if (!this._valves.size) return;
+    for (const v of this._valves) {
+      if (v.alive && !v.removeMe) continue;
+      this._valves.delete(v);
+      this.stunBoss(v.stunFrames || 60, { source: v });
+    }
+  }
+  /**
+   * Stun the active boss for `frames` (pressure valves, stage events). Honoured unless the boss' current phase sets ai.valveStun = false.
+   * @returns {boolean} true when a boss was stunned
+   */
+  stunBoss(frames = 60, { source = null } = {}) {
+    const b = this.boss;
+    if (!b || !b.alive || b.dead || b.defeated || (b.ai && b.ai.valveStun === false) || typeof b.stun !== 'function') return false;
+    b.stun(frames, source);
+    return true;
+  }
 
-  /** Draw everything: backdrop, shadows, depth-sorted entities, FX, particles, foreground. */
+  /** Draw everything: backdrop, shadows, depth-sorted entities, FX, particles, foreground, cutscene overlay. */
   draw(ctx) {
     const cam = this.camera;
     if (this.backdrop && this.backdrop.drawBack) this.backdrop.drawBack(ctx, cam, this.frame);
     else { ctx.fillStyle = '#202030'; ctx.fillRect(0, 0, VIEW_W, FLOOR_TOP); ctx.fillStyle = '#4a4650'; ctx.fillRect(0, FLOOR_TOP, VIEW_W, VIEW_H - FLOOR_TOP); }
+    this.drawBandEdges(ctx, cam);
     for (const e of this.entities) if (e.alive || e.kind === 'player' || e.state === ST.DEAD) e.drawShadow(ctx, cam);
     particles.draw(ctx, cam, 'back');
     const sorted = this.entities.slice().sort(depthCompare);
@@ -102,6 +142,16 @@ export class World {
     this.drawFx(ctx, cam);
     particles.draw(ctx, cam, 'front');
     if (this.backdrop && this.backdrop.drawFront) this.backdrop.drawFront(ctx, cam, this.frame);
+    if (this.cutsceneTimer > 0 && this.cutsceneDraw) this.cutsceneDraw(ctx, this, 1 - this.cutsceneTimer / Math.max(1, this.cutsceneLen));
+  }
+  /** Shrunk floor band: steam-vent strips along the closed edges (GDD 5.2 dais). */
+  drawBandEdges(ctx, cam) {
+    const b = this.floorBand;
+    if (b.z0 <= Z_MIN && b.z1 >= Z_MAX) return;
+    ctx.save(); ctx.globalAlpha = 0.35 + 0.15 * Math.sin(this.frame * 0.2); ctx.fillStyle = '#e8f0f4';
+    if (b.z0 > Z_MIN) ctx.fillRect(0, FLOOR_TOP + Z_MIN + cam.shakeY, VIEW_W, b.z0 - Z_MIN);
+    if (b.z1 < Z_MAX) ctx.fillRect(0, FLOOR_TOP + b.z1 + cam.shakeY, VIEW_W, Z_MAX - b.z1);
+    ctx.restore();
   }
   /** Debug overlay: hitboxes, hurtboxes, states. */
   drawDebug(ctx) { for (const e of this.entities) if (e.drawDebug) e.drawDebug(ctx, this.camera); }
@@ -130,21 +180,47 @@ export class World {
   }
 
   // ---------- spawning helpers ----------
-  /** Spawn a projectile. */
-  spawnProjectile(opts) { return this.add(new Projectile(opts)); }
   /**
-   * One-frame area hit centred at (x, z) with radius r, credited to `owner`. Uses an invisible explosion projectile.
+   * Spawn a projectile. Two forms:
+   *  spawnProjectile(rawOpts)                              raw Projectile options (see projectile.js)
+   *  spawnProjectile(spec, owner, x, y, z, opts)           content spec (or a name in owner.def.projectiles); x/y/z override the spec's
+   *                                                        offsets when given; opts: { index, count, aimX, aimZ, facing, ...overrides }
    */
-  spawnAreaHit(owner, x, z, r, hit, exclude = null, y = 0) {
-    const p = new Projectile({ owner, team: owner ? owner.team : TEAM.NONE, x, y: Math.max(y, r * 0.5), z, r, life: 2, style: 'explosion', hit: { ...hit, z: r }, pierce: 99 });
-    if (exclude) p.hitTargets.add(exclude.id);
+  spawnProjectile(spec, owner, x, y, z, opts = {}) {
+    if (arguments.length <= 1 || spec instanceof Projectile) return this.add(spec instanceof Projectile ? spec : new Projectile(spec));
+    const s = typeof spec === 'string' ? (owner && owner.def && owner.def.projectiles && owner.def.projectiles[spec]) : spec;
+    if (!s) return null;
+    const o = projectileOptsFromSpec(s, owner || null, { ...opts, x, y, z });
+    if (opts.overrides) Object.assign(o, opts.overrides);
+    if (!owner && o.team == null) o.team = TEAM.NONE;
+    return this.add(new Projectile(o));
+  }
+  /**
+   * One-frame area hit centred at (x, z) with radius r, credited to `attacker` (null = stage hazard, hits everyone).
+   * opts: { teams: [TEAM..] (who may be hit; default = the attacker's enemies, or everyone when null), team (projectile team),
+   *         exclude (entity), y (height), shake (px), color (ring), silent (no ring / shake), knockdown / launch (set hit.type) }
+   * @returns {Projectile}
+   */
+  areaHit(x, z, r, hit, attacker = null, opts = {}) {
+    const h = { ...hit };
+    if (opts.knockdown) h.type = 'knockdown'; else if (opts.launch) h.type = 'launch';
+    if (!attacker && h.friendly == null) h.friendly = true;
+    const team = opts.team != null ? opts.team : (attacker ? attacker.team : TEAM.NONE);
+    const p = new Projectile({ owner: attacker, team, x, y: Math.max(opts.y || 0, r * 0.5), z, r, life: 2, style: 'explosion', hit: { ...h, z: r }, pierce: 99, hitsTeams: opts.teams || opts.hitsTeams || null });
+    if (opts.exclude) p.hitTargets.add(opts.exclude.id);
+    if (!opts.silent) {
+      this.addFx('ring', x, 0, z, { r1: r, flat: true, color: opts.color || '#ffd080' });
+      if (opts.shake && this.camera) this.camera.shake(opts.shake, opts.shake >= 8 ? 12 : 8);
+    }
     return this.add(p);
   }
+  /** Legacy alias of areaHit(x, z, r, hit, owner, { exclude, y }). */
+  spawnAreaHit(owner, x, z, r, hit, exclude = null, y = 0) { return this.areaHit(x, z, r, hit, owner, { exclude, y, silent: true }); }
   /** Nearest living enemy fighter to (x, z). */
   nearestEnemy(x, z, { team = TEAM.ENEMY, maxDist = Infinity, exclude = null, zWeight = 1.5 } = {}) {
     let best = null, bestD = maxDist;
     for (const e of this._fighters) {
-      if (e.team !== team || e.dead || (exclude && (exclude === e || (exclude.has && exclude.has(e.id))))) continue;
+      if (e.team !== team || e.dead || (e.out) || (exclude && (exclude === e || (exclude.has && exclude.has(e.id))))) continue;
       const d = Math.abs(e.x - x) + Math.abs(e.z - z) * zWeight;
       if (d < bestD) { bestD = d; best = e; }
     }
@@ -158,8 +234,23 @@ export class World {
     if (cam.locked && e.entered !== false) return ab ? { x0: ab.x0 + m, x1: ab.x1 - m } : { x0: cam.left + m, x1: cam.right - m };
     return { x0: 0, x1: this.stageLength };
   }
-  /** Attack tokens: at most `max` enemies attack at once. */
-  requestToken(e) { const t = this.attackTokens; if (t.holders.has(e)) return true; if (t.holders.size >= t.max) return false; t.holders.add(e); return true; }
+  /** Floor band (z) a fighter is clamped to. */
+  zBounds(e) { return this.floorBand; }
+  /** Shrink the floor band by `px` on each edge (boss phases); resetBand() restores it. */
+  shrinkBand(px) { const b = this.floorBand; b.z0 = Math.min(b.z0 + px, 60); b.z1 = Math.max(b.z1 - px, 80); audio.play('steam'); }
+  resetBand() { this.floorBand.z0 = Z_MIN; this.floorBand.z1 = Z_MAX; }
+  /** Attack tokens: at most `max` enemies attack at once; a faction / ai.tokenGroup may cap itself lower (ai.maxAttackers). */
+  requestToken(e) {
+    const t = this.attackTokens;
+    if (t.holders.has(e)) return true;
+    const group = e.ai && (e.ai.tokenGroup || (e.ai.maxAttackers && e.def && e.def.faction)) || null;
+    if (group) {
+      let n = 0; for (const h of t.holders) if (h.ai && (h.ai.tokenGroup || (h.ai.maxAttackers && h.def && h.def.faction)) === group) n++;
+      if (n >= (e.ai.maxAttackers || t.max)) return false;
+    }
+    if (t.holders.size >= t.max) return false;
+    t.holders.add(e); return true;
+  }
   releaseToken(e) { this.attackTokens.holders.delete(e); }
   /** Called when a fighter dies (lands dead): drops + score credit. */
   onDeath(f) {
@@ -172,7 +263,7 @@ export class World {
     if (f.kind === 'boss' && this.boss === f) this.boss = null;
   }
   /** Reset for a new run. */
-  clear() { this.entities.length = 0; this.players.length = 0; this.fx.length = 0; this.boss = null; this.attackTokens.holders.clear(); particles.clear(); }
+  clear() { this.entities.length = 0; this.players.length = 0; this.fx.length = 0; this.boss = null; this.attackTokens.holders.clear(); this._valves.clear(); this.resetBand(); this.cutsceneTimer = 0; particles.clear(); }
   /** Living enemies excluding bosses (wave bookkeeping). */
   get waveEnemies() { return this._enemies.filter((e) => e.kind !== 'boss' && !e.fleeing && !e.dead); }
 }

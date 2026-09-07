@@ -1,12 +1,37 @@
 // Enemy: Fighter + the AI framework of ARCHITECTURE.md section 8 (ENTER / APPROACH / HOVER / ATTACK / RECOVER / KEEP_DISTANCE,
-// attack tokens, z alignment, target selection, separation, off-screen teleport, ranged behaviour, armor/stagger, flee, panic, evade, riposte).
-import { ST, TEAM, VIEW_W, Z_MIN, Z_MAX, Z_SPEED_FACTOR } from '../constants.js';
+// attack tokens, z alignment, target selection, separation, off-screen teleport, ranged behaviour, armor/stagger, flee, panic, evade,
+// riposte, whiff backsteps, shields, punish windows, tells).
+//
+// ================================ AI FLAG REFERENCE (def.ai.*) — all optional, defaults in AI_DEFAULTS ================================
+//  role (def.role) fodder|bruiser|ranged|rusher|elite|grabber   role defaults (ROLE_DEFAULTS) are applied under def.ai
+//  attackRange 40 | zTolerance 12 | attacks [{ anim, range, minRange, weight, maxUses, tell (tell anim), chain (follow-up anim), tellFrames }]
+//  attackCooldown [40, 90] | firstAttackDelay 45 | retreatChance 0.25 | retreatBudget 90 | flank false (both z lanes) | hoverCircle / circle (orbit)
+//  ranged { anim, minRange, maxRange, cooldown, keep, zAlign, aimDelay }  ranged attack + KEEP_DISTANCE; aimDelay = lob at the target's
+//                                                                         position N frames ago (Sapper 24) | keepDistance px (ranged.keep shorthand)
+//  ignoresTokens false | maxAttackers N (cap for this faction, e.g. 2 Footmen / Sootborn) | tokenGroup 'name' (custom token pool)
+//  staggerEvery N + staggerFrames 30  every Nth hit taken staggers (Brassbound gear slip) — also traits.staggerEveryNthHit
+//  shield true | { hitsToStagger: 4, staggerFrames: 30, stripOnLauncher: true, frontOnly: false }  super armor + no launch while shielded;
+//                Nth hit staggers, a launcher during the stagger strips the shield for good (rig.shieldStripped); frontOnly = armor only from the front
+//  launchStun N   armored brute: a launcher stuns for N frames instead of launching (Cinder Hulk 45)
+//  flee N / fleeHp N + fleeDistance 100   run away when hp < N (Cutthroat) | fleeLast true  last enemy at <= fleeHpFrac (0.3): fleeChance (0.5) flees off-screen
+//  panicRange / panicWhenClose px + panicFrames 30   a player inside the range -> stagger then run (Slinger)
+//  evadeChance 0 + evadeCooldown 90   dodge a player's attack | backstepAfterWhiffs { whiffs: 2, dist: 40, iframes: 8, cooldown: 60 } (Wrangler)
+//  riposteStance { afterPlayerAttacks: 3, frames: 30, flurryAnim, stanceAnim, range: 120, cooldown: 150 }  deterministic Duelist stance;
+//  riposteChance + riposteAnim + riposteCooldown   random riposte on a melee hit
+//  stallEvery N + stallFrames 70 + stallDamageMult 3 + stallGrabbable true   every Nth attack ends in a punishable stall (Hoister overheat)
+//  punishDamageMult 1 + punishGrabbable false   applied while the current frame has `punish: true` (recovery frames)
+//  tellScale 1 | attackSpeed 1   speed of tell / active frames (difficulty: world.options.tellScale) | tellWarnFrames 10 (rig.tellWarn)
+//  targetBy 'nearest'|'highestCombo'|'lowestHp' | grabHoldHits 3 | blinkOnDamage N (teleport away after N damage in one combo, bosses)
+//  valveStun true (bosses: pressure valves may stun) | stunDamageMult 1.5 + stunGrabbable (boss stun windows)
+//  Frame events handled here: aim (lob target), summon (frame.summon [{ type, variant }]), crateDrop, timeStop (frame.freeze; a dodge in the last
+//  tellWarnFrames of the tell escapes), teleportBehind. Enemy content may also use every def.hooks / traits / frame field of fighter.js.
+import { ST, TEAM, VIEW_W, Z_SPEED_FACTOR, FLOOR_TOP, UI } from '../constants.js';
 import { Fighter } from './fighter.js';
 import { rng } from '../engine/rng.js';
 import { audio } from '../engine/audio.js';
 import { clamp, sign } from '../engine/math.js';
 import { drawText } from '../engine/text.js';
-import { FLOOR_TOP } from '../constants.js';
+import { floatText } from '../art/fx.js';
 import { Prop } from './items.js';
 
 /** Defaults for `def.ai` (content overrides per type / variant). */
@@ -14,12 +39,36 @@ export const AI_DEFAULTS = Object.freeze({
   attackRange: 40, zTolerance: 12, retreatChance: 0.25, attackCooldown: [40, 90], aggression: 0.5, attacks: [], ranged: null,
   staggerEvery: 0, staggerFrames: 30, firstAttackDelay: 45, flank: false, hoverCircle: false, fleeLast: false, fleeHp: 0, fleeDistance: 100,
   retreatBudget: 90, evadeChance: 0, evadeCooldown: 90, riposteChance: 0, riposteCooldown: 150, riposteAnim: 'riposte', panicRange: 0, panicFrames: 30,
-  ignoresTokens: false, shield: false, launchStun: 0, stallEvery: 0, stallFrames: 70, grabHoldHits: 3,
+  ignoresTokens: false, shield: false, launchStun: 0, stallEvery: 0, stallFrames: 70, stallDamageMult: 3, stallGrabbable: true, grabHoldHits: 3,
+  backstepAfterWhiffs: null, riposteStance: null, punishDamageMult: 1, punishGrabbable: false, tellScale: 1, attackSpeed: 1, tellWarnFrames: 10, targetBy: 'nearest',
 });
-const OFFSCREEN_MARGIN = 200, OFFSCREEN_FRAMES = 300, SEP_X = 18, SEP_Z = 10, RETARGET = 90, HOVER_MAX = 240;
+/** Per-role defaults layered under def.ai (ARCHITECTURE 8 roles). */
+export const ROLE_DEFAULTS = Object.freeze({
+  fodder: {}, rusher: { flank: true }, bruiser: {}, ranged: {}, elite: { ignoresTokens: true }, grabber: { ignoresTokens: true, retreatChance: 0 },
+});
+const OFFSCREEN_MARGIN = 200, OFFSCREEN_FRAMES = 300, SEP_X = 18, SEP_Z = 10, RETARGET = 90, HOVER_MAX = 240, HIST = 48;
 const SPD_Z = Z_SPEED_FACTOR;
 
-/** AI-controlled fighter. `def` comes from content/enemies (see ARCHITECTURE section 8 for the fields). */
+/** Resolve the alias flags of an ai table into the canonical names. */
+export function normalizeAi(def) {
+  const ai = { ...AI_DEFAULTS, ...(ROLE_DEFAULTS[def.role] || {}), ...(def.ai || {}) };
+  if (ai.circle) ai.hoverCircle = true;
+  if (ai.panicWhenClose) ai.panicRange = ai.panicWhenClose;
+  if (ai.flee) { if (typeof ai.flee === 'object') { ai.fleeHp = ai.flee.hp || ai.fleeHp; ai.fleeDistance = ai.flee.distance || ai.fleeDistance; } else ai.fleeHp = ai.flee; }
+  if (ai.ranged && ai.keepDistance && ai.ranged.keep == null) ai.ranged = { ...ai.ranged, keep: ai.keepDistance };
+  if (ai.shield) {
+    const s = typeof ai.shield === 'object' ? ai.shield : {};
+    ai.shield = { hitsToStagger: s.hitsToStagger || ai.staggerEvery || 4, staggerFrames: s.staggerFrames || ai.staggerFrames || 30, stripOnLauncher: s.stripOnLauncher !== false, frontOnly: !!s.frontOnly };
+    if (!ai.staggerEvery) ai.staggerEvery = ai.shield.hitsToStagger;
+    ai.staggerFrames = ai.shield.staggerFrames;
+  }
+  const t = def.traits || {};
+  if (t.staggerEveryNthHit && !ai.staggerEvery) { ai.staggerEvery = t.staggerEveryNthHit; ai.staggerFrames = t.staggerFrames || 30; }
+  if (t.fleeHpFrac || t.fleeChance) ai.fleeLast = true;
+  return ai;
+}
+
+/** AI-controlled fighter. `def` comes from content/enemies (see the header table for the fields). */
 export class Enemy extends Fighter {
   /**
    * @param {object} def enemy definition
@@ -27,34 +76,45 @@ export class Enemy extends Fighter {
    */
   constructor(def, { x = 0, z = 70, facing = -1, entered = true, kind = 'enemy', fromSky = false } = {}) {
     super(def, { team: TEAM.ENEMY, kind, x, z, facing });
-    this.ai = { ...AI_DEFAULTS, ...(def.ai || {}) };
+    this.ai = normalizeAi(def);
+    this.applyAiTraits();
     this.entered = entered;
     this.aiState = entered ? 'APPROACH' : 'ENTER';
     this.aiTimer = 0; this.target = null; this.retargetTimer = 0;
     this.attackCooldown = this.ai.firstAttackDelay; this.rangedCooldown = Math.round(this.ai.firstAttackDelay * 0.8);
     this.hoverSide = rng.sign(); this.hoverDist = 60; this.hoverZ = 0; this.flankZ = this.ai.flank ? rng.range(-40, 40) : 0;
-    this.offscreenTimer = 0; this.enterTimer = 0; this.hitCount = 0; this.staggerTimer = 0; this.shieldStripped = false;
+    this.offscreenTimer = 0; this.enterTimer = 0; this.staggerTimer = 0; this.shieldStripped = false;
     this.fled = false; this.fleeTimer = 0; this.fleeing = false; this.fleeOff = false; this.fleeDir = 1; this.fleeChecked = false;
     this.pendingAttack = null; this.currentAttack = null; this.attackUses = new Map(); this.hasToken = false; this.attackCount = 0;
     this.retreatBudget = this.ai.retreatBudget; this.panicCooldown = 0; this.panicFlee = false; this.evadeTimer = 0; this.lastSeenAttack = -1; this.riposteTimer = 0;
-    this.retreating = false; this.spawned = false; this.aimX = null; this.aimZ = null; this.grabHitTimer = 0;
-    this.rig.keyAngle = 0; this.rig.tell = false;
+    this.retreating = false; this.grabHitTimer = 0; this.stalled = false;
+    // whiff backsteps / riposte stance bookkeeping
+    this.watchInst = -1; this.watchNear = false; this.hitByInst = -1; this.whiffs = 0; this.backstepCooldown = 0;
+    this.inStance = false; this.stanceTimer = 0; this.stanceCooldown = 0; this.playerAttacks = 0; this.lastPlayerAttack = -1; this.noAttackTimer = 0;
+    // target position history (ranged.aimDelay)
+    this.histX = new Float32Array(HIST); this.histZ = new Float32Array(HIST); this.histI = 0; this.histN = 0;
+    this.rig.keyAngle = 0; this.rig.tell = false; this.rig.tellWarn = false;
     if (fromSky) { this.y = 170; this.vy = 0; this.entered = true; this.aiState = 'APPROACH'; this.setState(ST.JUMP, 'fall', { fallback: 'jump' }); }
+  }
+  /** Shield / role flags that live in the traits the core reads. */
+  applyAiTraits() {
+    const ai = this.ai;
+    if (ai.shield) { this.traits.superArmor = true; this.traits.noLaunch = true; this.unlaunchable = true; if (ai.shield.frontOnly) this.traits.armorFrontOnly = true; }
   }
 
   // ---------- per-step ----------
   update(world) {
+    this.armorSuppressed = this.staggerTimer > 0 || this.shieldStripped || !!this.status.stunned;
     super.update(world);
-    // dynamic armor: staggered (gear slip) or shield-stripped automatons lose their armor
-    if (this.staggerTimer > 0 || this.shieldStripped) { this.armor = false; this.unlaunchable = false; }
-    else this.unlaunchable = !!this.def.unlaunchable;
-    if (this.def.onUpdate) this.def.onUpdate(this, world);
+    // dynamic armor: staggered (gear slip), stunned or shield-stripped automatons lose their armor
+    if (this.staggerTimer > 0 || this.shieldStripped || this.status.stunned) { this.armor = false; this.unlaunchable = false; }
+    else this.unlaunchable = this.traits.noLaunch;
   }
 
   think(world) {
-    if (!this.spawned) { this.spawned = true; if (this.def.onSpawn) this.def.onSpawn(this, world); }
-    const f = this.anim.frame;
-    this.rig.tell = !!(f && f.tell);
+    const ai = this.ai, f = this.anim.frame;
+    this.rig.tell = !!(f && f.tell) || this.inStance;
+    this.updateTellSpeed(world, f);
     if (this.state === ST.ATTACK || this.state === ST.WALK || this.state === ST.RUN) this.rig.keyAngle += 0.2;
     if (this.staggerTimer > 0) this.staggerTimer--;
     if (this.attackCooldown > 0) this.attackCooldown--;
@@ -63,10 +123,15 @@ export class Enemy extends Fighter {
     if (this.evadeTimer > 0) this.evadeTimer--;
     if (this.riposteTimer > 0) this.riposteTimer--;
     if (this.retargetTimer > 0) this.retargetTimer--;
+    if (this.backstepCooldown > 0) this.backstepCooldown--;
+    if (this.stanceCooldown > 0) this.stanceCooldown--;
+    if (this.stanceTimer > 0 && --this.stanceTimer === 0) this.inStance = false;
+    // punish window: stalls (STAGGER) or frames flagged punish:true
+    if (this.aiState !== 'STAGGER') { this.punishable = !!(f && f.punish); this.punishMult = ai.punishDamageMult; this.punishGrab = ai.punishGrabbable; }
     this.checkOffscreen(world);
-    if (this.dead || this.inHitstun || this.grabbedBy) { this.releaseToken(world); this.pendingAttack = null; return; }
+    if (this.dead || this.inHitstun || this.grabbedBy || this.status.netted) { this.releaseToken(world); this.pendingAttack = null; this.inStance = false; return; }
     if (this.state === ST.GRAB) { this.thinkGrab(world); return; }
-    if (this.state === ST.DODGE) { if (this.stateTimer <= 12) this.x -= this.facing * 3.5; return; }
+    if (this.state === ST.DODGE) { if (this.stateTimer <= 12) this.x -= this.facing * (this.backstepDist || 42) / 12; return; }
     if (this.state === ST.ATTACK || this.state === ST.SPECIAL || this.state === ST.JUMP || this.airborne) return;
     this.pickTarget(world);
     if (this.aiState === 'STAGGER') { if (--this.aiTimer <= 0) this.endStagger(); return; }
@@ -75,7 +140,9 @@ export class Enemy extends Fighter {
     if (this.aiState === 'ENTER' || !this.entered) { this.thinkEnter(world); return; }
     const t = this.target;
     if (!t) { this.stand(); return; }
-    if (this.tryEvade(world, t) || this.tryPanic(world, t)) return;
+    this.recordHistory(t);
+    if (this.inStance) { this.face(t); this.stand(); return; }
+    if (this.tryEvade(world, t) || this.tryPanic(world, t) || this.tryBackstep(world, t) || this.tryStance(world, t)) return;
     this.separate(world);
     switch (this.aiState) {
       case 'KEEP_DISTANCE': this.thinkRanged(world, t); break;
@@ -84,6 +151,21 @@ export class Enemy extends Fighter {
       default: this.thinkApproach(world, t);
     }
   }
+  /** Tell frames play at 1 / (ai.tellScale * options.tellScale) speed (or stretch to attack.tellFrames); active frames at ai.attackSpeed. */
+  updateTellSpeed(world, f) {
+    const ai = this.ai, a = this.anim;
+    if (f && f.tell && this.state === ST.ATTACK) {
+      let k = ai.tellScale * ((world.options && world.options.tellScale) || 1);
+      const atk = this.currentAttack;
+      if (atk && atk.tellFrames && a.def) { let tot = 0; for (const fr of a.def.frames) if (fr.tell) tot += fr.dur || 1; if (tot > 0) k = atk.tellFrames / tot; }
+      a.speed = 1 / Math.max(0.1, k);
+      const remaining = ((f.dur || 1) - a.frameTime) * k, next = a.def ? a.def.frames[a.frameIndex + 1] : null;
+      this.rig.tellWarn = !(next && next.tell) && remaining <= ai.tellWarnFrames;
+    } else { a.speed = this.state === ST.ATTACK ? ai.attackSpeed : 1; this.rig.tellWarn = false; }
+  }
+  recordHistory(t) { this.histX[this.histI] = t.x; this.histZ[this.histI] = t.z; this.histI = (this.histI + 1) % HIST; if (this.histN < HIST) this.histN++; }
+  /** Target position `delay` frames ago (clamped to what has been recorded). */
+  historyAt(delay) { const d = Math.min(delay | 0, Math.max(0, this.histN - 1)); const i = (this.histI - 1 - d + HIST * 2) % HIST; return { x: this.histX[i], z: this.histZ[i] }; }
 
   // ---------- targeting & movement helpers ----------
   pickTarget(world) {
@@ -91,9 +173,12 @@ export class Enemy extends Fighter {
     const valid = t && t.alive && !t.dead && !t.removeMe && !t.out;
     if (valid && this.retargetTimer > 0) return;
     let best = null, bestD = Infinity;
+    const by = this.ai.targetBy;
     for (const p of world.players) {
       if (!p.alive || p.dead || p.removeMe || p.out) continue;
-      const d = Math.abs(p.x - this.x) + Math.abs(p.z - this.z) * 1.5;
+      let d = Math.abs(p.x - this.x) + Math.abs(p.z - this.z) * 1.5;
+      if (by === 'highestCombo') d -= (p.combo || 0) * 100;
+      else if (by === 'lowestHp') d += (p.hp / Math.max(1, p.maxHp)) * 1000;
       if (d < bestD) { bestD = d; best = p; }
     }
     this.target = best; this.retargetTimer = RETARGET;
@@ -103,20 +188,21 @@ export class Enemy extends Fighter {
   moveToward(dx, dz, mult = 1, back = false, run = false) {
     const spd = (run ? this.runSpeed : this.walkSpeed) * mult;
     const mx = clamp(dx, -spd, spd), mz = clamp(dz, -spd * SPD_Z, spd * SPD_Z);
-    this.x += mx; this.z = clamp(this.z + mz, Z_MIN, Z_MAX);
+    const zb = this.world ? this.world.zBounds(this) : { z0: 0, z1: 140 };
+    this.x += mx; this.z = clamp(this.z + mz, zb.z0, zb.z1);
     if (!back && Math.abs(mx) > 0.2) this.facing = sign(mx);
     const st = run ? ST.RUN : ST.WALK, an = run ? 'run' : 'walk';
     if (this.state !== st || (this.anim.name !== an && this.anim.name !== 'flee')) { this.state = st; this.stateTimer = 0; this.play(an, { restart: false }); }
   }
   stand() {
     if (this.state !== ST.IDLE) this.setState(ST.IDLE, 'idle', { restart: false });
-    else if (this.anim.name !== 'idle' && this.anim.name !== 'land' && (this.anim.done || (this.anim.def && this.anim.def.loop))) this.play('idle');
+    else if (this.anim.name !== 'idle' && this.anim.name !== 'land' && this.anim.name !== 'riposteStance' && (this.anim.done || (this.anim.def && this.anim.def.loop))) this.play('idle');
   }
   separate(world) {
     for (const e of world.enemies) {
       if (e === this || e.dead) continue;
       const dx = this.x - e.x, dz = this.z - e.z;
-      if (Math.abs(dx) < SEP_X && Math.abs(dz) < SEP_Z) { this.x += (sign(dx) || (this.id > e.id ? 1 : -1)) * 0.5; this.z = clamp(this.z + (sign(dz) || 1) * 0.3, Z_MIN, Z_MAX); }
+      if (Math.abs(dx) < SEP_X && Math.abs(dz) < SEP_Z) { this.x += (sign(dx) || (this.id > e.id ? 1 : -1)) * 0.5; this.z = clamp(this.z + (sign(dz) || 1) * 0.3, world.floorBand.z0, world.floorBand.z1); }
     }
   }
   checkOffscreen(world) {
@@ -174,7 +260,7 @@ export class Enemy extends Fighter {
     }
     const standoff = Math.max(10, ai.attackRange - 8);
     const wantX = t.x - sign(dx || this.facing) * standoff;
-    const laneZ = (ai.flank && adx > 70) ? clamp(t.z + this.flankZ, Z_MIN, Z_MAX) : t.z;
+    const laneZ = (ai.flank && adx > 70) ? clamp(t.z + this.flankZ, world.floorBand.z0, world.floorBand.z1) : t.z;
     const mz = laneZ - this.z;
     this.moveToward(wantX - this.x, Math.abs(mz) > 3 ? mz : 0, 1, false, adx > 260);
   }
@@ -186,7 +272,7 @@ export class Enemy extends Fighter {
     if (this.ai.hoverCircle && this.aiTimer % 120 === 0) this.hoverSide = -curSide;
     const wantX = t.x + (this.ai.hoverCircle ? this.hoverSide : curSide) * this.hoverDist;
     if (this.aiTimer % 90 === 45) this.hoverZ = rng.range(-30, 30);
-    const wantZ = clamp(t.z + this.hoverZ, Z_MIN, Z_MAX);
+    const wantZ = clamp(t.z + this.hoverZ, world.floorBand.z0, world.floorBand.z1);
     const mx = wantX - this.x, mz = wantZ - this.z;
     if (Math.abs(mx) > 4 || Math.abs(mz) > 4) this.moveToward(mx, mz, 0.7, Math.abs(mx) < 30); else this.stand();
     if (this.aiTimer > HOVER_MAX) this.aiState = 'APPROACH';
@@ -235,14 +321,20 @@ export class Enemy extends Fighter {
     if (++this.grabHitTimer >= 18) { this.grabHitTimer = 0; this.grabHit(); }
   }
   endStagger() {
-    this.damageTaken = this.def.damageTaken || 1;
+    this.stalled = false; this.punishable = false; this.punishMult = 1; this.punishGrab = false;
     if (this.panicFlee) { this.panicFlee = false; this.aiState = 'FLEE'; this.fleeTimer = 50; this.fleeDir = this.target ? -(sign(this.target.x - this.x) || this.facing) : -this.facing; audio.play('soot_flee'); }
     else this.aiState = 'APPROACH';
   }
+  /** Stagger / stall for `frames` (AI state STAGGER, armor off). */
   enterStagger(frames, anim = 'stagger') {
     this.aiState = 'STAGGER'; this.aiTimer = frames; this.staggerTimer = Math.max(this.staggerTimer, frames);
-    this.pendingAttack = null; this.releaseToken();
+    this.pendingAttack = null; this.inStance = false; this.releaseToken();
     this.setState(ST.IDLE, anim, { fallback: 'hurt' });
+  }
+  /** Punishable stall window: damage x mult, grabbable (Hoister overheat, boss valve stuns). */
+  enterStall(frames, mult, grabbable) {
+    this.enterStagger(frames);
+    this.stalled = true; this.punishable = true; this.punishMult = mult; this.punishGrab = grabbable;
   }
   tryEvade(world, t) {
     const ai = this.ai;
@@ -251,7 +343,7 @@ export class Enemy extends Fighter {
     if (!attacking || t.anim.instance === this.lastSeenAttack) return false;
     this.lastSeenAttack = t.anim.instance;
     if (Math.abs(t.x - this.x) > 80 || Math.abs(t.z - this.z) > 24 || !rng.chance(ai.evadeChance)) return false;
-    this.evadeTimer = ai.evadeCooldown; this.face(t);
+    this.evadeTimer = ai.evadeCooldown; this.face(t); this.backstepDist = 42;
     this.setState(ST.DODGE, 'dodge'); this.invuln = Math.max(this.invuln, 10); this.releaseToken(world);
     return true;
   }
@@ -261,6 +353,34 @@ export class Enemy extends Fighter {
     if (Math.abs(t.x - this.x) > ai.panicRange || Math.abs(t.z - this.z) > 30) return false;
     this.panicCooldown = 240; this.panicFlee = true;
     this.enterStagger(ai.panicFrames); audio.play('soot_hurt');
+    return true;
+  }
+  /** ai.backstepAfterWhiffs: after N player attacks in a row that missed us nearby, hop back with i-frames (Gutter Wrangler). */
+  tryBackstep(world, t) {
+    const bs = this.ai.backstepAfterWhiffs;
+    if (!bs || !t.anim) return false;
+    const attacking = t.state === ST.ATTACK || t.state === ST.DASH_ATTACK || t.state === ST.JUMP_ATTACK, inst = t.anim.instance;
+    if (attacking && inst !== this.watchInst) {
+      if (this.watchInst >= 0 && this.watchNear) this.whiffs = this.hitByInst === this.watchInst ? 0 : this.whiffs + 1;
+      this.watchInst = inst; this.watchNear = Math.abs(t.x - this.x) < (bs.range || 110) && Math.abs(t.z - this.z) < 30;
+    }
+    if (this.whiffs < (bs.whiffs || 2) || this.backstepCooldown > 0) return false;
+    this.whiffs = 0; this.backstepCooldown = bs.cooldown || 60; this.face(t); this.backstepDist = bs.dist || 40;
+    this.setState(ST.DODGE, 'dodge'); this.invuln = Math.max(this.invuln, bs.iframes || 8); this.releaseToken(world);
+    return true;
+  }
+  /** ai.riposteStance: after the player presses Attack N times in a row nearby, hold a parry stance for `frames` (Chrome Duelist). */
+  tryStance(world, t) {
+    const rs = this.ai.riposteStance;
+    if (!rs || !t.anim) return false;
+    const attacking = t.state === ST.ATTACK || t.state === ST.DASH_ATTACK || t.state === ST.JUMP_ATTACK, inst = t.anim.instance;
+    if (attacking) { this.noAttackTimer = 0; if (inst !== this.lastPlayerAttack && Math.abs(t.x - this.x) < (rs.range || 120)) { this.lastPlayerAttack = inst; this.playerAttacks++; } }
+    else if (++this.noAttackTimer > 90) this.playerAttacks = 0;
+    if (this.playerAttacks < (rs.afterPlayerAttacks || 3) || this.stanceCooldown > 0 || this.attackCooldown > 20) return false;
+    this.playerAttacks = 0; this.stanceCooldown = rs.cooldown || 150; this.stanceTimer = rs.frames || 30; this.inStance = true;
+    this.face(t); this.releaseToken(world);
+    this.setState(ST.IDLE, rs.stanceAnim || 'riposteStance', { fallback: 'idle' });
+    audio.play('chime');
     return true;
   }
 
@@ -282,21 +402,26 @@ export class Enemy extends Fighter {
   startAttack(atk, t) {
     if (t) { this.face(t); this.aimX = t.x; this.aimZ = t.z; }
     this.currentAttack = atk; this.attackUses.set(atk.anim, (this.attackUses.get(atk.anim) || 0) + 1);
-    this.attackCooldown = 0; this.retreating = false;
+    this.attackCooldown = 0; this.retreating = false; this.inStance = false;
     if (atk.tell && this.anim.has(atk.tell)) { this.pendingAttack = atk.anim; this.setState(ST.ATTACK, atk.tell); }
     else this.setState(ST.ATTACK, atk.anim);
   }
   startRanged(r, t) {
-    this.face(t); this.aimX = t.x; this.aimZ = t.z;
+    this.face(t); this.aimAtTarget(t);
     this.currentAttack = { anim: r.anim, ranged: true }; this.rangedCooldown = r.cooldown || 150;
     this.setState(ST.ATTACK, r.anim);
+  }
+  /** Aim at the target (or where it was `ranged.aimDelay` frames ago: Copper Sapper lobs at 0.4s-old positions). */
+  aimAtTarget(t) {
+    const d = this.ai.ranged && this.ai.ranged.aimDelay;
+    if (d && this.histN > 0) { const h = this.historyAt(d); this.aimX = h.x; this.aimZ = h.z; } else { this.aimX = t.x; this.aimZ = t.z; }
   }
   onActionDone(world) {
     if (this.pendingAttack) { const a = this.pendingAttack; this.pendingAttack = null; this.setState(ST.ATTACK, a); return; }
     if (this.state === ST.ATTACK) {
       const atk = this.currentAttack; this.currentAttack = null;
       this.finishAttack(world);
-      if (atk && atk.chain && this.anim.has(atk.chain)) { this.startAttack({ anim: atk.chain, range: 999 }, this.target); return; }
+      if (atk && atk.chain && this.anim.has(atk.chain) && this.aiState !== 'STAGGER') { this.startAttack({ anim: atk.chain, range: 999 }, this.target); return; }
     }
     super.onActionDone(world);
   }
@@ -306,24 +431,25 @@ export class Enemy extends Fighter {
     this.retreatBudget = Math.min(ai.retreatBudget, this.retreatBudget + 40);
     this.attackCount++;
     this.releaseToken(world);
-    if (ai.stallEvery && this.attackCount % ai.stallEvery === 0) { this.enterStagger(ai.stallFrames); this.damageTaken = 3; audio.play('valve_blow'); return; }
+    if (ai.stallEvery && this.attackCount % ai.stallEvery === 0) { this.enterStall(ai.stallFrames, ai.stallDamageMult, ai.stallGrabbable); audio.play('valve_blow'); return; }
     if (ai.retreatChance > 0 && rng.chance(ai.retreatChance)) { this.aiState = 'RECOVER'; this.aiTimer = rng.int(20, 40); this.retreating = true; }
     else { this.aiState = ai.ranged && this.retreatBudget > 0 ? 'KEEP_DISTANCE' : 'APPROACH'; }
   }
   onAnimEvent(name, frame, world) {
-    if (name === 'aim') { const t = this.target; if (t) { this.aimX = t.x; this.aimZ = t.z; } return; }
+    if (name === 'aim') { const t = this.target; if (t) this.aimAtTarget(t); return; }
     if (name === 'summon') { this.summon(frame && frame.summon, world); return; }
     if (name === 'crateDrop') { this.crateDrop(frame && frame.projectile, world); return; }
-    if (name === 'timeStop') { for (const p of world.players) if (p.alive && !p.dead) { p.hitstop = Math.max(p.hitstop, (frame && frame.freeze) || 60); p.flashTimer = 2; } world.addFx('flash', this.x, 0, this.z, { color: '#4DF0E0' }); audio.play('time_stop_tick'); return; }
-    if (name === 'teleportBehind') {
-      const t = this.target; if (!t) return;
-      world.addFx('ring', this.x, 30, this.z, { r0: 4, r1: 40, color: '#4DF0E0' }); world.addFx('steam', this.x, 30, this.z, { count: 6 });
-      const b = world.boundsFor(this);
-      this.x = clamp(t.x - t.facing * 44, b.x0, b.x1); this.z = t.z; this.facing = t.facing;
-      world.addFx('ring', this.x, 30, this.z, { r0: 4, r1: 40, color: '#4DF0E0' });
-      return;
-    }
+    if (name === 'timeStop') { this.timeStop((frame && frame.freeze) || 60, world); return; }
     super.onAnimEvent(name, frame, world);
+  }
+  /** Time Stop (GDD 5.2): players freeze for `frames` unless they pressed Dodge in the last tellWarnFrames of the tell. */
+  timeStop(frames, world) {
+    for (const p of world.players) {
+      if (!p.alive || p.dead || p.out) continue;
+      if (p.dodgedRecently && p.dodgedRecently(this.ai.tellWarnFrames)) { floatText(p.x, p.y + p.h + 10, p.z, 'DODGED!', UI.meter, 1); if (p.addMeter) p.addMeter(10); continue; }
+      p.applyStatus('timeStopped', { frames }, this);
+    }
+    world.addFx('flash', this.x, 0, this.z, { color: '#4DF0E0' }); audio.play('time_stop_tick');
   }
   /** Hoister crate drop (GDD 5.1): a crate falls on the aimed spot, lands as an area knockdown and leaves a breakable crate with food. */
   crateDrop(spec, world) {
@@ -331,22 +457,21 @@ export class Enemy extends Fighter {
     const hit = { damage: spec.damage || 24, type: spec.type || 'knockdown', kbX: spec.kbX != null ? spec.kbX : 4, kbY: spec.kbY || 5, hitstun: spec.hitstun || 24 };
     const r = spec.radius || 60;
     this.fireProjectile({ ...spec, noContactHit: true, onExpire: (w, proj) => {
-      w.spawnAreaHit(this, proj.x, proj.z, r, hit);
-      w.addFx('ring', proj.x, 0, proj.z, { r1: r, flat: true, color: '#ffd080' }); w.addFx('dust', proj.x, 0, proj.z, { count: 8 });
-      if (w.camera) w.camera.shake(8, 10);
+      w.areaHit(proj.x, proj.z, r, hit, this, { shake: 8 });
+      w.addFx('dust', proj.x, 0, proj.z, { count: 8 });
       audio.play('crate_drop');
       const drop = spec.drops || (rng.chance(0.5) ? 'meatPie' : 'aetherVial');
-      const crate = new Prop('crate', proj.x, clamp(proj.z, Z_MIN, Z_MAX), { drops: drop });
-      w.add(crate);
+      w.add(new Prop('crate', proj.x, clamp(proj.z, w.floorBand.z0, w.floorBand.z1), { drops: drop }));
     } }, world);
   }
+  /** Summon escorts just outside the lock (frame.summon = [{ type, variant }]). */
   summon(list, world) {
     if (!list || !world.spawnEnemy) return;
     const cam = world.camera;
     list.forEach((s, i) => {
       const side = i % 2 ? -1 : 1;
       const x = side > 0 ? cam.x + VIEW_W + 30 + i * 20 : cam.x - 30 - i * 20;
-      world.spawnEnemy(s.type, s.variant, x, clamp(this.z + (i - 1) * 30, Z_MIN, Z_MAX), { entered: false, facing: -side });
+      world.spawnEnemy(s.type, s.variant, x, clamp(this.z + (i - 1) * 30, world.floorBand.z0, world.floorBand.z1), { entered: false, facing: -side });
     });
     audio.play('brass_tell');
   }
@@ -354,49 +479,56 @@ export class Enemy extends Fighter {
   // ---------- reactions ----------
   takeHit(hit, attacker) {
     const ai = this.ai;
-    // Riposte (GDD 3 A5): a melee hit from a player is parried and answered; the rest of that swing whiffs (Fighter.parried).
-    // Supers (invulnerable cinematic attacks) and projectiles are not parried ("answers: grab, projectiles").
+    const melee = attacker && attacker.kind === 'player' && attacker.state !== ST.SUPER && !hit.projectile && hit.type !== 'grab';
+    // Riposte stance (GDD 3 A5): any melee into the stance is parried and answered with the flurry
+    if (this.inStance && melee && !this.dead) { this.riposte(attacker, ai.riposteStance.flurryAnim || ai.riposteAnim); return false; }
+    // Random riposte: a melee hit from a player is parried and answered; the rest of that swing whiffs (Fighter.parried)
     if (ai.riposteChance && this.riposteTimer <= 0 && !this.dead && !this.inHitstun && !this.airborne && (this.state === ST.IDLE || this.state === ST.WALK)
-      && hit.type !== 'grab' && attacker && attacker.kind === 'player' && attacker.state !== ST.SUPER && !hit.projectile
-      && this.anim.has(ai.riposteAnim) && rng.chance(ai.riposteChance)) {
-      this.riposteTimer = ai.riposteCooldown; this.face(attacker); this.pendingAttack = null;
-      this.parried = { by: attacker, instance: attacker.anim.instance };
-      this.currentAttack = { anim: ai.riposteAnim, range: 999 };
-      this.setState(ST.ATTACK, ai.riposteAnim); this.invuln = Math.max(this.invuln, 6);
-      attacker.hitstop = Math.max(attacker.hitstop, 8);
-      if (this.world) this.world.addFx('spark', this.x + this.facing * 14, this.y + this.h * 0.6, this.z, { type: 'heavy' });
-      audio.play('parry');
-      return false;
+      && melee && this.anim.has(ai.riposteAnim) && rng.chance(ai.riposteChance)) { this.riposteTimer = ai.riposteCooldown; this.riposte(attacker, ai.riposteAnim); return false; }
+    // launchStun (Cinder Hulk): an armored brute is stunned by launchers instead of launched
+    if (ai.launchStun && hit.type === 'launch' && this.armor && !this.unlaunchable && !this.airborne && !this.dead && this.state !== ST.KNOCKDOWN) {
+      hit = { ...hit, type: 'heavy', stagger: true, hitstun: Math.max(8, ai.launchStun - 30), breaksArmor: true };
     }
     return super.takeHit(hit, attacker);
   }
+  riposte(attacker, anim) {
+    this.face(attacker); this.pendingAttack = null; this.inStance = false; this.stanceTimer = 0;
+    this.parried = { by: attacker, instance: attacker.anim.instance };
+    this.currentAttack = { anim, range: 999 };
+    this.setState(ST.ATTACK, anim, { fallback: 'attack1' }); this.invuln = Math.max(this.invuln, 6);
+    attacker.hitstop = Math.max(attacker.hitstop, 8);
+    if (this.world) this.world.addFx('spark', this.x + this.facing * 14, this.y + this.h * 0.6, this.z, { type: 'heavy' });
+    audio.play('parry');
+  }
   onHurt(hit, attacker) {
     const ai = this.ai, world = this.world;
-    this.pendingAttack = null; this.releaseToken(world);
-    if (this.aiState !== 'FLEE' && this.aiState !== 'ENTER') { this.aiState = 'APPROACH'; this.retreating = false; }
+    this.pendingAttack = null; this.releaseToken(world); this.inStance = false;
+    if (this.aiState !== 'FLEE' && this.aiState !== 'ENTER' && this.aiState !== 'STAGGER') { this.aiState = 'APPROACH'; this.retreating = false; }
     this.attackCooldown = Math.max(this.attackCooldown, 25);
-    if (attacker && attacker.kind === 'player') { this.target = attacker; this.retargetTimer = RETARGET; }
-    this.hitCount++;
+    if (attacker && attacker.kind === 'player') { this.target = attacker; this.retargetTimer = RETARGET; if (attacker.anim) this.hitByInst = attacker.anim.instance; }
     const grounded = !this.airborne && this.state !== ST.KNOCKDOWN && this.state !== ST.LYING;
-    if (!this.dead && ai.staggerEvery && this.hitCount % ai.staggerEvery === 0 && grounded && this.state !== ST.THROWN) {
+    const shieldUp = ai.shield && !this.shieldStripped;
+    if (!this.dead && ai.staggerEvery && this.hitCount % ai.staggerEvery === 0 && grounded && this.state !== ST.THROWN && !this.traits.staggerEveryNthHit) {
       this.staggerTimer = ai.staggerFrames; this.hurtTimer = ai.staggerFrames; this.chainHits = 0;
       this.setState(ST.HURT, 'stagger', { fallback: 'hurt' });
       audio.play('gear_slip');
-    } else if (!this.dead && ai.shield && !this.shieldStripped && this.staggerTimer > 0 && hit.type === 'launch') {
-      this.shieldStripped = true; this.rig.shieldStripped = true; audio.play('prop_break');
+    } else if (!this.dead && shieldUp && ai.shield.stripOnLauncher && this.staggerTimer > 0 && hit.type === 'launch') {
+      this.shieldStripped = true; this.rig.shieldStripped = true; this.flags.shieldStripped = true; audio.play('prop_break');
+      this.traits.superArmor = false; this.traits.noLaunch = false; this.traits.armorFrontOnly = false;
       if (world) world.addFx('ring', this.x, 30, this.z, { r0: 6, r1: 50, color: '#4DF0E0' });
     }
+    const fleeFrac = this.traits.fleeHpFrac || 0.3, fleeChance = this.traits.fleeChance || 0.5;
     if (!this.dead && ai.fleeHp && this.hp < ai.fleeHp && !this.fled && attacker) {
       this.fled = true; this.fleeTimer = Math.round(ai.fleeDistance / Math.max(1, this.runSpeed * 1.15)); this.fleeDir = -(sign(attacker.x - this.x) || this.facing); this.aiState = 'FLEE';
       audio.play('soot_flee');
-    } else if (!this.dead && ai.fleeLast && !this.fleeChecked && world && this.hp <= this.maxHp * 0.3 && world.waveEnemies.length === 1 && world.camera.locked) {
+    } else if (!this.dead && ai.fleeLast && !this.fleeChecked && world && this.hp <= this.maxHp * fleeFrac && world.waveEnemies.length === 1 && world.camera.locked) {
       this.fleeChecked = true;
-      if (rng.chance(0.5)) { this.fleeOff = true; this.fleeing = true; this.entered = false; this.aiState = 'FLEE'; this.fleeDir = (this.x - world.camera.x) < VIEW_W / 2 ? -1 : 1; this.invuln = 30; audio.play('soot_flee'); }
+      if (rng.chance(fleeChance)) { this.fleeOff = true; this.fleeing = true; this.entered = false; this.aiState = 'FLEE'; this.fleeDir = (this.x - world.camera.x) < VIEW_W / 2 ? -1 : 1; this.invuln = 30; audio.play('soot_flee'); }
     }
   }
 
   drawDebug(ctx, cam) {
     super.drawDebug(ctx, cam);
-    drawText(ctx, this.aiState + (this.hasToken ? '*' : ''), cam.toScreenX(this.x), FLOOR_TOP + this.z + 12, { size: 1, color: '#ff9', align: 'center' });
+    drawText(ctx, this.aiState + (this.hasToken ? '*' : '') + (this.inStance ? ' RIPOSTE' : '') + (this.punishable ? ' PUNISH' : ''), cam.toScreenX(this.x), FLOOR_TOP + this.z + 12, { size: 1, color: '#ff9', align: 'center' });
   }
 }

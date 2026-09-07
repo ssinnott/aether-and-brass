@@ -122,8 +122,8 @@ export class GameplayScreen extends Screen {
     this.hud.draw(ctx);
     if (window.__game && window.__game.debug) this.world.drawDebug(ctx);
     if (this.gameOverTimer > 0 && !this.gameOverShown) {
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-      drawTextOutlined(ctx, 'THE ENGINE WINS.', VIEW_W / 2, 150, { size: 3, color: UI.red, outline: '#2a1010', thickness: 1, align: 'center' });
+      ctx.fillStyle = `rgba(0,0,0,${Math.min(0.5, this.gameOverTimer / GAME_OVER_DELAY * 0.5)})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      drawTextOutlined(ctx, 'ALL HEROES DOWN', VIEW_W / 2, 150, { size: 3, color: UI.red, outline: '#2a1010', thickness: 1, align: 'center' });
     }
   }
   exit() { this.game.players = []; if (this.runner) this.runner.dispose(); }

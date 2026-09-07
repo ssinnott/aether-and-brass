@@ -1,17 +1,22 @@
-// Character select (ARCHITECTURE.md section 9, GDD 9): 4 portrait cards with stat pips, per-player cursor, P2 drop-in.
+// Character select (GDD 8/9): four 140x200 brass-framed cards with 2.5x rig busts, name, archetype, five 5-pip stat bars,
+// hovered card plays its taunt, P1 cursor = white gear ring, P2 = cyan, attack locks / jump unlocks, both may pick the
+// same hero (second copy tinted), READY state, then the stage intro. P2 drop-in on any P2 key.
 import { VIEW_W, VIEW_H, UI } from '../../constants.js';
 import { Screen } from '../game.js';
-import { drawText, drawTextOutlined } from '../../engine/text.js';
-import { buildRig, drawRig } from '../../art/rig.js';
+import { drawText, drawTextOutlined, measureText } from '../../engine/text.js';
+import { buildRig } from '../../art/rig.js';
 import { AnimPlayer } from '../animation.js';
 import { rrect, gear, rivetLine } from '../../art/shapes.js';
-import { drawShadowScreen } from '../../art/fx.js';
+import { drawBust, drawCursorRing, idlePoseOf } from '../../art/portraits.js';
 import { ENV } from '../../art/palettes.js';
 
 const STATS = ['power', 'speed', 'health', 'range', 'technique'];
 const STAT_LABELS = { power: 'POW', speed: 'SPD', health: 'HP', range: 'RNG', technique: 'TEC' };
+const CARD_W = 140, CARD_H = 200, GAP = 12, CARD_Y = 34, BUST_H = 96, BUST_SCALE = 2.5;
+const READY_FRAMES = 24;
+const P2_CURSOR = '#4DF0E0';
 
-/** Character select screen. Left/right moves the cursor, attack confirms, dodge cancels/backs out. */
+/** Character select screen. Left/right moves the cursor, attack locks, jump/dodge unlocks (P1 dodge backs out). */
 export class SelectScreen extends Screen {
   constructor(game) { super(game, 'select'); }
   enter(params) {
@@ -20,89 +25,117 @@ export class SelectScreen extends Screen {
     this.slots = this.chars.map((c) => {
       const anim = new AnimPlayer(c.anims || {});
       anim.play('idle');
-      return { rig: buildRig(c.build || {}), anim, def: c, hover: 0 };
+      return { rig: buildRig(c.build || {}), anim, def: c, idle: idlePoseOf(c) };
     });
     this.p = [
       { joined: true, cursor: 0, confirmed: false },
       { joined: this.game.input.joined(1), cursor: Math.min(1, Math.max(0, this.chars.length - 1)), confirmed: false },
     ];
-    this.starting = false;
+    this.starting = false; this.readyTimer = -1;
     this.game.audio.music.play('title');
+    if (this.slots[0]) this.slots[0].anim.play('taunt', { restart: true, fallback: 'idle' });
   }
   update() {
     super.update();
-    const inp = this.game.input, n = this.chars.length;
+    const inp = this.game.input, audio = this.game.audio, n = this.chars.length;
+    for (const s of this.slots) { s.anim.tick(); if (s.anim.done && s.anim.name !== 'win') s.anim.play('idle', { restart: true }); }
     if (!n || this.starting) return;
+    if (this.readyTimer >= 0) {
+      if (++this.readyTimer >= READY_FRAMES) {
+        this.starting = true;
+        const chars = this.p.filter((ps) => ps.joined).map((ps) => ps.cursor);
+        this.game.options.chars = chars;
+        const next = this.game.factories.intro ? 'intro' : 'gameplay';
+        this.game.fadeTo(() => this.game.replace(next, { chars }), 0.1);
+      }
+      return;
+    }
     for (let i = 0; i < 2; i++) {
       const ps = this.p[i];
       if (!ps.joined) {
-        if (inp.joinPressed(i)) { ps.joined = true; inp.setJoined(i, true); this.game.audio.play('join'); }
+        if (inp.joinPressed(i)) { ps.joined = true; inp.setJoined(i, true); audio.play('join'); this.slots[ps.cursor].anim.play('taunt', { restart: true, fallback: 'idle' }); }
         continue;
       }
       if (ps.confirmed) {
-        if (inp.pressed(i, 'dodge') || inp.pressed(i, 'jump')) { ps.confirmed = false; this.game.audio.play('menu_back'); this.slots[ps.cursor].anim.play('idle', { restart: true }); }
+        if (inp.pressed(i, 'dodge') || inp.pressed(i, 'jump')) { ps.confirmed = false; audio.play('menu_back'); this.slots[ps.cursor].anim.play('idle', { restart: true }); }
         continue;
       }
       let moved = false;
       if (inp.pressed(i, 'left')) { ps.cursor = (ps.cursor + n - 1) % n; moved = true; }
       if (inp.pressed(i, 'right')) { ps.cursor = (ps.cursor + 1) % n; moved = true; }
-      if (moved) { this.game.audio.play('menu_move'); this.slots[ps.cursor].anim.play('taunt', { restart: true, fallback: 'idle' }); }
+      if (moved) { audio.play('menu_move'); this.slots[ps.cursor].anim.play('taunt', { restart: true, fallback: 'idle' }); }
       if (inp.pressed(i, 'attack') || inp.pressed(i, 'start')) {
-        ps.confirmed = true; this.game.audio.play('menu_confirm');
+        ps.confirmed = true; audio.play('menu_confirm');
         this.slots[ps.cursor].anim.play('win', { restart: true });
-      } else if ((inp.pressed(i, 'dodge') || inp.pressed(i, 'jump')) && i === 0) {
-        this.game.audio.play('menu_back');
+      } else if (inp.pressed(i, 'dodge') && i === 0) {
+        audio.play('menu_back');
+        this.starting = true;
         this.game.fadeTo(() => this.game.replace('title'), 0.08);
         return;
       }
     }
     const allReady = this.p.every((ps) => !ps.joined || ps.confirmed);
-    if (allReady && this.p[0].confirmed) {
-      this.starting = true;
-      const chars = this.p.filter((ps) => ps.joined).map((ps) => ps.cursor);
-      this.game.options.chars = chars;
-      const next = this.game.factories.intro ? 'intro' : 'gameplay';
-      this.game.fadeTo(() => this.game.replace(next, { chars }), 0.1);
-    }
-    for (const s of this.slots) { s.anim.tick(); if (s.anim.done && s.anim.name !== 'win') s.anim.play('idle', { restart: true }); }
+    if (allReady && this.p[0].confirmed) { this.readyTimer = 0; audio.play('rank_stamp'); }
   }
   draw(ctx) {
     const f = this.frame;
     ctx.fillStyle = '#1c1420'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    ctx.globalAlpha = 0.25; gear(ctx, 60, 300, 90, 14, '#3a2a48', null, 0, f * 0.004, 30); gear(ctx, 600, 40, 70, 12, '#3a2a48', null, 0, -f * 0.005, 24); ctx.globalAlpha = 1;
-    drawTextOutlined(ctx, 'CHOOSE YOUR FIGHTER', 320, 12, { size: 2, color: UI.brass, outline: '#3a2010', align: 'center' });
+    ctx.globalAlpha = 0.22; gear(ctx, 60, 320, 90, 14, '#3a2a48', null, 0, f * 0.004, 30); gear(ctx, 600, 30, 70, 12, '#3a2a48', null, 0, -f * 0.005, 24); ctx.globalAlpha = 1;
+    drawTextOutlined(ctx, 'CHOOSE YOUR FIGHTER', 320, 8, { size: 2, color: UI.brass, outline: '#3a2010', align: 'center' });
     const n = this.slots.length;
     if (!n) { drawText(ctx, 'NO CHARACTERS REGISTERED', 320, 170, { size: 1, color: UI.red, align: 'center' }); return; }
-    const boxW = Math.min(148, Math.floor((VIEW_W - 40) / n)), boxH = 236, gap = 8;
-    const totalW = n * boxW + (n - 1) * gap, x0 = Math.round((VIEW_W - totalW) / 2), y0 = 40;
-    for (let i = 0; i < n; i++) {
-      const s = this.slots[i], d = s.def, x = x0 + i * (boxW + gap);
-      const sel1 = this.p[0].cursor === i && this.p[0].joined, sel2 = this.p[1].cursor === i && this.p[1].joined;
-      rrect(ctx, x, y0, boxW, boxH, 6, sel1 || sel2 ? '#2e2436' : '#241a2a', sel1 ? UI.p1 : sel2 ? UI.p2 : ENV.brassDark, sel1 || sel2 ? 2 : 1);
-      if (sel1 && sel2) rrect(ctx, x + 3, y0 + 3, boxW - 6, boxH - 6, 5, null, UI.p2, 1);
-      rivetLine(ctx, x + 8, y0 + 6, x + boxW - 8, y0 + 6, 6, 1.5, ENV.brass);
-      // rig bust area
-      const floorY = y0 + 128;
-      ctx.fillStyle = '#3a3040'; ctx.fillRect(x + 10, floorY, boxW - 20, 2);
-      const fit = Math.min(1.2, 92 / ((s.rig.height + 10) * s.rig.scale));
-      drawShadowScreen(ctx, x + boxW / 2, floorY + 1, 34 * s.rig.scale * fit, 0.5);
-      drawRig(ctx, s.rig, s.anim.pose, { x: x + boxW / 2, y: floorY, facing: 1, scale: fit });
-      if (sel1 || sel2) { ctx.strokeStyle = sel1 ? UI.p1 : UI.p2; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x + boxW / 2, floorY - 40, 46 + Math.sin(f * 0.1) * 2, 0, Math.PI * 2); ctx.stroke(); }
-      drawTextOutlined(ctx, d.name || d.id, x + boxW / 2, floorY + 8, { size: 2, color: UI.paper, outline: '#2a1410', align: 'center' });
-      drawText(ctx, d.archetype || '', x + boxW / 2, floorY + 28, { size: 1, color: UI.brass, align: 'center' });
-      // stat pips
-      const st = d.stats || {};
-      STATS.forEach((k, r) => {
-        const yy = floorY + 42 + r * 11;
-        drawText(ctx, STAT_LABELS[k], x + 10, yy, { size: 1, color: UI.steel });
-        for (let p = 0; p < 5; p++) { ctx.fillStyle = p < (st[k] || 0) ? (sel1 ? UI.p1 : sel2 ? UI.p2 : UI.brass) : '#3a3040'; ctx.fillRect(x + 42 + p * 12, yy, 9, 6); }
-      });
-      if (sel1) drawText(ctx, this.p[0].confirmed ? 'P1 READY' : 'P1', x + boxW / 2, y0 + 12, { size: 1, color: UI.p1, align: 'center' });
-      if (sel2) drawText(ctx, this.p[1].confirmed ? 'P2 READY' : 'P2', x + boxW / 2, y0 + (sel1 ? 22 : 12), { size: 1, color: UI.p2, align: 'center' });
-    }
+    const totalW = n * CARD_W + (n - 1) * GAP, x0 = Math.round((VIEW_W - totalW) / 2);
+    for (let i = 0; i < n; i++) this.drawCard(ctx, i, x0 + i * (CARD_W + GAP), CARD_Y, f);
     const hov = this.chars[this.p[0].cursor];
-    if (hov && hov.title) drawText(ctx, `${hov.fullName ? hov.fullName.toUpperCase() : hov.name} - ${hov.title}`, 320, 286, { size: 1, color: UI.paper, align: 'center' });
-    if (!this.p[1].joined && (f % 60) < 40) drawText(ctx, 'P2: PRESS J/K/U/L/O/I OR BACKSPACE TO JOIN', 320, 312, { size: 1, color: UI.p2, align: 'center' });
-    drawText(ctx, 'LEFT/RIGHT: CHOOSE   ATTACK: CONFIRM   DODGE: BACK', 320, 336, { size: 1, color: UI.steel, align: 'center' });
+    if (hov && hov.title) drawText(ctx, `${hov.fullName ? hov.fullName.toUpperCase() : hov.name} - ${hov.title}`, 320, 248, { size: 1, color: UI.paper, align: 'center' });
+    if (this.p[1].joined) { const h2 = this.chars[this.p[1].cursor]; if (h2 && h2.title) drawText(ctx, `P2: ${h2.fullName ? h2.fullName.toUpperCase() : h2.name} - ${h2.title}`, 320, 262, { size: 1, color: P2_CURSOR, align: 'center' }); }
+    else if ((f % 60) < 40) drawText(ctx, 'P2: PRESS J/K/U/L/O/I OR BACKSPACE TO JOIN', 320, 262, { size: 1, color: UI.p2, align: 'center' });
+    if (this.p[0].cursor === this.p[1].cursor && this.p[1].joined) drawText(ctx, 'SAME HERO: P2 WEARS A DARKER TINT', 320, 276, { size: 1, color: UI.steel, align: 'center' });
+    if (this.readyTimer >= 0) {
+      const k = Math.min(1, this.readyTimer / 6), sc = 5 - Math.round(2 * k), ty = 150 - sc * 3;
+      const pw = measureText('READY!', sc) + 48, ph = sc * 7 + 20;
+      rrect(ctx, 320 - pw / 2, ty - 10, pw, ph, 6, 'rgba(10,6,14,0.9)', UI.brass, 2);
+      drawTextOutlined(ctx, 'READY!', 320, ty, { size: sc, color: UI.brassLight, outline: '#3a2010', thickness: 2, align: 'center' });
+    }
+    drawText(ctx, 'LEFT/RIGHT: CHOOSE   ATTACK: LOCK   JUMP: UNLOCK   DODGE: BACK', 320, 336, { size: 1, color: UI.steel, align: 'center' });
+  }
+  drawCard(ctx, i, x, y, f) {
+    const s = this.slots[i], d = s.def, p1 = this.p[0], p2 = this.p[1];
+    const sel1 = p1.cursor === i && p1.joined, sel2 = p2.cursor === i && p2.joined, sel = sel1 || sel2;
+    const frameCol = sel1 && sel2 ? UI.brassLight : sel1 ? UI.white : sel2 ? P2_CURSOR : ENV.brassDark;
+    rrect(ctx, x, y, CARD_W, CARD_H, 6, sel ? '#2e2436' : '#241a2a', UI.brass, 2);
+    if (sel) rrect(ctx, x + 3, y + 3, CARD_W - 6, CARD_H - 6, 4, null, frameCol, 1);
+    // bust window (2.5x rig, head near the top) with a subtle backdrop gear
+    const bx = x + 6, by = y + 6, bw = CARD_W - 12;
+    ctx.fillStyle = '#1a1226'; ctx.fillRect(bx, by, bw, BUST_H);
+    ctx.save(); ctx.beginPath(); ctx.rect(bx, by, bw, BUST_H); ctx.clip();
+    ctx.globalAlpha = 0.3; gear(ctx, bx + bw / 2, by + BUST_H / 2 + 20, 60, 12, '#3a2a48', null, 0, f * 0.004 + i, 20); ctx.globalAlpha = 1;
+    ctx.restore();
+    const tint = sel2 && !sel1 ? null : sel1 && sel2 ? '#1a2a5a' : null;
+    drawBust(ctx, s.rig, s.anim.pose, s.idle, bx, by, bw, BUST_H, BUST_SCALE, { facing: 1, margin: 20, tint, tintAlpha: 0.3 });
+    rrect(ctx, bx, by, bw, BUST_H, 2, null, '#120c14', 1);
+    rivetLine(ctx, x + 10, y + 5, x + CARD_W - 10, y + 5, 6, 1.5, UI.brass);
+    rivetLine(ctx, x + 10, y + CARD_H - 5, x + CARD_W - 10, y + CARD_H - 5, 6, 1.5, UI.brass);
+    // name / archetype / stat pips
+    drawTextOutlined(ctx, d.name || d.id, x + CARD_W / 2, y + 108, { size: 2, color: UI.paper, outline: '#2a1410', align: 'center' });
+    drawText(ctx, d.archetype || '', x + CARD_W / 2, y + 126, { size: 1, color: UI.brass, align: 'center' });
+    const st = d.stats || {}, pipCol = sel1 && sel2 ? UI.brassLight : sel1 ? UI.white : sel2 ? P2_CURSOR : UI.brass;
+    STATS.forEach((k, r) => {
+      const yy = y + 140 + r * 11;
+      drawText(ctx, STAT_LABELS[k], x + 10, yy, { size: 1, color: UI.steel });
+      for (let p = 0; p < 5; p++) {
+        const on = p < (st[k] || 0);
+        rrect(ctx, x + 40 + p * 18, yy - 1, 14, 8, 1, on ? pipCol : '#332a3a', '#120c14', 0.5);
+        if (on) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x + 41 + p * 18, yy, 12, 1); }
+      }
+    });
+    // cursors: rotating gear rings in the top corners; READY stamp when locked
+    if (sel1) drawCursorRing(ctx, x + 16, y + 18, 13, UI.white, f * 0.04, '1', drawText);
+    if (sel2) drawCursorRing(ctx, x + CARD_W - 16, y + 18, 13, P2_CURSOR, -f * 0.04, '2', drawText);
+    if ((sel1 && p1.confirmed) || (sel2 && p2.confirmed)) {
+      const who = sel1 && p1.confirmed && sel2 && p2.confirmed ? 'P1+P2 READY' : sel1 && p1.confirmed ? 'P1 READY' : 'P2 READY';
+      rrect(ctx, x + 20, y + 80, CARD_W - 40, 14, 3, 'rgba(10,6,14,0.85)', sel1 && p1.confirmed ? UI.white : P2_CURSOR, 1);
+      drawText(ctx, who, x + CARD_W / 2, y + 83, { size: 1, color: UI.brassLight, align: 'center' });
+    }
   }
 }

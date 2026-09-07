@@ -47,7 +47,7 @@ export function drawBust(ctx, rig, pose, anchorPose, x, y, w, h, scale, o = {}) 
   const margin = o.margin != null ? o.margin : 12;
   const feetY = y + margin - a.top * ss;
   ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-  drawRig(ctx, rig, pose, { x: x + w / 2 - a.headX * facing * ss * 0.5, y: feetY, facing, scale, still: !!o.still, flash: !!o.flash, tint: o.tint || null, tintAlpha: o.tintAlpha });
+  drawRig(ctx, rig, pose, { x: x + w / 2 - a.headX * facing * ss, y: feetY, facing, scale, still: !!o.still, flash: !!o.flash, tint: o.tint || null, tintAlpha: o.tintAlpha });
   ctx.restore();
 }
 

@@ -230,11 +230,11 @@ const scenarios = {
         await g.step(400);
         let s = await g.summary();
         assert(s.enemies.length + (s.boss ? 1 : 0) >= 1, `${e.type}:${e.variant} spawned and alive after 400 frames`);
-        const hp0 = s.enemies.length ? s.enemies[0].hp : (s.boss ? s.boss.hp : 0);
+        const hp0 = s.boss ? s.boss.hp : (s.enemies.length ? s.enemies[0].hp : 0);
         // walk toward it and mash attack for a while
         for (let i = 0; i < 40; i++) { await g.eval(() => window.__game.facePlayerToNearestEnemy(0)); await g.press(0, { attack: true }, 2, 10); }
         s = await g.summary();
-        const hp1 = s.enemies.length ? s.enemies[0].hp : (s.boss ? s.boss.hp : 0);
+        const hp1 = s.boss ? s.boss.hp : (s.enemies.length ? s.enemies[0].hp : 0);
         assert(hp1 < hp0, `${e.type}:${e.variant} takes damage from player attacks (${hp0} -> ${hp1})`);
         await g.shot(`40-enemy-${e.type}-${e.variant}`);
       });
