@@ -10,5 +10,8 @@
     "test": "node tools/playtest.js",
     "lint": "node --check src/main.js"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
 }
