@@ -16,7 +16,9 @@ stage beats), the GDD wins.
 - **Internal resolution:** `640 x 360` (constants `VIEW_W`, `VIEW_H`). The internal
   canvas is scaled to the window by the largest integer factor that fits (min 1x), letterboxed, with
   `image-rendering: pixelated` and `imageSmoothingEnabled = false` on the *display*
-  canvas. All game drawing happens on the internal canvas. Snap sprite positions to
+  canvas. The integer factor is chosen in **device pixels** (`devicePixelRatio`, clamped
+  1..4) so HiDPI screens get evenly sized crisp game pixels; the display canvas's bitmap
+  is `window size * dpr` and its CSS size is the window size. All game drawing happens on the internal canvas. Snap sprite positions to
   integers when drawing (`Math.round`) for a crisp pixel look.
 - **Fixed timestep:** logic runs at exactly `60 Hz` (`DT = 1/60`). Render every
   requestAnimationFrame with the latest state (no interpolation needed). Accumulator
@@ -124,7 +126,7 @@ export function createLoop({ update, render, testMode })
 In `testMode` (URL `?autotest=1`) the loop does NOT self-run on rAF; `step(n)` drives it.
 
 ### `engine/input.js`
-Actions per player: `left, right, up, down, attack, jump, special, dodge, taunt, start`.
+Actions per player: `left, right, up, down, attack, jump, special, super, dodge, taunt, start`.
 ```js
 export const input = {
   init(canvasEl),                     // attaches listeners; handles gamepadconnected
@@ -147,19 +149,24 @@ for movement, buttons per GDD).
 ### `engine/camera.js`
 ```js
 export class Camera {
-  x = 0; left = 0; right = STAGE_LENGTH; locked = false; shakeX; shakeY;
-  follow(players)             // target = mean x of alive players - VIEW_W/2, clamped to [left, right - VIEW_W]; eased (approach 0.12)
-  lock(x0, x1) / unlock()     // lock also sets left/right; players clamped inside
+  constructor(stageLength)    // right bound when unlocked
+  x = 0; left = 0; right = STAGE_LENGTH; locked = false; shakeX; shakeY; minX;
+  follow(players)             // target = mean x of alive players - VIEW_W/2, clamped to [max(left, minX), right - VIEW_W]; eased (approach 0.12)
+  lock(x0, x1) / unlock()     // lock also sets left/right (right >= x0 + VIEW_W); unlock sets left = floor(x) (never scrolls back)
   shake(intensity, frames)
   update()
-  toScreenX(x) 
+  toScreenX(x)                // Math.round(x - this.x + shakeX)
+  snapTo(x), isVisible(x, margin)
 }
 ```
+`toScreenX`, `drawShadow` (art/fx.js) and `particles.draw` all fold `shakeX/shakeY` in, so
+entities must project as `sx = cam.toScreenX(x)`, `sy = FLOOR_TOP + z - y + cam.shakeY` to stay in sync.
 
 ### `engine/canvas.js`
 ```js
-export function createCanvas(mount) // -> { ctx /* internal 640x360 */, present(), scale, displayCanvas }
+export function createCanvas(mount) // -> { ctx /* internal 640x360 */, present(), scale /* integer, device px */, dpr, displayCanvas, resize(), toInternal(clientX, clientY) }
 ```
+Use `toInternal()` for any pointer mapping (it accounts for dpr and the letterbox offset).
 
 ### `engine/text.js`
 `drawText(ctx, text, x, y, { size = 1, color, align = 'left'|'center'|'right', shadow = true, font = 'pixel' })`.
@@ -233,11 +240,17 @@ DEFAULT_POSE = {
   armR: { upper: 20, lower: 10 }, armL: { upper: -20, lower: 10 },  // rotation in degrees, 0 = hanging down, + = forward (toward facing)
   legR: { upper: 0, lower: 0 }, legL: { upper: 0, lower: 0 },
   handR: { rot: 0 }, handL: { rot: 0 },
-  weapon: { rot: 0 },                      // extra rotation of the weapon in hand space
+  footR: { rot: 0 }, footL: { rot: 0 },    // extra foot/boot rotation
+  weapon: { rot: 0 },                      // extra rotation of the weapon in hand space (+ = clockwise when facing right)
   squash: 1, stretch: 1,                   // scaleX / scaleY on the whole rig (landing squash)
 }
-lerpPose(a, b, t) -> pose        // deep interpolation of numbers
+lerpPose(a, b, t, out = SCRATCH_POSE) -> pose   // deep interpolation of numbers; missing fields = defaults; no allocation
+makePose(partial), copyPose(src, out, reset), mirrorPose(pose, out), addPose(pose, delta), P(spec) /* authoring shorthand */
 ```
+Limb angles are plain numbers, so a value of `240` is drawn like `-120` but *interpolates*
+differently: authoring a wind-up as `240` and the hit as `80` sweeps the arm over the head
+(through 180), while `-120 -> 80` sweeps under the arm (through 0). Hand space: +x runs
+along the forearm; weapons draw along +x.
 Convention: `armR`/`legR` are the **near** (front-facing-viewer) limbs.
 
 ### Animations (`game/animation.js`)
@@ -295,7 +308,7 @@ Input → intent → state transitions (implements GDD section 7 combat rules):
 - Movement 8-way; double-tap direction (within 12 frames) or hold `dodge` + direction → `RUN`; `attack` during run → `DASH_ATTACK`.
 - Ground combo: `attack` from `IDLE/WALK` → `attack1`; during a frame with `cancel:'attack'` a buffered `attack` chains to the next hit only if the previous hit **connected** (`hitConfirmed`) or GDD says free chain; final hit knocks down.
 - `jump` → `JUMP`; `attack` in air → `JUMP_ATTACK` (one per jump); down+attack in air = dive if defined.
-- `special` → `SPECIAL` (costs meter or hp per GDD); `special` at full meter with `super` defined → `SUPER` (screen flash, invuln, big hitbox/multi-hit).
+- `special` → `SPECIAL` (costs 1 meter bar, or 8% HP per GDD); `super` (separate button) with a full 300 meter → `SUPER` (screen freeze + portrait cut-in, invuln, big hitbox/multi-hit).
 - `dodge` → `DODGE` (i-frames per GDD, short hop backward or roll through).
 - `taunt` → `TAUNT` (builds meter, interruptible).
 - Meter: `meter (0..100)`; gain on hit dealt (`+4` light, `+8` heavy), on taunt completion (`+25`), on damage taken (`+2`). Reset per life.

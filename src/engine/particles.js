@@ -96,6 +96,7 @@ export const particles = {
   draw(ctx, cam, layer) {
     const camX = cam ? cam.x - (cam.shakeX || 0) : 0;
     const camY = cam ? -(cam.shakeY || 0) : 0;
+    const baseAlpha = ctx.globalAlpha; // per-particle alphas multiply the caller's (e.g. a screen fade)
     for (let i = 0; i < MAX; i++) {
       const p = pool[i];
       if (!p.active) continue;
@@ -104,9 +105,9 @@ export const particles = {
       const t = p.life / p.max;
       const sx = p.screen ? Math.round(p.x) : Math.round(p.x - camX);
       const sy = p.screen ? Math.round(p.y) : Math.round(FLOOR_TOP + p.z - p.y - camY);
-      drawOne(ctx, p, sx, sy, t);
+      drawOne(ctx, p, sx, sy, t, baseAlpha);
     }
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = baseAlpha;
   },
   /** Remove all particles. */
   clear() { for (const p of pool) p.active = false; liveCount = 0; },
@@ -114,11 +115,12 @@ export const particles = {
   get count() { return liveCount; },
 };
 
-function drawOne(ctx, p, sx, sy, t) {
+function drawOne(ctx, p, sx, sy, t, baseAlpha) {
   const fade = 1 - t;
+  const A = baseAlpha;
   switch (p.kind) {
     case 'spark': {
-      ctx.globalAlpha = p.alpha * Math.min(1, fade * 1.6);
+      ctx.globalAlpha = A * p.alpha * Math.min(1, fade * 1.6);
       ctx.fillStyle = t < 0.4 ? p.color : p.color2;
       const len = Math.min(8, Math.hypot(p.vx, p.vy) * 2);
       const nx = p.vx, ny = -p.vy, m = Math.hypot(nx, ny) || 1;
@@ -129,21 +131,21 @@ function drawOne(ctx, p, sx, sy, t) {
     }
     case 'dust': case 'smoke': case 'steam': {
       const grow = p.kind === 'dust' ? 0.6 + t * 1.2 : 0.5 + t * 1.8;
-      ctx.globalAlpha = p.alpha * fade * (p.kind === 'steam' ? 0.7 : 0.55);
+      ctx.globalAlpha = A * p.alpha * fade * (p.kind === 'steam' ? 0.7 : 0.55);
       ctx.fillStyle = p.color;
       const r = Math.max(1, p.size * grow);
       ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
       break;
     }
     case 'ember': {
-      ctx.globalAlpha = p.alpha * (0.6 + 0.4 * Math.sin(p.life * 0.9)) * fade;
+      ctx.globalAlpha = A * p.alpha * (0.6 + 0.4 * Math.sin(p.life * 0.9)) * fade;
       ctx.fillStyle = t < 0.5 ? p.color : p.color2;
       const s = t < 0.3 ? p.size + 1 : p.size;
       ctx.fillRect(Math.round(sx - s / 2), Math.round(sy - s / 2), s, s);
       break;
     }
     case 'debris': {
-      ctx.globalAlpha = p.alpha * Math.min(1, fade * 3);
+      ctx.globalAlpha = A * p.alpha * Math.min(1, fade * 3);
       ctx.save(); ctx.translate(sx, sy); ctx.rotate(p.rot);
       ctx.fillStyle = p.color; ctx.fillRect(-p.size / 2, -p.size * 0.3, p.size, p.size * 0.6);
       ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-p.size / 2, 0, p.size, p.size * 0.3);
@@ -151,19 +153,19 @@ function drawOne(ctx, p, sx, sy, t) {
       break;
     }
     case 'gear': {
-      ctx.globalAlpha = p.alpha * Math.min(1, fade * 3);
+      ctx.globalAlpha = A * p.alpha * Math.min(1, fade * 3);
       drawGear(ctx, sx, sy, p.size, 6, p.color, '#241a14', 1, p.rot, p.size * 0.35);
       break;
     }
     case 'text': {
-      ctx.globalAlpha = p.alpha * (t > 0.7 ? (1 - t) / 0.3 : 1);
+      ctx.globalAlpha = A * p.alpha * (t > 0.7 ? (1 - t) / 0.3 : 1);
       drawText(ctx, p.text, sx, sy, { size: p.size, color: p.color, align: 'center', shadow: true });
       break;
     }
     case 'ring': {
       const e = 1 - (1 - t) * (1 - t);
       const r = p.size + (p.size1 - p.size) * e;
-      ctx.globalAlpha = p.alpha * fade;
+      ctx.globalAlpha = A * p.alpha * fade;
       ctx.strokeStyle = p.color;
       ctx.lineWidth = Math.max(1, p.width * fade);
       ctx.beginPath();
@@ -172,7 +174,7 @@ function drawOne(ctx, p, sx, sy, t) {
       break;
     }
     default: {
-      ctx.globalAlpha = p.alpha * fade;
+      ctx.globalAlpha = A * p.alpha * fade;
       ctx.fillStyle = p.color;
       ctx.fillRect(sx - 1, sy - 1, 2, 2);
     }

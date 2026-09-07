@@ -43,3 +43,34 @@ Each player owns one half of the keyboard so two people can share it.
 **SHOULD (add once MUST is green in your area):** Rook parry; Duelist Riposte; Warden shield stagger/strip; Sapper bombs battable; Slinger bolt reflect; Firebrand death explosion + fire puddles; Hulk grab & Wrangler net with mash-out; Sootborn flee at low HP; ring-outs (molten channel, funicular railings) ; Section 2 conveyor + molten channel in the mid-boss arena; Time Stop dodge-cancel; Aether Step; pressure valves; chandelier; tech roll; co-op revive; difficulty select (Easy/Normal/Hard) on the title menu; no-damage wave bonus; crowd-clear bonus.
 
 **CUT (do not build):** Options menu beyond difficulty + mute, alternate palettes, partner toss, DUO super, attract mode, controls screen (draw a compact controls legend on the title screen instead), MVP/BEST PARTNER badges, per-continue rank penalty (keep: rank from score only), "Boilerplate" difficulty, ghost-bar drain animation (a simple delayed second bar is fine), typewriter text (fade-in is fine).
+
+## Game title
+The game is **AETHER & BRASS** (logo already on the title screen). The GDD's "CALDERWICK" logo is
+overridden; "The Ascent of Calderwick" stays as the stage name and appears on the intro card.
+
+## Backdrop API (art/backgrounds/index.js — already in the tree)
+`createBackdrop(section, stage)` → `{ update(frame, cam), drawBack(ctx, cam, frame), drawFront(ctx, cam, frame) }`.
+Per-section modules `art/backgrounds/section1.js … section4.js` export `create(section, stage)` with that
+shape; `index.js` dispatches by `section.backdrop` and falls back to a placeholder. `game/stage.js`
+awaits `backdropsReady()` once (or just tolerates the placeholder for the first frames). Props,
+hazards and pickups are game entities, NOT backdrop.
+
+## Canonical audio names (game code calls these; engine/audio.js implements them)
+Unknown names must silently no-op (console.warn once when `?debug=1`).
+- UI: `menu_move menu_confirm menu_back pause unpause join continue_tick rank_stamp go_arrow stage_clear game_over`
+- Generic combat: `hit_light hit_medium hit_heavy hit_launch hit_knockdown hit_grab throw whiff parry armor dodge jump land land_heavy getup stagger gear_slip meter_full`
+- Factions: `brass_hit brass_tell brass_death soot_hurt soot_death soot_flee`
+- Hero weapons: `hammer_swing hammer_slam rapier rapier_arc revolver revolver_fan piston grapple claw steam_vent`
+- Specials/supers: `special_brunhild special_sael special_rook special_pip super_charge super_brunhild super_sael super_rook super_pip`
+- World: `prop_break explosion explosion_big fire burn steam vent_tell piston_crush crate_drop bomb_fuse bomb_bat net whip sling bolt chime hydraulic saw_whine time_stop_tick aether_step valve_blow hook_yank cannon`
+- Pickups: `pickup_food pickup_score pickup_meter pickup_life`
+- Bosses: `boss_intro boss_phase boss_defeat roar`
+- Music tracks (`audio.music.play(name)`): `title section1 section2 midboss section3 section4 boss results gameover`
+
+## File ownership for parallel work (no two agents edit the same file)
+- Game core (fighter/player/enemy/boss/combat/world/stage/items/hazards/projectile/hud/screens/bot, main.js, input.js bindings): game-core workflow.
+- `engine/audio.js` (+ optional `engine/audio/*.js` helpers): audio workflow only. Game code only calls `audio.play` / `audio.music.play`.
+- `art/backgrounds/section1..4.js`, `art/backgrounds/common.js`: backdrop workflow only (index.js is fixed).
+- `content/characters/*.js`: one agent per character file after the game core lands.
+- `content/enemies/*.js`: enemy workflow after the game core lands.
+- `content/stage/stage1.js`, `art/props.js`: stage workflow after the game core lands.

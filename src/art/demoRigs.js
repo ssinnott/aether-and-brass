@@ -68,7 +68,7 @@ function drawIronHelm(ctx, rig) {
 // ---------- animation sets ----------
 /** Generic unarmed/armed animation set; `w` selects a weapon-carry style: 'hammer' | 'dagger' | 'club' | 'none'. */
 export function makeDemoAnims(w = 'none') {
-  const carry = w === 'hammer' ? { armR: [15, 120], weapon: -150 } : w === 'club' ? { armR: [25, 10], weapon: -20 } : w === 'dagger' ? { armR: [30, 40], weapon: -60 } : { armR: [20, 10] };
+  const carry = w === 'hammer' ? { armR: [30, 30], weapon: -100 } : w === 'club' ? { armR: [25, 10], weapon: -20 } : w === 'dagger' ? { armR: [30, 40], weapon: -60 } : { armR: [20, 10] };
   const carry2 = { ...carry, armR: [carry.armR[0] + 4, carry.armR[1] + 4] };
   return {
     idle: { loop: true, frames: [
@@ -86,17 +86,18 @@ export function makeDemoAnims(w = 'none') {
       { dur: 6, pose: P({ ...carry, legR: [-45, 60], legL: [55, 20], armL: [-35, 60], torso: 18, root: [0, 0] }) },
     ] },
     attack1: { loop: false, frames: [
-      { dur: 5, pose: P({ armR: [-120, -20], armL: [30, 30], torso: -12, head: -5, weapon: w === 'hammer' ? -30 : 0, legR: [10, 5], legL: [-15, 10] }), sfx: 'whiff' },
-      { dur: 3, pose: P({ armR: [110, 0], armL: [-20, 10], torso: 22, head: 5, weapon: w === 'hammer' ? -100 : 0, legR: [30, 10], legL: [-25, 20], root: [3, 0] }),
+      // wind-up: 240 (= -120, arm up-back) lerps to 80 THROUGH 180, i.e. the weapon sweeps over the head, not under the arm
+      { dur: 5, pose: P({ armR: [240, -20], armL: [30, 30], torso: -12, head: -5, weapon: 20, legR: [10, 5], legL: [-15, 10] }), sfx: 'whiff' },
+      { dur: 3, pose: P({ armR: [80, 0], armL: [-20, 10], torso: 22, head: 5, weapon: 50, legR: [30, 10], legL: [-25, 20], root: [3, 0] }),
         hitbox: { x: 16, y: -50, w: 44, h: 46, z: 24, damage: 8, kbX: 3, kbY: 0, hitstun: 16, type: 'light', once: true }, fx: [{ kind: 'slash', x: 22, y: -40 }] },
-      { dur: 6, pose: P({ armR: [120, 5], armL: [-20, 10], torso: 24, head: 5, weapon: w === 'hammer' ? -100 : 0, legR: [30, 10], legL: [-25, 20], root: [3, 1] }), cancel: 'attack' },
+      { dur: 6, pose: P({ armR: [95, 5], armL: [-20, 10], torso: 24, head: 5, weapon: 90, legR: [30, 10], legL: [-25, 20], root: [3, 1] }), cancel: 'attack' },
       { dur: 8, pose: P({ ...carry, torso: 8, legR: [10, 5], legL: [-10, 10] }) },
     ] },
     attack2: { loop: false, frames: [
       { dur: 5, pose: P({ armR: [-90, -60], armL: [40, 30], torso: -16, root: [-2, 2], weapon: w === 'hammer' ? -60 : 0, legR: [10, 20], legL: [-10, 10] }), sfx: 'whiff' },
-      { dur: 4, pose: P({ armR: [60, 0], armL: [-30, 10], torso: 26, root: [6, 0], weapon: w === 'hammer' ? -90 : 0, legR: [40, 10], legL: [-30, 30] }),
+      { dur: 4, pose: P({ armR: [60, 0], armL: [-30, 10], torso: 26, root: [6, 0], weapon: w === 'hammer' ? -60 : 0, legR: [40, 10], legL: [-30, 30] }),
         hitbox: { x: 18, y: -40, w: 48, h: 40, z: 24, damage: 14, kbX: 6, kbY: 6, hitstun: 24, type: 'heavy', once: true }, fx: [{ kind: 'ring', x: 30, y: 0 }] },
-      { dur: 8, pose: P({ armR: [50, 5], armL: [-30, 10], torso: 24, root: [6, 1], weapon: w === 'hammer' ? -90 : 0, legR: [40, 10], legL: [-30, 30] }) },
+      { dur: 8, pose: P({ armR: [50, 5], armL: [-30, 10], torso: 24, root: [6, 1], weapon: w === 'hammer' ? -60 : 0, legR: [40, 10], legL: [-30, 30] }) },
       { dur: 8, pose: P({ ...carry, torso: 6 }) },
     ] },
     hurt: { loop: false, frames: [
@@ -112,14 +113,14 @@ export function makeDemoAnims(w = 'none') {
       { dur: 30, pose: P({ armR: [35, 15], armL: [25, 20], torso: 4, head: -10, legR: [10, 8], legL: [-4, 6], root: [34, -9, -88], weapon: 10 }) },
     ] },
     jump: { loop: false, frames: [
-      { dur: 6, pose: P({ ...carry, legR: [30, -60], legL: [20, -50], armL: [-60, -20], torso: 6, root: [0, 0] }) },
-      { dur: 30, pose: P({ ...carry, legR: [15, -30], legL: [5, -20], armL: [-40, -10], torso: 4 }) },
+      { dur: 6, pose: P({ ...carry, legR: [45, -85], legL: [25, -65], armL: [-60, -20], torso: 8, root: [0, 0] }) },
+      { dur: 30, pose: P({ ...carry, legR: [35, -75], legL: [20, -55], armL: [-40, -10], torso: 6 }) },
     ] },
     jumpAttack: { loop: false, frames: [
-      { dur: 4, pose: P({ armR: [-100, -30], armL: [40, 20], torso: -10, legR: [40, -60], legL: [10, -30], weapon: w === 'hammer' ? -40 : 0 }), sfx: 'whiff' },
-      { dur: 4, pose: P({ armR: [100, 10], armL: [-30, 10], torso: 20, legR: [40, -60], legL: [10, -30], weapon: w === 'hammer' ? -100 : 0 }),
+      { dur: 4, pose: P({ armR: [260, -30], armL: [40, 20], torso: -10, legR: [40, -60], legL: [10, -30], weapon: 20 }), sfx: 'whiff' },
+      { dur: 4, pose: P({ armR: [85, 5], armL: [-30, 10], torso: 20, legR: [40, -60], legL: [10, -30], weapon: 45 }),
         hitbox: { x: 10, y: -46, w: 42, h: 44, z: 24, damage: 10, kbX: 4, kbY: 5, hitstun: 20, type: 'knockdown', once: true } },
-      { dur: 20, pose: P({ armR: [110, 10], armL: [-30, 10], torso: 22, legR: [40, -60], legL: [10, -30], weapon: w === 'hammer' ? -100 : 0 }) },
+      { dur: 20, pose: P({ armR: [95, 10], armL: [-30, 10], torso: 22, legR: [40, -60], legL: [10, -30], weapon: 80 }) },
     ] },
     dead: { loop: false, frames: [
       { dur: 60, pose: P({ armR: [40, 10], armL: [30, 15], torso: 8, head: -14, legR: [6, 4], legL: [-6, 6], root: [34, -9, -90], weapon: 15 }) },

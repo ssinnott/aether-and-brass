@@ -123,7 +123,7 @@ const scenarios = {
       { name: 'jumpAttack', run: async (g) => { await g.press(0, { jump: true }, 2, 10); await g.press(0, { attack: true }, 2, 40); await g.step(30); } },
       { name: 'dashAttack', run: async (g) => { await g.press(0, { right: true }, 3, 3); await g.press(0, { right: true }, 3, 0); await g.press(0, { right: true, attack: true }, 3, 40); await g.step(30); } },
       { name: 'special', run: async (g) => { await g.press(0, { special: true }, 2, 60); await g.step(30); } },
-      { name: 'super', run: async (g) => { await g.eval(() => window.__game.fillMeter(0)); await g.press(0, { special: true }, 2, 120); await g.step(60); } },
+      { name: 'super', run: async (g) => { await g.eval(() => window.__game.fillMeter(0)); await g.press(0, { super: true }, 2, 120); await g.step(60); } },
       { name: 'grab', run: async (g) => { await g.press(0, { right: true }, 20, 5); await g.press(0, { attack: true }, 2, 20); await g.press(0, { attack: true }, 2, 20); await g.press(0, { right: true, attack: true }, 2, 60); } },
     ];
     for (let c = 0; c < CHARACTER_COUNT; c++) {
