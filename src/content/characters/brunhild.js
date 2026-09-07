@@ -1,6 +1,14 @@
 // Brunhild Coalheart — Tank (GDD 2.1). Dwarf boilerwright with a two-handed steam hammer, boiler backpack,
 // forehead goggles, gear pauldron and a big braided beard. Hand-authored 16-bit style sprite rig + full animation set.
-// Numbers (damage, startup, hitboxes) follow the GDD / the previous placeholder so the game logic is unchanged.
+//
+// Moveset numbers come straight from GDD 2.1 (timings inside the startup budgets, ART_STYLE section 8):
+//   combo   swipe 10 (6f startup, hitstun 16) -> backhand 10 (hits behind) -> overhead slam 15 (knockdown, ground-bounces an
+//           airborne body once, 1-hit armor) -> steam uppercut 20 (launcher, flame ring, 1-hit armor). Reach 40.
+//   jump    downward slam 14 + 40 px landing shockwave (10, knockdown)         dash   shoulder charge 14f, 18, ~120 px, 3-hit armor
+//   special Piston Quake r 60, 25, knockdown to GROUNDED enemies only, 8f startup / 4f active / 12f recovery, invulnerable
+//   super   Overpressure: three rings r 60 / 100 / 140 for 30 + 30 + 40 (knockdown), 45f, invulnerable (SUPER state)
+//   grab    forward = hammer-golf swing (20, flies ~200 px as a projectile); back = piledriver (22 + 40 px shockwave 10)
+//   trait   Heavy Frame: 15 % less damage taken, light (< 10 dmg) knockdowns become flinches, combo hits 3-4 absorb 1 hit each
 //
 // Readability pass (docs/ART_STYLE.md section 0): every adjacent pair of parts differs in value or hue family (tan skin /
 // cream sleeves / bright rust beard / dark oxblood apron / blue-grey trousers / cool slate boots with a steel toe /
@@ -14,6 +22,8 @@ import { JUMP_VY, METER } from '../../constants.js';
 import { celRect, celBall, celPoly, celPath, tones, flat } from '../../art/shading.js';
 import { drawSkull, drawFace, drawBoot, drawFist, drawBelt } from '../../art/rigParts.js';
 import { getChain } from '../../art/secondary.js';
+import { buildRig } from '../../art/rig.js';
+import { drawHeadPortrait } from '../../art/portraits.js';
 import { rad } from '../../engine/math.js';
 
 // ---------------------------------------------------------------------------------------------------------------
