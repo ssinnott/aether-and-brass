@@ -2,7 +2,7 @@
 // side / sky spawns with delays, reinforcements, timed waves for locked sections, props / hazards / zones, GO arrow,
 // scripted transitions (lift, funicular boarding, docking), mid-boss and boss triggers with intro cutscene / spotlight /
 // name plates, the defeat spectacle and results after a 240f pose hold.
-import { VIEW_W, ST } from '../constants.js';
+import { VIEW_W, ST, UI } from '../constants.js';
 import { createBackdrop, backdropsReady } from '../art/backgrounds/index.js';
 import { Prop } from './items.js';
 import { Hazard, Zone } from './hazards.js';
@@ -10,9 +10,11 @@ import { Transition, drawSpotlight, VictorySpectacle } from './transitions.js';
 import { clamp } from '../engine/math.js';
 import { audio } from '../engine/audio.js';
 import { particles } from '../engine/particles.js';
+import { floatText } from '../art/fx.js';
 
 const SPAWN_MARGIN = 50;
 const GO_FRAMES = 150;
+const NO_DAMAGE_BONUS = 1000;   // GDD 7 scoring: a wave cleared without any player being hit
 /** Pose hold after the boss defeat spectacle before the results (GDD 6). */
 const VICTORY_FRAMES = 240;
 const PLATE_FRAMES = 170, SPOTLIGHT_FRAMES = 110, DESCENT_FRAMES = 120, DAIS_SHRINK = 20;
@@ -175,7 +177,7 @@ export class StageRunner {
   }
   startWave(wave, lock = true) {
     if (lock) this.lockHere();
-    this.activeWave = { wave, reinforced: false, startFrame: this.frame };
+    this.activeWave = { wave, reinforced: false, startFrame: this.frame, hits: this.playerHits() };
     this.queueSpawns(wave.spawns || []);
   }
   updateWave() {
@@ -188,8 +190,18 @@ export class StageRunner {
     if (alive > 0) return;
     this.clearWave();
   }
+  /** Total times the players have been hit this run (GDD 7 no-damage wave bonus). */
+  playerHits() { let n = 0; for (const p of this.world.players) n += p.hitCount || 0; return n; }
   clearWave() {
-    const sec = this.section;
+    const sec = this.section, aw = this.activeWave;
+    // GDD 7 scoring: clearing a wave without a single player getting hit is worth +1000 to each survivor
+    if (aw && this.playerHits() === aw.hits) {
+      for (const p of this.world.players) {
+        if (!p.alive || p.dead || p.out || !p.addScore) continue;
+        p.addScore(NO_DAMAGE_BONUS, false);
+        floatText(p.x, p.y + p.h + 20, p.z, 'NO DAMAGE +' + NO_DAMAGE_BONUS, UI.brassLight, 1);
+      }
+    }
     this.activeWave = null;
     this.wavesCleared++;
     this.world.wavesCleared = this.wavesCleared;

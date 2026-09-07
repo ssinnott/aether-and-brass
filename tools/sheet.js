@@ -76,19 +76,28 @@ function drawFloor(alt) {
   sctx.fillStyle = bgOpt && bgOpt[0] === '#' ? bgOpt : BG[alt ? 1 : 0]; sctx.fillRect(0, 0, CELL_W, CELL_H);
   sctx.fillStyle = 'rgba(0,0,0,0.25)'; sctx.fillRect(0, FEET, CELL_W, CELL_H - FEET);
 }
+/** Rigs larger than the cell (Hoister x2, Regent Engine x2.8) would clip: fit them to the cell instead. */
+function cellFit(e) { return Math.min(1, (FEET - 4) / (80 * e.rig.scale), (CELL_W - 4) / (72 * e.rig.scale)); }
+function drawFit(e) {
+  const f = cellFit(e);
+  if (f >= 1) { drawRig(sctx, e.rig, e.anim.pose, { x: CELL_W / 2, y: FEET, facing: FACING }); return; }
+  sctx.save(); sctx.translate(CELL_W / 2, FEET); sctx.scale(f, f);
+  drawRig(sctx, e.rig, e.anim.pose, { x: 0, y: 0, facing: FACING });
+  sctx.restore();
+}
 function renderCell(e, opts = {}) {
   drawFloor(opts.alt);
-  drawShadowScreen(sctx, CELL_W / 2, FEET, 34 * e.rig.scale, 0.45);
-  drawRig(sctx, e.rig, e.anim.pose, { x: CELL_W / 2, y: FEET, facing: FACING });
+  drawShadowScreen(sctx, CELL_W / 2, FEET, 34 * e.rig.scale * cellFit(e), 0.45);
+  drawFit(e);
 }
 function blit(x, y, z = zoom) { out.imageSmoothingEnabled = false; out.drawImage(scratch, 0, 0, CELL_W, CELL_H, x, y, CELL_W * z, CELL_H * z); }
 function label(text, x, y, color = '#f4e8c8', size = 12) { out.fillStyle = color; out.font = `bold ${size}px monospace`; out.textBaseline = 'top'; out.fillText(text, x, y); }
 /** Advance n ticks, drawing each into the scratch so secondary motion (chains, puffs) integrates like in game. */
-function tickDraw(e, n) { for (let i = 0; i < n; i++) { e.anim.tick(); drawRig(sctx, e.rig, e.anim.pose, { x: CELL_W / 2, y: FEET, facing: FACING }); } }
+function tickDraw(e, n) { for (let i = 0; i < n; i++) { e.anim.tick(); drawFit(e); } }
 /** Warm the chains: play the anim through once (drawing into the scratch) then restart it. */
 function warm(e, name) {
   e.anim.play(name, { restart: true, fallback: 'idle' }); tickDraw(e, Math.max(8, e.anim.length));
-  e.anim.play(name, { restart: true, fallback: 'idle' }); drawRig(sctx, e.rig, e.anim.pose, { x: CELL_W / 2, y: FEET, facing: FACING });
+  e.anim.play(name, { restart: true, fallback: 'idle' }); drawFit(e);
 }
 function seekHit(e) { let g = 0; while (!(e.anim.frame.hitbox || e.anim.frame.hitboxes) && g++ < 200 && !e.anim.done) tickDraw(e, 1); tickDraw(e, 1); }
 function sizeSheet(w, h) { sheet.width = w; sheet.height = h; out.fillStyle = '#1c1822'; out.fillRect(0, 0, w, h); }

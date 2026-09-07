@@ -54,7 +54,7 @@
 //  projectiles { name: spec } | hurtParts [{ name, y: [y0, y1], x: [x0, x1], damageMult, flag, when(f) }] | deathSpawn [{ projectile, dx, dz }]
 //  explodeOnDeath { delay, radius, damage, friendly } | onSpawn/onUpdate/onDeath (legacy aliases of the hooks)
 //  moves { throwFwd / throwBack: { damage, vx, vy, releaseAt, shockwave: { r, damage }, selfVy, bounce: true|vy }, grabHit: { damage, hits } }
-import { ST, TEAM, GRAVITY, FLOOR_TOP, Z_MIN, Z_MAX, HITSTOP, FIGHTER_DEFAULTS, LAUNCH_VY, JUGGLE_VY, KNOCKDOWN_POP_VY, JUMP_VY, UI } from '../constants.js';
+import { ST, TEAM, GRAVITY, FLOOR_TOP, Z_MIN, Z_MAX, HITSTOP, FIGHTER_DEFAULTS, LAUNCH_VY, JUGGLE_VY, KNOCKDOWN_POP_VY, JUMP_VY, UI, VIEW_W } from '../constants.js';
 import { Entity } from './entity.js';
 import { AnimPlayer } from './animation.js';
 import { buildRig, drawRig } from '../art/rig.js';
@@ -604,16 +604,18 @@ export class Fighter extends Entity {
     if (hooks && hooks.drawAfter) hooks.drawAfter(ctx, this, sx, sy, cam);
     if (this.team === TEAM.ENEMY && this.hpBarTimer > 0 && !this.dead && this.kind !== 'boss') {
       const w = this.def.elite ? 60 : 40, hh = this.def.elite ? 4 : 3, top = Math.round(sy - this.h - 10);
-      ctx.fillStyle = '#120c14'; ctx.fillRect(sx - w / 2 - 1, top - 1, w + 2, hh + 2);
-      ctx.fillStyle = '#5a1a1a'; ctx.fillRect(sx - w / 2, top, w, hh);
-      ctx.fillStyle = this.hp / this.maxHp > 0.3 ? UI.hp : UI.hpLow; ctx.fillRect(sx - w / 2, top, Math.round(w * this.hp / this.maxHp), hh);
+      // an enemy at a screen edge would push its bar (and an elite's name) off-screen: keep both fully on
+      const bx = clamp(sx, w / 2 + 2, VIEW_W - w / 2 - 2);
+      ctx.fillStyle = '#120c14'; ctx.fillRect(bx - w / 2 - 1, top - 1, w + 2, hh + 2);
+      ctx.fillStyle = '#5a1a1a'; ctx.fillRect(bx - w / 2, top, w, hh);
+      ctx.fillStyle = this.hp / this.maxHp > 0.3 ? UI.hp : UI.hpLow; ctx.fillRect(bx - w / 2, top, Math.round(w * this.hp / this.maxHp), hh);
       if (this.def.elite) {
         // Two elites standing close would stamp their labels on the same row, so alternate the
         // row by entity id and back the text with a plate to keep it readable over anything behind.
         const ly = top - 9 - (this.id & 1) * 9;
-        const lw = measureText(this.name, 1) + 4;
-        ctx.fillStyle = 'rgba(18,12,20,0.75)'; ctx.fillRect(Math.round(sx - lw / 2), ly - 1, lw, 9);
-        drawText(ctx, this.name, sx, ly, { size: 1, color: UI.paper, align: 'center' });
+        const lw = measureText(this.name, 1) + 4, lx = clamp(sx, lw / 2 + 2, VIEW_W - lw / 2 - 2);
+        ctx.fillStyle = 'rgba(18,12,20,0.75)'; ctx.fillRect(Math.round(lx - lw / 2), ly - 1, lw, 9);
+        drawText(ctx, this.name, lx, ly, { size: 1, color: UI.paper, align: 'center' });
       }
     }
   }

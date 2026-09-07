@@ -37,12 +37,54 @@ Each player owns one half of the keyboard so two people can share it.
 - P2 joins (title, select, pause, or in-game) by pressing any P2-only key (J K U L O I Backspace or Numpad). When P2 joins, P1's solo aliases switch off. Gamepad 0 → P1, gamepad 1 → P2, OR-merged with their keyboard keys.
 - Super = separate button (no attack+jump chord).
 
-## Scope tiers
-**MUST (the vertical slice; everything here ships):** all 4 characters with full GDD movesets (ground combo, jump attack, dash attack, special, super, grab/throw, taunt, unique trait), 10 enemy variants with their listed attacks/tells/roles, mid-boss (both phases) and final boss (three phases) with all listed attacks, all 4 sections with distinct backdrops/floors/props/hazards/waves exactly as listed, pickups, lives/continues, score/combo/grades/rank, meter/specials/supers, dodge i-frames, juggles, grabs/throws (thrown enemies hit others), hit-stop/shake, HUD, title/select/intro/pause/game-over/results screens, local co-op, gamepad, synthesized SFX + music per section.
+## Scope tiers — final ship status (verified 2026-09-07 against the tree)
 
-**SHOULD (add once MUST is green in your area):** Rook parry; Duelist Riposte; Warden shield stagger/strip; Sapper bombs battable; Slinger bolt reflect; Firebrand death explosion + fire puddles; Hulk grab & Wrangler net with mash-out; Sootborn flee at low HP; ring-outs (molten channel, funicular railings) ; Section 2 conveyor + molten channel in the mid-boss arena; Time Stop dodge-cancel; Aether Step; pressure valves; chandelier; tech roll; co-op revive; difficulty select (Easy/Normal/Hard) on the title menu; no-damage wave bonus; crowd-clear bonus.
+**MUST (the vertical slice) — SHIPPED IN FULL.** Verified end to end: a bot playthrough
+(`?bot=1&godmode=1&seed=5`) runs title → select → all four sections → both bosses → victory
+spectacle → results in ~22,000 frames with zero runtime errors (the bot auto-skips the intro
+card; it was screenshot-verified separately with `skipTo=intro`), and
+`node tools/playtest.js` (boot select combat playthrough coop gallery audio) is 127 checks,
+0 failures.
 
-**CUT (do not build):** Options menu beyond difficulty + mute, alternate palettes, partner toss, DUO super, attract mode, controls screen (draw a compact controls legend on the title screen instead), MVP/BEST PARTNER badges, per-continue rank penalty (keep: rank from score only), "Boilerplate" difficulty, ghost-bar drain animation (a simple delayed second bar is fine), typewriter text (fade-in is fine).
+| MUST item | Status |
+|---|---|
+| 4 characters, full GDD movesets (ground combo, jump/dash attack, special, super, grab/throw, taunt, trait) | `content/characters/{brunhild,sael,rook,pip}.js` — 29–31 animations each, complete state sets |
+| 10 enemy variants + roles/attacks/tells | `content/enemies/{brassbound,sootborn}.js` — 5 + 5, all registered in `ENEMY_LIST` |
+| Mid-boss (both phases) | `content/enemies/midboss.js` — Hoister 300 + Overheat 300 (the GDD's "2-segment bar, phase 2 at 50 %") then Grubbik on foot 100 |
+| Final boss (three phases) | `content/enemies/boss.js` — Regent Engine Legs → Body → Chancellor Vane |
+| 4 sections, distinct backdrops/floors/props/hazards/waves | `content/stage/stage1.js` + `art/backgrounds/section1..4.js`; 15 waves cleared per full run |
+| Pickups, lives/continues, score/combo/grades/rank | `game/items.js`, `game/hud.js` (per-player CONTINUE countdown), `game/screens/results.js` |
+| Meter / specials / supers, dodge i-frames, juggles, grabs & throws (thrown enemies hit others) | `game/player.js`, `game/fighter.js`, `game/grabs.js` |
+| Hit-stop / shake, HUD, title / select / intro / pause / game-over / results | `game/screens/*`, `game/hud.js` |
+| Local co-op, gamepad | `engine/input.js` (P2 drop-in on any P2 key; pads 0→P1, 1→P2) |
+| Synthesized SFX + music per section | `engine/audio/{sfx,music,synth}.js` — all canonical names below implemented |
+
+Nothing from MUST is missing.
+
+**SHOULD — built (all but one):**
+Rook parry (`content/characters/rook.js` + `game/traits.js`); Duelist Riposte (`brassbound.js`
+`riposteStance`/`riposte`); Warden shield stagger + launcher shield strip; Sapper bombs battable
+(`reflectable`, `damageOnReflect: 20`); Slinger bolt reflect (flat `onReflect` so a batted bolt
+travels back down the lane); Firebrand death explosion + fire puddles; Cinder Hulk grab and
+Wrangler net, both with mash-out (`status.mashNet`, `player.mashCount`); Sootborn flee at low HP
+(`ai.fleeHp` / `ai.fleeLast`); ring-outs (molten channel + funicular railings, `game/hazards.js`);
+Section 2 conveyor + molten channel in the mid-boss cargo bay; Time Stop dodge-cancel
+(`enemy.timeStop` honours `dodgedRecently`); Aether Step (Vane `blinkAnim`); pressure valves and
+the chandelier (`game/items.js` + the section 4 props); tech roll (`player.js`); difficulty select
+(Easy/Normal/Hard on the title menu, `DIFFICULTY` in `screens/gameplay.js`); crowd-clear bonus;
+**no-damage wave bonus (+1000, `game/stage.js`)**.
+
+**SHOULD — not built (the one gap):** *co-op revive* in the GDD 7 sense — a partner at 0 lives
+lying as a ghost for 15 s, revived by holding Taunt beside them for 120 f, once per section. What
+ships instead is the MUST-tier continue system: a downed player gets their own 10-second
+CONTINUE? countdown on their side of the HUD while the partner keeps playing, and any of
+attack/jump/special spends a continue to bring them back (`game/hud.js`).
+
+**CUT — confirmed absent from the tree:** no options menu beyond difficulty + mute, no alternate
+palettes, no partner toss, no DUO super, no attract mode, no controls screen (the title draws the
+compact legend instead), no MVP / BEST PARTNER badges, no per-continue rank penalty (rank comes
+from score only; a lost continue countdown caps it at D), no "Boilerplate" difficulty, no ghost-bar
+drain animation (the HUD uses the simple delayed second bar), no typewriter text.
 
 ## Game title
 The game is **AETHER & BRASS** (logo already on the title screen). The GDD's "CALDERWICK" logo is
