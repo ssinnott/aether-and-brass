@@ -181,6 +181,31 @@ const scenarios = {
     });
   },
 
+  // 7. Audio: every canonical SFX and music track renders non-silently through an OfflineAudioContext.
+  async audio(server) {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
+    const errs = [];
+    page.on('pageerror', (e) => errs.push(e.message));
+    try {
+      await page.goto(`http://localhost:${server.port}/index.html?debug=1&seed=1`, { waitUntil: 'load' });
+      await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 15000 });
+      const report = await page.evaluate(() => import('/src/engine/audio.js').then((m) => m.audio.selfTest()));
+      assert(report && Array.isArray(report.sfx), 'audio.selfTest() returns {sfx:[...], music:[...]}');
+      const silent = (report.sfx || []).filter((r) => !(r.rms > 0.0005));
+      const failed = (report.sfx || []).filter((r) => r.error);
+      assert(failed.length === 0, `no SFX throws (${failed.map((r) => r.name + ': ' + r.error).slice(0, 5).join('; ')})`);
+      assert(silent.length === 0, `every SFX is audible (silent: ${silent.map((r) => r.name).join(', ')})`);
+      assert((report.sfx || []).length >= 60, `canonical SFX list implemented (${(report.sfx || []).length} rendered)`);
+      const quietTracks = (report.music || []).filter((r) => !(r.rms > 0.002) || r.error);
+      assert((report.music || []).length >= 9, `all 9 music tracks render (${(report.music || []).length})`);
+      assert(quietTracks.length === 0, `every music track is audible/no error (${quietTracks.map((r) => r.name + (r.error ? ':' + r.error : '')).join(', ')})`);
+      assert(errs.length === 0, `no page errors during audio self-test ${errs.slice(0, 2).join('; ')}`);
+    } catch (e) {
+      failures++; results.push(`  FAIL: audio scenario crashed: ${e.message}`); console.log(`  FAIL: audio scenario crashed: ${e.message}`);
+    } finally { await browser.close(); }
+  },
+
   // 6. Gallery of every character, enemy variant and boss for visual review.
   async gallery(server) {
     await withPage(server, 'seed=1&skipTo=gallery', async (g) => {
