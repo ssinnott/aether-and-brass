@@ -105,3 +105,7 @@ src/game/      fighters, players, enemy AI, bosses, combat, world, stage runner,
 src/content/   characters, enemies and stage data (pure data + small draw hooks)
 tools/         dev server, single-file build, playtest harness, contact-sheet generator
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, ship it; just keep the copyright notice.
