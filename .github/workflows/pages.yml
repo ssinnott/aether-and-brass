@@ -1,0 +1,67 @@
+# Build the single-file game and publish it to GitHub Pages.
+#
+# One-time setup, and it can only be done by a repository admin in the browser: open
+# Settings -> Pages and set "Build and deployment" -> Source to "GitHub Actions". A workflow
+# cannot do it for you -- creating the Pages site needs admin rights that the built-in
+# GITHUB_TOKEN does not have, so actions/configure-pages with enablement: true fails here with
+# "Resource not accessible by integration".
+#
+# Once that switch is set, every push to a listed branch redeploys
+# https://ssinnott.github.io/aether-and-brass/
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - claude/github-pages-retry-4w8te7
+  workflow_dispatch:
+
+# Allow the workflow to publish a Pages deployment.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; let a newer push finish rather than cancelling it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the single-file game
+        run: npm run build
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp dist/index.html _site/index.html
+          touch _site/.nojekyll
+          ls -la _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

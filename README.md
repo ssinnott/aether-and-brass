@@ -13,6 +13,10 @@ synthesized from oscillators and noise at runtime.
 
 ## Play
 
+**Online:** <https://ssinnott.github.io/aether-and-brass/> — published from `main` by GitHub Actions.
+
+**Locally:**
+
 ```
 npm run dev          # serves the repo at http://localhost:8080
 ```
@@ -88,6 +92,25 @@ are silent.
 
 Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,2`,
 `?skipTo=gallery`, `?bot=1`, `?godmode=1`, `?nowaves=1`, `?seed=N`.
+
+### Deployment
+
+`.github/workflows/pages.yml` builds the single-file game and publishes it to GitHub Pages on
+every push to `main`, serving it at `https://ssinnott.github.io/aether-and-brass/`.
+
+It needs Pages switched on once, by a repository admin in the browser:
+
+1. Open **Settings → Pages**.
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+
+That step cannot be automated. Creating the Pages site requires admin rights the workflow's
+built-in `GITHUB_TOKEN` does not have, so `actions/configure-pages` with `enablement: true`
+fails with *Resource not accessible by integration*; only an admin (or a personal access token
+with `repo` scope) can create the site.
+
+The next push, or a manual run from the Actions tab, then publishes. If the deploy job reports
+that a branch is not allowed to deploy, either merge to `main` or add that branch under
+**Settings → Environments → github-pages → Deployment branches**.
 
 ### Documentation
 
