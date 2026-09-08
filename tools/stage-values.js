@@ -311,6 +311,45 @@ window.__sv = (function () {
    *   p10 dE    the 10th percentile: the part of the actor that disappears
    *   lost%     share of actor pixels under dE 10 (see LOST)
    */
+  /**
+   * COLOUR-SPACE RESERVATION. Mean hue distance says nothing about whether two colour sets COLLIDE: a polychrome
+   * backdrop can sit a long way from the cast on average while still containing every colour the cast uses.
+   * This bins both sets into the same 3D Oklab lattice and asks what share of the actor's colour mass lands in a
+   * cell the backdrop also occupies. 0% = the stage reserves that region entirely for the cast (what a reference
+   * frame does); 100% = every colour the cast wears is already on the wall behind it.
+   * occupancy is the share of the whole lattice the backdrop claims -- a wide, polychrome stage reserves nothing.
+   */
+  function reservation(A, back, m, w, h, skip) {
+    var LB = 12, AB = 24;                  // lattice: 12 lightness steps, 24 steps per chroma axis
+    var CH = 0.30;                          // Oklab a/b half-range the lattice spans
+    function cell(o) {
+      var li = Math.min(LB - 1, Math.max(0, Math.floor(o.L * LB)));
+      var ai = Math.min(AB - 1, Math.max(0, Math.floor((o.a + CH) / (2 * CH) * AB)));
+      var bi = Math.min(AB - 1, Math.max(0, Math.floor((o.b + CH) / (2 * CH) * AB)));
+      return (li * AB + ai) * AB + bi;
+    }
+    var actorH = new Map(), bgH = new Map(), nA = 0, nB = 0;
+    for (var y = 1; y < h - 1; y++) for (var x = 1; x < w - 1; x++) {
+      var p = y * w + x; if (!m[p] || (skip && skip[p])) continue;
+      var i = p * 4;
+      var ka = cell(oklab(A[i], A[i + 1], A[i + 2])), kb = cell(oklab(back[i], back[i + 1], back[i + 2]));
+      actorH.set(ka, (actorH.get(ka) || 0) + 1); nA++;
+      bgH.set(kb, (bgH.get(kb) || 0) + 1); nB++;
+    }
+    if (!nA || !nB) return { overlap: 0, occupancy: 0, actorCells: 0, bgCells: 0 };
+    // a backdrop cell counts as "claimed" only above a floor, so a handful of stray pixels is not a collision
+    var FLOOR = Math.max(1, nB * 0.0008);
+    var claimed = new Set();
+    bgH.forEach(function (v, k) { if (v >= FLOOR) claimed.add(k); });
+    var collide = 0;
+    actorH.forEach(function (v, k) { if (claimed.has(k)) collide += v; });
+    return {
+      overlap: 100 * collide / nA,
+      occupancy: 100 * claimed.size / (LB * AB * AB),
+      actorCells: actorH.size, bgCells: claimed.size,
+    };
+  }
+
   function separation(A, back, m, w, h, skip) {
     var dV = [], dS = [], dE = [], edge = [], av = [], as = [], bv = [], bs2 = [], dL = [], dC = [];
     var hA = hueAcc(), hB = hueAcc(), dH = [];
@@ -349,6 +388,7 @@ window.__sv = (function () {
       lostPct: dE.length ? (100 * lost / dE.length) : 0,
       lostThreshold: LOST,
       actorHue: hueOf(hA), bgHue: hueOf(hB),
+      reservation: reservation(A, back, m, w, h, skip),
       actorValSpread: stats(av), bgValSpread: stats(bv),
       actorSatSpread: stats(as),
       hueGap: hueGap(hueOf(hA).deg, hueOf(hB).deg),
@@ -362,7 +402,7 @@ window.__sv = (function () {
     return { px: d.data, w: canvas.width, h: canvas.height };
   }
   return { hsv: hsv, oklab: oklab, band: band, maskFromDiff: maskFromDiff, maskFromSaturation: maskFromSaturation,
-    localBackdrop: localBackdrop, separation: separation, classifyShadow: classifyShadow, fillPinholes: fillPinholes, dropSmallBlobs: dropSmallBlobs, hueOf: hueOf, hueGap: hueGap, grab: grab, stats: stats, LOST: LOST };
+    localBackdrop: localBackdrop, separation: separation, reservation: reservation, classifyShadow: classifyShadow, fillPinholes: fillPinholes, dropSmallBlobs: dropSmallBlobs, hueOf: hueOf, hueGap: hueGap, grab: grab, stats: stats, LOST: LOST };
 })();
 `;
 
@@ -570,11 +610,12 @@ if (CFG.json) {
   console.log('  dE = Oklab distance x100 (all-pixel mean) | edge = dE on silhouette pixels | p10 = the 10th percentile');
   console.log(`  lost% = share of actor pixels under dE ${results.separation[0] ? results.separation[0].exact.lostThreshold : 10} (they merge into the ground)`);
   console.log('  actH/bgH = chroma-weighted mean Oklab hue angle of the actors and of the ground behind them | dHue = the gap between them');
+  console.log('  ovlap = share of actor colour mass landing in an Oklab cell the backdrop also occupies (0 = the stage reserves that colour space for the cast) | bgOcc = share of the lattice the backdrop claims');
   console.log('');
-  console.log('BOARD SECTION                     FACTION      actV  bgV   dV    actS  bgS   dS      dE   edge   p10  lost%   actH   bgH  dHue');
+  console.log('BOARD SECTION                     FACTION      actV  bgV   dV    actS  bgS   dS      dE   edge   p10  lost%   actH   bgH  dHue  ovlap  bgOcc');
   for (const s of results.separation) {
     const e = s.exact;
-    console.log(`  ${s.stage}   ${(s.section + ' ' + s.name).padEnd(28)} ${s.faction.padEnd(11)} ${pc(e.actorVal)} ${pc(e.bgVal)} ${sgn(e.dVal).padStart(4)}  ${pc(e.actorSat)} ${pc(e.bgSat)} ${sgn(e.dSat).padStart(4)}   ${f1(e.dE)} ${f1(e.edgeDE)} ${f1(e.dEp10)} ${f1(e.lostPct)}  ${deg(e.actorHue && e.actorHue.deg)} ${deg(e.bgHue && e.bgHue.deg)} ${f1(e.hueGap)}`);
+    console.log(`  ${s.stage}   ${(s.section + ' ' + s.name).padEnd(28)} ${s.faction.padEnd(11)} ${pc(e.actorVal)} ${pc(e.bgVal)} ${sgn(e.dVal).padStart(4)}  ${pc(e.actorSat)} ${pc(e.bgSat)} ${sgn(e.dSat).padStart(4)}   ${f1(e.dE)} ${f1(e.edgeDE)} ${f1(e.dEp10)} ${f1(e.lostPct)}  ${deg(e.actorHue && e.actorHue.deg)} ${deg(e.bgHue && e.bgHue.deg)} ${f1(e.hueGap)} ${f1(e.reservation && e.reservation.overlap)} ${f1(e.reservation && e.reservation.occupancy)}`);
   }
   console.log('\n=== WORST FIRST (least separation) ===================================================================');
   const ranked = results.separation.slice().sort((a, b) => a.exact.dE - b.exact.dE);
