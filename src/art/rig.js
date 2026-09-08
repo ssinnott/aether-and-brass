@@ -14,6 +14,12 @@
 // hand to the weapon-head centre, used by the tools/sheet.js pose audit).
 // New part hooks: parts.beard (after the face, in head space), parts.hair (replaces the default hair cap), parts.neck,
 // parts.shoulder (at the shoulder joint, torso space, over the upper arm), parts.smear.
+// LIMB SPACE (parts.armUpper / armLower / legUpper / legLower): origin at the segment's own joint (shoulder, elbow,
+// hip, knee) and +Y ALONG THE BONE toward the next joint — a segment is drawn from (0, 0) to (0, info.len), and a
+// band across it is w = 2r wide on x by a few px tall on y. It is NOT +x: this space is entered at -limbAngle, and
+// only hand space (entered at -handAngle + 90) and foot space put +x along the part. A hook that draws its segment
+// along +x lays the bone across the joint instead of down it, and the limb comes apart in every pose but a horizontal
+// one — see the git history of pip.js, where all four limbs were authored that way.
 // Readability knobs (all optional, defaults tuned for the 2x display): farShade (0.62) + farDesat (0.25) build
 // rig.paletteFar (far limbs ~40 % darker and greyer); contactShadow (true = alpha 0.3, or a number, or false) draws a
 // 1 px translucent dark capsule under every limb (near limbs over the torso, far limbs over the back layer) so a limb

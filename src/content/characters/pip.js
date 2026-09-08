@@ -195,7 +195,7 @@ function drawShoulder(ctx, rig, pose, inf) { celBall(ctx, rig, 0, 0, inf.r - 2.5
  *  part of that segment's silhouette; this cylinder butts straight against it, so the only line between them is the
  *  forearm's own outline — one segment, one contour (section 0.2). */
 function drawArmUpper(ctx, rig, pose, inf) {
-  celRect(ctx, rig, -2, -inf.r, inf.len + 3, inf.r * 2, 3, inf.pal.sleeve, 0.36, 0.28);
+  celRect(ctx, rig, -inf.r, -2, inf.r * 2, inf.len + 3, 3, inf.pal.sleeve, 0.36, 0.28);
 }
 /**
  * Forearm: ONE object — a square dark-bronze piston housing at the elbow with a long pale brass rod sliding out of it
@@ -218,15 +218,15 @@ function drawArmUpper(ctx, rig, pose, inf) {
  */
 function drawArmLower(ctx, rig, pose, inf) {
   const r = inf.r, L = inf.len, pal = inf.pal, rr = r * 0.72;
-  pathTaperedCapsule(ctx, 3, 0, L + 1, 0, rr, rr);   // the pale rod, out to the wrist
-  pistonBlock(ctx, -2, -r, 7, r * 2, 2);             // the bronze housing, bolted over the elbow
+  pathTaperedCapsule(ctx, 0, 3, 0, L + 1, rr, rr);   // the pale rod, out to the wrist
+  pistonBlock(ctx, -r, -2, r * 2, 7, 2);             // the bronze housing, bolted over the elbow
   outlinePath(ctx, rig);
   ctx.fillStyle = rig.col(tones(rig, pal.rod).base);
   ctx.fill();
   if (rig.override) return;
   ctx.save(); ctx.clip();                            // the silhouette just stroked above is still the current path
-  ctx.fillStyle = tones(rig, pal.bronze).base; ctx.fillRect(-2, -r, 7, r * 2);
-  blockShade(ctx, rig, -2, -r, 7, r * 2, pal.bronze);
+  ctx.fillStyle = tones(rig, pal.bronze).base; ctx.fillRect(-r, -2, r * 2, 7);
+  blockShade(ctx, rig, -r, -2, r * 2, 7, pal.bronze);
   ctx.restore();
 }
 /** Two-prong brass claw (hand space, origin at the wrist). Dark bronze wrist block, brass prongs; opens by rig.claw. */
@@ -243,10 +243,10 @@ function drawClaw(ctx, rig, pose, inf) {
  *  Thigh wider than knee sleeve wider than shin rod gives the leg a taper, so it reads as a piston and not as a stack. */
 function drawLegUpper(ctx, rig, pose, inf) {
   const r = inf.r + 1.5, L = inf.len;
-  celRect(ctx, rig, -2, -r, L + 3, r * 2, 2, inf.pal.secondary, 0.38, 0.25);
+  celRect(ctx, rig, -r, -2, r * 2, L + 3, 2, inf.pal.secondary, 0.38, 0.25);
   if (rig.override) return;
   // steel collar on a slate thigh: a material change, so it takes its own ink (0.2) at 4 px rather than 3 (0.7)
-  band(ctx, rig, 0, -r + 1, 4, r * 2 - 2, inf.pal.metal);
+  band(ctx, rig, -r + 1, 0, r * 2 - 2, 4, inf.pal.metal);
 }
 /**
  * Shin: the same one-object piston as the forearm, in the leg's cool metals — a long light-steel rod sliding out of a
@@ -263,15 +263,15 @@ function drawLegUpper(ctx, rig, pose, inf) {
  */
 function drawLegLower(ctx, rig, pose, inf) {
   const r = inf.r + 1, L = inf.len, pal = inf.pal, rr = r * 0.7;
-  pathTaperedCapsule(ctx, 3, 0, L + 1, 0, rr, rr);   // the light-steel rod, out to the ankle
-  pistonBlock(ctx, -2, -r, 6, r * 2, 2);             // the iron knee sleeve the rod slides out of
+  pathTaperedCapsule(ctx, 0, 3, 0, L + 1, rr, rr);   // the light-steel rod, out to the ankle
+  pistonBlock(ctx, -r, -2, r * 2, 6, 2);             // the iron knee sleeve the rod slides out of
   outlinePath(ctx, rig);
   ctx.fillStyle = rig.col(tones(rig, pal.metal).base);
   ctx.fill();
   if (rig.override) return;
   ctx.save(); ctx.clip();
-  ctx.fillStyle = tones(rig, pal.iron).base; ctx.fillRect(-2, -r, 6, r * 2);
-  blockShade(ctx, rig, -2, -r, 6, r * 2, pal.iron);
+  ctx.fillStyle = tones(rig, pal.iron).base; ctx.fillRect(-r, -2, r * 2, 6);
+  blockShade(ctx, rig, -r, -2, r * 2, 6, pal.iron);
   ctx.restore();
 }
 /** Plate foot: near-black plate with a light steel toe cap and a 2 px sole (ankle space). */
