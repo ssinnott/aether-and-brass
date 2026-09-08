@@ -1,11 +1,57 @@
 # Online Co-op — Options Brainstorm (no backend)
 
-Status: **exploration only**. Nothing here is implemented. This is a menu of options
-with a recommendation, written against the code as of this branch.
+Status: **implemented**. The recommended path below was built; sections 1-9 remain as the
+reasoning behind the choices. See "What shipped" for the map from options to code.
 
 Constraint: **no backend we own or operate.** The game must stay a single static file
 (`tools/build.js` output) served from anywhere. The live deployment is GitHub Pages
 (`.github/workflows/pages.yml`) — see §3b for what that specifically implies.
+
+---
+
+## What shipped
+
+Online co-op works: two browsers run the same simulation at 60Hz and exchange only 16-bit
+input masks over a WebRTC data channel, with no server we operate.
+
+| Piece | Module | Notes |
+|---|---|---|
+| Deterministic trig | `src/engine/trig.js` | Matches `Math.sin`/`cos` to 5.6e-16 using only IEEE-exact ops |
+| Wire format | `src/net/protocol.js` | 11 actions + run in a uint16; an INPUT packet with 8 frames of redundancy is 22 bytes |
+| Frame scheduler | `src/net/lockstep.js` | Delay applied at record time; `resend()` while stalled |
+| Desync canary | `src/net/checksum.js` | FNV-1a over `rng.state` + per-entity sim fields |
+| Peer connection | `src/net/peer.js` | Unreliable, unordered channel; queues early ICE candidates |
+| Signalling | `src/net/signal.js` | MQTT over WSS, BroadcastChannel, copy-paste codes |
+| MQTT subset | `src/net/mqtt-codec.js` | Streaming parser: a WebSocket frame does not align with an MQTT packet |
+| Session | `src/net/session.js` | Signalling → lobby → match, and the per-frame pump |
+| UI | `src/game/screens/lobby.js` | Host/join, hero pick, ready; `?room=CODE` invite links |
+| Tests | `tools/nettest.js`, `tools/playtest.js` | Pure-Node suites plus a two-page end-to-end match |
+
+**Deferred from v1**, deliberately: rollback (M2), state-transfer resync after a desync (a
+desync ends the session and hands P2 to the bot), more than two players, and the MQTT
+transport is untested against a live broker from this environment — BroadcastChannel and the
+copy-paste path are the verified ones.
+
+### What testing actually proved
+
+- `npm run nettest` — two simulated peers consume byte-identical input across 3000 frames at
+  up to 70% packet loss with jitter and reordering; the checksum catches string state, `vz`,
+  hitstop and animation-cursor divergence while ignoring `-0`, differing entity ids and
+  visual-only entities.
+- `node tools/playtest.js netplay` — two real headless pages, a real data channel: invite link
+  to lobby, host on slot 0 and guest on slot 1, 120+ frames with no desync and peers within
+  delay+2, a key press on the guest moving player 2 **on the host's machine** with both
+  agreeing on the position, and a disconnect handing slot 2 to the bot.
+- The full existing suite (200 checks) passes unchanged, so the determinism work is invisible
+  in single player.
+
+### Two bugs the work found in the existing game
+
+- `hazards.js` consumed the shared gameplay RNG inside `draw()`. Render runs per rAF while
+  update runs at a fixed 60Hz, so a 144Hz display or a throttled tab advanced the stream by a
+  different number of draws — runs were not reproducible from a seed even in single player.
+- `content/characters/pip.js` wrote `Math.sin`/`cos` results onto a grabbed enemy's position,
+  putting implementation-defined math directly into simulation state.
 
 ---
 
