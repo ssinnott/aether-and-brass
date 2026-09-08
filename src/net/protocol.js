@@ -8,8 +8,16 @@
 
 import { ACTIONS } from '../engine/input.js';
 
-/** Bit index of each action in the packed mask; `run` occupies the bit after the last action. */
-export const RUN_BIT = ACTIONS.length;
+/**
+ * Bumped whenever ACTIONS, the message layout or a simulation rule changes. Peers compare this in
+ * HELLO and refuse to start on a mismatch: GitHub Pages is CDN-cached, so one player can easily be
+ * on yesterday's bundle, and a shifted bit would silently turn their 'jump' into someone's 'dodge'.
+ */
+export const PROTOCOL_VERSION = 1;
+
+/** Bit index of `run`, after the 11 actions. Frozen: changing it is a wire break, so bump the version. */
+export const RUN_BIT = 11;
+if (ACTIONS.length !== RUN_BIT) throw new Error(`net/protocol: ACTIONS changed (${ACTIONS.length}); bump PROTOCOL_VERSION and RUN_BIT`);
 /** Frames of input repeated in every INPUT packet. */
 export const REDUNDANCY = 8;
 

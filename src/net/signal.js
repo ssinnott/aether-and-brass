@@ -54,8 +54,9 @@ export function mqttSignal(room, role, brokers = MQTT_BROKERS) {
   const topic = `aether-and-brass/${room}`;
   return new Promise((resolve, reject) => {
     let i = 0;
+    let lastError = '';
     const tryNext = () => {
-      if (i >= brokers.length) { reject(new Error('no MQTT broker reachable')); return; }
+      if (i >= brokers.length) { reject(new Error(lastError || 'no MQTT broker reachable')); return; }
       const url = brokers[i++];
       let ws;
       try { ws = new WebSocket(url, 'mqtt'); } catch { tryNext(); return; }
@@ -71,16 +72,25 @@ export function mqttSignal(room, role, brokers = MQTT_BROKERS) {
       ws.onmessage = (e) => {
         for (const p of parser.push(new Uint8Array(e.data))) {
           if (p.type === PKT.CONNACK) {
+            // Return code 0 is "accepted". A public broker that is rate-limiting answers with a
+            // non-zero code and then closes; treating that as success gives a channel whose every
+            // publish is silently swallowed, and disarms the fallback to the next broker.
+            const rc = p.body && p.body.length > 1 ? p.body[1] : 0;
+            if (rc !== 0) { lastError = `rendezvous refused the connection (0x${rc.toString(16)})`; fail(); return; }
             ws.send(encodeSubscribe(1, topic));
             clearTimeout(timer);
             settled = true;
             ping = setInterval(() => { try { ws.send(encodePingReq()); } catch { /* ignore */ } }, 30000);
-            resolve({
+            const chan = {
               send(obj) { try { ws.send(encodePublish(topic, JSON.stringify({ role, ...obj }))); } catch { /* ignore */ } },
               onMessage(fn) { handler = fn; },
               close() { clearInterval(ping); try { ws.close(); } catch { /* ignore */ } },
+              /** Set by the caller to hear about the rendezvous dying (a broker drop is invisible otherwise). */
+              onDown: null,
               url,
-            });
+            };
+            ws.onclose = () => { clearInterval(ping); if (chan.onDown) chan.onDown('rendezvous disconnected'); };
+            resolve(chan);
           } else if (p.type === PKT.PUBLISH && p.topic === topic && handler) {
             let m = null;
             try { m = JSON.parse(p.payload); } catch { /* not ours */ }

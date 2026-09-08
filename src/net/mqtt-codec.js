@@ -78,7 +78,7 @@ export function createParser() {
         if (buf.length < total) break;                     // body not fully arrived
         const type = buf[0] >> 4, flags = buf[0] & 0x0f;
         const body = buf.subarray(start, total);
-        const msg = { type, flags };
+        const msg = { type, flags, body };   // CONNACK's return code lives in body[1]
         if (type === PKT.PUBLISH) {
           const tl = (body[0] << 8) | body[1];
           msg.topic = dec.decode(body.subarray(2, 2 + tl));

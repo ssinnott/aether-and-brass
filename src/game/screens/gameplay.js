@@ -161,7 +161,13 @@ export class GameplayScreen extends Screen {
       drawTextOutlined(ctx, 'ALL HEROES DOWN', VIEW_W / 2, 150, { size: 3, color: UI.red, outline: '#2a1010', thickness: 1, align: 'center' });
     }
   }
-  exit() { this.game.players = []; if (this.runner) this.runner.dispose(); }
+  exit() {
+    // Any way out of the match ends the session: quitting to title, the results screen, a reset.
+    // Without this the lockstep pump keeps injecting the peer's masks into the title screen menu.
+    if (this.game.net && this.game.net.active) this.game.net.end('left the match');
+    this.game.players = [];
+    if (this.runner) this.runner.dispose();
+  }
 
   // ---------- window.__game hooks ----------
   summary() {

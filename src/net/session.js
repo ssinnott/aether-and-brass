@@ -17,10 +17,16 @@ import { createPeer } from './peer.js';
 import { createLockstep } from './lockstep.js';
 import { worldChecksum } from './checksum.js';
 import { broadcastSignal, mqttSignal, manualSignal, makeRoomCode } from './signal.js';
-import { MSG, packActions, unpackActions, encodeInput, encodeChecksum, encodeStart, encodeJson, encodePing, decodeMessage } from './protocol.js';
+import { MSG, PROTOCOL_VERSION, packActions, unpackActions, encodeInput, encodeChecksum, encodeStart, encodeJson, encodePing, decodeMessage } from './protocol.js';
 
-/** Frames without remote input before the match is declared dead (~8s). */
-const STALL_TIMEOUT = 480;
+/**
+ * Wall-clock milliseconds without remote input before the match is declared dead. Counted in real
+ * time, NOT in ticks: canStep() runs once per rAF, so a 144Hz display would reach a tick count
+ * three times sooner than a 60Hz one and kill sessions over a survivable blip.
+ */
+const STALL_TIMEOUT_MS = 8000;
+/** Milliseconds of stall before the "waiting" overlay appears, and the minimum it stays up. */
+const WAIT_SHOW_MS = 220, WAIT_HOLD_MS = 500;
 /** How often a stalled peer retransmits its window, in rAF ticks. */
 const RESEND_EVERY = 3;
 
@@ -48,6 +54,10 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     remoteSlot: isHost ? 1 : 0,
     delay: 3,
     rtt: null,
+    /** True once a ping measurement exists; the match will not start before this. */
+    rttReady: false,
+    /** Set when the peer reports a different protocol version. */
+    versionMismatch: false,
     /** Lobby: each side's character index and ready flag. */
     lobby: { myChar: 0, theirChar: 1, myReady: false, theirReady: false, peerHere: false },
     ls: null,
@@ -63,6 +73,9 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
   let resendTick = 0;
   let pingId = 1;
   const pingSent = new Map();
+  let stallStart = 0, waitShownAt = 0, watchdog = 0;
+  /** Set by beforeStep, cleared by afterStep: the two must always pair on the same frame. */
+  let stepped = false;
 
   // ---- transport -------------------------------------------------------------------------------
 
@@ -87,7 +100,14 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
       isHost,
       signal: net.signal,
       trickle: transport !== 'manual',
-      onOpen: () => { net.lobby.peerHere = true; setState('lobby'); sendLobby(); measureRtt(); },
+      onOpen: () => {
+        // Version first: a peer on a cached older bundle must be told, not silently desynced.
+        sendCtl(encodeJson(MSG.HELLO, { v: PROTOCOL_VERSION }));
+        net.lobby.peerHere = true;
+        setState('lobby');
+        sendLobby();
+        measureRtt();
+      },
       onMessage: onPacket,
       onClose: (reason) => net.end(reason || 'peer disconnected'),
     });
@@ -97,12 +117,14 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
   /** Copy-paste transport only: feed in the code the other player sent. */
   net.acceptCode = (code) => (net.signal && net.signal.accept ? net.signal.accept(code) : false);
 
-  const send = (bytes) => { if (net.peer) net.peer.send(bytes); };
+  /** INPUT/CHECKSUM go unreliable (redundancy covers loss); control messages must not be lost. */
+  const send = (bytes) => { if (net.peer) net.peer.send(bytes, false); };
+  const sendCtl = (bytes) => { if (net.peer) net.peer.send(bytes, true); };
 
   // ---- lobby -----------------------------------------------------------------------------------
 
   function sendLobby() {
-    send(encodeJson(MSG.LOBBY, { char: net.lobby.myChar, ready: net.lobby.myReady }));
+    sendCtl(encodeJson(MSG.LOBBY, { char: net.lobby.myChar, ready: net.lobby.myReady }));
   }
   net.setChar = (i) => { net.lobby.myChar = i | 0; sendLobby(); };
   net.setReady = (v) => { net.lobby.myReady = !!v; sendLobby(); maybeStart(); };
@@ -117,12 +139,18 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     const fromStats = net.peer ? await net.peer.rtt() : null;
     if (fromStats != null && net.rtt == null) net.rtt = fromStats;
     net.delay = delayForRtt(net.rtt);
+    net.rttReady = true;
+    maybeStart();                 // both may already have readied while we were measuring
   }
 
   /** Host only: once both sides are ready, fix the session parameters and tell the guest. */
   function maybeStart() {
     if (!isHost || net.state !== 'lobby') return;
     if (!net.lobby.myReady || !net.lobby.theirReady) return;
+    // The delay must exceed the one-way latency (tools/nettest.js), so never start on the default
+    // guess: measureRtt takes ~800ms and two players in a voice call can ready up faster than that.
+    if (!net.rttReady) return;
+    net.delay = delayForRtt(net.rtt);
     const params = {
       seed: (Math.floor(Math.random() * 0x7fffffff) | 0) >>> 0 || 1,   // chosen once, before any simulation
       stage: game.options.stage || 1,
@@ -130,7 +158,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
       chars: isHost ? [net.lobby.myChar, net.lobby.theirChar] : [net.lobby.theirChar, net.lobby.myChar],
       delay: net.delay,
     };
-    send(encodeStart(params));
+    sendCtl(encodeStart(params));
     beginMatch(params);
   }
 
@@ -145,6 +173,16 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     Entity.resetIds();          // ids must match: a host who played solo first would otherwise start higher
     rng.seed(seed);             // the boot seed is Date.now()-derived, so re-seed at the match boundary
     input.setJoined(1, true);   // both slots exist from frame 0; drop-in is disabled under netplay
+    // The disconnect watchdog runs on a timer, NOT off canStep(): the gated loop only calls that
+    // from requestAnimationFrame, which Chromium throttles or suspends for a backgrounded page -
+    // exactly the situation where the peer has gone away and the session must be torn down.
+    if (watchdog) clearInterval(watchdog);
+    watchdog = setInterval(() => {
+      if (!net.active || !net.ls) return;
+      if (net.ls.canAdvance()) { stallStart = 0; return; }
+      if (!stallStart) stallStart = performance.now();
+      if (performance.now() - stallStart > STALL_TIMEOUT_MS) net.end('connection lost');
+    }, 250);
     setState('playing');
     game.reset('gameplay', { chars: [chars[0], chars[1]], net });
   }
@@ -155,6 +193,9 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     const m = decodeMessage(bytes);
     if (!m) return;
     switch (m.type) {
+      case MSG.HELLO:
+        if (m.v !== PROTOCOL_VERSION) { net.versionMismatch = true; net.end('different game version - both reload the page'); }
+        break;
       case MSG.LOBBY:
         net.lobby.theirChar = m.char | 0;
         net.lobby.theirReady = !!m.ready;
@@ -193,10 +234,16 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
   net.canStep = function canStep() {
     if (!net.active || !net.ls) return true;
     const ready = net.ls.canAdvance();
-    net.waiting = !ready;
-    if (!ready) {
+    const now = performance.now();
+    if (ready) {
+      stallStart = 0;
+      // Hold the overlay briefly once shown: at 3% loss canAdvance flips false for a single rAF
+      // about once a second, and a banner that flashes for 16ms reads as a rendering fault.
+      if (net.waiting && now - waitShownAt > WAIT_HOLD_MS) net.waiting = false;
+    } else {
       net.ls.stall();
-      if (net.ls.stalled > STALL_TIMEOUT) net.end('connection lost');
+      if (!stallStart) stallStart = now;
+      if (!net.waiting && now - stallStart > WAIT_SHOW_MS) { net.waiting = true; waitShownAt = now; }
     }
     return ready;
   };
@@ -206,6 +253,10 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
    * the same frame and neither transmits, the match deadlocks permanently (tools/nettest.js).
    */
   net.pump = function pump() {
+    // After a session ends the surviving player must keep their own keyboard: the local slot is
+    // still virtual-injected, so keep feeding it from the real devices rather than clearing it,
+    // which would move them to the other binding set.
+    if (net.endedPump) { input.setVirtual(net.localSlot, input.pollRaw(0, { solo: true })); return; }
     if (!net.active || !net.ls) return;
     if (net.ls.desync) { net.end(`desync at frame ${net.ls.desync.frame}`); return; }
     if (!net.waiting) return;
@@ -216,7 +267,11 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
 
   /** Before each simulated frame: sample local devices, share them, and apply both delayed masks. */
   net.beforeStep = function beforeStep() {
-    if (!net.active || !net.ls) return;
+    if (!net.active || !net.ls) return false;
+    // Belt and braces: loop.step(n) deliberately ignores canUpdate, so a test (or any future
+    // caller) could reach here without the peer's input. Never guess - inputs() would return a
+    // neutral mask, and a manufactured release+press edge reads as a double-tap run in player.js.
+    if (!net.ls.canAdvance()) return false;
     const raw = input.pollRaw(0, { solo: true });
     // Escape must not pause locally: routed through `start`, both peers pause on the same frame.
     if (input.globalPressed('pause')) raw.start = true;
@@ -225,11 +280,18 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     const [m0, m1] = net.ls.inputs();
     input.setVirtual(0, unpackActions(m0));
     input.setVirtual(1, unpackActions(m1));
+    stepped = true;
+    return true;
   };
 
   /** After each simulated frame: advance the clock and exchange a checksum periodically. */
   net.afterStep = function afterStep(world) {
-    if (!net.active || !net.ls) return;
+    // Only advance for a frame beforeStep actually prepared. The two are guarded independently in
+    // main.js, and beginMatch() runs from inside game.update() (the lobby's own update), so the
+    // frame a match starts on would otherwise be advanced without ever having been fed input -
+    // leaving the two peers' frame counters permanently one apart.
+    if (!stepped || !net.active || !net.ls) { stepped = false; return; }
+    stepped = false;
     const f = net.ls.frame;
     if (world && net.ls.isChecksumFrame(f)) {
       const sum = worldChecksum(world, rng);
@@ -245,15 +307,19 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
    */
   net.end = function end(reason = 'session ended') {
     if (net.state === 'ended') return;
+    if (watchdog) { clearInterval(watchdog); watchdog = 0; }
     net.endReason = reason;
-    try { send(encodeJson(MSG.BYE, { reason })); } catch { /* channel already gone */ }
+    try { sendCtl(encodeJson(MSG.BYE, { reason })); } catch { /* channel already gone */ }
     setState('ended');
     net.waiting = false;
-    input.clearVirtual(0);
-    input.clearVirtual(1);
     game.options.netplay = false;
+    // Hand the REMOTE slot to the bot - on the guest that is slot 0, not slot 1. Clearing both
+    // virtuals would also drop the local player onto the other binding set (arrows / J K U L O I)
+    // mid-run, so the local slot keeps being driven from their own keyboard by netEndPump().
+    input.clearVirtual(net.remoteSlot);
     const players = game.players || [];
-    if (players[1]) players[1].bot = true;
+    if (players[net.remoteSlot]) players[net.remoteSlot].bot = true;
+    net.endedPump = true;
     try { if (net.peer) net.peer.close(); } catch { /* ignore */ }
     net.ls = null;
   };

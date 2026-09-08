@@ -32,6 +32,7 @@ export class LobbyScreen extends Screen {
     this.error = '';
     this.net = null;
     this.localCode = '';
+    this.inviteUrl = '';
     this.overlay = null;
     this.charCursor = 0;
     this.game.audio.music.play('title');
@@ -76,6 +77,17 @@ export class LobbyScreen extends Screen {
     });
     this.net = net;
     net.lobby.myChar = this.charCursor;
+    // The address bar must hold a GUEST-facing link. Sharing our own URL would carry host=1, and
+    // two hosts in a room never see each other: signal.js filters by role, so both sit waiting.
+    if (this.isHost && this.mode !== 'manual' && typeof history !== 'undefined' && history.replaceState) {
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.delete('host');
+        u.searchParams.set('room', net.room);
+        history.replaceState(null, '', u.toString());
+        this.inviteUrl = u.toString();
+      } catch { /* non-standard URL: fall back to showing the code alone */ }
+    }
     const okStart = await net.connect();
     if (!okStart) { this.phase = 'error'; this.error = net.error || 'could not connect'; }
     else if (this.mode !== 'manual') this.status = this.isHost ? 'WAITING FOR PLAYER 2' : 'CONNECTING';
@@ -205,7 +217,10 @@ export class LobbyScreen extends Screen {
       if (this.net && this.net.room && this.mode !== 'manual') {
         drawText(ctx, 'ROOM CODE', 320, 142, { size: 1, color: UI.steel, align: 'center' });
         drawTextOutlined(ctx, this.net.room, 320, 156, { size: 4, color: '#4DF0E0', outline: '#0a3a38', align: 'center' });
-        if (this.isHost) drawText(ctx, 'SEND YOUR FRIEND THIS CODE, OR THE LINK IN THE ADDRESS BAR', 320, 188, { size: 1, color: UI.brassDark, align: 'center' });
+        if (this.isHost) {
+          drawText(ctx, 'SEND YOUR FRIEND THIS CODE', 320, 188, { size: 1, color: UI.brassDark, align: 'center' });
+          if (this.inviteUrl) drawText(ctx, this.inviteUrl.replace(/^https?:\/\//, '').slice(0, 74).toUpperCase(), 320, 200, { size: 1, color: UI.steel, align: 'center' });
+        }
       }
       drawText(ctx, 'DODGE: CANCEL', 320, 250, { size: 1, color: UI.brassDark, align: 'center' });
       return;

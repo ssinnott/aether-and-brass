@@ -47,6 +47,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Pure Node, no browser download. This is the only gate between a netcode protocol
+      # regression and a deploy, so it runs before the build.
+      - name: Net protocol and lockstep tests
+        run: npm run nettest
+
       - name: Build the single-file game
         run: npm run build
 
