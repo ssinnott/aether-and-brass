@@ -148,7 +148,7 @@ export class GameplayScreen extends Screen {
     const stats = this.players.filter(Boolean).map((p) => ({
       name: p.def.name, kills: p.kills, maxCombo: p.maxCombo, damageTaken: Math.round(p.damageTakenTotal), continues: p.continuesUsed, score: p.score, lives: p.lives, index: p.index,
     }));
-    this.game.replace('results', { stats, defeat, time: this.time, enemiesDefeated: this.enemiesDefeated, continuesUsed: this.continuesUsed, sectionIndex: this.world.sectionIndex, wavesCleared: this.world.wavesCleared, cameraX: this.world.camera.x });
+    this.game.replace('results', { stats, defeat, stage: this.stage, time: this.time, enemiesDefeated: this.enemiesDefeated, continuesUsed: this.continuesUsed, sectionIndex: this.world.sectionIndex, wavesCleared: this.world.wavesCleared, cameraX: this.world.camera.x });
   }
   draw(ctx) {
     this.world.draw(ctx);

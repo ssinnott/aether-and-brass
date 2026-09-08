@@ -2,6 +2,9 @@
 // continues, time, score) rolling in one row per 20f with ratchet ticks, rank S/A/B/C/D stamped with a 6f slam + shake
 // (rank from score only per RECONCILIATION; D ceiling after a lost continue countdown), victory poses (win anims),
 // auto-return after 600f, PRESS START.
+// Clearing a board records it in game/progress.js, which is what opens the next board on BOARD SELECT; when this run
+// opened one, a plate announces it under the totals and dismissing the plaque hands off to BOARD SELECT so the
+// unlock plays out on the newly opened board's own plaque instead of dropping straight back to the title.
 import { VIEW_W, VIEW_H, UI } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
@@ -10,6 +13,8 @@ import { particles } from '../../engine/particles.js';
 import { buildRig, drawRig } from '../../art/rig.js';
 import { drawShadowScreen } from '../../art/fx.js';
 import { AnimPlayer } from '../animation.js';
+import { progress } from '../progress.js';
+import { getStage, stageIndex } from '../../content/stage/index.js';
 
 const ROWS = [['ENEMIES DEFEATED', 'kills'], ['MAX COMBO', 'maxCombo'], ['DAMAGE TAKEN', 'damageTaken'], ['CONTINUES USED', 'continues'], ['TIME', 'time'], ['SCORE', 'score']];
 const ROW_FRAMES = 20, ROLL_FRAMES = 16;
@@ -37,6 +42,9 @@ export class ResultsScreen extends Screen {
     this.total = this.stats.reduce((a, s) => a + s.finalScore, 0);
     this.summaryExtra = { sectionIndex: params.sectionIndex || 0, wavesCleared: params.wavesCleared || 0, cameraX: params.cameraX || 0 };
     this.rank = this.defeat ? rankFor(0) : rankFor(this.total);
+    // Which board this was, and - on a clear - the board that clear just opened (null when nothing new opened).
+    this.stage = params.stage || getStage(this.game.options.stage);
+    this.unlocked = this.defeat || !this.stage ? null : progress.markCleared(this.stage.id, { score: this.total, rank: this.rank.letter });
     this.rowsShown = 0; this.rowTimer = 0; this.stamp = -1; this.leaving = false;
     // victory poses: the players' rigs playing their win anims (defeat: lying)
     const chars = this.game.characters || [], picks = this.game.options.chars || [];
@@ -51,7 +59,7 @@ export class ResultsScreen extends Screen {
     particles.clear();
   }
   /** Keep the stage bookkeeping visible to window.__game.summary() after the run. */
-  summary() { return this.summaryExtra; }
+  summary() { return { ...this.summaryExtra, stageId: this.stage ? this.stage.id : '', unlockedStageId: this.unlocked ? this.unlocked.id : '' }; }
   update() {
     super.update();
     for (const h of this.heroes) if (h) { h.anim.tick(); if (h.anim.done) h.anim.play(this.defeat ? 'lying' : 'win', { restart: true, fallback: 'idle' }); }
@@ -69,7 +77,20 @@ export class ResultsScreen extends Screen {
     for (let p = 0; p < 2; p++) if (inp.joined(p) && (inp.pressed(p, 'start') || inp.pressed(p, 'attack'))) go = true;
     if (this.game.options.bot) go = this.frame > BOT_HOLD;
     else if (this.stamp > AUTO_RETURN) go = true;
-    if (go && this.frame > 30) { this.leaving = true; audio.play('menu_confirm'); this.game.fadeTo(() => this.game.reset('title'), 0.06); }
+    if (go && this.frame > 30) {
+      this.leaving = true; audio.play('menu_confirm');
+      // a clear that opened a board goes to BOARD SELECT to play the reveal; everything else returns to the title
+      const reveal = this.unlocked && this.game.factories.boardselect ? this.unlocked.id : '';
+      this.game.fadeTo(() => (reveal ? this.game.reset('boardselect', { reveal }) : this.game.reset('title')), 0.06);
+    }
+  }
+  /** "NEW BOARD OPEN" plate: what this clear unlocked, and where to find it. */
+  drawUnlock(ctx, f) {
+    const stage = this.unlocked, n = stage.number || stageIndex(stage) + 1;
+    const x = 56, y = 262, w = 344, h = 34;
+    rrect(ctx, x, y, w, h, 4, 'rgba(20,44,44,0.85)', UI.teal, (f % 40) < 20 ? 2 : 1);
+    drawText(ctx, `NEW BOARD OPEN - STAGE ${n}`, x + w / 2, y + 5, { size: 1, color: UI.teal, align: 'center' });
+    drawText(ctx, stage.name, x + w / 2, y + 18, { size: 1, color: UI.brassLight, align: 'center' });
   }
   /** Value of a row as shown while it rolls in (numbers count up over ROLL_FRAMES). */
   rowValue(s, key, r) {
@@ -91,7 +112,7 @@ export class ResultsScreen extends Screen {
     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(56, 94, VIEW_W - 112, 1); ctx.fillRect(56, 218, 340, 1);
     if (this.defeat) drawTextOutlined(ctx, 'THE ENGINE WINS.', VIEW_W / 2, 40, { size: 3, color: UI.red, outline: '#2a1010', thickness: 1, align: 'center' });
     else drawTextOutlined(ctx, 'STAGE CLEAR', VIEW_W / 2, 40, { size: 3, color: UI.brassLight, outline: '#3a2010', thickness: 1, align: 'center' });
-    drawText(ctx, 'THE ASCENT OF CALDERWICK', VIEW_W / 2, 70, { size: 1, color: UI.paper, align: 'center' });
+    drawText(ctx, this.stage ? this.stage.name : '', VIEW_W / 2, 70, { size: 1, color: UI.paper, align: 'center' });
     // columns
     const n = this.stats.length;
     this.stats.forEach((s, i) => drawText(ctx, `P${i + 1} ${s.name}`, COL_X + i * COL_W + COL_W / 2, 84, { size: 1, color: i === 0 ? UI.p1 : UI.p2, align: 'center' }));
@@ -123,6 +144,7 @@ export class ResultsScreen extends Screen {
       if (this.defeat && t >= 1) drawText(ctx, 'D CEILING', rx, ry + 54, { size: 1, color: UI.red, align: 'center' });
       particles.draw(ctx, null, 'front');
     }
+    if (this.unlocked && this.stamp > 12) this.drawUnlock(ctx, f);
     if ((f % 60) < 40 && this.stamp > 10) drawText(ctx, 'PRESS START', VIEW_W / 2, VIEW_H - 48, { size: 1, color: UI.paper, align: 'center' });
   }
 }

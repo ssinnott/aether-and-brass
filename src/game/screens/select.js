@@ -70,7 +70,9 @@ export class SelectScreen extends Screen {
       } else if (inp.pressed(i, 'dodge') && i === 0) {
         audio.play('menu_back');
         this.starting = true;
-        this.game.fadeTo(() => this.game.replace('title'), 0.08);
+        // back out to wherever the board was chosen, so P1 can change board without restarting from the title
+        const back = this.game.factories.boardselect ? 'boardselect' : 'title';
+        this.game.fadeTo(() => this.game.replace(back), 0.08);
         return;
       }
     }

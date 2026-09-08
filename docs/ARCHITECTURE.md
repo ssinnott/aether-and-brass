@@ -96,7 +96,7 @@ src/
       midboss.js, boss.js          # stage 1 bosses
       midboss2.js, boss2.js        # stage 2 bosses (reuse the Stormcrow rig)
     stage/
-      index.js             # STAGES registry + getStage(n): the boards the title screen offers
+      index.js             # STAGES registry + getStage(n): the boards BOARD SELECT offers
       stage1.js            # stage data (sections, waves, props, hazards) per section 7 format
       stage2.js
 ```
@@ -368,9 +368,28 @@ export const stage1 = {
 }
 ```
 Stages are registered in `content/stage/index.js` (`STAGES`, `getStage(n)`); `game.options.stage` is the
-**1-based stage number** the title screen's BOARD row and the `?stage=N` URL param write, and the gameplay /
+**1-based stage number** the BOARD SELECT screen and the `?stage=N` URL param write, and the gameplay /
 intro screens resolve it through `getStage`. Adding a board is a stage data file, its backdrop modules (with
-their ids added to `art/backgrounds/index.js`) and one entry in `STAGES`.
+their ids added to `art/backgrounds/index.js`), a `preview` block for its select plaque and one entry in
+`STAGES` — the selector, the unlock chain and the title screen's board counter all size themselves off
+`STAGES.length`, so nothing else needs touching.
+
+`preview` is the BOARD SELECT vignette (`game/screens/boardselect.js`), not gameplay art:
+`{ skyTop, skyBot, ground, groundH?, accent, motif: 'city'|'sky', blurb? }`.
+
+### Board unlocks (`game/progress.js`)
+Board 1 is always selectable; board N opens once board N-1 has been cleared. `ResultsScreen` calls
+`progress.markCleared(stage.id, { score, rank })` on a clear (never on a defeat) and announces whatever
+that opened. Dismissing such a clear does `reset('boardselect', { reveal: <stageId> })` instead of
+returning to the title, and `BoardSelectScreen` plays the unlock on that plaque: a fixed frame-timed
+sequence (`RV` in `screens/boardselect.js` — hold, rattle, snap, peel, name, stamp) that draws the plaque
+still sealed, breaks the padlock, retracts the hatch as two doors over the vignette, resolves the name out
+of scrambled glyphs and lands a STAGE N OPEN stamp with the music. Attack or start ends it early; either way
+the screen settles into ordinary selection with the cursor already on the new board. State persists to `localStorage` under `aetherAndBrass.progress.v1` as
+`{ version: 1, boards: { <stageId>: { cleared, score, rank } } }`, and **every** access is guarded — a
+browser that throws on storage reads as "nothing cleared yet" and the game stays playable on board 1.
+`allowSession(i)` / `unlockAllForSession()` open boards for one page load only and are never written back,
+which is how `?stage=N` links and `?unlockall=1` work without rewriting a save.
 
 `StageRunner` (`game/stage.js`): tracks the furthest camera position; on wave
 trigger, locks camera, spawns enemies at `side` just outside the lock bounds (with
@@ -425,8 +444,9 @@ URL params: `?debug=1` (hitboxes, hurtboxes, AI state labels, FPS), `?autotest=1
 (test mode: no audio context, no rAF loop, seeded rng, `window.__game` fully populated),
 `?seed=123`, `?skipTo=gameplay&chars=0,2&section=3` (jump straight into gameplay with
 chosen characters and section), `?stage=2` (which board to play; honoured outside dev mode
-too), `?godmode=1`, `?bot=1` (built-in autopilot that walks
-right and attacks the nearest enemy — used for headless playthroughs).
+too, and it opens that board on BOARD SELECT for the page load), `?unlockall=1` (open every board for
+this page load, save untouched), `?resetprogress=1` (wipe the saved unlocks), `?godmode=1`, `?bot=1`
+(built-in autopilot that walks right and attacks the nearest enemy — used for headless playthroughs).
 
 ```js
 window.__game = {
@@ -449,7 +469,11 @@ debug mode) — tests fail on any error.
 - `npm test` → `node tools/playtest.js`: starts the server, launches headless Chromium
   via the globally installed Playwright (`NODE_PATH=/opt/node22/lib/node_modules` or
   local dep), runs scenarios and writes screenshots to `tools/screens/`:
-  1. `boot`: title screen renders, zero errors.
+  1. `boot`: title screen renders, START reaches BOARD SELECT and then character select, zero errors.
+  1b. `boards`: BOARD SELECT lists every registered board, a locked board refuses to start, a recorded
+     clear opens the next board and survives a page reload, the results screen names the board it cleared
+     and reports the unlock, dismissing it hands off to the plaque reveal (which runs, is skippable, and
+     leaves a startable board), and `?unlockall=1` / `?resetprogress=1` behave.
   2. `select`: navigate select, pick every character (4 runs), start gameplay, zero errors.
   3. `combat`: for each character, spawn near enemies, script attacks (combo, jump attack,
      dash attack, special, super, grab/throw), assert enemy hp decreases, assert hits land.

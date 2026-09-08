@@ -9,6 +9,7 @@ import { audio } from './engine/audio.js';
 import { particles } from './engine/particles.js';
 import { Game } from './game/game.js';
 import { TitleScreen } from './game/screens/title.js';
+import { BoardSelectScreen } from './game/screens/boardselect.js';
 import { SelectScreen } from './game/screens/select.js';
 import { GalleryScreen } from './game/screens/gallery.js';
 import { GameplayScreen } from './game/screens/gameplay.js';
@@ -18,6 +19,7 @@ import { GameOverScreen } from './game/screens/gameover.js';
 import { LobbyScreen } from './game/screens/lobby.js';
 import { ResultsScreen } from './game/screens/results.js';
 import { createNetSession } from './net/session.js';
+import { progress } from './game/progress.js';
 import { CHARACTERS } from './content/characters/index.js';
 import { ENEMY_LIST, ENEMY_GALLERY } from './content/enemies/index.js';
 
@@ -44,13 +46,16 @@ export function parseOptions(search = window.location.search) {
     godmode: devOnly && flag('godmode'),
     section: devOnly ? (parseInt(q.get('section') || '0', 10) || 0) : 0,
     // which board to play: 1-based stage number (see content/stage/index.js). Honoured outside dev mode too so a
-    // link can point straight at a board.
+    // link can point straight at a board, and it opens that board on BOARD SELECT for this page load (game/progress.js).
     stage: q.has('stage') ? (parseInt(q.get('stage'), 10) || 1) : 1,
     // Online co-op invite links: ?room=CODE joins that room, ?host=1 hosts it, ?transport= picks
     // the signalling strategy (mqtt by default; broadcast is same-machine tabs and the e2e test).
     room: (q.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8),
     host: flag('host'),
     transport: ['mqtt', 'broadcast', 'manual'].includes(q.get('transport')) ? q.get('transport') : 'mqtt',
+    // open every board on BOARD SELECT for this page load; `resetprogress` wipes the saved unlocks instead.
+    unlockall: flag('unlockall'),
+    resetprogress: flag('resetprogress'),
   };
 }
 
@@ -69,6 +74,10 @@ window.addEventListener('unhandledrejection', (e) => { if (!hooks._record) hooks
 
 function boot() {
   const options = parseOptions();
+  // Unlock state has to settle before the title / board select read it.
+  if (options.resetprogress) progress.reset();
+  if (options.unlockall) progress.unlockAllForSession();
+  if (options.stage > 1) progress.allowSession(options.stage - 1); // a `?stage=N` link is its own key to board N
   audio.testMode = options.autotest;
   rng.seed(options.seed);
   const view = createCanvas(document.getElementById('game') || document.body);
@@ -83,6 +92,7 @@ function boot() {
   game.enemyList = ENEMY_LIST;
   game.galleryRegistry = [...CHARACTERS.map((c) => ({ id: c.id, name: c.name, build: c.build, anims: c.anims })), ...ENEMY_GALLERY];
   game.registerScreen('title', (g) => new TitleScreen(g));
+  game.registerScreen('boardselect', (g) => new BoardSelectScreen(g));
   game.registerScreen('select', (g) => new SelectScreen(g));
   game.registerScreen('intro', (g) => new IntroScreen(g));
   game.registerScreen('gallery', (g) => new GalleryScreen(g));
@@ -154,7 +164,7 @@ function boot() {
   };
   // NOTE: Object.assign would evaluate getters once; live getters are defined separately below.
   Object.assign(hooks, {
-    game, input, rng, audio, particles, loop, options,
+    game, input, rng, audio, particles, loop, options, progress,
     step(n = 1) { loop.step(Math.max(0, n | 0)); },
     screen() { return game.screenId(); },
     summary() {
@@ -175,6 +185,12 @@ function boot() {
     toggleDebug() { showDebug = !showDebug; return showDebug; },
     /** Online co-op state for tools/playtest.js. */
     netState() { return net ? { state: net.state, room: net.room, slot: net.localSlot, delay: net.delay, waiting: net.waiting, frame: net.ls ? net.ls.frame : -1, desync: net.ls ? net.ls.desync : null, reason: net.endReason } : null; },
+    /** Board-unlock state, for tools/playtest.js: `saved` proves nothing was written to disk. */
+    progressState() {
+      let saved = null;
+      try { saved = window.localStorage.getItem('aetherAndBrass.progress.v1'); } catch (e) { saved = null; }
+      return { unlockedCount: progress.unlockedCount(), unlocked: [0, 1, 2, 3].map((i) => progress.isUnlocked(i)), saved };
+    },
     /** Netplay tests need the real gated rAF loop; autotest otherwise leaves it stopped. */
     startLoop() { loop.start(true); return true; },
     stopLoop() { loop.stop(); return true; },

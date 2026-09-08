@@ -17,6 +17,8 @@ const COGS = ['brassCog', 'brassCog'];
 
 export const stage1 = {
   id: 'stage1', name: 'THE ASCENT OF CALDERWICK', subtitle: 'CALDERWICK, CITY OF THE HEART-ENGINE. THE CHANCELLOR HAS SEALED THE SKY.',
+  // BOARD SELECT vignette (game/screens/boardselect.js): sky ramp, ground band, accent light, motif to draw.
+  preview: { skyTop: '#0E1424', skyBot: '#4A3050', ground: '#2B211C', accent: '#FFB038', motif: 'city', blurb: 'BRASSBOUND & SOOTBORN' },
   length: 6000,
   music: { section1: 'section1', section2: 'section2', section3: 'section3', section4: 'section4', midboss: 'midboss', boss: 'boss' },
   sections: [

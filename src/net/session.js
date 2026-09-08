@@ -13,6 +13,7 @@
 
 import { rng } from '../engine/rng.js';
 import { Entity } from '../game/entity.js';
+import { progress } from '../game/progress.js';
 import { createPeer } from './peer.js';
 import { createLockstep } from './lockstep.js';
 import { worldChecksum } from './checksum.js';
@@ -58,8 +59,12 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     rttReady: false,
     /** Set when the peer reports a different protocol version. */
     versionMismatch: false,
-    /** Lobby: each side's character index and ready flag. */
-    lobby: { myChar: 0, theirChar: 1, myReady: false, theirReady: false, peerHere: false },
+    /**
+     * Lobby state. `stage` is the HOST's board: unlocks are per-player localStorage, so the two
+     * peers do not agree on what is playable. The host's game is the one being played, so the host
+     * chooses from their own unlocked boards and the guest is given a session-only key to it.
+     */
+    lobby: { myChar: 0, theirChar: 1, myReady: false, theirReady: false, peerHere: false, stage: 1 },
     ls: null,
     peer: null,
     signal: null,
@@ -124,9 +129,12 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
   // ---- lobby -----------------------------------------------------------------------------------
 
   function sendLobby() {
-    sendCtl(encodeJson(MSG.LOBBY, { char: net.lobby.myChar, ready: net.lobby.myReady }));
+    // Only the host's stage is meaningful; the guest echoes it back harmlessly.
+    sendCtl(encodeJson(MSG.LOBBY, { char: net.lobby.myChar, ready: net.lobby.myReady, stage: net.lobby.stage }));
   }
   net.setChar = (i) => { net.lobby.myChar = i | 0; sendLobby(); };
+  /** Host only: choose the board this session plays, from the boards the HOST has unlocked. */
+  net.setStage = (n) => { if (isHost) { net.lobby.stage = Math.max(1, n | 0); sendLobby(); } };
   net.setReady = (v) => { net.lobby.myReady = !!v; sendLobby(); maybeStart(); };
 
   async function measureRtt() {
@@ -153,7 +161,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     net.delay = delayForRtt(net.rtt);
     const params = {
       seed: (Math.floor(Math.random() * 0x7fffffff) | 0) >>> 0 || 1,   // chosen once, before any simulation
-      stage: game.options.stage || 1,
+      stage: net.lobby.stage || game.options.stage || 1,
       difficulty: ['easy', 'normal', 'hard'].indexOf(game.options.difficulty || 'normal'),
       chars: isHost ? [net.lobby.myChar, net.lobby.theirChar] : [net.lobby.theirChar, net.lobby.myChar],
       delay: net.delay,
@@ -167,6 +175,11 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     net.delay = Math.max(1, delay);
     net.ls = createLockstep({ localSlot: net.localSlot, delay: net.delay });
     game.options.stage = stage || 1;
+    // Board unlocks live in each player's own localStorage, so the guest may never have opened the
+    // board the host picked. The host's game is the one being played: give the guest a key to it
+    // for this page load only (progress.js allowSession is never written back to their save). They
+    // still earn the board properly if they clear it - results.js records the clear on both peers.
+    progress.allowSession((stage || 1) - 1);
     game.options.difficulty = ['easy', 'normal', 'hard'][difficulty] || 'normal';
     game.options.chars = [chars[0], chars[1]];
     game.options.netplay = true;
@@ -199,6 +212,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
       case MSG.LOBBY:
         net.lobby.theirChar = m.char | 0;
         net.lobby.theirReady = !!m.ready;
+        if (!isHost && m.stage) net.lobby.stage = m.stage | 0;   // the guest follows the host's board
         maybeStart();
         break;
       case MSG.START:

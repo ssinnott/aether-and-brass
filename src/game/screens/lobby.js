@@ -9,6 +9,8 @@ import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
 import { rrect, rivetLine, gear } from '../../art/shapes.js';
 import { makeRoomCode } from '../../net/signal.js';
+import { progress } from '../progress.js';
+import { STAGES } from '../../content/stage/index.js';
 
 const MODES = [
   { id: 'mqtt', label: 'ROOM CODE', blurb: 'PLAY OVER THE INTERNET' },
@@ -77,6 +79,8 @@ export class LobbyScreen extends Screen {
     });
     this.net = net;
     net.lobby.myChar = this.charCursor;
+    // The host's save decides which boards this session can play (see net/session.js beginMatch).
+    if (this.isHost) net.lobby.stage = this.game.options.stage || 1;
     // The address bar must hold a GUEST-facing link. Sharing our own URL would carry host=1, and
     // two hosts in a room never see each other: signal.js filters by role, so both sit waiting.
     if (this.isHost && this.mode !== 'manual' && typeof history !== 'undefined' && history.replaceState) {
@@ -91,6 +95,17 @@ export class LobbyScreen extends Screen {
     const okStart = await net.connect();
     if (!okStart) { this.phase = 'error'; this.error = net.error || 'could not connect'; }
     else if (this.mode !== 'manual') this.status = this.isHost ? 'WAITING FOR PLAYER 2' : 'CONNECTING';
+  }
+
+  /** Board indices the HOST has unlocked. The guest never picks; it follows. */
+  boardOptions() { return STAGES.map((_, i) => i).filter((i) => progress.isUnlocked(i)); }
+
+  cycleBoard(dir) {
+    const opts = this.boardOptions();
+    if (opts.length < 2) return;
+    const at = opts.indexOf((this.net.lobby.stage || 1) - 1);
+    this.net.setStage(opts[((at < 0 ? 0 : at) + dir + opts.length) % opts.length] + 1);
+    this.game.audio.play('menu_move');
   }
 
   onNetState(s) {
@@ -166,6 +181,9 @@ export class LobbyScreen extends Screen {
       if (!this.net.lobby.myReady) {
         if (inp.pressed(0, 'left')) { this.charCursor = (this.charCursor + chars.length - 1) % chars.length; this.net.setChar(this.charCursor); audio.play('menu_move'); }
         if (inp.pressed(0, 'right')) { this.charCursor = (this.charCursor + 1) % chars.length; this.net.setChar(this.charCursor); audio.play('menu_move'); }
+        // Only the host cycles the board: it is their unlocks the session runs on.
+        if (this.isHost && inp.pressed(0, 'up')) this.cycleBoard(-1);
+        if (this.isHost && inp.pressed(0, 'down')) this.cycleBoard(1);
         if (inp.pressed(0, 'attack') || inp.pressed(0, 'start')) { this.net.setReady(true); audio.play('menu_confirm'); }
       } else if (inp.pressed(0, 'jump') || inp.pressed(0, 'dodge')) { this.net.setReady(false); audio.play('menu_back'); }
       return;
@@ -227,7 +245,7 @@ export class LobbyScreen extends Screen {
     }
 
     if (this.phase === 'lobby') {
-      plate(70, 170);
+      plate(70, 186);
       const chars = this.game.characters || [];
       const me = chars[this.net.lobby.myChar], them = chars[this.net.lobby.theirChar];
       drawText(ctx, `CONNECTED  -  YOU ARE PLAYER ${this.net.localSlot + 1}`, 320, 88, { size: 1, color: '#4DF0E0', align: 'center' });
@@ -237,10 +255,19 @@ export class LobbyScreen extends Screen {
         drawText(ctx, (name && (name.name || name.id)) || '?', 250, y, { size: 2, color: UI.paper });
         drawText(ctx, ready ? 'READY' : 'CHOOSING', 400, y, { size: 1, color: ready ? '#7ef07e' : UI.brassDark });
       };
-      row('YOU', me, this.net.lobby.myReady, 134, UI.white);
-      row('THEM', them, this.net.lobby.theirReady, 160, '#4DF0E0');
-      drawText(ctx, this.net.lobby.myReady ? 'JUMP: CHANGE YOUR MIND' : 'LEFT/RIGHT: PICK YOUR HERO    ATTACK: READY', 320, 200, { size: 1, color: UI.brass, align: 'center' });
-      if (this.net.lobby.myReady && this.net.lobby.theirReady) drawTextOutlined(ctx, 'STARTING!', 320, 224, { size: 3, color: UI.brassLight, outline: '#3a2010', align: 'center' });
+      row('YOU', me, this.net.lobby.myReady, 128, UI.white);
+      row('THEM', them, this.net.lobby.theirReady, 152, '#4DF0E0');
+      // The board is the host's: unlocks are per-player, so the guest plays the host's game and is
+      // given a key to that board for this session only.
+      const bi = Math.max(0, (this.net.lobby.stage || 1) - 1), board = STAGES[bi];
+      const opts = this.boardOptions().length;
+      drawText(ctx, this.isHost ? `BOARD  < ${bi + 1} OF ${opts} >` : "HOST'S BOARD", 160, 178, { size: 1, color: UI.brass });
+      drawText(ctx, board ? board.name : '?', 250, 178, { size: 1, color: UI.paper });
+      if (!this.isHost && !progress.isUnlocked(bi)) drawText(ctx, 'OPENED FOR THIS SESSION', 320, 192, { size: 1, color: '#7ef07e', align: 'center' });
+      drawText(ctx, this.net.lobby.myReady ? 'JUMP: CHANGE YOUR MIND'
+        : this.isHost ? 'LEFT/RIGHT: HERO    UP/DOWN: BOARD    ATTACK: READY' : 'LEFT/RIGHT: PICK YOUR HERO    ATTACK: READY',
+        320, 208, { size: 1, color: UI.brass, align: 'center' });
+      if (this.net.lobby.myReady && this.net.lobby.theirReady) drawTextOutlined(ctx, 'STARTING!', 320, 226, { size: 3, color: UI.brassLight, outline: '#3a2010', align: 'center' });
       return;
     }
 

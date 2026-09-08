@@ -24,8 +24,23 @@ input masks over a WebRTC data channel, with no server we operate.
 | Signalling | `src/net/signal.js` | MQTT over WSS, BroadcastChannel, copy-paste codes |
 | MQTT subset | `src/net/mqtt-codec.js` | Streaming parser: a WebSocket frame does not align with an MQTT packet |
 | Session | `src/net/session.js` | Signalling → lobby → match, and the per-frame pump |
-| UI | `src/game/screens/lobby.js` | Host/join, hero pick, ready; `?room=CODE` invite links |
+| UI | `src/game/screens/lobby.js` | Host/join, hero pick, host's board pick, ready; `?room=CODE` invite links |
 | Tests | `tools/nettest.js`, `tools/playtest.js` | Pure-Node suites plus a two-page end-to-end match |
+
+### Shared state: board unlocks
+
+Board unlocks (`src/game/progress.js`) live in each player's own `localStorage`, so the two
+peers genuinely disagree about what is playable — and a lockstep peer cannot simulate a board
+it will not load. **The host's game is the one being played:**
+
+- The host picks the board in the lobby, from the boards *they* have unlocked.
+- `START` carries that board; on receiving it the guest calls `progress.allowSession(index)`,
+  which opens it **for that page load only and is never written back to their save**.
+- The guest still earns the board honestly: `results.js` records the clear on both peers, so
+  clearing it together unlocks it permanently for both.
+
+Anything else in `progress` stays local — it is read at screen boundaries, never inside the
+simulation, so it cannot desync a match.
 
 **Deferred from v1**, deliberately: rollback (M2), state-transfer resync after a desync (a
 desync ends the session and hands P2 to the bot), more than two players, and the MQTT
@@ -41,7 +56,8 @@ copy-paste path are the verified ones.
 - `node tools/playtest.js netplay` — two real headless pages, a real data channel: invite link
   to lobby, host on slot 0 and guest on slot 1, 120+ frames with no desync and peers within
   delay+2, a key press on the guest moving player 2 **on the host's machine** with both
-  agreeing on the position, and a disconnect handing slot 2 to the bot.
+  agreeing on the position, a disconnect handing slot 2 to the bot (from either side), and a
+  guest playing a board only the host had unlocked without their save being rewritten.
 - The full existing suite (200 checks) passes unchanged, so the determinism work is invisible
   in single player.
 
