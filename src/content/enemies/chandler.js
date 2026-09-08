@@ -16,6 +16,7 @@ import {
   CH, CH_PAL, CH_PROPS, CH_PARTS, CLAN, BASE_HOOKS, makeChandlerBase, drawLamp, drawRiteRim, riteSourceGone, isClient, riteFlash,
 } from './chandlerRig.js';
 import { celRect, celBall, celPoly, tones } from '../../art/shading.js';
+import { farShade } from '../../art/palettes.js';
 import { getChain } from '../../art/secondary.js';
 import { pathPoly, paint } from '../../art/shapes.js';
 import { rad, clamp } from '../../engine/math.js';
@@ -26,14 +27,21 @@ import { ST } from '../../constants.js';
 const R = Math.round;
 const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
 const LOW = { low: true }, BEHIND = { behind: true };
-const WOOD = '#9A7B4E', TARP = '#D8DCCC', KILN = '#3A322A', DRAM = '#2E4A38', CART = '#332C24';
+// WOOD is a pale ash, 33 pts over harness leather (it used to be 21 pts under §0.1's 25 % floor in the same warm-brown
+// family, so the stave, the crook and the bracer that holds them read as one continuous brown).
+// TARP is dirty canvas, 26 pts under quicklime, so the cart's cargo does not read as more apron.
+// KILN / CART are now ACCENT hexes — the ironwork, the chimney collar, the grate frame, the hub — not the drum and box
+// bodies, which are pewter and leather (§4: this faction is pale, the darks live at the extremities).
+const WOOD = '#B79A6A', TARP = '#B0AE96', KILN = '#3A322A', DRAM = '#2E4A38', CART = '#332C24';
+/** The far-side value of the Tallyman's ledger board: accessories get no `info`, so the constant is precomputed. */
+const LEDGER_FAR = farShade(CH.quicklime, 0.62, 0.25), LEDGER_FAR_INK = farShade(CH.leather, 0.62, 0.25);
 
 // ================================================================ tools (hand space: +x along the forearm)
 /** Wickboy: 56px lighting-pole, leather-bound, with the faction's only lamp carried ABOVE the head and a live wick. */
 function drawPole(ctx, rig) {
   celRect(ctx, rig, -8, -2, 54, 4, 2, CH.leather, 0.4, 0.2);
   if (!rig.override) { const t = tones(rig, CH.pewter); ctx.fillStyle = t.base; ctx.fillRect(-7, -2, 4, 4); ctx.fillRect(24, -2, 3, 4); }
-  drawLamp(ctx, rig, 48, 0, 0.85);
+  drawLamp(ctx, rig, 48, 0, 1.1);   // k 0.85 gave a 5x5 glass, under §0.7's 6 px glow floor, on the faction's furthest lamp
   if (rig.override) return;
   const s = (rig.lamp | 0) === 0 ? 0 : 3 + ((rig.tick & 2) ? 1 : 0);
   if (!s) return;
@@ -94,41 +102,49 @@ function drawCrook(ctx, rig) {
   ctx.save(); ctx.translate(x + 10, top + 3);
   ctx.rotate(rad(ch.ang[0])); if (!rig.override) { ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(-1, 0, 2, 6); }
   ctx.translate(0, 6); ctx.rotate(rad(ch.ang[1]));
-  drawLamp(ctx, rig, 0, 6, 0.9);
+  drawLamp(ctx, rig, 0, 6, 1.05);   // 6x6 of glass: k 0.9 was 5x5, under the same §0.7 floor as the Wickboy's pole lamp
   ctx.restore();
 }
 /** Tallyman: ledger board strapped to the far forearm (handL space) — the only Chandler reading something. */
 function drawLedger(ctx, rig) {
-  celRect(ctx, rig, -1, -13, 11, 15, 1, CH.quicklime, 0.4, 0.25);
+  // it hangs off the FAR forearm, so it takes far values: at CH.quicklime it sat at exactly the near sleeve's value,
+  // and the closeup showed two identical white slabs on the chest with no way to tell the arm from the item (§5).
+  celRect(ctx, rig, -1, -13, 11, 15, 1, LEDGER_FAR, 0.4, 0.25);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(CH.leather); ctx.fillRect(-1, -13, 3, 15);
-  ctx.fillStyle = tones(rig, CH.quicklime).sh;
+  ctx.fillStyle = rig.col(LEDGER_FAR_INK); ctx.fillRect(-1, -13, 3, 15);
+  ctx.fillStyle = tones(rig, LEDGER_FAR).sh;
   for (let i = 0; i < 3; i++) ctx.fillRect(3, -10 + i * 4, 6, 2);
 }
 /** Limeburner: the hip kiln drum, the lamp behind its grate (so his cone comes out STRIPED) and a puffing chimney. */
 function drawKiln(ctx, rig) {
   const hw = R(rig.p.hip / 2);
-  celRect(ctx, rig, hw - 2, -12, 18, 24, 4, KILN, 0.4, 0.28);
-  celRect(ctx, rig, hw + 2, -19, 6, 8, 2, CH.pewter, 0.4, 0.3);
-  drawLamp(ctx, rig, hw + 7, 2, 1);
+  // greened pewter, not near-black: an 18x24 KILN drum plus the hose, the gauntlets and the boots stacked into a dark
+  // upper body and grouped the Limeburner with the Sootborn silhouette mass at squint (§4 'SMALL AREAS ONLY')
+  celRect(ctx, rig, hw - 2, -12, 18, 24, 4, CH.pewter, 0.4, 0.28);
+  celRect(ctx, rig, hw + 2, -19, 6, 8, 2, KILN, 0.4, 0.3);              // the rubber chimney collar
+  drawLamp(ctx, rig, hw + 7, 1, 1.3);                                    // 8x9 of glass, over §0.7's 6 px floor
   if (rig.override) return;
-  const t = tones(rig, KILN);
-  ctx.fillStyle = t.deep;
-  for (let i = 0; i < 3; i++) ctx.fillRect(hw + 2, -3 + i * 4, 11, 2); // the grate bars
   ctx.fillStyle = rig.col(CLAN.limeburner); ctx.fillRect(hw - 1, -11, 16, 3);
+  // ONE window in a 3px grate frame instead of three 2px bars laid across a 6px glass (which read as a smudge at 1x)
+  ctx.fillStyle = rig.col(KILN); ctx.fillRect(hw + 1, -8, 13, 3); ctx.fillRect(hw + 1, 7, 13, 3);
 }
 /** Limeburner: the corrugated hose, a 3-segment chain from the respirator down over the shoulder into the kiln. */
 function drawHose(ctx, rig) {
-  if (rig.override) return;
+  // the early return used to sit HERE, above the segment loop, so a ~30x40 diagonal punched a hole in the Limeburner's
+  // own hit flash and the chain stopped lagging on flash frames (§3 / §11: the flash draws the WHOLE silhouette).
   const p = rig.p, ch = getChain(rig, 'hose', 3, { joint: 'torso', rest: [0, 1], stiffness: 0.15, damping: 0.66, gain: 1.6, rotGain: 0.5, maxAng: 34 });
-  ctx.save(); ctx.translate(R(p.torsoW * 0.28), -p.torsoH - 2);
-  const t = tones(rig, CH.rubber), hi = t.hi;
+  const t = tones(rig, CH.rubber), flash = !!rig.override;
+  // 6px segments routed DOWN THE SIDE of the shoulder (angle 26 -> 12) instead of a fat diagonal across the chest, so
+  // the limedust coat keeps the shoulder mass and the darks stay at the extremities
+  ctx.save(); ctx.translate(R(p.torsoW * 0.46), -p.torsoH + 3);
   for (let i = 0; i < ch.n; i++) {
-    ctx.rotate(rad(ch.ang[i] + 26));
-    ctx.fillStyle = rig.col(rig.outline); ctx.fillRect(-5, 0, 10, 11);
-    ctx.fillStyle = rig.col(CH.rubber); ctx.fillRect(-4, 0, 8, 10);
-    ctx.fillStyle = t.deep; ctx.fillRect(-4, 4, 8, 2); ctx.fillRect(-4, 8, 8, 2);
-    ctx.fillStyle = hi; ctx.fillRect(-4, 0, 2, 4);
+    ctx.rotate(rad(ch.ang[i] + 12));
+    ctx.fillStyle = rig.col(rig.outline); ctx.fillRect(-4, 0, 8, 11);
+    ctx.fillStyle = rig.col(CH.rubber); ctx.fillRect(-3, 0, 6, 10);
+    if (!flash) {
+      ctx.fillStyle = t.deep; ctx.fillRect(-3, 4, 6, 2); ctx.fillRect(-3, 8, 6, 2);
+      ctx.fillStyle = t.hi; ctx.fillRect(-3, 0, 2, 4);
+    }
     ctx.translate(0, 9);
   }
   ctx.restore();
@@ -136,14 +152,16 @@ function drawHose(ctx, rig) {
 /** Purser: the bandolier of eight glass drams — it EMPTIES as he spends them, so the silhouette reads his stock. */
 function drawBandolier(ctx, rig) {
   const p = rig.p, H = p.torsoH, hw = R(p.torsoW / 2), left = rig.drams != null ? rig.drams : 8;
-  celPoly(ctx, rig, [-hw - 2, -H + 3, -hw + 3, -H + 1, hw + 3, R(-H * 0.3), hw + 1, R(-H * 0.3) + 6], CH.leather, 0.4, 0.2);
-  if (rig.override) return;
+  celPoly(ctx, rig, [-hw - 2, -H + 3, -hw + 3, -H + 1, hw + 4, R(-H * 0.26), hw + 2, R(-H * 0.26) + 6], CH.leather, 0.4, 0.2);
+  // the bottles are OUTLINED and stand proud of the coat edge, and they draw during the flash: filled black the Purser
+  // used to be a torso with two bars and a cap tab, and the emptying row was a colour read only (§11 silhouette test)
   for (let i = 0; i < 8; i++) {
     if (i >= left) continue;
     const u = i / 7;
-    ctx.fillStyle = rig.col(DRAM);
-    ctx.fillRect(R(-hw + 1 + u * (hw * 2 - 2)), R(-H + 3 + u * (H * 0.65)), 3, 4);
+    celRect(ctx, rig, R(-hw + 2 + u * (hw * 2 + 5)), R(-H + 2 + u * (H * 0.6)), 3, 5, 1, DRAM, 0.4, 0);
   }
+  if (rig.override) return;
+  ctx.fillStyle = tones(rig, CH.leather).deep; ctx.fillRect(R(-hw + 2), R(-H + 4), R(hw * 1.6), 1);
 }
 /** Purser: the bull's-eye lantern on the hip — the lowest lamp in the faction, so his cone starts at his own boots. */
 function drawBullseye(ctx, rig) {
@@ -155,21 +173,24 @@ function drawBullseye(ctx, rig) {
 /** Resurrection Man: the two-wheel handcart on a hip yoke, tarpaulin lump strapped down, lamp swinging from the shaft. */
 function drawCart(ctx, rig) {
   const p = rig.p, x = -R(p.torsoW / 2) - 30, y = -4;
-  // the cart is dark equipment (like the Limeburner's kiln) so it never merges with the pale coat in front of it
-  celRect(ctx, rig, x, y - 12, 34, 16, 2, CART, 0.4, 0.22);
+  // harness-leather planks with CART kept for the ironwork, the wheel and the hub. As one 34x16 near-black box (plus a
+  // near-black wheel that its own outline could not bound) it dragged the faction's elite grabber to Sootborn value.
+  celRect(ctx, rig, x, y - 12, 34, 16, 2, CH.leather, 0.4, 0.22);
   celPoly(ctx, rig, [x + 3, y - 12, x + 10, y - 21, x + 24, y - 22, x + 31, y - 12], TARP, 0.4, 0.25);
-  celBall(ctx, rig, x + 8, y + 8, 8, CH.rubber, false);
+  celBall(ctx, rig, x + 8, y + 8, 8, CART, false);
   celRect(ctx, rig, x + 30, y - 8, 16, 4, 2, CH.leather, 0.4, 0.2);
   const ch = getChain(rig, 'lamp', 2, { joint: 'torso', rest: [0, 1], stiffness: 0.18, damping: 0.62, gain: 1.5, rotGain: 0.4, maxAng: 30 });
+  // the lamp hangs on the cart's front board at torso y -16 (waist height). At -28 it was ABOVE the shoulder line and
+  // level with his head, which stole the Wickboy's unique high light — the faction reads as four low lights and one high.
   ctx.save(); ctx.translate(x + 4, y - 12);
-  ctx.rotate(rad(ch.ang[0])); if (!rig.override) { ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(-1, -6, 2, 6); }
+  ctx.rotate(rad(ch.ang[0])); if (!rig.override) { ctx.fillStyle = rig.col(CART); ctx.fillRect(-1, -4, 2, 4); }
   ctx.rotate(rad(ch.ang[1]));
-  drawLamp(ctx, rig, 0, -12, 1.1);
+  drawLamp(ctx, rig, 0, 0, 1.1);
   ctx.restore();
   if (rig.override) return;
-  ctx.fillStyle = rig.col(CH.leather); ctx.fillRect(x + 6, y - 20, 22, 3);
-  ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(x + 6, y + 6, 4, 4);
-  ctx.fillStyle = tones(rig, CART).hi; ctx.fillRect(x + 2, y - 12, 30, 2);
+  ctx.fillStyle = rig.col(CART); ctx.fillRect(x + 6, y - 20, 22, 3);       // the tarp lashing
+  ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(x + 5, y + 5, 6, 6);    // the wheel hub
+  ctx.fillStyle = tones(rig, CH.leather).deep; ctx.fillRect(x + 2, y - 5, 30, 2); // the plank seam
 }
 
 // ================================================================ the four rites (all content-side statuses)
@@ -278,10 +299,12 @@ function findCrust(f, world) {
   }
   return best || f;
 }
-function findDose(f, world) {
-  for (const e of world.enemies) if (isClient(e, f) && Math.abs(e.x - f.x) < 170 && !e.hasStatus('dosed')) return e;
-  return f;
+function findDose(f, world, skip) {
+  for (const e of world.enemies) if (e !== skip && isClient(e, f) && Math.abs(e.x - f.x) < 170 && !e.hasStatus('dosed')) return e;
+  return skip ? null : f;
 }
+/** The dram doses TWO allies, so it needs two cone/tether slots — the same scan the dose loop uses (chandlerRig BASE_HOOKS). */
+function findDose2(f, world, first) { return findDose(f, world, first); }
 
 // ================================================================ shared def assembly
 const BASE = {
@@ -306,16 +329,20 @@ const mkBuild = (o) => ({ ...BASE.build, ...o });
 
 // ================================================================ C1 WICKBOY: the one that steals your punish
 const WICK_CARRY = { armR: [32, 26], weapon: -78, armL: [-34, -20] };
-const WICK_CHAND = { face: 'bare', cap: 'flat', capCol: '#6A5A44', rites: ['relight'], lampJoint: 'weaponTip', lampDX: -2, lampDY: 2, selfConeDX: 24, find: findMend, cool: (f) => f.rangedCooldown };
+// capCol was '#6A5A44' against CH.hair '#6B5A44' — a 0.3 % separation between two directly adjacent parts, so the
+// crown and the hair merged into one brown lump and he lost his only headgear cue. '#4A3E30' is ~29 % under the hair.
+const WICK_CHAND = { face: 'bare', cap: 'flat', capCol: '#4A3E30', rites: ['relight'], lampJoint: 'weaponTip', lampDX: -2, lampDY: 2, selfConeDX: 24, find: findMend, cool: (f) => f.rangedCooldown };
 const POKE_BOX = frontBox(50, hit(6, 'light', 4, 0, 16, { id: 'poke' }));
 const SINGE_BOX = frontBox(44, hit(5, 'knockdown', 3, 4, 20, { id: 'singe' }), LOW);
-const wickboyAnims = Object.assign(makeChandlerBase(WICK_CARRY, { stoop: 12, head: 1, weaponFloor: -18 }), {
+const wickboyAnims = Object.assign(makeChandlerBase(WICK_CARRY, { stoop: 12, head: 1, weaponFloor: -18, gait: 'scamper' }), {
   // poke: 16f pole drawn back (light bobbing at his shoulder) -> smear thrust -> hold -> 20f punishable recovery
   poke: { loop: false, frames: [
-    FK(10, { armR: [-16, 62], weapon: -85, armL: [26, 10], torso: 4, head: -2, root: [-3, 0], legR: [6, 6], legL: [-14, 10], face: 'angry' }, { tell: true, sfx: 'whiff', ease: 'in' }),
-    FK(6, { armR: [-26, 70], weapon: -88, armL: [34, 12], torso: -2, head: -4, root: [-5, 1], legR: [4, 6], legL: [-16, 12], face: 'angry', squash: 0.97, stretch: 1.03 }, { tell: true, ease: 'out' }),
+    // ANTICIPATION, not the idle carry: the old tell keys moved the pole from -58 to -40 canvas degrees, i.e. TOWARD
+    // the player, so 16 frames of telegraph on the introduction-wave fodder unit said nothing (§8 / §11).
+    FK(10, { armR: [-40, 96], weapon: -120, armL: [40, 8], torso: -6, head: -6, root: [-6, 0], legR: [4, 10], legL: [-20, 16], face: 'angry' }, { tell: true, sfx: 'whiff', ease: 'in' }),
+    FK(6, { armR: [-58, 118], weapon: -142, armL: [46, 6], torso: -12, head: -8, root: [-9, 1], legR: [2, 12], legL: [-24, 18], face: 'angry', squash: 0.97, stretch: 1.03 }, { tell: true, ease: 'out' }),
     FK(6, { armR: [86, -6], weapon: 18, armL: [-36, 18], torso: 30, head: 4, root: [5, 1], legR: [40, 8], legL: [-30, 28], face: 'shout', squash: 1.04, stretch: 0.96 },
-      { hitbox: POKE_BOX, move: { x: 3 }, smear: { from: -30, to: 20, a: 0.34, r: 54 }, fx: [{ kind: 'slash', x: 46, y: 40, radius: 16, angle: 0, sweep: 40 }], sfx: 'whiff', ease: 'overshoot' }),
+      { hitbox: POKE_BOX, move: { x: 3 }, smear: { from: -125, to: -2, a: 0.34, r: 54 }, fx: [{ kind: 'slash', x: 46, y: 40, radius: 16, angle: 0, sweep: 40 }], sfx: 'whiff', ease: 'overshoot' }),
     FK(3, { armR: [90, -4], weapon: 22, armL: [-38, 18], torso: 32, head: 4, root: [6, 1], legR: [40, 8], legL: [-30, 28], face: 'shout' }, { ease: 'out' }),
     FK(20, { armR: [72, 8], weapon: -12, armL: [-30, 14], torso: 22, head: 0, root: [4, 2], legR: [34, 8], legL: [-26, 24], face: 'grit' }, { punish: true, ease: 'inout' }),
     FK(6, { ...WICK_CARRY, torso: 12, head: 1, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
@@ -325,7 +352,7 @@ const wickboyAnims = Object.assign(makeChandlerBase(WICK_CARRY, { stoop: 12, hea
     FK(11, { armR: [-52, -26], weapon: -34, armL: [30, 14], torso: -6, head: -8, root: [-3, 0], legR: [8, 8], legL: [-14, 12], face: 'angry' }, { tell: true, sfx: 'fire', ease: 'in' }),
     FK(7, { armR: [-70, -34], weapon: -56, armL: [38, 16], torso: -12, head: -10, root: [-5, 0], legR: [6, 8], legL: [-16, 14], face: 'angry', squash: 0.96, stretch: 1.04 }, { tell: true, ease: 'out' }),
     FK(8, { armR: [30, 26], weapon: 35, armL: [-34, 16], torso: 34, head: 8, root: [5, 3], legR: [44, 26], legL: [-32, 34], face: 'shout', squash: 1.06, stretch: 0.95 },
-      { hitbox: SINGE_BOX, smear: { from: -140, to: 60, a: 0.38, r: 56 }, fx: [{ kind: 'ring', x: 40, y: 0, r0: 4, r1: 30, flat: true, color: CH.lime }], sfx: 'burn', ease: 'overshoot' }),
+      { hitbox: SINGE_BOX, smear: { from: 160, to: 30, a: 0.38, r: 56 }, fx: [{ kind: 'ring', x: 40, y: 0, r0: 4, r1: 30, flat: true, color: CH.lime }], sfx: 'burn', ease: 'overshoot' }),
     FK(3, { armR: [34, 28], weapon: 38, armL: [-36, 16], torso: 36, head: 8, root: [6, 3], legR: [44, 26], legL: [-32, 34], face: 'shout' }, { ease: 'out' }),
     FK(22, { armR: [50, 20], weapon: -6, armL: [-28, 12], torso: 24, head: 2, root: [4, 2], legR: [36, 16], legL: [-28, 28], face: 'grit' }, { punish: true, ease: 'inout' }),
     FK(6, { ...WICK_CARRY, torso: 12, head: 1, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
@@ -334,7 +361,7 @@ const wickboyAnims = Object.assign(makeChandlerBase(WICK_CARRY, { stoop: 12, hea
   relight: { loop: false, frames: [
     FK(16, { armR: [110, 26], weapon: -34, armL: [-40, -10], torso: 2, head: -10, root: [-2, 0], legR: [10, 8], legL: [-16, 10], face: 'angry' }, { tell: true, sfx: 'steam', ease: 'in' }),
     FK(10, { armR: [136, 12], weapon: -18, armL: [-48, -6], torso: -4, head: -14, root: [-3, -1], legR: [8, 8], legL: [-18, 12], face: 'shout', squash: 0.97, stretch: 1.04 },
-      { tell: true, smear: { from: -110, to: -160, a: 0.35, r: 70 }, ease: 'out' }),
+      { tell: true, smear: { from: -55, to: -88, a: 0.3, r: 70 }, ease: 'out' }),
     FK(6, { armR: [142, 8], weapon: -14, armL: [-52, -4], torso: -6, head: -16, root: [-3, -1], legR: [8, 8], legL: [-18, 12], face: 'shout' },
       { event: 'relight', sfx: 'steam', fx: [{ kind: 'steam', x: 20, y: 62, count: 3 }], ease: 'out' }),
     FK(30, { armR: [96, 18], weapon: -46, armL: [-36, -12], torso: 14, head: -4, root: [1, 1], legR: [12, 8], legL: [-14, 10], face: 'grit' }, { punish: true, ease: 'inout' }),
@@ -367,7 +394,10 @@ const wickboy = def({
     riteFlash(f, world);
     a.applyStatus('mended', MENDED, f);
     // THE CRIME: the relight cancels a stagger. It does NOT restore a stripped shield (permanent) or clear a net.
-    a.staggerTimer = 0; a.hurtTimer = 0; a.clearStatus('stunned');
+    // THE CRIME IS THE STAGGER CANCEL, NOT A COMBO BREAKER: clearing hurtTimer unconditionally let a Wickboy 140px
+    // away pull an ally out of ordinary hitstun mid-combo, which is a strictly larger effect than the tell promises.
+    if (a.staggerTimer > 0 || a.hasStatus('stunned') || a.punishable) a.hurtTimer = 0;
+    a.staggerTimer = 0; a.clearStatus('stunned');
     a.punishable = false; a.punishMult = 1; a.punishGrab = false;
     if (a.aiState === 'STAGGER' && a.endStagger) a.endStagger();
     return true;
@@ -391,35 +421,41 @@ const CHALKWEIGHT = {
     ctx.fillStyle = CH.leather; ctx.fillRect(-2, -7, 4, 3); ctx.restore();
   },
 };
+// The three used to be ONE animation with three durations: all three cocked the stave overhead to the same canvas
+// angle, all three threw it through the same arc, and rap #2 / weight #2 / tally #2 shared a copy-pasted lower body.
+// Now each has its own shape AND its own stance (§10 'parametric/canned'): rap is an elbow crack from a narrow stance,
+// weight is an off-hand lob loaded onto the back foot, tally is the only overhead travel and the only held finish.
 const tallymanAnims = Object.assign(makeChandlerBase(TAL_CARRY, { stoop: 13, head: 4, weaponFloor: -20 }), {
-  // rap: a short measuring-rod crack across the knuckles — 14f tell, 6f active, 18f punishable
+  // rap: a sideways knuckle-crack — the stave never leaves waist height, the ELBOW does all the work, feet planted
   rap: { loop: false, frames: [
-    FK(8, { armR: [-58, -20], weapon: 74, armL: [24, 40], torso: 2, head: -6, root: [-2, 0], legR: [8, 6], legL: [-12, 10], face: 'angry' }, { tell: true, sfx: 'whiff', ease: 'in' }),
-    FK(6, { armR: [-76, -26], weapon: 54, armL: [30, 42], torso: -4, head: -8, root: [-4, 0], legR: [6, 6], legL: [-14, 12], face: 'angry', squash: 0.97, stretch: 1.03 }, { tell: true, ease: 'out' }),
-    FK(6, { armR: [40, 14], weapon: 5, armL: [-16, 40], torso: 26, head: 6, root: [4, 1], legR: [34, 8], legL: [-26, 24], face: 'shout', squash: 1.04, stretch: 0.96 },
-      { hitbox: RAP_BOX, smear: { from: -130, to: 30, a: 0.38, r: 50 }, sfx: 'whiff', ease: 'overshoot' }),
-    FK(3, { armR: [44, 16], weapon: 7, armL: [-18, 40], torso: 28, head: 6, root: [5, 1], legR: [34, 8], legL: [-26, 24], face: 'shout' }, { ease: 'out' }),
-    FK(18, { armR: [56, 20], weapon: -14, armL: [-10, 42], torso: 20, head: 2, root: [3, 1], legR: [30, 8], legL: [-22, 22], face: 'grit' }, { punish: true, ease: 'inout' }),
+    FK(8, { armR: [26, 76], weapon: 10, armL: [22, 42], torso: 6, head: -2, root: [-2, 0], legR: [16, 6], legL: [-14, 10], face: 'angry' }, { tell: true, sfx: 'whiff', ease: 'in' }),
+    FK(6, { armR: [22, 100], weapon: 20, armL: [26, 44], torso: 2, head: -4, root: [-3, 0], legR: [14, 6], legL: [-12, 10], face: 'angry', squash: 0.98, stretch: 1.02 }, { tell: true, ease: 'out' }),
+    FK(6, { armR: [36, 2], weapon: -8, armL: [10, 40], torso: 16, head: 4, root: [3, 0], legR: [20, 6], legL: [-16, 12], face: 'shout', squash: 1.03, stretch: 0.97 },
+      { hitbox: RAP_BOX, smear: { from: -16, to: 30, a: 0.3, r: 44 }, sfx: 'whiff', ease: 'overshoot' }),
+    FK(3, { armR: [38, 0], weapon: -10, armL: [8, 40], torso: 18, head: 4, root: [4, 0], legR: [20, 6], legL: [-16, 12], face: 'shout' }, { ease: 'out' }),
+    FK(18, { armR: [32, 16], weapon: -2, armL: [14, 42], torso: 14, head: 2, root: [2, 0], legR: [16, 6], legL: [-14, 10], face: 'grit' }, { punish: true, ease: 'inout' }),
     FK(6, { ...TAL_CARRY, torso: 13, head: 4, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
   ] },
-  // weight: the aim event on the first tell frame samples 18 frames of history, then the plumb-weight goes up and over
+  // weight: a LOB. The plumb-weight is in the off hand (armL) and does all the travel; the stave stays tucked under the
+  // near arm and the weight loads onto the back foot. The aim event on the first tell frame samples 18f of history.
   weight: { loop: false, frames: [
-    FK(13, { armR: [-64, -34], weapon: 58, armL: [26, 40], torso: -4, head: -10, root: [-3, 0], legR: [8, 8], legL: [-14, 10], face: 'angry' }, { tell: true, event: 'aim', sfx: 'sling', ease: 'in' }),
-    FK(9, { armR: [-96, -40], weapon: -3, armL: [34, 42], torso: -12, head: -14, root: [-5, 0], legR: [6, 8], legL: [-16, 12], face: 'grit', squash: 0.97, stretch: 1.03 }, { tell: true, ease: 'out' }),
-    FK(6, { armR: [96, -14], weapon: -10, armL: [-20, 38], torso: 28, head: 4, root: [4, 1], legR: [34, 8], legL: [-26, 24], face: 'shout', squash: 1.04, stretch: 0.96 },
-      { event: 'spawnProjectile', projectile: CHALKWEIGHT, smear: { from: -150, to: 10, a: 0.36, r: 50 }, sfx: 'throw', ease: 'overshoot' }),
-    FK(3, { armR: [100, -12], weapon: 8, armL: [-22, 38], torso: 30, head: 4, root: [5, 1], legR: [34, 8], legL: [-26, 24], face: 'shout' }, { ease: 'out' }),
-    FK(24, { armR: [78, 4], weapon: 6, armL: [-12, 40], torso: 20, head: 0, root: [3, 1], legR: [28, 8], legL: [-22, 22], face: 'grit' }, { punish: true, ease: 'inout' }),
+    FK(13, { armR: [20, 50], weapon: 22, armL: [-86, -8], torso: -2, head: -6, root: [-6, 0], legR: [2, 10], legL: [-22, 22], face: 'angry' }, { tell: true, event: 'aim', sfx: 'sling', ease: 'in' }),
+    FK(9, { armR: [24, 56], weapon: 26, armL: [-130, -22], torso: -12, head: -14, root: [-9, 1], legR: [0, 12], legL: [-28, 26], face: 'grit', squash: 0.97, stretch: 1.03 }, { tell: true, ease: 'out' }),
+    FK(6, { armR: [18, 44], weapon: 16, armL: [66, -20], torso: 18, head: 6, root: [5, 1], legR: [28, 8], legL: [-20, 20], face: 'shout', squash: 1.04, stretch: 0.96 },
+      { event: 'spawnProjectile', projectile: CHALKWEIGHT, smear: { from: 20, to: 52, a: 0.28, r: 46 }, sfx: 'throw', ease: 'overshoot' }),
+    FK(3, { armR: [18, 42], weapon: 14, armL: [78, -14], torso: 20, head: 6, root: [6, 1], legR: [28, 8], legL: [-20, 20], face: 'shout' }, { ease: 'out' }),
+    FK(24, { armR: [22, 40], weapon: 10, armL: [48, 6], torso: 16, head: 2, root: [4, 1], legR: [22, 8], legL: [-18, 18], face: 'grit' }, { punish: true, ease: 'inout' }),
     FK(6, { ...TAL_CARRY, torso: 13, head: 4, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
   ] },
-  // TALLY: the longest wind-up in the faction, no hitbox anywhere, and the one time the cone lands on YOU
+  // TALLY: the only overhead travel he has, no hitbox anywhere, and the only anim that HOLDS its finish — the stave
+  // stays out at the end of the stroke, pointing at the hero he just marked, for the whole 34f recovery.
   tally: { loop: false, frames: [
     FK(20, { armR: [-40, -50], weapon: 59, armL: [40, 30], torso: -6, head: -12, root: [-3, 0], legR: [10, 8], legL: [-16, 10], face: 'angry' }, { tell: true, sfx: 'chime', ease: 'in' }),
     FK(14, { armR: [-120, -40], weapon: -41, armL: [50, 24], torso: -16, head: -18, root: [-5, -1], legR: [8, 8], legL: [-18, 12], face: 'shout', squash: 0.96, stretch: 1.05 },
-      { tell: true, smear: { from: -60, to: -150, a: 0.34, r: 54 }, ease: 'out' }),
+      { tell: true, ease: 'out' }),
     FK(8, { armR: [56, 8], weapon: 49, armL: [-24, 30], torso: 30, head: 8, root: [5, 1], legR: [36, 10], legL: [-28, 26], face: 'shout', squash: 1.05, stretch: 0.96 },
-      { event: 'tally', smear: { from: -150, to: 40, a: 0.42, r: 56 }, sfx: 'chime', fx: [{ kind: 'slash', x: 40, y: 50, radius: 24, angle: 0, sweep: 90 }], ease: 'overshoot' }),
-    FK(34, { armR: [50, 16], weapon: -10, armL: [-10, 38], torso: 20, head: 2, root: [3, 1], legR: [30, 8], legL: [-22, 22], face: 'grit' }, { punish: true, ease: 'inout' }),
+      { event: 'tally', smear: { from: -140, to: 48, a: 0.42, r: 56 }, sfx: 'chime', fx: [{ kind: 'slash', x: 40, y: 50, radius: 24, angle: 0, sweep: 90 }], ease: 'overshoot' }),
+    FK(34, { armR: [70, -12], weapon: 30, armL: [-30, 26], torso: 24, head: 10, root: [6, 1], legR: [34, 10], legL: [-26, 24], face: 'grit' }, { punish: true, ease: 'inout' }),
     FK(6, { ...TAL_CARRY, torso: 13, head: 4, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
   ] },
 });
@@ -462,7 +498,9 @@ const tallyman = def({
 });
 
 // ================================================================ C3 LIMEBURNER: the one that hands your target a shield
-const LIM_CARRY = { armR: [24, 30], weapon: -46, armL: [-28, -12] };
+// weapon -46 -> -31: at -46 the shovel blade lay straight across the hip kiln in every rest pose, hiding the one
+// thing that identifies him (§0.6: nothing crosses the load in a rest pose).
+const LIM_CARRY = { armR: [24, 30], weapon: -31, armL: [-28, -12] };
 const LIM_CHAND = { cap: 'flat', rites: ['slake'], lampJoint: 'torso', lampDX: 16, lampDY: 0, selfConeDX: 30, find: findCrust, cool: (f) => f.attackCooldown };
 const SLAM_BOX = frontBox(58, hit(14, 'knockdown', 5, 5, 24, { id: 'slam' }));
 const SCOOP_BOX = frontBox(50, hit(10, 'medium', 6, 0, 18, { id: 'scoop' }), LOW);
@@ -492,11 +530,15 @@ const limeburnerAnims = Object.assign(makeChandlerBase(LIM_CARRY, { stoop: 20, h
   // SLAKE: the only armoured tell in the faction (and the only exception to "one touch breaks a rite"). Plant the
   // shovel, crack the kiln, 30f of hiss with frame armour worth 2 hits, then a 46px shove and the crust.
   slake: { loop: false, frames: [
-    FK(18, { armR: [-20, 46], weapon: -60, armL: [-16, 40], torso: 16, head: 6, root: [-2, 2], legR: [16, 14], legL: [-18, 18], face: 'angry' }, { tell: true, armor: true, sfx: 'steam_vent', ease: 'in' }),
-    FK(12, { armR: [-30, 54], weapon: -60, armL: [-22, 46], torso: 22, head: 10, root: [-4, 3], legR: [14, 16], legL: [-20, 20], face: 'grit', squash: 1.05, stretch: 0.96 },
+    // A REAL WIND-UP. The old two tell keys moved armR 10 degrees and the torso 6 across the whole 30f armoured tell,
+    // and the audit had the shovel head sitting at the SAME point on all three keys — a player standing next to him
+    // could not tell 'venting' from 'standing there'. Now: plant the blade on the floor line in front (key 0), then
+    // rear back over the hip drum so the kiln lid visibly opens (key 1). Same 18+12 budget, same armor, same box.
+    FK(18, { armR: [-62, 74], weapon: -42, armL: [46, 26], torso: 26, head: 12, root: [-1, 2], legR: [24, 18], legL: [-14, 20], face: 'angry' }, { tell: true, armor: true, sfx: 'steam_vent', ease: 'in' }),
+    FK(12, { armR: [-16, 92], weapon: -70, armL: [-42, 52], torso: -8, head: -16, root: [-6, 1], legR: [8, 12], legL: [-28, 22], face: 'grit', squash: 0.96, stretch: 1.05 },
       { tell: true, armor: true, fx: [{ kind: 'steam', x: 14, y: 20, count: 3 }], ease: 'out' }),
     FK(10, { armR: [-8, 40], weapon: -64, armL: [-6, 34], torso: 4, head: -6, root: [0, -1], legR: [20, 10], legL: [-22, 14], face: 'shout', squash: 0.95, stretch: 1.06 },
-      { hitbox: SLAKE_BOX, event: 'slake', sfx: 'steam_vent',
+      { hitbox: SLAKE_BOX, event: 'slake', sfx: 'steam_vent', smear: { from: -52, to: 12, a: 0.32, r: 60 },
         fx: [{ kind: 'ring', x: 0, y: 26, r0: 6, r1: 62, color: CH.quicklime }, { kind: 'steam', x: 10, y: 30, count: 5 }], ease: 'overshoot' }),
     FK(34, { armR: [10, 44], weapon: -40, armL: [-18, 30], torso: 22, head: 4, root: [1, 2], legR: [16, 12], legL: [-18, 16], face: 'grit' },
       { punish: true, fx: [{ kind: 'steam', x: -6, y: 34, count: 2 }], ease: 'inout' }),
@@ -532,10 +574,10 @@ const limeburner = def({
 
 // ================================================================ C4 PURSER: the one that makes the crowd swing harder
 const PUR_CARRY = { armR: [30, 24], weapon: -21, armL: [-40, -60] };
-const PUR_CHAND = { cap: 'peaked', rites: ['dram'], lampJoint: 'torso', lampDX: 13, lampDY: 4, selfConeDX: 28, find: findDose, cool: (f) => f.attackCooldown };
+const PUR_CHAND = { cap: 'peaked', rites: ['dram'], lampJoint: 'torso', lampDX: 13, lampDY: 4, selfConeDX: 28, find: findDose, find2: findDose2, cool: (f) => f.attackCooldown };
 const CANE_BOX = frontBox(50, hit(12, 'light', 4, 0, 16, { id: 'cane' }));
 const FLICK_BOX = frontBox(46, hit(10, 'medium', 5, 0, 18, { id: 'flick' }), BEHIND);
-const purserAnims = Object.assign(makeChandlerBase(PUR_CARRY, { stoop: 0, head: 0, weaponFloor: -26 }), {
+const purserAnims = Object.assign(makeChandlerBase(PUR_CARRY, { stoop: 0, head: 0, weaponFloor: -26, gait: 'parade' }), {
   // cane: a fast fencer's thrust that CHAINS into the flick (ai entry chain: 'flick', run by onActionDone)
   cane: { loop: false, frames: [
     FK(8, { armR: [-24, 66], weapon: -66, armL: [-44, -56], torso: -8, head: -2, root: [-3, 0], legR: [12, 8], legL: [-12, 10], face: 'angry' }, { tell: true, sfx: 'rapier', ease: 'in' }),
@@ -557,12 +599,19 @@ const purserAnims = Object.assign(makeChandlerBase(PUR_CARRY, { stoop: 0, head: 
     FK(6, { ...PUR_CARRY, torso: 0, head: 0, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
   ] },
   // DRAM: thumb a cork, the hip lantern flares, two cones land at once. 32f tell, no hitbox, 32f punishable recovery.
+  // A REAL RAISE (the spec's `style: 'raise'`). The three old tell/active keys moved the cane 4 canvas degrees and the
+  // dram hand not at all across 40 frames — the elite whose whole counterplay is "one touch during the tell breaks the
+  // rite" gave the player nothing to see, and the floor cone did 100 % of the work. Same 19/13/8 budget, no hitbox.
   dram: { loop: false, frames: [
-    FK(19, { armR: [-30, 84], weapon: -100, armL: [-30, 60], torso: -6, head: -8, root: [-2, 0], legR: [10, 8], legL: [-12, 10], face: 'angry' }, { tell: true, sfx: 'bomb_bat', ease: 'in' }),
-    FK(13, { armR: [-46, 96], weapon: -108, armL: [-38, 70], torso: -12, head: -12, root: [-3, -1], legR: [8, 8], legL: [-14, 12], face: 'shout', squash: 0.97, stretch: 1.04 }, { tell: true, ease: 'out' }),
-    FK(8, { armR: [-58, 104], weapon: -114, armL: [-44, 76], torso: -16, head: -14, root: [-3, -2], legR: [8, 8], legL: [-14, 12], face: 'shout' },
+    // the cane drops to a low guard while the off hand goes ACROSS to the bandolier
+    FK(19, { armR: [16, 24], weapon: 0, armL: [52, 44], torso: -8, head: -4, root: [-3, 0], legR: [10, 8], legL: [-14, 12], face: 'angry' }, { tell: true, sfx: 'bomb_bat', ease: 'in' }),
+    // the dram snaps up CLEAR OF THE PEAKED CAP (far hand at y -73 against a skull centre of -66) and the back
+    // straightens under it — the one silhouette in the faction with a hand above the head
+    FK(13, { armR: [34, 30], weapon: -4, armL: [142, -14], torso: 4, head: -12, root: [-1, -1], legR: [8, 6], legL: [-10, 8], face: 'shout', squash: 0.94, stretch: 1.07 }, { tell: true, ease: 'out' }),
+    FK(8, { armR: [38, 26], weapon: -6, armL: [152, -20], torso: 6, head: -14, root: [-1, -1], legR: [8, 6], legL: [-10, 8], face: 'shout' },
       { event: 'dram', sfx: 'chime', fx: [{ kind: 'ring', x: 8, y: 24, r0: 4, r1: 40, color: CH.lime }], ease: 'out' }),
-    FK(32, { armR: [10, 50], weapon: -70, armL: [-38, -44], torso: 6, head: -2, root: [1, 1], legR: [12, 8], legL: [-12, 10], face: 'grit' }, { punish: true, ease: 'inout' }),
+    // the off arm is CARRIED down through the recovery instead of teleporting 120 degrees to parade rest in one frame
+    FK(32, { armR: [30, 26], weapon: -14, armL: [0, -46], torso: 2, head: -2, root: [1, 1], legR: [12, 8], legL: [-12, 10], face: 'grit' }, { punish: true, ease: 'inout' }),
     FK(6, { ...PUR_CARRY, torso: 0, head: 0, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
   ] },
 });
@@ -574,9 +623,15 @@ const purser = def({
   // no armour anywhere: the shield-and-strip lane belongs to the Iron Warden and this faction does not take it again
   traits: { flinchEvery: 2, weight: 1.2 },
   ai: {
-    attackRange: 46, zTolerance: 13, hoverCircle: true, attackCooldown: [70, 110], evadeChance: 0.3, evadeCooldown: 110,
+    // role 'elite' supplies ignoresTokens: true, and enemy.js only enters HOVER when a fighter is REFUSED a token — so
+    // hoverCircle was dead configuration and he walked into the line like fodder. He takes a token now and hovers when
+    // the chandler pool (3) is full, which is the spacing the spec describes without a KEEP_DISTANCE park.
+    attackRange: 46, zTolerance: 13, hoverCircle: true, ignoresTokens: false, tokenGroup: 'chandler', maxAttackers: 3,
+    attackCooldown: [70, 110], evadeChance: 0.3, evadeCooldown: 110,
     retreatChance: 0.25, tellWarnFrames: 14, backstepAfterWhiffs: null, // the whiff backstep is somebody else's signature
-    attacks: [{ anim: 'cane', range: 50, weight: 3, chain: 'flick' }, { anim: 'flick', range: 46, weight: 1 }, { anim: 'dram', range: 240, minRange: 0, weight: 3, tellFrames: 32 }],
+    // NO standalone flick: a 10f tell on the game's only `behind: true` hitbox is inside human reaction time, and the
+    // spec's own counterplay text ("the second half of a chain you can see starting") is only true of the chained one.
+    attacks: [{ anim: 'cane', range: 50, weight: 3, chain: 'flick' }, { anim: 'dram', range: 240, minRange: 0, weight: 3, tellFrames: 32 }],
   },
 }, {
   onSpawn(f) { BASE_HOOKS.onSpawn(f); f.drams = 8; f.rig.drams = 8; },
@@ -620,7 +675,7 @@ function recrew(f, world) {
   if (world.camera) world.camera.shake(4, 8);
   audio.play('chime');
 }
-const resAnims = Object.assign(makeChandlerBase(RES_CARRY, { stoop: 18, head: 4, weaponFloor: -34, grab: true }), {
+const resAnims = Object.assign(makeChandlerBase(RES_CARRY, { stoop: 18, head: 4, weaponFloor: -34, grab: true, gait: 'trudge' }), {
   // hook: a 92px tong-sweep with NEGATIVE knockback that DRAGS you in, chaining straight into the grab
   hook: { loop: false, frames: [
     FK(13, { armR: [-40, 60], weapon: -134, armL: [-30, 62], grip: 0, torso: -4, head: -8, root: [-3, 0], legR: [12, 8], legL: [-16, 12], face: 'angry' }, { tell: true, sfx: 'hydraulic', ease: 'in' }),
@@ -632,13 +687,20 @@ const resAnims = Object.assign(makeChandlerBase(RES_CARRY, { stoop: 18, head: 4,
     FK(6, { ...RES_CARRY, torso: 18, head: 4, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
   ] },
   // RECREW: 40f of tell (the yoke goes down, the tarp goes back, the hand-bell rings), no hitbox, 40f free punish
+  // THE FACTION'S MOST IMPORTANT TELEGRAPH. It used to sweep the 44px two-handed tongs UP ACROSS THE COWL — the shaft
+  // and the jaws covered the head, the cart lamp was occluded and torso -22 / head -22 folded the whole thing into one
+  // brown lump — and it keyed the same 'tongs up in front, jaws open, reared back' shape as grabTell two rows above,
+  // so a 40f summon and a 20f grab (rush him vs back off) read identically. Now he turns and works the CART: torso
+  // forward over the yoke, both arms low and BEHIND him, the jaws pointed down-back at the tarp where the cone lands,
+  // and the head, the shoulders and the cart lamp all clear of the tool (§0 / §0.6).
   recrew: { loop: false, frames: [
-    FK(24, { armR: [-40, 70], weapon: -90, armL: [-46, 62], grip: 0, torso: -10, head: -14, root: [-4, 1], legR: [14, 10], legL: [-18, 14], face: 'angry' }, { tell: true, sfx: 'chime', ease: 'in' }),
-    FK(16, { armR: [-84, 60], weapon: -104, armL: [-92, 54], grip: 0, torso: -18, head: -20, root: [-6, 0], legR: [12, 10], legL: [-20, 16], face: 'shout', squash: 0.97, stretch: 1.05 },
+    FK(24, { armR: [-4, 34], weapon: 16, armL: [2, 30], grip: 0, torso: -6, head: 4, root: [-2, 1], legR: [14, 10], legL: [-16, 14], face: 'angry' }, { tell: true, sfx: 'chime', ease: 'in' }),
+    FK(16, { armR: [-16, 30], weapon: 28, armL: [-10, 26], grip: 0, torso: -12, head: 8, root: [-5, 1], legR: [18, 12], legL: [-14, 16], face: 'shout', squash: 1.05, stretch: 0.96 },
       { tell: true, fx: [{ kind: 'dust', x: -30, y: 0, count: 4 }], ease: 'out' }),
-    FK(10, { armR: [-96, 52], weapon: -110, armL: [-104, 46], grip: 0, torso: -22, head: -22, root: [-6, 0], legR: [12, 10], legL: [-20, 16], face: 'shout' },
+    // jaws at (-43, 2): down and BEHIND, on the tarp where the cone lands, 65 px below the skull
+    FK(10, { armR: [-22, 28], weapon: 34, armL: [-16, 24], grip: 0, torso: -16, head: 10, root: [-6, 1], legR: [20, 12], legL: [-12, 16], face: 'shout' },
       { event: 'recrew', sfx: 'chime', fx: [{ kind: 'ring', x: -34, y: 10, r0: 6, r1: 44, flat: true, color: CH.lime }, { kind: 'dust', x: -34, y: 0, count: 6 }], ease: 'out' }),
-    FK(40, { armR: [-10, 60], weapon: -80, armL: [-14, 54], grip: 0, torso: 12, head: -2, root: [-1, 1], legR: [14, 8], legL: [-16, 12], face: 'grit' }, { punish: true, ease: 'inout' }),
+    FK(40, { armR: [6, 32], weapon: 8, armL: [10, 28], grip: 0, torso: 4, head: 2, root: [-1, 1], legR: [14, 8], legL: [-16, 12], face: 'grit' }, { punish: true, ease: 'inout' }),
     FK(8, { ...RES_CARRY, torso: 18, head: 4, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
   ] },
 });

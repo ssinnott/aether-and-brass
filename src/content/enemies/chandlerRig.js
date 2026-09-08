@@ -27,6 +27,7 @@ import { floatText } from '../../art/fx.js';
 import { particles } from '../../engine/particles.js';
 import { audio } from '../../engine/audio.js';
 import { rad } from '../../engine/math.js';
+import { FACE } from '../../art/poses.js';
 import { FLOOR_TOP, ST } from '../../constants.js';
 import { FK } from './common.js';
 
@@ -60,34 +61,71 @@ export const CH_PROPS = {
 export const CLAN = { wickboy: '#E8D9A8', tallyman: '#F2F0E4', limeburner: '#A8482A', purser: '#D08A2E', resurrectionist: '#5B5F62' };
 
 const EMPTY = Object.freeze({});
-const HEAD_MASKED = Object.freeze({ noNose: true, jaw: 0.44 });
-const HEAD_BARE = Object.freeze({ jaw: 0.4 });
-const FACE_MASK = Object.freeze({ big: true, noMouth: true, eyeY: -2 });
-const FACE_BARE = Object.freeze({ big: true, eyeY: -1, mouthY: 1 });
+// jaw 0.62 (not 0.44): the respirator bar eats the middle of the head, so the chin polygon has to reach far enough
+// down that 4 px of bare skin survives BELOW the bar (§0.5 head rows: cap / brow / eyes / bar / jaw).
+const HEAD_MASKED = Object.freeze({ noNose: true, jaw: 0.62 });
+const HEAD_BARE = Object.freeze({ jaw: 0.5 });
+// BROW is its own value: rigParts.drawFace defaults brows to palette.hair, which is the hex of the cap sitting directly
+// above them, so the brow row vanished into the fringe on every variant.
+const BROW = '#3A2E20';
+const FACE_MASK = Object.freeze({ big: true, noMouth: true, eyeY: -2, brow: BROW });
+const FACE_BARE = Object.freeze({ big: true, eyeY: -1, mouthY: 1, brow: BROW });
 
 // ---------------------------------------------------------------- parts
 /** Human skull under a canvas cap; the respirator covers the nose on every variant but the Wickboy. */
 export function chHead(ctx, rig, pose, inf) {
   const r = inf.r, pal = inf.pal, ch = rig.build.chand || EMPTY;
   if (ch.face === 'none') {
-    // Resurrection Man: a flat leather cowl and nothing else — no skin, no eyes
+    // Resurrection Man: a flat leather cowl — no skin, no eyes. The one feature is the lamp-glass slit that chFace
+    // draws over this, so the cowl itself carries no seam that would compete with it.
     celBall(ctx, rig, 0, 0, r, pal.secondary);
-    if (rig.override) return;
-    ctx.fillStyle = tones(rig, pal.secondary).deep; ctx.fillRect(R(-r * 0.9), R(-r * 0.2), R(r * 1.8), 2);
     return;
   }
-  drawSkull(ctx, rig, r, pal.skin, pal.hair, ch.face === 'bare' ? HEAD_BARE : HEAD_MASKED);
+  drawSkull(ctx, rig, r, pal.skin, null, ch.face === 'bare' ? HEAD_BARE : HEAD_MASKED);
+  chHair(ctx, rig, r, pal.hair);
+}
+const HAIR_PTS = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+/**
+ * The faction hairline is a NAPE MASS, never a fringe. rigParts.drawHairCap reaches y -5.6 at the near eye and the brow
+ * row sits at -7..-6, so every Chandler was drawing its brows on top of its own hair — and drawFace defaults the brow
+ * colour to palette.hair, i.e. the exact hex underneath. Ending the hair behind x -0.6r leaves the brow row on skin.
+ * (Module-level point list, refilled in place: no per-frame allocation, ARCHITECTURE 11.)
+ */
+function chHair(ctx, rig, r, hex) {
+  HAIR_PTS[0] = R(-r * 0.15); HAIR_PTS[1] = R(-r * 1.0);
+  HAIR_PTS[2] = R(-r * 0.75); HAIR_PTS[3] = R(-r * 0.88);
+  HAIR_PTS[4] = R(-r * 1.05); HAIR_PTS[5] = R(-r * 0.3);
+  HAIR_PTS[6] = R(-r * 0.98); HAIR_PTS[7] = R(r * 0.32);
+  HAIR_PTS[8] = R(-r * 0.62); HAIR_PTS[9] = R(r * 0.12);
+  HAIR_PTS[10] = R(-r * 0.58); HAIR_PTS[11] = R(-r * 0.72);
+  celPoly(ctx, rig, HAIR_PTS, hex, 0.4, 0.3);
 }
 /** Eyes + brows above the bar, the dark rubber respirator across the nose, a bare jaw below it (ART_STYLE 0.5 rows). */
 export function chFace(ctx, rig, pose, inf) {
   const r = inf.r, ch = rig.build.chand || EMPTY;
-  if (ch.face !== 'none') drawFace(ctx, rig, r, pose.face | 0, ch.face === 'bare' ? FACE_BARE : FACE_MASK);
+  if (ch.face === 'none') {
+    // The cowl gets a horizontal lamp-glass slit that the POSE drives (the Brassbound lens pattern in common.js): with
+    // no drawFace call the ~60 keys that set face: 'shout' / 'grit' / 'hurt' did nothing at all on him, and §11's
+    // "face changes across idle -> attack -> hurt" could not hold on a featureless brown dome.
+    const f = pose.face | 0, lit = f === FACE.shout || f === FACE.angry || f === FACE.grit;
+    const w = R(r * 1.5), x = R(-r * 0.45), y = R(-r * 0.18);
+    celRect(ctx, rig, x, y, w, 5, 1, CH.pewter, 0.4, 0.3);
+    if (rig.override) return;
+    ctx.fillStyle = rig.col(f === FACE.dazed || f === FACE.hurt ? CH.dead : lit ? CH.lime : CH.idleGlass);
+    ctx.fillRect(x + 1, y + 1, w - 2, 3);
+    if (lit) { ctx.fillStyle = rig.col(CH.hot); ctx.fillRect(x + 2, y + 2, w - 4, 1); }
+    return;
+  }
+  drawFace(ctx, rig, r, pose.face | 0, ch.face === 'bare' ? FACE_BARE : FACE_MASK);
   if (ch.face === 'bare') return;
-  const y = R(r * 0.34), w = R(r * 1.95);
+  // rows on a headR-9 skull: brows -7..-6 | eyes -4..-1 | BAR 0..3 | bare jaw 5..8. The bar used to start at r*0.34
+  // and left 0-2 px of chin, so it merged with the hair shadow and read as a pale scratch instead of a dark bar.
+  const y = R(r * 0.05), w = R(r * 1.95);
   celRect(ctx, rig, R(-r * 0.95), y, w, 4, 1, CH.rubber, 0.4, 0);
   if (rig.override) return;
+  const t = tones(rig, CH.rubber);
+  ctx.fillStyle = t.hi; ctx.fillRect(R(-r * 0.9), y, w - 2, 1);                          // the bar stays DARK: its own rim, not lime
   ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(R(r * 0.4), y + 1, 3, 2);            // filter stud
-  ctx.fillStyle = rig.col(CH.quicklime); ctx.fillRect(R(-r * 0.9), y, w - 2, 1);        // lime dust on the top edge
 }
 /** Flat-topped waxed-canvas cap with a short brim, above the hairline; 'peaked' for the Purser's officer cap. */
 export function chHat(ctx, rig, pose, inf) {
@@ -95,44 +133,50 @@ export function chHat(ctx, rig, pose, inf) {
   if (ch.cap === 'none') return;
   const peaked = ch.cap === 'peaked', col = ch.capCol || CH.limedust, y = R(-r);
   const crown = peaked ? 9 : 6;
-  celRect(ctx, rig, R(-r * 0.95), y - crown, R(r * 1.9), crown + 1, 1, col, 0.36, 0.3);
-  celPoly(ctx, rig, [R(-r * 1.1), y - 1, R(r * 1.45), y - 2, R(r * 1.5), y + 2, R(-r * 1.1), y + 2], col, 0.4, 0.2);
+  // ONE mass, not two boards: the crown runs all the way down to the brim line (crown + 3) so the two shapes share a
+  // bottom edge and sit ON the skull, and the 2 px t.deep band that used to split them horizontally is gone (§0.5).
+  celRect(ctx, rig, R(-r * 0.95), y - crown, R(r * 1.9), crown + 3, 1, col, 0.36, 0.3);
+  // brim trimmed from r*1.5 (13.5 px, a shelf) to r*1.25
+  celPoly(ctx, rig, [R(-r * 1.1), y - 1, R(r * 1.2), y - 2, R(r * 1.25), y + 2, R(-r * 1.1), y + 2], col, 0.4, 0.2);
   if (rig.override) return;
-  const t = tones(rig, col);
-  ctx.fillStyle = t.deep; ctx.fillRect(R(-r * 0.95), y - 2, R(r * 1.9), 2);
-  if (peaked) { ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(R(-r * 0.2), y - crown + 2, 4, 4); }
-  else { ctx.fillStyle = t.sh; ctx.fillRect(R(-r * 0.9), y - crown + 1, 3, crown - 1); }
+  if (peaked) { ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(R(-r * 0.2), y - crown + 3, 4, 4); }
   // Tallyman: the green celluloid eyeshade is the UNDERSIDE of the brim, not a second dark band across the eyes
-  if (ch.shade) { ctx.fillStyle = rig.col(CH.shade); ctx.fillRect(R(-r * 0.6), y, R(r * 2.05), 2); }
+  if (ch.shade) { ctx.fillStyle = rig.col(CH.shade); ctx.fillRect(R(-r * 0.6), y, R(r * 1.7), 2); }
 }
 /** The numbered lead tally-tag on a wire with the variant's wax seal (>= 3x3, ART_STYLE 0.7). */
 function chTallyTag(ctx, rig, x, y) {
   celBall(ctx, rig, x, y + 4, 3, CH.pewter, false);
   if (rig.override) return;
-  ctx.strokeStyle = rig.col(CH.pewter); ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(x - 4, y - 2); ctx.lineTo(x, y + 2); ctx.stroke();
+  // a 2-step stair of whole pixels, not a lineWidth-1 diagonal: the only anti-aliased hairline in the rig read as a
+  // grey smudge of dirt at the collar (§3 'joints snapped to whole pixels', §5 'integer coordinates for every detail')
+  ctx.fillStyle = rig.col(CH.pewter);
+  ctx.fillRect(x - 4, y - 2, 2, 1); ctx.fillRect(x - 2, y - 1, 2, 2);
   ctx.fillStyle = rig.col(rig.build.clan || CLAN.wickboy); ctx.fillRect(x - 1, y + 3, 3, 3);
 }
 /** Long buttoned waxed-canvas coat with a flaring skirt, a quicklime apron panel and the tally-tag at the throat. */
 export function chTorso(ctx, rig, pose, inf) {
   const W = inf.w, H = inf.h, hw = R(W / 2), pal = inf.pal;
   celPoly(ctx, rig, [-hw - 1, -H + 5, -hw + 4, -H, hw - 4, -H, hw + 2, -H + 5, hw + 3, R(-H * 0.45), hw + 5, 6, hw - 4, 8, -hw + 3, 8, -hw - 4, 6, -hw - 2, R(-H * 0.45)], pal.primary, 0.38, 0.28);
-  celPoly(ctx, rig, [2, -H + 5, hw - 2, -H + 3, hw + 2, R(-H * 0.45), hw + 4, 5, 1, 7], pal.sleeve, 0.4, 0.25);
+  // THE APRON IS HARNESS LEATHER, NOT QUICKLIME. It used to take pal.sleeve, the same hex rig.js paints the upper-arm
+  // capsule with, and the two touch on every carry pose — the near arm dissolved into the chest on all five variants.
+  // Leaving palette.sleeve quicklime keeps the arm the LIGHT element against a mid torso, which is what §0.1 asks for.
+  celPoly(ctx, rig, [2, -H + 5, hw - 2, -H + 3, hw + 2, R(-H * 0.45), hw + 4, 5, 1, 7], pal.secondary, 0.4, 0.25);
   if (rig.override) return;
   const t = tones(rig, pal.primary);
   ctx.fillStyle = t.deep; ctx.fillRect(-2, -H + 3, 3, H + 4);
-  ctx.fillStyle = rig.col(pal.metal); ctx.fillRect(-2, R(-H * 0.62), 3, 3); ctx.fillRect(-2, R(-H * 0.26), 3, 3);
-  ctx.fillStyle = tones(rig, pal.sleeve).sh; ctx.fillRect(R(hw * 0.3), R(-H * 0.2), R(hw * 0.6), 2);
-  chTallyTag(ctx, rig, R(-hw * 0.25), -H + 3);
+  ctx.fillStyle = rig.col(pal.metal); ctx.fillRect(-2, R(-H * 0.5), 3, 3); ctx.fillRect(-2, R(-H * 0.24), 3, 3);
+  ctx.fillStyle = rig.col(pal.sleeve); ctx.fillRect(R(hw * 0.3), R(-H * 0.18), R(hw * 0.7), 2);   // the apron hem
+  // the tag moves off the placket column so it has clear ground (§0.7: one seam per garment, one detail per 6 px)
+  chTallyTag(ctx, rig, R(-hw * 0.6), -H + 3);
 }
 /** Harness-leather belt block: the faction carries its load at the WAIST, and this is where it hangs. */
 export function chHips(ctx, rig, pose, inf) {
   const hip = inf.w, hw = R(hip / 2), pal = inf.pal;
   celRect(ctx, rig, -hw, -5, hip, 11, 3, pal.secondary, 0.4, 0.2);
   if (rig.override) return;
-  const t = tones(rig, pal.secondary);
-  ctx.fillStyle = rig.col(pal.sleeve); ctx.fillRect(-hw + 1, -5, hip - 2, 2);
-  ctx.fillStyle = t.deep; ctx.fillRect(-hw + 1, 0, hip - 2, 2);
+  // ONE seam: a 3 px quicklime top edge that breaks the leather apron above from the leather belt block. The old
+  // t.deep bottom band is gone — the thigh below is limedust now (chLegUpper), so nothing needs separating there.
+  ctx.fillStyle = rig.col(pal.sleeve); ctx.fillRect(-hw + 1, -5, hip - 2, 3);
   ctx.fillStyle = rig.col(pal.metal); ctx.fillRect(0, -5, 4, 5);
 }
 /** Leather bracer with a quicklime sleeve wrap at the elbow (limb space: origin at the elbow, +y along the forearm). */
@@ -142,6 +186,17 @@ export function chArmLower(ctx, rig, pose, inf) {
   if (rig.override) return;
   ctx.fillStyle = rig.col(pal.sleeve); ctx.fillRect(-r, 0, r * 2, 4);
   ctx.fillStyle = tones(rig, pal.sleeve).sh; ctx.fillRect(-r, 3, r * 2, 1);
+}
+/**
+ * Limedust canvas trousers with a leather knee strap (limb space: origin at the hip).
+ * Without this hook rig.js fills the thigh with pal.secondary, which put the belt block, BOTH leg segments and the
+ * forearm on one hex — waist to knee was a single unbroken leather field ~12 game px tall (§0.1 / §11).
+ */
+export function chLegUpper(ctx, rig, pose, inf) {
+  const r = inf.r, len = inf.len, pal = inf.pal;
+  celRect(ctx, rig, -r, 0, r * 2, len + 1, r, pal.primary, 0.4, 0.25);
+  if (rig.override) return;
+  ctx.fillStyle = rig.col(pal.secondary); ctx.fillRect(-r, len - 3, r * 2, 4);   // the knee strap
 }
 /** Quicklime gaiter over the shin with one leather strap (limb space: origin at the knee). */
 export function chLegLower(ctx, rig, pose, inf) {
@@ -153,19 +208,22 @@ export function chLegLower(ctx, rig, pose, inf) {
 }
 /** Rubber boot with a pewter buckle and a cap of lime dust on the toe (ankle space, toe toward +x). */
 export function chFoot(ctx, rig, pose, inf) {
-  drawBoot(ctx, rig, inf.w, inf.h, inf.pal.dark, inf.pal.metal);
+  // far side takes LEATHER, not rubber: farPalette drops #2B2620 to ~(26,24,27) against a #20180F outline, so the
+  // far boot rendered as a featureless hole that its own outline could not bound (§0.1 / §0.3 'never darken twice').
+  drawBoot(ctx, rig, inf.w, inf.h, inf.far ? inf.pal.secondary : inf.pal.dark, inf.pal.metal);
   if (rig.override) return;
   const toe = R(inf.w * 0.62), sole = R(inf.h * 0.5);
   ctx.fillStyle = rig.col(inf.pal.sleeve); ctx.fillRect(toe - 6, sole - 4, 5, 3);
 }
-/** Rubber gauntlet with a quicklime wrist cuff. */
+/** Rubber gauntlet with a quicklime wrist cuff (far gauntlet in leather — see chFoot). */
 export function chHand(ctx, rig, pose, inf) {
-  drawFist(ctx, rig, inf.r, inf.pal.dark);
+  drawFist(ctx, rig, inf.r, inf.far ? inf.pal.secondary : inf.pal.dark);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(inf.pal.sleeve); ctx.fillRect(R(-inf.r * 0.6) - 2, R(-inf.r), 2, R(inf.r * 2));
+  // 3 px, not 2: the cuff is the only thing separating the far fist from the far forearm it shares a hex with
+  ctx.fillStyle = rig.col(inf.pal.sleeve); ctx.fillRect(R(-inf.r * 0.6) - 2, R(-inf.r), 3, R(inf.r * 2));
 }
 /** Complete Chandlery part table. */
-export const CH_PARTS = { head: chHead, face: chFace, hat: chHat, torso: chTorso, hips: chHips, armLower: chArmLower, legLower: chLegLower, foot: chFoot, hand: chHand };
+export const CH_PARTS = { head: chHead, face: chFace, hat: chHat, torso: chTorso, hips: chHips, armLower: chArmLower, legUpper: chLegUpper, legLower: chLegLower, foot: chFoot, hand: chHand };
 
 // ---------------------------------------------------------------- the lamp, the cone and the tether
 /** Glass colour for the current `rig.lamp` state: 0 dark / 1 idle / 2 rite. Three states, 30-70 L* points apart. */
@@ -183,7 +241,8 @@ export function drawLamp(ctx, rig, x, y, k = 1) {
   ctx.fillStyle = rig.col(lampGlass(rig)); ctx.fillRect(x0 + 1, y0 + 2, w - 2, h - 4);
   if (lampState(rig) === 2) { ctx.fillStyle = rig.col(CH.hot); ctx.fillRect(x0 + 2, y0 + 3, w - 4, h - 6); }
   const t = tones(rig, CH.pewter);
-  ctx.fillStyle = t.deep; ctx.fillRect(x0, y0 + 1, w, 1); ctx.fillRect(x0, y0 + h - 2, w, 1);
+  // ONE shutter fin, not two: three separate 1 px marks on an 8 px body is the clutter §0.7 bans
+  ctx.fillStyle = t.deep; ctx.fillRect(x0, y0 + h - 2, w, 1);
   ctx.fillStyle = t.hi; ctx.fillRect(x0 + 1, y0, w - 2, 1);
 }
 
@@ -196,44 +255,65 @@ export function lampScreen(f) {
   LAMP_PT.y += (ch.lampDY || 0) * sc;
   return LAMP_PT;
 }
-const CONE_HALF = 35, DASH = [3, 3], NODASH = [];
+const CONE_MIN = 26, CONE_MAX = 38, CONE_REACH = 46, DASH = [3, 3], NODASH = [];
 /** Where the cone lands: the recipient, or (Resurrection Man) the cart behind his heels. */
-function riteSpotX(f, cam) {
-  const t = f.riteTarget;
+function riteSpotX(f, cam, t) {
   if (t && t !== f) return cam.toScreenX(t.x);
   const ch = f.rig.build.chand || EMPTY;
   return cam.toScreenX(f.x + f.facing * (ch.selfConeDX != null ? ch.selfConeDX : 26));
 }
-function riteSpotZ(f) { const t = f.riteTarget; return t && t !== f ? t.z : f.z; }
+function riteSpotZ(f, t) { return t && t !== f ? t.z : f.z; }
 /**
- * THE SHUTTER CONE (drawBefore): a hard-edged limelight cone flat on the floor from the lamp to the recipient, with a
- * 2px pitch-tallow outline so it reads on the Heart-Engine's pale marble as well as on wet planks. Strobes on tellWarn.
+ * ONE cone. The apex is the lamp; the base is a wedge on the floor under the recipient. Two clamps keep it a SHAPE:
+ * the base is pushed at least CONE_REACH px past the lamp (the hip-lamp variants mark allies ~30 px away, and a
+ * 30 px-long cone from a hip lamp collapsed to a sliver), and the half-width grows with distance between MIN and MAX.
+ * Outer 2 px pitch-tallow + inner 1 px hot core so it reads on wet planks AND on the Heart-Engine's pale marble.
+ */
+function drawOneCone(ctx, f, cam, t, strobe) {
+  const L = lampScreen(f), ty = R(FLOOR_TOP + riteSpotZ(f, t) + cam.shakeY);
+  let tx = riteSpotX(f, cam, t);
+  const dist = Math.abs(tx - L.x);
+  if (dist < CONE_REACH) tx = L.x + (tx >= L.x ? CONE_REACH : -CONE_REACH);
+  const half = Math.max(CONE_MIN, Math.min(CONE_MAX, dist * 0.5));
+  ctx.beginPath();
+  ctx.moveTo(L.x, L.y);
+  ctx.lineTo(tx - half, ty - 5);
+  ctx.quadraticCurveTo(tx, ty + 8, tx + half, ty - 5);
+  ctx.closePath();
+  ctx.globalAlpha = strobe; ctx.fillStyle = CH.lime; ctx.fill();
+  ctx.globalAlpha = Math.min(1, strobe + 0.4);
+  ctx.strokeStyle = CH.outline; ctx.lineWidth = 2; ctx.stroke();
+  ctx.strokeStyle = CH.hot; ctx.lineWidth = 1; ctx.stroke();
+}
+/**
+ * THE SHUTTER CONE. Drawn from drawAfter at a low alpha rather than drawBefore: drawBefore runs under the Chandler and
+ * before the z-sorted recipient, so the widest end of the cone landed exactly where the recipient's sprite covered it.
+ * Every recipient gets one — the Purser doses TWO allies, and only one of them used to get a cone.
  */
 export function drawRiteCone(ctx, f, cam) {
   if ((f.rig.lamp | 0) !== 2) return;
   const fr = f.anim.frame;
   if (!(fr && fr.tell)) return;
-  const L = lampScreen(f), tx = riteSpotX(f, cam), ty = R(FLOOR_TOP + riteSpotZ(f) + cam.shakeY);
-  const strobe = f.rig.tellWarn && (f.rig.tick & 2) ? 0.72 : 0.5;
+  const strobe = f.rig.tellWarn && (f.rig.tick & 2) ? 0.5 : 0.34;
   ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(L.x, L.y);
-  ctx.lineTo(tx - CONE_HALF, ty - 5);
-  ctx.quadraticCurveTo(tx, ty + 8, tx + CONE_HALF, ty - 5);
-  ctx.closePath();
-  ctx.globalAlpha = strobe; ctx.fillStyle = CH.lime; ctx.fill();
-  ctx.globalAlpha = 1; ctx.strokeStyle = CH.outline; ctx.lineWidth = 2; ctx.stroke();
+  drawOneCone(ctx, f, cam, f.riteTarget, strobe);
+  if (f.riteTarget2 && f.riteTarget2 !== f.riteTarget) drawOneCone(ctx, f, cam, f.riteTarget2, strobe);
   ctx.restore();
 }
-/** The tether (drawAfter): 1px dashed limelight from the lamp to the recipient's chest, going SOLID on the active frame. */
-export function drawRiteTether(ctx, f, cam) {
-  const t = f.riteTarget;
-  if (!t || t === f || t.dead || (f.rig.lamp | 0) !== 2) return;
+/** One tether: 1px dashed limelight from the lamp to a recipient's chest, going SOLID on the active frame. */
+function drawOneTether(ctx, f, cam, t) {
+  if (!t || t === f || t.dead) return;
   const L = lampScreen(f), tx = cam.toScreenX(t.x), ty = R(FLOOR_TOP + t.z + cam.shakeY) - R(t.h * 0.55);
+  ctx.beginPath(); ctx.moveTo(L.x, L.y); ctx.lineTo(tx, ty); ctx.stroke();
+}
+/** The tether (drawAfter): one per recipient, so the two-ally dram tethers both of its clients. */
+export function drawRiteTether(ctx, f, cam) {
+  if ((f.rig.lamp | 0) !== 2) return;
   ctx.save();
   ctx.strokeStyle = CH.lime; ctx.lineWidth = 1;
   ctx.setLineDash(f.riteHold > 0 ? NODASH : DASH);
-  ctx.beginPath(); ctx.moveTo(L.x, L.y); ctx.lineTo(tx, ty); ctx.stroke();
+  drawOneTether(ctx, f, cam, f.riteTarget);
+  drawOneTether(ctx, f, cam, f.riteTarget2);
   ctx.setLineDash(NODASH);
   ctx.restore();
 }
@@ -277,7 +357,7 @@ export function riteFlash(f, world) {
  * cone, drawAfter the tether; onDeath is COSMETIC ONLY — the buffs are cleared by each rite's own onTick.
  */
 export const BASE_HOOKS = {
-  onSpawn(f) { f.riteTarget = null; f.riteBroken = 0; f.riteHold = 0; f.rig.lamp = 1; },
+  onSpawn(f) { f.riteTarget = null; f.riteTarget2 = null; f.riteBroken = 0; f.riteHold = 0; f.rig.lamp = 1; },
   onUpdate(f, world) {
     const ch = f.rig.build.chand || EMPTY, rig = f.rig;
     if (f.riteBroken > 0) f.riteBroken--;
@@ -291,6 +371,8 @@ export const BASE_HOOKS = {
     if (telling) { if (!f.riteTarget || f.riteTarget.dead || f.riteTarget.removeMe) f.riteTarget = ch.find(f, world); }
     else if (rig.lamp === 1) f.riteTarget = ch.find(f, world);
     else if (f.riteHold <= 0) f.riteTarget = null;
+    // the second slot exists only for the rite that hands out TWO buffs (the Purser's dram); the other four leave it null
+    if (ch.find2) f.riteTarget2 = f.riteTarget && f.riteTarget !== f ? ch.find2(f, world, f.riteTarget) : null;
   },
   // ONE TOUCH BREAKS A RITE. Runs at fighter.js:416, BEFORE the armour branch, so frame armour has to be filtered by
   // hand (only the Limeburner's vent has any). Returns undefined so the hit still resolves normally.
@@ -301,23 +383,77 @@ export const BASE_HOOKS = {
       f.rangedCooldown = Math.max(f.rangedCooldown, 120);
       f.attackCooldown = Math.max(f.attackCooldown, 90);
       if (f.tallyCd != null) f.tallyCd = Math.max(f.tallyCd, 120);
-      f.riteBroken = 90; f.riteHold = 0; f.riteTarget = null; f.rig.lamp = 0;
+      f.riteBroken = 90; f.riteHold = 0; f.riteTarget = null; f.riteTarget2 = null; f.rig.lamp = 0;
       floatText(f.x, f.y + f.h + 10, f.z, 'RITE BROKEN', CH.lime, 1);
       audio.play('gear_slip');
     }
     return undefined;
   },
-  drawBefore(ctx, f, sx, sy, cam) { drawRiteCone(ctx, f, cam); },
-  drawAfter(ctx, f, sx, sy, cam) { drawRiteTether(ctx, f, cam); },
+  drawAfter(ctx, f, sx, sy, cam) { drawRiteCone(ctx, f, cam); drawRiteTether(ctx, f, cam); },
   // cosmetic only: the lamp glass shatters, the tethers drop. The rites themselves pop from their own onTick.
   onDeath(f, world) {
-    f.rig.lamp = 0; f.riteTarget = null; f.riteHold = 0;
+    f.rig.lamp = 0; f.riteTarget = null; f.riteTarget2 = null; f.riteHold = 0;
     const y = f.y + f.h * 0.5;
     particles.burst('spark', f.x, y, f.z, 9, { speed: 3, up: 2, color: CH.lime, color2: CH.hot });
     particles.burst('debris', f.x, y, f.z, 4, { speed: 2.4, up: 2.6, color: CH.pewter });
     if (world) world.addFx('ring', f.x, R(f.h * 0.45), f.z, { r0: 4, r1: 26, color: CH.lime });
     audio.play('prop_break');
   },
+};
+
+// ---------------------------------------------------------------- the faction's gaits
+/**
+ * FOUR gaits, not one. The base set used to hand every variant the same 32f / 8-key cycle, which put a scampering boy,
+ * a kiln-carrier at half speed and a straight-backed officer on identical feet (§10). `o.gait` picks the table; the
+ * helper `w(legR, legL, armL, rootY, squash, footR, footL, headBob, armRdU, armRdL, torsoRock)` is closed over the
+ * variant's own carry pose, so the load still rides where that variant carries it.
+ */
+const WALKS = {
+  // the trudging contractor: contact / down (+2, squash) / pass / up (-1) x2, the off arm biased BACK
+  work: (w, aL, A) => [
+    FK(4, w([28, 4], [-22, 16], A(aL, 12, -4), 0, 0, -8, 0, 0, 4, -2, 2), { ease: 'out' }),
+    FK(4, w([22, 12], [-14, 28], A(aL, 6, -6), 2, 1.04, 0, 0, 2, 6, -5, 5), { ease: 'out' }),
+    FK(4, w([6, 24], [0, 10], A(aL, -8, -8), 1, 0, 0, 0, 1, 2, -3, 4), { ease: 'inout' }),
+    FK(4, w([-10, 12], [16, -2], A(aL, -22, -10), -1, 0, 0, -6, -2, -3, 1, 1), { ease: 'in' }),
+    FK(4, w([-22, 16], [28, 4], A(aL, -34, -12), 0, 0, 0, -8, 0, -5, 2, 2), { ease: 'out' }),
+    FK(4, w([-14, 28], [22, 12], A(aL, -28, -12), 2, 1.04, 0, 0, 2, 0, -1, 5), { ease: 'out' }),
+    FK(4, w([0, 10], [6, 24], A(aL, -16, -10), 1, 0, 0, 0, 1, 4, -4, 4), { ease: 'inout' }),
+    FK(4, w([16, -2], [-10, 12], A(aL, -2, -6), -1, 0, -6, 0, -2, 6, -4, 1), { ease: 'in' }),
+  ],
+  // WICKBOY — 24f scamper, high knees, both boots clear of the deck on the two pass keys, the pole bouncing +-7 deg
+  scamper: (w, aL, A) => [
+    FK(3, w([36, 2], [-30, 30], A(aL, 16, -4), 2, 0, -10, 0, -1, 7, -3, 0), { ease: 'out' }),
+    FK(3, w([26, 20], [-16, 46], A(aL, 8, -8), 3, 1.06, 0, 0, 3, 1, -6, 6), { ease: 'out' }),
+    FK(3, w([4, 40], [6, 26], A(aL, -12, -10), 0, 0.94, 0, 0, -3, -6, 0, -2), { ease: 'out' }),
+    FK(3, w([-16, 28], [24, -4], A(aL, -30, -12), 1, 0, 0, -10, -2, -2, 3, 1), { ease: 'in' }),
+    FK(3, w([-30, 30], [36, 2], A(aL, -40, -14), 2, 0, 0, -10, -1, 7, -3, 0), { ease: 'out' }),
+    FK(3, w([-16, 46], [26, 20], A(aL, -32, -14), 3, 1.06, 0, 0, 3, 1, -6, 6), { ease: 'out' }),
+    FK(3, w([6, 26], [4, 40], A(aL, -20, -12), 0, 0.94, 0, 0, -3, -6, 0, -2), { ease: 'out' }),
+    FK(3, w([24, -4], [-16, 28], A(aL, -4, -8), 1, 0, -10, 0, -2, -2, 3, 1), { ease: 'in' }),
+  ],
+  // RESURRECTION MAN — 44f, the slowest cycle in the game: one boot always planted, root bob +3, torso rocking S+-4
+  trudge: (w, aL, A) => [
+    FK(6, w([20, 6], [-16, 14], A(aL, 8, -2), 0, 0, -4, 0, 0, 3, -1, 4), { ease: 'inout' }),
+    FK(6, w([16, 14], [-10, 26], A(aL, 4, -4), 3, 1.05, 0, 0, 3, 6, -4, 7), { ease: 'out' }),
+    FK(5, w([6, 22], [-2, 14], A(aL, -4, -6), 1, 0, 0, 0, 2, 2, -2, 3), { ease: 'inout' }),
+    FK(5, w([-6, 12], [12, 2], A(aL, -14, -8), 0, 0, 0, -4, -1, -3, 1, -1), { ease: 'in' }),
+    FK(6, w([-16, 14], [20, 6], A(aL, -22, -8), 0, 0, 0, -4, 0, 3, -1, 4), { ease: 'inout' }),
+    FK(6, w([-10, 26], [16, 14], A(aL, -18, -8), 3, 1.05, 0, 0, 3, 6, -4, 7), { ease: 'out' }),
+    FK(5, w([-2, 14], [6, 22], A(aL, -10, -6), 1, 0, 0, 0, 2, 2, -2, 3), { ease: 'inout' }),
+    FK(5, w([12, 2], [-6, 12], A(aL, -2, -4), 0, 0, -4, 0, -1, -3, 1, -1), { ease: 'in' }),
+  ],
+  // PURSER — parade march: the back never bends (torso rock 0), the cane arm swings from the SHOULDER, the off hand
+  // stays clasped behind the back on every key
+  parade: (w, aL, A) => [
+    FK(4, w([26, 2], [-24, 12], A(aL, 0, 0), 0, 0, -6, 0, 0, 14, 0, 0), { ease: 'inout' }),
+    FK(4, w([20, 10], [-16, 24], A(aL, 0, 0), 1, 1.03, 0, 0, 0, 9, 0, 0), { ease: 'out' }),
+    FK(4, w([6, 20], [0, 10], A(aL, 0, 0), 0, 0, 0, 0, 0, 2, 0, 0), { ease: 'inout' }),
+    FK(4, w([-10, 10], [14, 0], A(aL, 0, 0), -1, 0, 0, -6, 0, -6, 0, 0), { ease: 'in' }),
+    FK(4, w([-24, 12], [26, 2], A(aL, 0, 0), 0, 0, 0, -6, 0, -12, 0, 0), { ease: 'inout' }),
+    FK(4, w([-16, 24], [20, 10], A(aL, 0, 0), 1, 1.03, 0, 0, 0, -7, 0, 0), { ease: 'out' }),
+    FK(4, w([0, 10], [6, 20], A(aL, 0, 0), 0, 0, 0, 0, 0, 0, 0, 0), { ease: 'inout' }),
+    FK(4, w([14, 0], [-10, 10], A(aL, 0, 0), -1, 0, -6, 0, 0, 8, 0, 0), { ease: 'in' }),
+  ],
 };
 
 // ---------------------------------------------------------------- shared base animation set
@@ -328,15 +464,17 @@ export const BASE_HOOKS = {
  * States: idle 4 / walk 8 / run 8 / jump 3 / fall 2 / land 2 / hurt 3 / stagger 2 / hurtAir / knockdown / lying 2 /
  * getup 3 / dead 2 / dodge 5, plus the engine grab set (o.grab) for the Resurrection Man.
  * @param {object} c rest carry { armR, armL, weapon, weaponBack?, grip? }
- * @param {{ stoop?: number, head?: number, weaponFloor?: number, grab?: boolean }} o
+ * @param {{ stoop?: number, head?: number, weaponFloor?: number, grab?: boolean, gait?: string }} o
  */
 export function makeChandlerBase(c, o = {}) {
   const S = o.stoop != null ? o.stoop : 14, HD = o.head != null ? o.head : 2, wf = o.weaponFloor != null ? o.weaponFloor : -24;
   const K = (s) => ({ torso: S, head: HD, legR: [8, 4], legL: [-8, 6], ...c, ...s });
   const aR = c.armR, aL = c.armL, A = (a, du, dl) => [a[0] + du, a[1] + dl];
   const FLOOR = { armR: [-20, -6], weapon: wf, armL: [30, 20], torso: 2, head: -12, legR: [12, 10], legL: [-4, 8], root: [24, -8, -88], grip: 0, weaponBack: 0, face: 'dazed' };
-  const walk = (lr, ll, al, ty, sq, fr, fl, hb) => K({ legR: lr, legL: ll, armL: al, armR: A(aR, 2, -2), torso: S + 3, head: HD + (hb || 0), root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, footR: fr || 0, footL: fl || 0 });
-  const run = (lr, ll, al, ty, sq) => K({ legR: lr, legL: ll, armL: al, armR: A(aR, -10, -6), torso: S + 16, head: HD - 6, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'angry' });
+  // `du`/`dl` are the LAMP-ARM drift for this key and `ts` the torso rock: a carry arm frozen at one offset through all
+  // eight keys of a bobbing walk was the flattest thing in the set (§8 walk / §10 "the sheet must not look canned").
+  const walk = (lr, ll, al, ty, sq, fr, fl, hb, du, dl, ts) => K({ legR: lr, legL: ll, armL: al, armR: A(aR, du != null ? du : 2, dl != null ? dl : -2), torso: S + (ts != null ? ts : 3), head: HD + (hb || 0), root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, footR: fr || 0, footL: fl || 0 });
+  const run = (lr, ll, al, ty, sq, du, dl) => K({ legR: lr, legL: ll, armL: al, armR: A(aR, du != null ? du : -10, dl != null ? dl : -6), torso: S + 16, head: HD - 6, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'angry' });
   const anims = {
     // breathing carry: the lamp arm drifts 2 deg, the coat skirt settles, the head nods
     idle: { loop: true, frames: [
@@ -345,26 +483,16 @@ export function makeChandlerBase(c, o = {}) {
       FK(14, K({ torso: S + 1, head: [HD - 1, 1, 0], root: [0, 0], armR: A(aR, 1, -1) }), { ease: 'inout' }),
       FK(13, K({ torso: S - 1, head: [HD + 1, 0, 0], root: [0, 0], armR: A(aR, -1, 1), armL: A(aL, -3, -2) }), { ease: 'inout' }),
     ] },
-    // trudging contractor's walk: contact / down (+2, squash) / pass / up (-1) x2; the off arm swings biased BACK
-    walk: { loop: true, frames: [
-      FK(4, walk([28, 4], [-22, 16], A(aL, 12, -4), 0, 0, -8, 0, 0), { ease: 'out' }),
-      FK(4, walk([22, 12], [-14, 28], A(aL, 6, -6), 2, 1.04, 0, 0, 2), { ease: 'out' }),
-      FK(4, walk([6, 24], [0, 10], A(aL, -8, -8), 1, 0, 0, 0, 1), { ease: 'inout' }),
-      FK(4, walk([-10, 12], [16, -2], A(aL, -22, -10), -1, 0, 0, -6, -2), { ease: 'in' }),
-      FK(4, walk([-22, 16], [28, 4], A(aL, -34, -12), 0, 0, 0, -8, 0), { ease: 'out' }),
-      FK(4, walk([-14, 28], [22, 12], A(aL, -28, -12), 2, 1.04, 0, 0, 2), { ease: 'out' }),
-      FK(4, walk([0, 10], [6, 24], A(aL, -16, -10), 1, 0, 0, 0, 1), { ease: 'inout' }),
-      FK(4, walk([16, -2], [-10, 12], A(aL, -2, -6), -1, 0, -6, 0, -2), { ease: 'in' }),
-    ] },
+    walk: { loop: true, frames: WALKS[o.gait] ? WALKS[o.gait](walk, aL, A) : WALKS.work(walk, aL, A) },
     run: { loop: true, frames: [
-      FK(3, run([52, 14], [-40, 56], A(aL, 40, -34), -2), { ease: 'out' }),
-      FK(3, run([40, 30], [-30, 70], A(aL, 22, -30), 1, 1.05), { ease: 'out' }),
-      FK(3, run([10, 40], [10, 30], A(aL, -12, -26), -4), { ease: 'inout' }),
-      FK(3, run([-24, 50], [40, 8], A(aL, -42, -26), -3), { ease: 'in' }),
-      FK(3, run([-40, 56], [52, 14], A(aL, -52, -28), -2), { ease: 'out' }),
-      FK(3, run([-30, 70], [40, 30], A(aL, -38, -30), 1, 1.05), { ease: 'out' }),
-      FK(3, run([10, 30], [10, 40], A(aL, -2, -30), -4), { ease: 'inout' }),
-      FK(3, run([40, 8], [-24, 50], A(aL, 28, -34), -3), { ease: 'in' }),
+      FK(3, run([52, 14], [-40, 56], A(aL, 40, -34), -2, 0, -14, -2), { ease: 'out' }),
+      FK(3, run([40, 30], [-30, 70], A(aL, 22, -30), 1, 1.05, -6, -8), { ease: 'out' }),
+      FK(3, run([10, 40], [10, 30], A(aL, -12, -26), -4, 0, -2, -10), { ease: 'inout' }),
+      FK(3, run([-24, 50], [40, 8], A(aL, -42, -26), -3, 0, -8, -8), { ease: 'in' }),
+      FK(3, run([-40, 56], [52, 14], A(aL, -52, -28), -2, 0, -16, -4), { ease: 'out' }),
+      FK(3, run([-30, 70], [40, 30], A(aL, -38, -30), 1, 1.05, -8, -8), { ease: 'out' }),
+      FK(3, run([10, 30], [10, 40], A(aL, -2, -30), -4, 0, -2, -10), { ease: 'inout' }),
+      FK(3, run([40, 8], [-24, 50], A(aL, 28, -34), -3, 0, -6, -8), { ease: 'in' }),
     ] },
     jump: { loop: false, frames: [
       FK(3, K({ legR: [30, 40], legL: [-20, 44], torso: S + 10, root: [0, 4], squash: 1.1, stretch: 0.9, armL: A(aL, -20, 24) }), { ease: 'out' }),
@@ -389,13 +517,15 @@ export function makeChandlerBase(c, o = {}) {
       FK(6, K({ torso: 2, head: HD - 14, root: [-3, 2], armR: [10, 20], armL: [-42, -14], weapon: (c.weapon || 0) + 26, legR: [22, 12], legL: [-22, 16], face: 'dazed' }), { ease: 'inout' }),
       FK(6, K({ torso: 18, head: HD + 8, root: [3, 1], armR: [16, 14], armL: [-24, -20], weapon: (c.weapon || 0) + 32, legR: [18, 14], legL: [-26, 12], face: 'dazed' }), { ease: 'inout' }),
     ] },
+    // the load goes first: the tool arm stays clamped shut on the haft while the OFF arm windmills, which is the
+    // opposite of the Sootborn's both-arms-flung flail (§10 — the wave recipes mix these two factions on one screen)
     hurtAir: { loop: true, frames: [
-      FK(6, { armR: [-90, -40], weapon: 40, armL: [-100, -30], torso: -30, head: -25, legR: [40, 40], legL: [10, 60], root: [0, 0, -15], face: 'hurt' }, { ease: 'inout' }),
-      FK(6, { armR: [-100, -50], weapon: 50, armL: [-110, -30], torso: -35, head: -30, legR: [50, 30], legL: [20, 50], root: [0, 0, -25], face: 'hurt' }, { ease: 'inout' }),
+      FK(6, { armR: [-52, 34], weapon: (c.weapon || 0) + 22, armL: [-124, -34], torso: -22, head: -28, legR: [26, 52], legL: [4, 68], root: [0, 0, -12], grip: 0, face: 'hurt' }, { ease: 'inout' }),
+      FK(6, { armR: [-64, 26], weapon: (c.weapon || 0) + 34, armL: [-148, -26], torso: -30, head: -34, legR: [40, 40], legL: [16, 58], root: [0, 0, -21], grip: 0, face: 'hurt' }, { ease: 'inout' }),
     ] },
     knockdown: { loop: true, frames: [
-      FK(8, { armR: [-60, -40], weapon: 40, armL: [-80, -30], torso: -50, head: -20, legR: [50, 30], legL: [30, 50], root: [0, -6, -25], face: 'hurt' }, { ease: 'inout' }),
-      FK(8, { armR: [-70, -50], weapon: 50, armL: [-90, -30], torso: -55, head: -25, legR: [60, 20], legL: [40, 40], root: [0, -6, -35], face: 'hurt' }, { ease: 'inout' }),
+      FK(8, { armR: [-28, 44], weapon: (c.weapon || 0) + 30, armL: [-104, -18], torso: -46, head: -16, legR: [56, 26], legL: [34, 46], root: [0, -5, -28], grip: 0, face: 'hurt' }, { ease: 'inout' }),
+      FK(8, { armR: [-36, 52], weapon: (c.weapon || 0) + 40, armL: [-118, -10], torso: -52, head: -22, legR: [66, 16], legL: [44, 34], root: [0, -5, -38], grip: 0, face: 'hurt' }, { ease: 'inout' }),
     ] },
     lying: { loop: true, frames: [
       FK(16, { ...FLOOR, face: 'hurt' }, { ease: 'inout' }),
@@ -455,7 +585,8 @@ export function makeChandlerBase(c, o = {}) {
       throwBack: { loop: false, frames: [
         FK(5, K({ ...G, armR: [-108, -16], armL: [-108, -16], torso: S - 24, head: HD - 10, root: [-3, 0], legR: [16, 6], legL: [-20, 14], face: 'angry' }), { ease: 'in' }),
         FK(6, K({ ...G, armR: [-158, -8], armL: [-158, -8], torso: -34, head: HD - 18, root: [-6, 4], legR: [30, 10], legL: [-24, 26], face: 'shout', squash: 0.96, stretch: 1.04 }), { sfx: 'throw', ease: 'overshoot' }),
-        FK(10, K({ ...G, armR: [-148, 0], armL: [-148, 0], torso: -26, head: HD - 14, root: [-6, 5], legR: [28, 10], legL: [-22, 24], face: 'grit' }), { punish: true, ease: 'inout' }),
+        // root y 5 sank both boots 3.5 px through the floor line (audit FLOOR); 1 puts them back inside +-2.5
+        FK(10, K({ ...G, armR: [-148, 0], armL: [-148, 0], torso: -26, head: HD - 14, root: [-6, 1], legR: [28, 10], legL: [-22, 24], face: 'grit' }), { punish: true, ease: 'inout' }),
         FK(6, K({ torso: S + 4 }), { ease: 'out' }),
       ] },
     });
