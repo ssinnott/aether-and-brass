@@ -191,7 +191,7 @@ function brassDeath(f, world) {
 
 // ---------------------------------------------------------------- shared build / def helpers
 function mkBuild(o) {
-  return { scale: o.scale || 1, palette: { ...BRASS_PAL, ...(o.palette || {}) }, outline: BRASS_OUTLINE, outlineWidth: 1, ramp: { sh: 0.6 }, thinR: 4.5, contactShadow: true,
+  return { scale: o.scale || 1, palette: { ...BRASS_PAL, ...(o.palette || {}) }, outline: BRASS_OUTLINE, outlineWidth: 1, ramp: { sh: 0.6 },
     smearColor: o.smear || '#C8D0D8', proportions: { ...BRASS_PROPS, ...(o.proportions || {}) }, parts: BRASS_PARTS, stripe: o.stripe,
     weapon: o.weapon, accessories: [BRASS_KEY, ...(o.accessories || [])] };
 }

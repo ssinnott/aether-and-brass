@@ -6,14 +6,17 @@
 //   node tools/art-check.js --only=palette        only rules whose id starts with 'palette'
 //   node tools/art-check.js --subject=sootborn    only the Sootborn rigs
 //   node tools/art-check.js --json                the structured report, for CI
+//   node tools/art-check.js --census              the per-rig mark census (a measurement, not a gate)
 //
 // Exit code 1 when anything reports an error (exempt findings and warnings do not fail the run).
-import { runArtCheck } from './art-invariants/index.js';
+import { runArtCheck, runCensus } from './art-invariants/index.js';
 
 const USAGE = `Usage: node tools/art-check.js [--render] [--json] [--only=<ruleId>] [--subject=<id>]
 
   --render           add the render tier (headless Chromium; NODE_PATH=/opt/node22/lib/node_modules)
   --json             print the structured report instead of the human one
+  --census           print the per-rig mark census instead of the invariant report (honours --subject and --json;
+                     always exits 0 — it measures, it does not judge)
   --only=<ruleId>    run only these rules (comma-separated; a prefix like 'palette' works)
   --subject=<id>     run only these subjects (comma-separated; an id, a faction, a kind or a class)
   --notes            also print the info notes (measured tables rules print pass or fail)
@@ -23,13 +26,13 @@ const USAGE = `Usage: node tools/art-check.js [--render] [--json] [--only=<ruleI
 Exit code: 1 if any non-exempt error was reported, 0 otherwise.`;
 
 function parseArgs(argv) {
-  const o = { render: false, json: false, only: [], subject: [], quiet: false, notes: false, help: false };
+  const o = { render: false, json: false, census: false, only: [], subject: [], quiet: false, notes: false, help: false };
   const bad = [];
   for (const a of argv) {
     const m = /^--([a-z-]+)(?:=(.*))?$/.exec(a);
     if (!m) { bad.push(a); continue; }
     const [, k, v] = m;
-    if (k === 'render' || k === 'json' || k === 'quiet' || k === 'notes' || k === 'help') o[k] = true;
+    if (k === 'render' || k === 'json' || k === 'census' || k === 'quiet' || k === 'notes' || k === 'help') o[k] = true;
     else if (k === 'only' || k === 'subject') o[k].push(...String(v || '').split(',').map((s) => s.trim()).filter(Boolean));
     else bad.push(a);
   }
@@ -92,9 +95,34 @@ function printReport(report, opts) {
   console.log('\n' + (counts.errors ? C.red(summary) : C.green(summary)));
 }
 
+/** The mark census as a table: one row per rig, worst keyframe first. */
+function printCensus(c) {
+  const t = c.totals;
+  console.log(C.bold('MARK CENSUS') + C.dim(`  ${t.subjects} subjects, ${t.frames} keyframes, ${t.durationMs} ms`));
+  const head = ['rig', 'class', 'scale', 'marks/key', 'worst', 'outlined', '<3px', 'limb', 'head', 'torso', 'dflt', 'worst key'];
+  const w = [26, 15, 6, 10, 6, 9, 6, 6, 6, 6, 6, 0];
+  const row = (cells) => cells.map((s, i) => (i === 0 || i === 1 ? String(s).padEnd(w[i]) : i === cells.length - 1 ? String(s) : String(s).padStart(w[i]))).join(' ');
+  console.log(C.dim(row(head)));
+  for (const s of [...c.subjects].sort((a, b) => b.marks.max - a.marks.max)) {
+    console.log(row([s.id, s.class || '-', s.scale == null ? '-' : s.scale, s.marks.mean, s.marks.max, s.outlined.max,
+      s.small3.mean, s.region.limb, s.region.head, s.region.torso, s.region.default, C.dim(s.marks.at)]));
+  }
+  console.log(`\ncast mean: ${t.meanMarks} marks/keyframe, ${t.meanLimb} in limb hooks, ${t.meanHead} head, ${t.meanDefault} default renderer, ${t.meanSmall3} under 3 px`);
+  const cls = Object.entries(c.byClass).sort((a, b) => b[1].maxMarks - a[1].maxMarks);
+  console.log('worst-keyframe ceiling by class: ' + cls.map(([k, v]) => `${k} ${v.maxMarks}`).join(', '));
+  console.log(C.dim('  (marks are OPAQUE fills only; translucent contact shadows are counted separately as alphaMarks)'));
+}
+
 const opts = parseArgs(process.argv.slice(2));
 if (opts.help) { console.log(USAGE); process.exit(0); }
 if (opts.bad.length) { console.error(`unknown argument(s): ${opts.bad.join(' ')}\n\n${USAGE}`); process.exit(2); }
+
+if (opts.census) {
+  const census = await runCensus({ subject: opts.subject });
+  if (opts.json) console.log(JSON.stringify(census, null, 2));
+  else printCensus(census);
+  process.exit(0); // a measurement, never a gate
+}
 
 const report = await runArtCheck({ subject: opts.subject, only: opts.only, render: opts.render });
 if (opts.json) console.log(JSON.stringify(report, null, 2));

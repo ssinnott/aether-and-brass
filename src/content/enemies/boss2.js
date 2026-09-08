@@ -203,7 +203,7 @@ function drawShell(ctx, p, sx, sy) {
 }
 
 // ---------------------------------------------------------------- builds
-const ADM_PAL = { ...CROW_PAL, primary: COAT, sleeve: '#C6BCA0', secondary: '#77809A', accent: GOLD, metal: '#C2CCD8', hair: '#4A2E24', glow: CROW.spark, rank: SASH };
+const ADM_PAL = { ...CROW_PAL, primary: COAT, sleeve: '#F7F1E2', secondary: '#77809A', accent: GOLD, metal: '#C2CCD8', hair: '#4A2E24', glow: CROW.spark, rank: SASH };
 const BASE_BUILD = {
   scale: 1.22, palette: ADM_PAL, outline: CROW.outline, outlineWidth: 1, proportions: CROW_PROPS,
   parts: { ...CROW_PARTS, torso: admiralCoat, hat: bicorne }, clan: SASH, smearColor: '#E4ECFA',

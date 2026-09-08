@@ -23,7 +23,8 @@
 // so the lowest foot plate sits on the floor (spec.root[1] is an extra sink), so the long piston legs never float.
 import { speedFor, hpFor, areaBox, frontBox, P, F, hit } from './common.js';
 import { JUMP_VY, METER, ST } from '../../constants.js';
-import { celRect, celBall, celPoly, celCapsule, tones, flat, band } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celCapsule, tones, flat, band, outlinePath } from '../../art/shading.js';
+import { pathTaperedCapsule } from '../../art/shapes.js';
 import { drawSkull, drawFace } from '../../art/rigParts.js';
 import { getChain } from '../../art/secondary.js';
 import { buildRig, computeJoints, jointScreen } from '../../art/rig.js';
@@ -162,20 +163,70 @@ function drawHips(ctx, rig, pose, inf) {
   ctx.fillStyle = rig.col(PAL.metal); ctx.fillRect(-hw + 2, -3, inf.w - 4, 3);
   ctx.fillStyle = tones(rig, PAL.iron).hi; ctx.fillRect(-4, -5, 8, 1);
 }
+/**
+ * Append one of Pip's square piston housings to the CURRENT path as a subpath (never begins a path of its own, so a
+ * segment silhouette can be assembled from a housing plus its rod and stroked once). Deliberately a boxy rounded
+ * rect and not a capsule: the frame is machinery bolted around a small person, and a housing that rounds off into a
+ * tube stops reading as a bolted-on block. Winding matches pathTaperedCapsule's, so `fill()` unions the two.
+ */
+function pistonBlock(ctx, x, y, w, h, r) {
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+/**
+ * The one shadow step a piston housing gets: the housing shrunk toward the far corner (celBall / celCapsule's own
+ * idiom), so it touches the two edges away from the light and can never leave the block. One fillRect, no clip of
+ * its own, and no line — a tone step INSIDE one material is form, not a boundary (ART_STYLE section 0.2).
+ */
+function blockShade(ctx, rig, x, y, w, h, hex) {
+  const k = 0.62, hw = w / 2, hh = h / 2, cx = x + hw, cy = y + hh;
+  ctx.fillStyle = tones(rig, hex).sh;
+  ctx.fillRect(cx - rig.light.x * hw * (1 - k) - hw * k, cy - rig.light.y * hh * (1 - k) - hh * k, w * k, h * k);
+}
 /** Light-steel ball joint — the same machined metal as the shin rods, so the eye reads "this is where a limb starts".
  *  Cool and bright against both the dark frame behind it and the warm brass upper arm in front; small enough to stay a joint. */
 function drawShoulder(ctx, rig, pose, inf) { celBall(ctx, rig, 0, 0, inf.r - 2.5, inf.pal.metal); }
-/** Upper arm: one light brass cylinder. The dark bronze at the elbow is the FOREARM's piston sleeve (drawArmLower),
- *  which butts straight against this one and carries its own outline: section 0.7's one shape per material. */
+/** Upper arm: one light brass cylinder. The dark bronze at the elbow belongs to the FOREARM (drawArmLower), where it is
+ *  part of that segment's silhouette; this cylinder butts straight against it, so the only line between them is the
+ *  forearm's own outline — one segment, one contour (section 0.2). */
 function drawArmUpper(ctx, rig, pose, inf) {
   celRect(ctx, rig, -2, -inf.r, inf.len + 3, inf.r * 2, 3, inf.pal.sleeve, 0.36, 0.28);
 }
-/** Forearm: a short dark bronze piston sleeve at the elbow and a long pale brass rod out to the wrist. The rod is the longer
- *  and lighter of the two on purpose — a piston reads as a limb, two equal blocks read as a scaffold. */
+/**
+ * Forearm: ONE object — a square dark-bronze piston housing at the elbow with a long pale brass rod sliding out of it
+ * to the wrist. The rod is the longer and lighter of the two on purpose: a piston reads as a limb, two equal blocks
+ * read as a scaffold.
+ *
+ * It used to be a capsule and a rounded rect drawn as two separately outlined shapes, so the forearm wore an ink line
+ * across itself where the rod met the housing and read as two parts bolted end to end. Housing and rod now go into
+ * ONE path, stroked once and filled once (section 0.2), and the bronze is painted afterwards INSIDE that silhouette as
+ * a colour change with no line of its own. The clip is what declares that: section 0.2's material-change exception
+ * only accepts an unoutlined fill when it is clipped inside a path that has itself been inked, and "the block happens
+ * to land inside the union anyway" is how a real boundary gets faked by accident later.
+ *
+ * The housing is deliberately KEPT, and kept square. It is this rig's ONE material crossing on the forearm (section
+ * 0.7): ~7 x 10 px, well over the 4 px floor, and it sits ON the elbow, which is where a piston really does change
+ * material. geom/limb-crossings used to read it the other way round — it scores "the limb's material" by the biggest
+ * single recorded mark, and celRect's clipped tone band records its pre-clip rect, which made the 7 px housing measure
+ * as the forearm and the whole rod measure as a band crossing it 9 px from the elbow. With the segment drawn as one
+ * shape that inversion is gone: the rod is the limb, the housing is the crossing, and the crossing is on the joint.
+ */
 function drawArmLower(ctx, rig, pose, inf) {
-  const r = inf.r, L = inf.len;
-  celCapsule(ctx, rig, 3, 0, L + 1, 0, r * 0.72, inf.pal.rod, 0.3);
-  celRect(ctx, rig, -2, -r, 7, r * 2, 2, inf.pal.bronze, 0.38, 0.25);
+  const r = inf.r, L = inf.len, pal = inf.pal, rr = r * 0.72;
+  pathTaperedCapsule(ctx, 3, 0, L + 1, 0, rr, rr);   // the pale rod, out to the wrist
+  pistonBlock(ctx, -2, -r, 7, r * 2, 2);             // the bronze housing, bolted over the elbow
+  outlinePath(ctx, rig);
+  ctx.fillStyle = rig.col(tones(rig, pal.rod).base);
+  ctx.fill();
+  if (rig.override) return;
+  ctx.save(); ctx.clip();                            // the silhouette just stroked above is still the current path
+  ctx.fillStyle = tones(rig, pal.bronze).base; ctx.fillRect(-2, -r, 7, r * 2);
+  blockShade(ctx, rig, -2, -r, 7, r * 2, pal.bronze);
+  ctx.restore();
 }
 /** Two-prong brass claw (hand space, origin at the wrist). Dark bronze wrist block, brass prongs; opens by rig.claw. */
 function drawClaw(ctx, rig, pose, inf) {
@@ -196,12 +247,31 @@ function drawLegUpper(ctx, rig, pose, inf) {
   // steel collar on a slate thigh: a material change, so it takes its own ink (0.2) at 4 px rather than 3 (0.7)
   band(ctx, rig, 0, -r + 1, 4, r * 2 - 2, inf.pal.metal);
 }
-/** Shin: a long light-steel piston rod sliding out of a short near-black knee sleeve. The rod is the brightest thing below
- *  the hip line, so both legs are findable in one glance even with a claw hanging beside them. */
+/**
+ * Shin: the same one-object piston as the forearm, in the leg's cool metals — a long light-steel rod sliding out of a
+ * short near-black knee sleeve. The rod is the brightest thing below the hip line, so both legs are findable in one
+ * glance even with a claw hanging beside them, and the sleeve is the darkest band on the rig, which is what makes the
+ * knee read as a knee.
+ *
+ * Sleeve and rod are one path, stroked once and filled once; the iron is painted inside that silhouette under a clip,
+ * with no outline of its own (section 0.2 — see drawArmLower for the argument, which is the same one). The sleeve is
+ * this rig's ONE crossing on the shin (section 0.7): 6 x 9 px, over the 4 px floor, sitting ON the knee. Before this it
+ * was a separately outlined block butted against a separately outlined rod, and the shin carried an ink line across
+ * itself mid-way down; geom/limb-crossings scored the 6 px sleeve as the shin's material and the whole rod as a band
+ * crossing it 8.5 px from the knee.
+ */
 function drawLegLower(ctx, rig, pose, inf) {
-  const r = inf.r + 1, L = inf.len;
-  celCapsule(ctx, rig, 3, 0, L + 1, 0, r * 0.7, inf.pal.metal, 0.3);
-  celRect(ctx, rig, -2, -r, 6, r * 2, 2, inf.pal.iron, 0.38, 0.25);
+  const r = inf.r + 1, L = inf.len, pal = inf.pal, rr = r * 0.7;
+  pathTaperedCapsule(ctx, 3, 0, L + 1, 0, rr, rr);   // the light-steel rod, out to the ankle
+  pistonBlock(ctx, -2, -r, 6, r * 2, 2);             // the iron knee sleeve the rod slides out of
+  outlinePath(ctx, rig);
+  ctx.fillStyle = rig.col(tones(rig, pal.metal).base);
+  ctx.fill();
+  if (rig.override) return;
+  ctx.save(); ctx.clip();
+  ctx.fillStyle = tones(rig, pal.iron).base; ctx.fillRect(-2, -r, 6, r * 2);
+  blockShade(ctx, rig, -2, -r, 6, r * 2, pal.iron);
+  ctx.restore();
 }
 /** Plate foot: near-black plate with a light steel toe cap and a 2 px sole (ankle space). */
 function drawPlateFoot(ctx, rig, pose, inf) {
@@ -246,7 +316,7 @@ const build = {
   scale: 1, palette: PAL, outline: INK, outlineWidth: 1, smearColor: '#E8D8A0',
   // the far claw arm and far piston leg are pushed 45 % darker and greyer (ART_STYLE 0.3) and every near limb crossing the
   // chassis gets a heavier contact shadow, so the two arms and the two legs never merge into one scaffold
-  contactShadow: 0.42, farShade: 0.55, farDesat: 0.32, thinR: 4,
+  farShade: 0.55, farDesat: 0.32,
   // 85 px tall scaffold: 26 x 30 frame, 15 + 14 piston arms with 7 px claws, 13 + 13 piston legs on 13 px plates; the gnome's
   // 18 px head sits 10 px above the frame (neck) so her body fits inside the cage; bulge 0 = machine limbs
   // shoulderX 11 (torso half-width is 13): the claw arms are mounted on the OUTSIDE of the chassis, near arm in front of the

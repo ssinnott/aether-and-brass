@@ -45,10 +45,14 @@ const T = {
   /** section 0.8 within-faction divergence. Reference floor: brassbound halberdier/sapper differ in 2 keys. */
   divergeKeys: 2,
   /** section 0.3 / 0.4 / 1 / 9 shading knobs (null = the engine default). */
-  thinR: [3.5, 5.5],   // measured 4 (default) .. 5 (hoister, regent)
-  hiMin: [5, 8],       // measured 6 (default) .. 7 (hoister, regent)
-  flatR: [2, 3.5],     // no content rig sets it; FLAT_R default 2.5
-  contactAlpha: 0.25,  // measured 0.3 everywhere except pip 0.42
+  // Re-cut with the calm-bands pass. The engine defaults are now thinR 6.5 / hiMin 10 / flatR 5, and every content
+  // override that used to exist sat BELOW those, i.e. asked for MORE bands on a narrow part — the opposite of what
+  // section 0.4 wants. The bands are now "at or above the engine floor": a rig may ask for calmer, never busier.
+  thinR: [6.5, 9],
+  hiMin: [10, 14],
+  flatR: [5, 8],
+  /** Contact shadow is off by default now (section 0.2). A rig that opts in must do so visibly, not at 0.05. */
+  contactAlpha: 0.25,
   farShade: [0.5, 0.7],  // measured 0.62 everywhere except pip 0.55
   farDesat: [0.2, 0.4],  // measured 0.25 everywhere except pip 0.32
   bulge: [0, 1],       // hard engine constraint: drawLimbSegs goes negative-radius above ~4.5
@@ -456,8 +460,8 @@ export const RULES = [
         if (value < lo || value > hi) out.push(finding(`${label} is ${value}, outside the authored band ${lo}..${hi}`, detail, where));
       };
       const fs = build.farShade != null ? build.farShade : 0.62, fd = build.farDesat != null ? build.farDesat : 0.25;
-      const detail = `thinR=${rig.thinR == null ? 'default 4' : rig.thinR} hiMin=${rig.hiMin == null ? 'default 6' : rig.hiMin} `
-        + `flatR=${rig.flatR == null ? 'default 2.5' : rig.flatR} shading=${rig.shading} snap=${rig.snap} contactAlpha=${rig.contactAlpha} `
+      const detail = `thinR=${rig.thinR == null ? 'default 6.5' : rig.thinR} hiMin=${rig.hiMin == null ? 'default 10' : rig.hiMin} `
+        + `flatR=${rig.flatR == null ? 'default 5' : rig.flatR} shading=${rig.shading} snap=${rig.snap} contactAlpha=${rig.contactAlpha} `
         + `bulge=${rig.p.bulge} farShade=${fs} farDesat=${fd} tones=${rig.tonesN}`;
       band('build.thinR', rig.thinR, T.thinR, 'build.thinR');
       band('build.hiMin', rig.hiMin, T.hiMin, 'build.hiMin');
@@ -467,7 +471,9 @@ export const RULES = [
       band('proportions.bulge', rig.p.bulge, T.bulge, 'build.proportions.bulge');
       if (rig.shading !== true) out.push(finding('build.shading is false — flat fills are a bench knob, not a shipping rig', detail, 'build.shading'));
       if (rig.snap !== true) out.push(finding('build.snap is false — joints must snap to whole pixels at 1x (section 1)', detail, 'build.snap'));
-      if (!(rig.contactAlpha >= T.contactAlpha)) out.push(finding(`contact-shadow alpha ${rig.contactAlpha} is under ${T.contactAlpha} (build.contactShadow)`, detail, 'build.contactShadow'));
+      // Off is the default and is correct. What is not allowed is a shadow so faint it costs a translucent mark
+      // per limb segment and buys nothing — if a rig opts in, it must opt in visibly.
+      if (rig.contactAlpha !== 0 && !(rig.contactAlpha >= T.contactAlpha)) out.push(finding(`contact-shadow alpha ${rig.contactAlpha} is neither off nor at least ${T.contactAlpha} (build.contactShadow)`, detail, 'build.contactShadow'));
       // engine guard: buildRig derives paletteFar; only a def that hand-rolls its own far palette can break this
       for (const k of hexKeys(rig.palette)) {
         const want = farShade(rig.palette[k], fs, fd);

@@ -363,7 +363,7 @@ const cutthroat = def({
 const boltSpec = { style: 'stone', speed: 4, damage: 8, type: 'medium', kbX: 5, kbY: 0, hitstun: 18, maxDist: 320, life: 120, offsetX: 18, offsetY: 46, color: '#9a9a90', r: 5, muzzle: false,
   reflectable: true, damageOnReflect: 12, reflectSpeed: 7, draw: drawBolt,
   onReflect(p) { p.vy = 0; p.gravity = 0; p.maxDist = 320; p.startX = p.x; } };
-const SLING_CARRY = { armR: [14, 36], weapon: 0, armL: [-30, -18] };
+const SLING_CARRY = { armR: [14, 36], weapon: -12, armL: [-30, -18] };
 const slingerAnims = Object.assign(gobAnims(SLING_CARRY), {
   // sling: raise 6f, three overhead loops over 30f (weapon.rot 0 -> 1080), release the bolt, 24f recovery
   sling: { loop: false, frames: [

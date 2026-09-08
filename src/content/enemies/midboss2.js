@@ -137,7 +137,7 @@ function drawGrapnel(ctx, p, sx, sy) {
  * crimper's #4A3226 family at dL 10.5. Nothing warm moves: the rank ladder's chroma is the rank's alone. The coat move
  * also clears the palette/value-ladder-adjacent warning this rig has carried on torso/hips (0.509 -> 0.566, bound 0.525).
  */
-const SKREE_PAL = { ...CROW_PAL, primary: '#2C3E62', sleeve: '#C9BDA0', secondary: '#7282BE', metal: '#B4BECA', hair: '#4A3226', rank: RANK };
+const SKREE_PAL = { ...CROW_PAL, primary: '#2C3E62', sleeve: '#F6EFDC', secondary: '#7282BE', metal: '#B4BECA', hair: '#4A3226', rank: RANK };
 /** Phase 1: the winch. Squat and top-heavy under the drum — short legs, wide hips, a barrel of a torso. */
 const WINCH_BUILD = {
   scale: 1.5, palette: SKREE_PAL, outline: CROW.outline, outlineWidth: 1,

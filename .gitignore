@@ -1,6 +1,7 @@
 node_modules/
 dist/
 tools/screens/
+tools/.compare/
 *.log
 .DS_Store
 .claude/worktrees/

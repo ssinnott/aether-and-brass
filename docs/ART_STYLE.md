@@ -28,7 +28,23 @@ the renderer (`src/art/rig.js`, `shading.js`, `rigParts.js`) so every rig gets i
    a light shirt colour so the arms read against the torso. GDD colours are hue references — re-space the values.
 2. **One 1 px outline on every boundary, internal ones included.** Every part strokes its own outline
    (`outlinePath` under the fill), so draw order gives internal boundaries for free; never fake one with a tone seam,
-   and keep an outline on every accessory that overlaps the body. **Contact shadow:** the renderer draws a translucent
+   and keep an outline on every accessory that overlaps the body.
+   **Exception — a material change inside one silhouette.** A boundary separates two *objects*. A colour change
+   *within* one object is not a boundary and must not carry a line: an arm is one thing whether or not the sleeve
+   ends halfway down it, and inking that transition is what made limbs read as a bicep object stacked on a forearm
+   object. So a fill **clipped inside a path that has itself been stroked** in the outline colour is a material
+   change and correctly has no line of its own — the silhouette is carrying the ink. This is exactly how
+   `drawLimbSegs` puts skin below the elbow and `drawSkull` puts hair on a head. The exception is narrow on
+   purpose, and `geom/outline-stroke-contract` enforces the narrowness: the clip must contain the fill and the
+   clipped path must have been inked, so an unoutlined fill in open space is still an error.
+   The test to apply when in doubt: *would a reader call these two things separate objects?* Sleeve and forearm, no
+   — one arm. Gauntlet and forearm, yes — outline it.
+   **Draw order is part of the boundary.** Because every part inks its own outline, *which part is drawn last* is
+   what says which one is in front — so an appendage goes **after** the mass it grips and **before** the mass that
+   should overlap it. A hand drawn before its weapon hides behind the haft instead of closing around it; a near leg
+   drawn after the hip block is painted onto the front of the body instead of emerging from inside it; an ear drawn
+   over its own skull is a triangle inked on a cheek. All three were real, and all three were one line each.
+   Enforced by `geom/appendage-layering` (**error** — this one is cheap to get right and expensive to look at). **Contact shadow:** the renderer draws a translucent
    dark capsule (`build.contactShadow`, default alpha 0.3, `false` = off) under every arm and leg segment, so a limb
    crossing the torso, the far leg or a back accessory gets a darker 1 px contact edge on top of its outline.
 3. **Far limbs darker and greyer.** `rig.paletteFar = farPalette(palette, farShade, farDesat)` — `build.farShade` 0.62
@@ -56,6 +72,23 @@ the renderer (`src/art/rig.js`, `shading.js`, `rigParts.js`) so every rig gets i
 7. **Less clutter — the 2 px floor.** Anything under 2 px at 1× is noise: no 1 px rivets, knuckle notches, gauge
    needles, studs or wrap stripes; bands ≥ 3 px, buckles ≥ 3×3, toe caps ≥ 4 px, glow slots ≥ 6 px; one buckle per
    boot, one seam per garment, one shape per material.
+   **One crossing per limb.** A limb is one object. Every band drawn across it is another line the eye has to parse
+   before it can decide the limb is a limb, and a limb wearing three of them reads as a stack of parts — which is
+   what "the arms don't read as arms" meant. So: **at most one material crossing per limb segment, at least 4 px on
+   its short side, positioned at a joint** (elbow, wrist, knee, ankle), where an arm really does change. Keep the ONE
+   that carries the faction — the Stormcrow wing armband, a rank cuff, the Marine's shoulder plate — and drop the
+   rest. Which mark survives is an art decision per rig, not a mechanical one: a generic band cannot stand in for the
+   Galewright's coils. Enforced by `geom/limb-crossings` (warn).
+   *Rank carriers are the exception, and must be argued.* Where a mark encodes something the player has to read —
+   the Stormcrow rank ladder, whose pixel areas `tools/stormcrow-pixels.mjs` audits as Bosun < Galewright < Marine,
+   or a cuff a boss deliberately switches off so its return marks a phase change — the second crossing is carrying
+   information, not decoration. Record it as an exemption in `tools/art-invariants/exemptions.js` with that reason.
+   Do not silently delete a rank carrier to satisfy the count; that trades a readability problem for a gameplay one.
+   **The mark budget.** A rig may not paint more marks on any one keyframe than its class allows: hero 140,
+   human-machine 145, organic-mook 130, boss 180 (`geom/mark-budget`, warn). These are a ratchet, set just above the
+   cast's measured maxima after the readability pass — hero 126, human-machine 133, organic-mook 120, boss 166.
+   Raising one is a decision to argue in review, not a way to make a new rig pass. `node tools/art-check.js --census`
+   prints the current table, bucketed by the hook each mark came from.
 8. **Squint test + audit.** Render the 1× idle / walk / hit frames, downscale to 0.5× and upscale ×6 nearest: a person
    with the weapon must still be visible. `window.__sheet.audit()` (`weapon.headAt` = px from the near hand to the
    weapon-head centre) must print no new `GRIP` / `FLOOR` flags; `mode=cast&enemies=1&bg=docks` must keep every rig
@@ -68,7 +101,8 @@ the renderer (`src/art/rig.js`, `shading.js`, `rigParts.js`) so every rig gets i
 Chunky 16-bit arcade sprite (Shredder's Revenge / Metal Slug energy): big heads, big hands, big boots; one crisp
 **1 px near-black outline** around every silhouette *and every internal part boundary*; **flat cel tones** (highlight /
 base / shadow on the big shapes, base + shadow on anything narrower than 8 px) laid down as hard bands with a
-**top-left light**; no gradients, no soft alpha except smears and steam; joints snapped to whole pixels at 1×;
+**top-left light**; no gradients, no soft alpha except smears and steam; joints snapped to whole **device** pixels
+at whatever scale the rig is drawn at;
 **everything moves** — idle breathes, cloth and hair lag, weapons smear, hits overshoot and hold. Readability beats
 detail: §0 wins every argument.
 
@@ -148,7 +182,8 @@ facing right. `info` (`{ name, far, pal, len, r, w, h, color }`) is a reusable o
 (`src/art/shading.js`): `celRect`, `celPoly`, `celBall`, `celCapsule`, `celTaper`, `celPath` (any path you traced),
 `flat`, `outlinePath`, `rimRect`, `rimTop`, `wantHi`, `wantSh`, `tones`, `pathRR`. Default renderers (`src/art/rigParts.js`) are exported so you can
 compose: `drawBoot`, `drawFist`, `drawBelt`, `drawSkull`, `drawHairCap`, `drawFace`, `drawMouth`, `drawTorsoShape`,
-`drawLimbSegs`, `drawCuff`, `drawNeck`, `drawStick`.
+`drawLimbSegs`, `drawNeck`, `drawStick`. (`drawCuff` is gone: the sleeve cuff was a ring drawn across the forearm,
+one of the internal lines that stopped an arm reading as an arm.)
 
 Part hooks: `head face beard hair hat neck torso hips back shoulder armUpper armLower hand legUpper legLower foot weapon
 smear`. Accessories: `{ attach: 'head'|'torso'|'back'|'hip'|'handR'|'handL'|'root', layer?: 'back', draw(ctx, rig, pose) }`
@@ -300,7 +335,11 @@ Timing numbers (startup/active/recovery) come from the GDD and never change for 
   clips (each clip ≈ 3 fills in software raster; prefer `celCapsule`/`celBall`/`celTaper`, which use offset shapes and
   no clip), chains (each segment is a cel shape). Cap a rig at ~45 cel shapes + ~140 flat 1-px rects (1-px rects are
   nearly free); put detail in rects, not extra shapes. Shading is ~20 % of Brunhild's raster cost, the outlines ~30 %.
-* Snapping: leave `build.snap` on (default) — sub-pixel joints blur the 1 px outline.
+* Snapping: leave `build.snap` on (default) — sub-pixel joints blur the 1 px outline. Snapping is on the **device**
+  grid (`round(v * rig.pxScale) / rig.pxScale`, where `pxScale` is `(o.scale || 1) * rig.scale`), not the rig's local
+  one. Only the four heroes are at `scale: 1`; every enemy is 0.77–2.45, so local-integer joints landed on fractional
+  device pixels and the 1 px outline smeared across two. For the same reason `rig.ow` is the authored outline width
+  **divided by** the draw scale, so the stroke is exactly one device pixel wide after `ctx.scale()`.
 
 ## 10. Contact-sheet workflow
 

@@ -98,6 +98,16 @@ const crowFlag = (rig) => !!(rig.build.crow && rig.build.crow.flag);
 /** Band thickness in LOCAL units, floored so the mark still clears ART_STYLE section 0.7's 3px band floor at 1x. */
 export const rankH = (rig, n) => Math.max(n || 3, Math.ceil(3 / (rig.build.scale || 1)));
 /**
+ * `rankH`'s CROSSING-grade sibling. Section 0.7's floor for a mark that crosses a limb is 4 px on its short side
+ * measured on the DEVICE grid, and every Stormcrow line trooper is drawn under scale 1 (crimper 0.95, corsair 0.93,
+ * galewright 0.92) - so a 4-unit band landed as 3.7-3.8 device px on the three of them and geom/limb-crossings was
+ * right to call it thin. This floors the LOCAL height at whatever clears 4 device px instead of `rankH`'s 3, which
+ * costs the three small rates one local unit and leaves the five rigs at scale >= 1 (bosun, and every boss) exactly
+ * where they were. Use it for the armband, the cuff, the knee patch and the trouser lace; `rankH` still governs the
+ * marks that sit on a torso or a head, where nothing crosses a bone.
+ */
+const crossH = (rig, n) => Math.max(rankH(rig, n), Math.ceil(4 / (rig.build.scale || 1)));
+/**
  * A rank band and its 1px shadow, in a space with no far copy (torso / head / hips). Detail, not silhouette: call it
  * AFTER the part's `if (rig.override) return;` so the smear and hit-flash passes stay one flat colour.
  */
@@ -402,36 +412,55 @@ export function crowHips(ctx, rig, pose, inf) {
   band(ctx, rig, -hw - 2, -3, 7, 8, CROW.leather);
 }
 /**
- * Sleeve with the WING ARMBAND above the elbow (armUpper hook). It used to be one shared wine for the whole faction;
+ * Sleeve with the WING ARMBAND at the SHOULDER (armUpper hook). It used to be one shared wine for the whole faction;
  * it is now the variant's rank colour, which is the biggest single lever in the rank read - so `inf.pal.rank`, never
  * a module constant, or the far arm's band would glow as bright as the near one (section 0.3).
+ *
+ * THE ARM IS ONE OBJECT (section 0.7), and two things were stopping it reading as one.
+ * The sleeve used to stop at 0.95r while rig.js hands the forearm `armR - 0.5`, so the two segments met the elbow at
+ * two different radii and the step between them inked itself into a collar - the same seam the renderer pass just
+ * took off the generic limbs. The taper now ENDS on the forearm's own radius, so the outline runs through the joint
+ * instead of ringing it.
+ * And the armband sat at `len * 0.5`, dead mid-bone, which is precisely where a band says "this arm is two objects
+ * stacked". It is the mark that carries the faction, so it is KEPT at full width (widened, in fact - see `crossH`)
+ * and moved onto a joint rather than dropped. The joint is the SHOULDER, not the elbow, and that is a measured
+ * decision, not a preference: the forearm's own round cap covers the last `armR - 0.5` units of the upper arm, so an
+ * armband tucked against the elbow is half eaten by the limb below it - tools/stormcrow-pixels.mjs put the Crimper's
+ * rank census at 270 px before, 133 px with the band at the elbow, 409 px with it at the shoulder. A band the player
+ * cannot see is not a rank carrier. High on the arm is also where a brassard is actually worn.
  */
 export function crowArmUpper(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, sleeve = inf.pal.sleeve || inf.pal.primary;
-  celTaper(ctx, rig, 0, 0, 0, len, r * 1.12, r * 0.95, sleeve, 0.3);
+  celTaper(ctx, rig, 0, 0, 0, len, r * 1.12, r - 0.5, sleeve, 0.3);
   // `crow.bareArm`: the Powder Bosun's sleeve IS his skin, and a warm band on warm tan fails section 0.1 - his
   // rank rides cloth only (sash, brow band, smock collar).
   if (rig.override || (rig.build.crow || EMPTY).bareArm) return;
-  const rank = inf.pal.rank || CROW.wine, h = rankH(rig, 4), y = R(len * 0.5);
+  // y = 1: hard against the shoulder, one unit of sleeve left above it so the band's own line and the cap's stay apart
+  const rank = inf.pal.rank || CROW.wine, h = crossH(rig, 4), y = 1, bw = R(r * 2);
   // INKED (section 0.2): the armband is cloth on canvas, and it is the one rank carrier every rate above the
   // Crimper shares - it has to survive against the sleeve behind it, not blend into it.
-  band(ctx, rig, -r, y, r * 2, h, rank);
-  ctx.fillStyle = tones(rig, rank).sh; ctx.fillRect(R(-r), y + h - 1, R(r * 2), 1);
-  ctx.fillStyle = rig.col(inf.far ? farTone(CROW.brass) : CROW.brass); ctx.fillRect(-1, y + 1, 3, 3);
+  band(ctx, rig, R(-r), y, bw, h, rank);
+  ctx.fillStyle = tones(rig, rank).sh; ctx.fillRect(R(-r), y + h - 1, bw, 1);
+  // the wing stud rides the middle of the band whatever height the band ends up at
+  ctx.fillStyle = rig.col(inf.far ? farTone(CROW.brass) : CROW.brass); ctx.fillRect(-1, R(y + (h - 3) / 2), 3, 3);
 }
-/** Bare forearm rolled out of the sleeve, with the sleeve turned back into a 3px cuff (armLower hook). */
+/**
+ * Bare forearm rolled out of the sleeve, with the sleeve turned back into a cuff at the elbow (armLower hook).
+ * Straight capsule -> taper: it starts at the radius the sleeve above it now ends on and narrows into the wrist, so
+ * the arm is one tapering object from shoulder to fist and the fist is wider than what it is on, the way a fist is.
+ */
 export function crowArmLower(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, pal = inf.pal;
-  celCapsule(ctx, rig, 0, 0, 0, len, r, pal.skin, 0.3);
+  celTaper(ctx, rig, 0, 0, 0, len, r, r * 0.86, pal.skin, 0.3);
   if (rig.override) return;
   // petty officer and up turn the cuff out in the rank colour; ratings keep a plain sleeve cuff
-  const h = rankH(rig, 4);
+  const h = crossH(rig, 4), bw = R(r * 2) + 2;
   const col = (rig.build.crow || EMPTY).cuff ? (pal.rank || CROW.wine) : (pal.sleeve || pal.primary);
   // INKED: cloth turned back over a bare forearm is the sharpest material change on the arm, and this one line is
   // shared by all five rates AND by Skree and Kestrel through CROW_PARTS - it was the single largest unoutlined
   // fill on the faction (8-9 px x 13 px, on every keyframe, on both arms).
-  band(ctx, rig, R(-r) - 1, 0, r * 2 + 2, h, col);
-  ctx.fillStyle = tones(rig, col).sh; ctx.fillRect(R(-r) - 1, h - 1, R(r * 2) + 2, 1);
+  band(ctx, rig, R(-r) - 1, 0, bw, h, col);
+  ctx.fillStyle = tones(rig, col).sh; ctx.fillRect(R(-r) - 1, h - 1, bw, 1);
 }
 /** Fingerless flight glove: bare knuckles with a leather strap across the back of the hand (hand hook). */
 export function crowHand(ctx, rig, pose, inf) {
@@ -444,29 +473,40 @@ export function crowHand(ctx, rig, pose, inf) {
  * Officer lace: a stripe of rank down the outer trouser seam, on `crow.lace` rigs only. `inf.pal.rank` so the far leg
  * darkens for free through farPalette (this is why the rank colour is a palette key and not a module constant).
  */
-function crowLace(ctx, rig, inf, y0, len) {
+function crowLace(ctx, rig, inf, y0, len, rOut) {
   // NEAR LEG ONLY. On the far leg the stripe is farPalette's 38%-darker copy of the rank colour laid on the
   // 38%-darker copy of the trousers: two dark values against each other, which reads as nothing and costs two cel
   // shapes and two ink strokes a keyframe on the two rigs that already carry the most rank in the faction.
   if (rig.override || inf.far || !(rig.build.crow || EMPTY).lace) return;
   // the trouser lace runs the whole length of the leg, so its footprint is large however narrow the stripe is:
-  // it takes the line (§0.2), and it is widened to 4 px so there is something for the line to bound.
-  band(ctx, rig, R(-inf.r * 0.95), y0, rankH(rig, 4), len, inf.pal.rank || CROW.wine);
+  // it takes the line (§0.2), and `crossH` widens it until it clears section 0.7's 4 px floor on the DEVICE grid,
+  // which the three sub-scale-1 line rates were missing by a third of a pixel.
+  // `rOut` is the segment's NARROWEST half-width, not its widest: the leg now tapers, so a seam pinned to the hip
+  // radius would walk off the outside of the shape by the time it reached the knee.
+  band(ctx, rig, R(-rOut), y0, crossH(rig, 4), len, inf.pal.rank || CROW.wine);
 }
-/** Thigh: tapered so it swells at the hip and narrows into the knee (legUpper hook). */
+/** Thigh: swells at the hip and narrows into the SHIN's own radius, so the knee is a joint and not a collar. */
 export function crowLegUpper(ctx, rig, pose, inf) {
-  celTaper(ctx, rig, 0, 0, 0, inf.len, inf.r * 1.1, inf.r * 0.96, inf.pal.secondary, 0.3);
-  crowLace(ctx, rig, inf, 2, inf.len - 3);
+  const r = inf.r;
+  celTaper(ctx, rig, 0, 0, 0, inf.len, r * 1.1, r - 1, inf.pal.secondary, 0.3);
+  crowLace(ctx, rig, inf, 2, inf.len - 3, r - 1);
 }
-/** Shin with a strapped leather knee patch at the top so the leg reads as two bones, not one tube (legLower hook). */
+/**
+ * Shin with a strapped leather knee patch at the top so the leg reads as two bones, not one tube (legLower hook).
+ * The shin used to be a straight capsule at `legR - 1` while the thigh above it stopped at 0.96 * legR, so the two
+ * met the knee three quarters of a pixel apart and the step inked itself into a ring. The thigh now ends exactly
+ * here and the shin tapers on into the ankle.
+ */
 export function crowLegLower(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, pal = inf.pal;
-  celCapsule(ctx, rig, 0, 0, 0, len, r, pal.secondary, 0.3);
+  celTaper(ctx, rig, 0, 0, 0, len, r, r * 0.9, pal.secondary, 0.3);
   if (rig.override) return;
-  // knee patch: leather over duck trousers, INKED. The 1px strap highlight that used to sit under it is gone -
+  // knee patch: leather over duck trousers, INKED, and sitting ON the knee - this is the shin's one crossing under
+  // section 0.7 on the six rigs with no officer's lace. The 1px strap highlight that used to sit under it is gone -
   // it was below the 2px detail floor and the outline says the same thing at full strength.
-  band(ctx, rig, R(-r) - 1, -1, r * 2 + 2, 4, inf.far ? LEATHER_F : CROW.leather);
-  crowLace(ctx, rig, inf, 6, len - 7);
+  const kh = crossH(rig, 4);
+  band(ctx, rig, R(-r) - 1, -1, R(r * 2) + 2, kh, inf.far ? LEATHER_F : CROW.leather);
+  crowLace(ctx, rig, inf, kh + 2, len - kh - 3, r * 0.9);
 }
 /** Flight boot: dark plum leather with a turned-down canvas cuff and a pewter toe cap (foot hook, ankle space). */
 export function crowBoot(ctx, rig, pose, inf) {

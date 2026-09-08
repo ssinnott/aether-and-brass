@@ -14,7 +14,7 @@ import * as helpers from './helpers.js';
 import * as palette from './rules/palette.js';
 import * as animation from './rules/animation.js';
 import * as geometry from './rules/geometry.js';
-import { tones } from '../../src/art/shading.js';
+import { tones, celCapsule } from '../../src/art/shading.js';
 import { getChain } from '../../src/art/secondary.js';
 
 const RULES = new Map();
@@ -96,6 +96,25 @@ expect('anim/hitbox-placement', 'brunhild', (s) => { for (const f of s.anims.idl
 expect('anim/locomotion-shape', 'sael', (s) => { for (const f of s.anims.run.frames) { f.pose.torso = { ...(f.pose.torso || {}), rot: 0 }; f.pose.legN = { upper: 0, lower: 0 }; f.pose.legF = { upper: 0, lower: 0 }; } }, 'run with no lean or stride');
 expect('palette/faction-variant-divergence', 'stormcrow:corsair', (s) => { const c = subs.get('stormcrow:crimper'); s.build.palette = { ...c.build.palette }; }, 'variant palette cloned');
 expect('anim/attack-face-aggressive', 'brunhild', (s) => { for (const a of Object.values(s.anims)) for (const f of a.frames) { f.face = 'neutral'; if (f.pose) f.pose.face = 'neutral'; } }, 'blank face through every attack');
+
+// ---- the readability pass
+expect('geom/mark-budget', 'brassbound:footman', (s) => { const t = s.build.parts.torso; s.build.parts = { ...s.build.parts, torso(ctx, rig, pose, inf) { const r = t && t(ctx, rig, pose, inf); if (!rig.override) for (let i = 0; i < 140; i++) { ctx.fillStyle = '#c0ffee'; ctx.fillRect(-8 + i % 8, -8 + ((i / 8) | 0), 4, 4); } return r; } }; }, '140 extra marks on the torso');
+// brunhild has no limb hooks, so the rule is silent on her by construction: an armUpper that paints TWO bands
+// across the bicep is the entire signal, with no baseline to subtract.
+expect('geom/limb-crossings', 'brunhild', (s) => {
+  s.build.parts = { ...s.build.parts,
+    armUpper(ctx, rig, pose, inf) {
+      const r = inf.r, pal = inf.pal;
+      celCapsule(ctx, rig, 0, 0, 0, inf.len, r, pal.sleeve || pal.primary, 0);
+      if (rig.override) return;
+      ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-r, inf.len * 0.35, r * 2, 2);
+      ctx.fillStyle = rig.col(pal.metal); ctx.fillRect(-r, inf.len * 0.6, r * 2, 2);
+    } };
+}, 'two material bands across one bicep');
+// The order this rule checks is fixed in rig.js, so it cannot be broken from a build. What CAN be done is open a
+// 'hand' range early: rig.parts.hand is wrapped by name, so calling it from the torso hook makes the hand appear
+// long before the weapon — exactly the defect the rule exists to catch, reproduced without touching src/.
+expect('geom/appendage-layering', 'brassbound:duelist', (s) => { const t = s.build.parts.torso; s.build.parts = { ...s.build.parts, torso(ctx, rig, pose, inf) { const r = t && t(ctx, rig, pose, inf); if (rig.parts.hand) rig.parts.hand(ctx, rig, pose, { ...inf, name: 'hand', far: false, r: rig.p.handR, color: rig.palette.skin }); return r; } }; }, 'hand opened during the torso, before the weapon');
 
 // Coverage: a data/geometry rule with no case here is a rule nobody has proved can fire.
 const uncovered = [...RULES.keys()].filter((id) => !covered.has(id));

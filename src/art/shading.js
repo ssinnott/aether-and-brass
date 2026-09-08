@@ -10,16 +10,19 @@ export const LIGHT_X = -0.7071, LIGHT_Y = -0.7071;
 /** Default ramp factors (build.shading may override { hi, sh, rim }). */
 export const RAMP = Object.freeze({ hi: 1.22, sh: 0.66, rim: 1.55 });
 /**
- * Readability rule: parts narrower than this radius (px at 1x; i.e. limbs < ~8 px wide) get TWO tones (base + shadow),
- * no highlight — a third band on a 5 px limb reads as noise, not form. Override per rig with build.thinR.
+ * Readability rule: parts narrower than this radius get TWO tones (base + shadow), no highlight.
+ * A shadow band and a highlight band ARE dividing lines — a 5 px limb carrying both is three stripes of colour
+ * across something 5 px wide, which reads as noise, not as form. The budget is one boundary on a narrow part,
+ * so the thresholds are set where a part is genuinely big enough to hold a second one: at 6.5 a limb has to be
+ * ~13 px across before it gets a highlight. Override per rig with build.thinR.
  * Shading budget knobs stored on the rig by buildRig: thinR, hiMin, flatR, tonesN (build.tones: 2 = no highlights at
  * all; light marks are then explicit 1 px rims via rimRect / rimTop on big shapes only).
  */
-export const THIN_R = 4;
+export const THIN_R = 6.5;
 /** Below this radius a part is a single flat tone (plus outline). Override per rig with build.flatR. */
-export const FLAT_R = 2.5;
+export const FLAT_R = 5;
 /** Smallest half-extent (px) of a clipped shape (celPath / celRect / celPoly) that still gets a highlight cap; build.hiMin. */
-export const HI_MIN = 6;
+export const HI_MIN = 10;
 function thinR(rig) { return rig.thinR != null ? rig.thinR : THIN_R; }
 /**
  * Highlight gate: false on a `build.tones: 2` rig (base + shadow only, light marks come from explicit rims), and for

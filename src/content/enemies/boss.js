@@ -11,7 +11,8 @@
 // clockwork fist ratchet. Rig flags set by hooks.onUpdate: sawFast, sawJam, cannonCharge, cannonVent, watch, boltTell,
 // fistOut, coreT (eased core-cover opening). `face: dazed` is the "down and out" read: Vane's hat and cane drop.
 import { FK, frontBox, makeBrassBase, noFace } from './common.js';
-import { celRect, celBall, celPoly, celCapsule, celPath, tones, flat, rimTop, pathRR, band } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celCapsule, celPath, tones, flat, rimTop, pathRR, pathCap } from '../../art/shading.js';
+import { pathTaperedCapsule } from '../../art/shapes.js';
 import { drawFist, drawBoot, drawSkull, drawFace } from '../../art/rigParts.js';
 import { getChain } from '../../art/secondary.js';
 import { FACE } from '../../art/poses.js';
@@ -72,6 +73,11 @@ function puff(ctx, x, y, r, a) {
 }
 
 // ================================================================ the Regent Engine (scale 2.8 -> ~207 px)
+// The walker has three materials, not nine: light steel, dark iron and brass. The humanoid palette keys it has to
+// fill are ALIASES onto those - `skin` and `metal` are both the steel, `hair`, `sleeve` and `secondary` are all the
+// iron - because a tripod walker has no skin and no hair. Worth knowing when reading a tool report: the invariant
+// suite maps a colour back to the FIRST key that carries it, so a finding about the leg says "skin over its own
+// hair" when what it means is "the steel piston over its own iron cylinder". It is naming an alias, not a defect.
 const ENGINE_PAL = { skin: STEEL, hair: IRON, primary: BRASSB, sleeve: IRON, secondary: IRON, accent: BRASSB, metal: STEEL, dark: SLATE, glow: CYAN };
 
 /** Aether core (torso space): iron bezel, cyan window, and the two brass iris plates that slide apart as `open` (0..1) grows (Core Vent). */
@@ -185,32 +191,73 @@ function engineShoulder(ctx, rig, pose, inf) {
   if (rig.override) return;
   ctx.fillStyle = tones(rig, inf.pal.accent).deep; ctx.fillRect(-2, -2, 4, 4);
 }
+/**
+ * ONE hydraulic segment of the walker (limb space, +y along the limb): a dark iron cylinder whose brass gland
+ * collar at the far joint is part of the SAME shape. Shared by the boom, the thigh and the rear leg's thigh.
+ *
+ * It used to be a cylinder with a separately inked band painted on top, so every boom and every thigh wore a dark
+ * ring at the elbow / knee and the limb read as a bar with a part bolted to it. The cylinder and the collar now go
+ * into one path, stroked once and filled once (ART_STYLE 0.2), and the brass is painted inside that silhouette
+ * afterwards under a clip. The clip is what DECLARES the material change: 0.2's exception, and
+ * geom/outline-stroke-contract with it, only accepts an unoutlined fill when it is clipped inside a path that has
+ * itself been inked - "it lands inside the cylinder anyway" is rejected on purpose.
+ *
+ * The brass is deliberately KEPT and made bigger, not simplified away. It is this machine's ONE material crossing
+ * per segment (0.7): 5 px of it at scale 2.45 is 12 device px, three times the 4 px floor, it stands 1.5 px proud
+ * of the cylinder on each side so the joint has a profile, and it sits ON the joint. Brass is the only warm on the Regent; losing it would cost
+ * the walker the thing that says "Aetherwright machine" at a glance.
+ */
+function engineHydraulic(ctx, rig, r, L, pal) {
+  // the collar stops 1 px short of the joint: the segment BELOW is drawn after it, so a collar that ran to the joint
+  // would be half covered by the piston rod / the forearm and the brass would read as two slivers, not a gland.
+  const cx = -(r + 1.5), cw = r * 2 + 3, cy = L - 6, ch = 5;
+  ctx.beginPath();
+  // the cylinder flares 0.86r -> r toward the gland: form inside ONE material, so it costs a taper and no line.
+  pathTaperedCapsule(ctx, 0, -1, 0, L, r * 0.86, r, true);
+  ctx.rect(cx, cy, cw, ch);                                  // the gland collar, in the same path as the cylinder
+  celPath(ctx, rig, pal.secondary, 0, R(L * 0.5), (L + r * 2 + 6) * 0.5, 0.38, 0.26);
+  if (rig.override) return;
+  ctx.save(); ctx.clip();                                    // still the silhouette path celPath just inked
+  ctx.beginPath(); ctx.rect(cx, cy, cw, ch);
+  ctx.fillStyle = tones(rig, pal.accent).base; ctx.fill();
+  ctx.restore();
+}
 /** Upper arm / boom (limb space, +y along the limb): dark iron hydraulic barrel with a brass collar at the elbow. */
 function engineArmUpper(ctx, rig, pose, inf) {
-  const r = inf.r, L = inf.len, pal = inf.pal;
-  celRect(ctx, rig, -r, -3, r * 2, L + 6, 3, pal.secondary, 0.38, 0.26);
-  if (rig.override) return;
-  // brass collar on an iron barrel: a material change, so it takes ink (0.2). 6 px inked leaves 4 px of brass.
-  band(ctx, rig, -r, L - 3, r * 2, 6, pal.accent, 2);
-  ctx.fillStyle = tones(rig, pal.secondary).hi; ctx.fillRect(-r + 1, -1, 1, L);
+  engineHydraulic(ctx, rig, inf.r, inf.len, inf.pal);
 }
 /** Forearm: near = the saw arm's light-steel ram, far = the steam cannon's gunmetal barrel with brass bands. */
 function engineArmLower(ctx, rig, pose, inf) {
   const r = inf.r, L = inf.len, pal = inf.pal;
   if (!inf.far) {
-    celCapsule(ctx, rig, 0, 4, 0, L + 2, r * 0.62, pal.metal, 0.3);
-    celRect(ctx, rig, -r, -3, r * 2, 9, 3, pal.secondary, 0.4, 0.24);
+    // The saw arm's ram: the steel ram and the iron elbow sleeve are ONE object, the same way the thigh and its
+    // gland are. They used to be a capsule and a rounded rect stroked separately, so the ram wore a dark ring where
+    // it left the sleeve -- the seam that made a limb read as two parts stacked end to end (ART_STYLE 0.2).
+    ctx.beginPath();
+    pathTaperedCapsule(ctx, 0, 4, 0, L + 2, r * 0.62, r * 0.62, true);
+    ctx.rect(-r, -3, r * 2, 9);                              // the iron sleeve, in the same path as the ram
+    // ext/centre are the SLEEVE's, not the union's: the sleeve is the mass that carries the cel bands and it keeps
+    // exactly the shading celRect gave it before. The ram is the flat light-steel it always was (r is under flatR).
+    celPath(ctx, rig, pal.secondary, 0, 1.5, Math.hypot(r * 2, 9) * 0.5, 0.4, 0.24);
     if (rig.override) return;
+    ctx.save(); ctx.clip();
+    pathTaperedCapsule(ctx, 0, 4, 0, L + 2, r * 0.62, r * 0.62);
+    ctx.fillStyle = tones(rig, pal.metal).base; ctx.fill();
+    ctx.restore();
     return;   // the old 3 px brass wrist collar is gone: under the 0.7 floor, it could not carry a line and did not read
   }
   celRect(ctx, rig, -r - 1, -3, r * 2 + 2, L + 3, 4, pal.metal, 0.38, 0.28);
   if (rig.override) return;
   const gun = inf.far ? GUN_F : GUN;
-  // gunmetal bands on the steel barrel, brass-capped: both are material changes and both take ink.
+  // Gunmetal reinforcing rings on the steel barrel. These stay INKED rather than becoming clipped fills like the
+  // boom's collar: a ring fitted around a barrel is a second object by 0.2's own test ("would a reader call these
+  // two things separate objects?"), and it is the same language as the barrel body's ribs and the boiler's hoops.
+  // The collar at a JOINT is part of the casting; a band along a barrel is a fitting.
   inkBands(ctx, rig, gun, -r - 1, R(L * 0.3), r * 2 + 2, 6, -r - 1, R(L * 0.68), r * 2 + 2, 6);
-  // the 2 px cap under each band was brass, i.e. a THIRD material on two pixels: it cannot carry a line at that width
-  // (ART_STYLE 0.7), so it is demoted to a rim band of the gunmetal itself - form inside one material, no ink (0.4/3).
-  ctx.fillStyle = tones(rig, gun).hi; ctx.fillRect(-r - 1, R(L * 0.3) + 6, r * 2 + 2, 2); ctx.fillRect(-r - 1, R(L * 0.68) + 6, r * 2 + 2, 2);
+  // The 2 px "rim band" that used to sit under each band is gone. It was described as form inside one material, but
+  // it was painted OUTSIDE the band, on the steel barrel, in a third colour - so the forearm carried two material
+  // crossings (gunmetal + gunmetal-highlight) where 0.7 allows one, and the second one was two pixels of it. The
+  // band is inked; the outline IS that edge now, exactly as the barrel's iron ribs were fixed above.
   ctx.fillStyle = tones(rig, pal.metal).hi; ctx.fillRect(-r, 0, 1, R(L * 0.3));
 }
 /** Near hand = the brass hub the gear-saw spins on; far hand = the steam cannon's muzzle bell (hand space, +x forward). */
@@ -261,23 +308,27 @@ function drawSaw(ctx, rig) {
   ctx.beginPath(); ctx.arc(cx, 0, RS - 6, 0, TAU); ctx.stroke();
   if (rig.sawJam) { ctx.fillStyle = rig.col(RED); ctx.fillRect(cx + R(Math.cos(a) * (RS - 3)) - 2, R(Math.sin(a) * (RS - 3)) - 2, 4, 4); }
 }
-/** Thigh: iron sleeve with a brass knee collar (limb space, +y along the limb). */
+/**
+ * Thigh: the leg's hydraulic cylinder, with the brass gland collar at the knee (limb space, +y along the limb).
+ *
+ * The leg used to be FOUR outlined objects across its two segments - an iron sleeve with a steel piston capsule
+ * poking out of it, a brass sliver painted on top, then a steel rod with a second iron sleeve and a second brass
+ * sliver on the shin - so each leg read as a chain of blocks with a dark ring at every seam, which is most of what
+ * "the models blend together" meant at the knee. It is now ONE machine read: a dark iron cylinder, a brass gland
+ * at the knee, and a light-steel piston rod sliding out of it (ART_STYLE 0.1's value ladder in three steps, and
+ * 0.7's one material crossing per segment - the brass on the thigh, nothing on the rod).
+ */
 function engineLegUpper(ctx, rig, pose, inf) {
-  const r = inf.r, L = inf.len, pal = inf.pal;
-  celCapsule(ctx, rig, 0, R(L * 0.4), 0, L + 2, r * 0.62, pal.metal, 0.3);
-  celRect(ctx, rig, -r, -3, r * 2, R(L * 0.55), 3, pal.secondary, 0.4, 0.25);
-  if (rig.override) return;
-  band(ctx, rig, -r, L - 2, r * 2, 6, pal.accent, 2);   // brass knee collar on iron: material change, takes ink
-  ctx.fillStyle = tones(rig, pal.secondary).hi; ctx.fillRect(-r + 1, -1, 1, R(L * 0.5));
+  engineHydraulic(ctx, rig, inf.r, inf.len, inf.pal);
 }
-/** Shin: a light-steel piston rod sliding out of a short iron sleeve — the walker's "idling piston" read. */
+/** Shin: the light-steel piston rod that slides out of the thigh's gland — the walker's "idling piston" read. */
 function engineLegLower(ctx, rig, pose, inf) {
   const r = inf.r, L = inf.len, pal = inf.pal;
-  celCapsule(ctx, rig, 0, 3, 0, L + 2, r * 0.7, pal.metal, 0.3);
-  celRect(ctx, rig, -r, -4, r * 2, 9, 3, pal.secondary, 0.4, 0.24);
+  celCapsule(ctx, rig, 0, 0, 0, L + 2, r * 0.72, pal.metal, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-r, 2, r * 2, 3);
-  ctx.fillStyle = tones(rig, pal.metal).hi; ctx.fillRect(-2, 9, 1, L - 8);
+  // the rod is under flatR, so the renderer gives it one flat tone; the 1 px glint is its only form mark, and it is
+  // the rod's OWN highlight - form inside one material, so it takes no ink and is not a second crossing (0.2, 0.7).
+  ctx.fillStyle = tones(rig, pal.metal).hi; ctx.fillRect(-2, 3, 1, L - 3);
   if (rig.phaseIndex === 1) { ctx.fillStyle = rig.col(RED); ctx.fillRect(-2, L - 2, 4, 4); }   // sheared, still glowing
 }
 /** Splayed plate foot: slate pad with a brass toe cap, deep sole and two grousers (ankle space, toe toward +x). */
@@ -297,16 +348,14 @@ function engineRearLeg(ctx, rig, pose) {
   const u = broken ? 24 : -(pose.legR.upper + pose.legL.upper) * 0.5;
   const l = broken ? 40 : -(pose.legR.lower + pose.legL.lower) * 0.5;
   ctx.save(); ctx.translate(-7, 1); ctx.rotate(rad(-u));
-  celRect(ctx, rig, -p.legR + 1, -3, (p.legR - 1) * 2, p.upperLeg + 6, 3, pal.secondary, 0.4, 0.22);
-  if (!rig.override) band(ctx, rig, -p.legR + 1, p.upperLeg - 2, (p.legR - 1) * 2, 5, pal.accent, 2);
+  engineHydraulic(ctx, rig, p.legR - 1, p.upperLeg, pal);   // same cylinder + gland as the other two legs
   ctx.translate(0, p.upperLeg); ctx.rotate(rad(-l));
   if (broken) {
     celPoly(ctx, rig, [-4, -2, 4, -2, 3, 8, -2, 11, -5, 6], pal.secondary, 0.4, 0.2);
     if (!rig.override) { ctx.fillStyle = rig.col(HOT); ctx.fillRect(-2, 7, 3, 3); }
     ctx.restore(); return;
   }
-  celCapsule(ctx, rig, 0, 2, 0, p.lowerLeg, (p.legR - 1) * 0.62, pal.metal, 0.3);
-  celRect(ctx, rig, -p.legR + 1, -4, (p.legR - 1) * 2, 9, 3, pal.secondary, 0.4, 0.2);
+  celCapsule(ctx, rig, 0, 0, 0, p.lowerLeg, (p.legR - 1) * 0.72, pal.metal, 0.3);
   ctx.translate(0, p.lowerLeg + 2);
   celPoly(ctx, rig, [-6, -5, 9, -5, 12, 0, 12, 3, -6, 3], pal.dark, 0.34, 0.24);
   if (!rig.override) { ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(6, -4, 5, 3); }
@@ -334,7 +383,7 @@ function engineBoiler(ctx, rig) {
 }
 
 const ENGINE_BUILD = {
-  scale: 2.45, palette: ENGINE_PAL, outline: OL, outlineWidth: 1, ramp: { sh: 0.6 }, thinR: 5, hiMin: 7, contactShadow: true, smearColor: STEEL,
+  scale: 2.45, palette: ENGINE_PAL, outline: OL, outlineWidth: 1, ramp: { sh: 0.6 }, smearColor: STEEL,
   proportions: { headR: 8, neck: 3, neckR: 5, torsoW: 32, torsoH: 31, hip: 22, upperArm: 15, lowerArm: 13, armR: 5.5, handR: 5.5,
     upperLeg: 16, lowerLeg: 15, legR: 5.5, footL: 16, footH: 6, shoulderX: 15, hipX: 6, bulge: 0 },
   parts: { torso: engineBarrel, hips: engineHub, neck: engineCollar, head: engineDome, face: noFace, shoulder: engineShoulder,
@@ -559,31 +608,65 @@ function vaneHips(ctx, rig, pose, inf) {
   ctx.fillStyle = rig.col(CYAN); ctx.fillRect(-hw - 2, 6, hw * 2 + 5, 1);
   ctx.fillStyle = tones(rig, rig.palette.primary).deep; ctx.fillRect(-1, -6, 1, 15);
 }
-/** Upper arm: charcoal coat sleeve (near) / brass-banded clockwork upper arm (far, the left arm). */
+/**
+ * Upper arm: charcoal coat sleeve with its cyan-piped cuff (near) / the clockwork arm's brass elbow collar (far).
+ *
+ * Both marks used to be painted flat on top of the sleeve: the cyan was 1 px, the brass was 3 px and sat at 0.45 of
+ * the bone - mid-humerus, where a sleeve does not change - so neither could carry a line and neither was at a joint
+ * (ART_STYLE 0.7 wants >= 4 px, on a joint). Each is now 4-5 px, sits ON the elbow, and is painted INSIDE the
+ * sleeve's own inked silhouette under a clip, which is what 0.2's material-change exception asks for: a cuff is not
+ * a second object stacked on an arm, it is the same arm changing material.
+ * The cyan is kept, not dropped for being small: the piping is what says "Aetherwright" on a near-black coat, and
+ * it is the same mark as the coat's breast piping and the hip hem.
+ */
 function vaneArmUpper(ctx, rig, pose, inf) {
   const r = inf.r, L = inf.len, pal = inf.pal;
-  if (!inf.far) { celCapsule(ctx, rig, 0, 0, 0, L, r, pal.sleeve); if (!rig.override) { ctx.fillStyle = rig.col(CYAN); ctx.fillRect(-r + 1, L - 4, r * 2 - 2, 1); } return; }
   celCapsule(ctx, rig, 0, 0, 0, L, r, pal.sleeve);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-r, R(L * 0.45), r * 2, 3);
+  ctx.save(); pathCap(ctx, 0, 0, 0, L, r); ctx.clip();
+  if (!inf.far) { ctx.fillStyle = rig.col(CYAN); ctx.fillRect(-r, L - 4, r * 2, 4); }
+  else { ctx.fillStyle = tones(rig, pal.accent).base; ctx.fillRect(-r, L - 5, r * 2, 5); }
+  ctx.restore();
 }
-/** Forearm: near = shirt cuff + skin; far = the clockwork arm (brass elbow gear, steel shaft, and the ram extended while rig.fistOut). */
+/**
+ * Forearm: near = shirt cuff + skin; far = the clockwork arm (brass elbow gear, steel shaft, and the ram extended
+ * while rig.fistOut). Both sides are ONE object per ART_STYLE 0.2.
+ *
+ * Near: the cream cuff had a 1 px shade seam under it, which is a faked boundary (0.2 forbids inking a material
+ * change with a tone seam) and measured as a second 1.5 px crossing mid-forearm. The seam is gone - the cuff is now
+ * clipped inside the arm's own inked silhouette, so the silhouette carries the ink and the cuff carries none.
+ *
+ * Far: the ram, the shaft and the brass elbow gear were three separately outlined objects, so the clockwork arm wore
+ * a dark ring at the elbow and another where the ram left the shaft. They are one path now, stroked once and filled
+ * once in steel, with the brass gear painted inside it under a clip. The 26 px ram offset is untouched: it is the
+ * hardcoded coupling to vaneHand's fist.
+ * The cyan moved from a 2 px stripe at 0.6 of the bone - mid-forearm, and only 2.3 px so it could not carry a line -
+ * into the middle of the brass gear, where it reads as the aether core driving the arm and sits on the elbow. It is
+ * a 4 px disc: kept, moved and made round so it stays a detail rather than a second band across the limb (0.7).
+ */
 function vaneArmLower(ctx, rig, pose, inf) {
   const r = inf.r, L = inf.len, pal = inf.pal;
   if (!inf.far) {
     celCapsule(ctx, rig, 0, 2, 0, L, r, pal.skin);
     if (rig.override) return;
-    ctx.fillStyle = rig.col(CREAM); ctx.fillRect(-r - 1, 0, r * 2 + 2, 4);
-    ctx.fillStyle = tones(rig, CREAM).sh; ctx.fillRect(-r - 1, 4, r * 2 + 2, 1);
+    ctx.save(); pathCap(ctx, 0, 2, 0, L, r); ctx.clip();
+    ctx.fillStyle = rig.col(CREAM); ctx.fillRect(-r, -1, r * 2, 5);
+    ctx.restore();
     return;
   }
-  const out = rig.fistOut ? 26 : 0;
-  if (out) celCapsule(ctx, rig, 0, L * 0.5, 0, L + out, r * 0.7, pal.metal, 0.3);
-  celRect(ctx, rig, -r - 0.5, 0, r * 2 + 1, L, 2, pal.metal, 0.38, 0.28);
-  celBall(ctx, rig, 0, 0, r + 1, pal.accent, false);
+  const out = rig.fistOut ? 26 : 0, gr = r + 1;
+  ctx.beginPath();
+  if (out) pathTaperedCapsule(ctx, 0, L * 0.5, 0, L + out, r * 0.7, r * 0.7, true);
+  ctx.rect(-r - 0.5, 0, r * 2 + 1, L);
+  ctx.moveTo(gr, 0); ctx.arc(0, 0, gr, 0, TAU);
+  celPath(ctx, rig, pal.metal, 0, R((L + out) * 0.5), (L + out + gr * 2) * 0.5, 0.38, 0.28);
   if (rig.override) return;
-  ctx.fillStyle = tones(rig, pal.accent).deep; ctx.fillRect(-2, -2, 4, 4);
-  ctx.fillStyle = rig.col(CYAN); ctx.fillRect(-r, R(L * 0.6), r * 2, 2);
+  ctx.save(); ctx.clip();                                    // still the silhouette path celPath just inked
+  ctx.beginPath(); ctx.arc(0, 0, gr, 0, TAU);
+  ctx.fillStyle = tones(rig, pal.accent).base; ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, 2, 0, TAU);
+  ctx.fillStyle = rig.col(CYAN); ctx.fill();
+  ctx.restore();
 }
 /** Hands: near = bare hand on the cane; far = the clockwork brass fist (ratchets on pose.handL.rot, rides the piston out). */
 function vaneHand(ctx, rig, pose, inf) {
@@ -707,7 +790,7 @@ function vaneDropped(ctx, rig, pose) {
 }
 
 const VANE_BUILD = {
-  scale: 1.15, palette: VANE_PAL, outline: '#191622', outlineWidth: 1, thinR: 4, hiMin: 6, contactShadow: true, smearColor: BLADE,
+  scale: 1.15, palette: VANE_PAL, outline: '#191622', outlineWidth: 1, smearColor: BLADE,
   face: { brow: '#6E6E7A', eyeY: -1 }, hairStyle: 'bald', jaw: 0.3,
   proportions: { headR: 8.5, neck: 3.5, neckR: 3, torsoW: 19, torsoH: 27, hip: 15, upperArm: 14, lowerArm: 13, armR: 3.8, handR: 4.6,
     upperLeg: 17, lowerLeg: 17, legR: 4.6, footL: 11, footH: 5, shoulderX: 3, hipX: 4, bulge: 0.35 },

@@ -278,7 +278,8 @@ export function makeEnemyDef(base, v) {
 // Upgraded cel-shaded automaton parts + the shared base animation set used by content/enemies/brassbound.js. Every hook draws in
 // the local space rig.js sets up (limbs: origin at the joint, +y along the segment; hand/weapon: +x along the forearm; torso:
 // origin at the hip centre, y up negative; head: origin at the head centre). Far-side parts colour from `inf.pal`.
-import { celRect, celBall, celPoly, celPath, celCapsule, tones, band } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celPath, celCapsule, tones, band, outlinePath } from '../../art/shading.js';
+import { pathTaperedCapsule } from '../../art/shapes.js';
 import { drawFist } from '../../art/rigParts.js';
 import { FACE } from '../../art/poses.js';
 import { pathGear } from '../../art/shapes.js';
@@ -365,11 +366,40 @@ export function brassPauldronB(ctx, rig, pose, inf) {
   if (rig.override) return;
   ctx.fillStyle = tones(rig, inf.pal.accent).deep; ctx.fillRect(dx - 1, dy - 1, 3, 3);
 }
-/** Ball-jointed limb segment (any limb hook): dark-steel bar with a brass ball at the joint. */
+/**
+ * Ball-jointed limb segment (any limb hook): a dark-steel bar whose brass ball joint is part of the SAME shape.
+ *
+ * It used to be two separately outlined objects — a capsule, then a ball painted on top of it — so every automaton
+ * wore a dark ring around all four of its joints and a limb read as a chain of parts. The bar and the ball now go
+ * into one path, stroked once and filled once (ART_STYLE §0.2), and the brass is painted inside that silhouette
+ * afterwards as a colour change with no line of its own. The clip is what DECLARES that: §0.2's material-change
+ * exception, and geom/outline-stroke-contract with it, only accepts an unoutlined fill when it is clipped inside a
+ * path that has itself been inked. Leaving it out because the ball happens to sit inside the union geometrically
+ * is how a real boundary gets faked by accident later.
+ *
+ * The brass boss is deliberately kept. It is this faction's ONE material crossing per segment (§0.7), it is ~8 px
+ * across, and it sits exactly on the joint — which is what the rule asks for. Losing it would cost the Brassbound
+ * the thing that says "machine" at a glance.
+ */
 export function brassLimbB(ctx, rig, pose, inf) {
   const r = inf.r, pal = inf.pal;
-  celCapsule(ctx, rig, 0, r * 0.6, 0, inf.len - 1, r - 0.5, pal.secondary, 0); // clip-free bar (perf: no celRect clips on limbs)
-  celBall(ctx, rig, 0, 0, r * 0.95, pal.joint || pal.accent, false);
+  const rb = r - 0.5, len = inf.len - 1, jr = r * 0.95;
+  const silhouette = () => {
+    ctx.beginPath();
+    pathTaperedCapsule(ctx, 0, r * 0.6, 0, len, rb, rb, true);
+    ctx.moveTo(jr, 0); ctx.arc(0, 0, jr, 0, Math.PI * 2);
+  };
+  silhouette();
+  outlinePath(ctx, rig);
+  ctx.fillStyle = rig.col(tones(rig, pal.secondary).base);
+  ctx.fill();
+  if (rig.override) return;
+  ctx.save();
+  silhouette(); ctx.clip();
+  ctx.beginPath(); ctx.arc(0, 0, jr, 0, Math.PI * 2);
+  ctx.fillStyle = tones(rig, pal.joint || pal.accent).base;
+  ctx.fill();
+  ctx.restore();
 }
 /** Plate boot (ankle space): steel plate with a deep sole and a brass toe cap. */
 export function brassFootB(ctx, rig, pose, inf) {
@@ -515,6 +545,7 @@ export function makeBrassBase(c, o = {}) {
 // shorts on a rope belt, wrapped bare feet, clawed fists (optional wrist chains for the Cinder Hulk). Far-side parts colour from
 // `inf.pal`. Build knobs: build.clan (sash / trims), build.gob = { tunic: 'rags'|'skin'|'waistcoat', shorts, chains, shirt }.
 import { flat as flatFill, rimTop as gobRim, band as gobBand } from '../../art/shading.js';
+import { farShade } from '../../art/palettes.js';
 import { getChain as gobChain } from '../../art/secondary.js';
 import { rad as gobRad } from '../../engine/math.js';
 
@@ -549,13 +580,16 @@ function gobEar(ctx, rig, x, y, r, ang, col) {
   if (!rig.override) { ctx.beginPath(); ctx.moveTo(-GR(r * 0.3), -GR(r * 0.2)); ctx.lineTo(-GR(r * 0.9), -GR(r * 0.5)); ctx.lineTo(-GR(r * 0.3), GR(r * 0.1)); ctx.closePath(); ctx.fillStyle = tones(rig, col).sh; ctx.fill(); }
   ctx.restore();
 }
-/** Oversized goblin skull (head space): far ear behind, ball skull, near ear, big wedge nose BELOW the eye row. */
+/** Oversized goblin skull (head space): BOTH ears behind the ball skull, big wedge nose BELOW the eye row. */
 export function gobHead(ctx, rig, pose, inf) {
   const r = inf.r, pal = inf.pal;
   const ch = gobChain(rig, 'ear', 1, { joint: 'head', rest: [-1, 0], stiffness: 0.22, damping: 0.6, gain: 1.6, rotGain: 0.5, maxAng: 24 });
+  // Both ears go UNDER the skull. The near ear used to be painted on top of it, which put a triangle of ink across
+  // the cheek and over the far eye — the ear read as a shape stuck onto the face instead of one growing out from
+  // behind it. Drawn first, the skull covers its base and only the blade of the ear shows, which is an ear.
   gobEar(ctx, rig, GR(-r * 0.55), GR(-r * 0.2), r, ch.ang[0] - 6, rig.paletteFar.skin);
-  celBall(ctx, rig, 0, 0, r, pal.skin);
   gobEar(ctx, rig, GR(-r * 0.4), GR(-r * 0.05), r * 0.95, ch.ang[0] * 0.8, pal.skin);
+  celBall(ctx, rig, 0, 0, r, pal.skin);
   ctx.beginPath(); ctx.moveTo(GR(r * 0.55), GR(-r * 0.05)); ctx.lineTo(GR(r * 1.55), GR(r * 0.3)); ctx.lineTo(GR(r * 0.6), GR(r * 0.62)); ctx.closePath();
   celPath(ctx, rig, pal.skin, r * 0.9, r * 0.3, r * 0.5, 0.42, 0);
   if (rig.override) return;
@@ -675,8 +709,17 @@ export function gobCuffArm(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, col = inf.pal.skin;
   celRect(ctx, rig, -r, 0, r * 2, len + 1, r, col, 0.4, 0);
   if (rig.override) return;
-  gobBand(ctx, rig, -r, len - 6, r * 2, 4, rig.build.clan || '#9A4A22');
-  ctx.fillStyle = tones(rig, rig.build.clan || '#9A4A22').sh; ctx.fillRect(-r, len - 2, r * 2, 1);
+  // The clan cuff is this arm's ONE material crossing (§0.7), so it has to be worth the line it costs:
+  //  * it lands ON the wrist, not up the forearm;
+  //  * it clears 4 px on the DEVICE grid — 4 local px on a 0.85-scale goblin renders 3.4, under the floor, which
+  //    is how a band ends up as a smudge;
+  //  * the 1 px shadow stripe under it is gone. It was below the detail floor, and being a second tone of a colour
+  //    the palette does not know, it also read as a SECOND material crossing on the same forearm.
+  //  * and it goes through farTone on the far side. Painting build.clan at near brightness on both arms is the
+  //    §0.3 leak that has been sitting in the exemption ledger since 2026-09-07; this clears it for both rigs.
+  const clan = rig.build.clan || '#9A4A22';
+  const h = Math.max(4, Math.ceil(4 / (rig.pxScale || rig.scale || 1)));
+  gobBand(ctx, rig, -r, len - h - 1, r * 2, h, inf.far ? farShade(clan, 0.62, 0.25) : clan);
 }
 /** Complete goblin part table. */
 export const GOB_PARTS = { head: gobHead, face: gobFace, torso: gobTorso, hips: gobHips, foot: gobFoot, hand: gobHand };

@@ -324,7 +324,7 @@ const BASE = {
   type: 'chandler', faction: 'chandler', walkSpeed: 1.6,
   build: {
     scale: 1, palette: CH_PAL, outline: CH.outline, outlineWidth: 1, proportions: CH_PROPS, parts: CH_PARTS,
-    smearColor: CH.limedust, contactShadow: true, thinR: 4.5, clan: CLAN.wickboy,
+    smearColor: CH.limedust, clan: CLAN.wickboy,
   },
   // no new CANONICAL_SFX: the respirator-muffled voice is the lowpassed 'hydraulic' wheeze, the death is the lamp glass
   sfx: { hurt: 'hydraulic', death: 'prop_break' },
