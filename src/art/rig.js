@@ -54,6 +54,22 @@ function getOffscreen() {
   return offCtx;
 }
 
+/**
+ * A limb root pushed `d` px along the limb, so the wide end of the tube ends up INSIDE the body instead of butting
+ * against its edge. A limb whose root sits exactly on the silhouette reads as bolted on; one that starts a little
+ * way inside reads as attached, because the torso overlaps it the way a shoulder overlaps an arm.
+ * Two scratch objects, alternating, because both limbs of a pair are live at once and this file allocates nothing.
+ */
+const SUNK = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
+let sunkFlip = 0;
+function sunk(a, b, d) {
+  if (!d) return a;
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+  const o = SUNK[(sunkFlip = 1 - sunkFlip)];
+  o.x = a.x + dx / len * d; o.y = a.y + dy / len * d;
+  return o;
+}
+
 const pt = () => ({ x: 0, y: 0 });
 function makeJoints() {
   return {
@@ -236,7 +252,8 @@ function drawLeg(ctx, rig, pose, side) {
     if (hooks.legLower) { enter(ctx, rig, knee.x, knee.y, -ang.lower); hooks.legLower(ctx, rig, pose, info(rig, 'legLower', far, pal, p.lowerLeg, p.legR - 1, pal.secondary)); leave(ctx, rig); }
     else celCapsule(ctx, rig, knee.x, knee.y, ankle.x, ankle.y, p.legR - 0.5, pal.secondary);
   } else {
-    drawLimbSegs(ctx, rig, hip, knee, ankle, p.legR, p.legR - 0.5, pal.secondary, pal.secondary, false, p.bulge);
+    // root sunk into the pelvis: the thigh starts under the hip block rather than on its edge
+    drawLimbSegs(ctx, rig, sunk(hip, knee, p.legR * 0.35), knee, ankle, p.legR, p.legR - 0.5, pal.secondary, pal.secondary, false, p.bulge);
   }
   // foot / boot
   enter(ctx, rig, ankle.x, ankle.y, -ang.foot);
@@ -267,7 +284,9 @@ function drawArm(ctx, rig, pose, side, withWeapon) {
     if (hooks.armLower) { enter(ctx, rig, el.x, el.y, -ang.lower); hooks.armLower(ctx, rig, pose, info(rig, 'armLower', far, pal, p.lowerArm, p.armR - 0.5, pal.skin)); leave(ctx, rig); }
     else celCapsule(ctx, rig, el.x, el.y, wr.x, wr.y, p.armR + 0.5, pal.skin);
   } else {
-    drawLimbSegs(ctx, rig, sh, el, wr, p.armR, p.armR + 0.5, sleeve, pal.skin, true, p.bulge);
+    // root sunk into the torso. Only the TUBE moves: the shoulder hook below still enters at the true joint, so a
+    // rig's epaulette or pauldron stays where its author put it.
+    drawLimbSegs(ctx, rig, sunk(sh, el, p.armR * 0.45), el, wr, p.armR, p.armR + 0.5, sleeve, pal.skin, true, p.bulge);
   }
   if (hooks.shoulder) { enter(ctx, rig, sh.x, sh.y, J.torsoAngle); hooks.shoulder(ctx, rig, pose, info(rig, 'shoulder', far, pal, 0, p.armR + 1, pal.accent)); leave(ctx, rig); }
   // hand space: +x along the forearm direction (plus hand.rot); weapons draw along +x.
