@@ -9,10 +9,15 @@ import { Projectile } from './projectile.js';
 import { Prop, ringOut } from './items.js';
 import { particles } from '../engine/particles.js';
 import { audio } from '../engine/audio.js';
-import { rng } from '../engine/rng.js';
+import { rng, makeRng } from '../engine/rng.js';
 import { rrect, circle, pathPoly } from '../art/shapes.js';
 import { tones } from '../art/props.js';
 import { dsin } from '../engine/trig.js';
+
+// Visual-only PRNG for draw(). The gameplay `rng` singleton must never be touched from render code:
+// draw runs once per rAF while update runs at a fixed 60Hz, so a 144Hz peer, a throttled tab or a
+// single dropped frame would advance the shared stream a different number of times and desync it.
+const vrng = makeRng(0x4a2d);
 
 const OL = '#2B2B30';
 const AIR_STATES = new Set([ST.KNOCKDOWN, ST.THROWN, ST.HURT_AIR]);
@@ -190,7 +195,7 @@ export class Hazard extends Entity {
         ctx.fillStyle = bar.sh; ctx.fillRect(0, by + 16, VIEW_W, 9); ctx.fillStyle = bar.hi; ctx.fillRect(0, by + 1, VIEW_W, 2);
         ctx.fillStyle = tones('#C9963A').base; for (let x = 10; x < VIEW_W; x += 40) ctx.fillRect(x, by + 6, 8, 14);
         ctx.fillStyle = tones('#C9963A').hi; for (let x = 10; x < VIEW_W; x += 40) ctx.fillRect(x + 2, by + 8, 2, 2);
-        if (ph === 'active' && (f & 1)) particles.burst('spark', cam.x + rng.range(0, VIEW_W), 30, 10, 1, { speed: 3, up: 1 });
+        if (ph === 'active' && (f & 1)) particles.burst('spark', cam.x + vrng.range(0, VIEW_W), 30, 10, 1, { speed: 3, up: 1 });
         break;
       }
       default: break;

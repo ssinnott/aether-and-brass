@@ -203,6 +203,39 @@ export const input = {
   joined(player) { return player === 0 || !!players[player].joined; },
   /** Global (non-player) key edge this step: 'pause' | 'mute' | 'debug'. */
   globalPressed(name) { return !!globalPressed[name]; },
+  /**
+   * Read the raw device state for a player WITHOUT touching the edge/buffer state machine.
+   *
+   * Netplay needs both: it must sample the local devices to send them, and simultaneously inject
+   * the peer's delayed input into the same slot through setVirtual(). update() cannot do both, so
+   * this reads devices and update() then computes edges from the injected virtuals.
+   *
+   * `solo` controls the P1 alias keys (arrows, Z X C V B, Space). They are normally live only until
+   * P2 joins, but netplay must call setJoined(1, true) for the remote slot — which would silently
+   * kill half of the local player's keyboard. Netplay passes solo:true to keep them.
+   *
+   * Mutates nothing: prev, pressedNow, bufAge, joinNow, device and keysPressedPending are all
+   * written only inside update().
+   * @returns {object} action map plus `run`
+   */
+  pollRaw(player = 0, { solo = !players[1].joined } = {}) {
+    if (!boundCodes) rebuildBoundCodes();
+    pollGamepads();
+    const o = {};
+    const map = bindings.keyboard[player];
+    for (const a of ACTIONS) {
+      let v = keyHeld(map[a]);
+      if (!v && player === 0 && solo) v = keyHeld(bindings.soloAliases[a] || []);
+      o[a] = v;
+    }
+    readGamepad(player, o, o);        // writes o[action] and o.run; passing `o` as both keeps the real record clean
+    if (player === 0 && touchActions) {
+      for (const a of ACTIONS) if (touchActions[a]) o[a] = true;
+      if (touchActions.run) o.run = true;
+    }
+    o.run = !!o.run;
+    return o;
+  },
   /** Test hook: override devices with { left:true, attack:true, run:true ... } until cleared. */
   setVirtual(player, actions) { players[player].virtual = actions ? { ...actions } : null; },
   /** On-screen touch controls: merged into player 1 alongside the keyboard (engine/touch.js). */

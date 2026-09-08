@@ -31,6 +31,7 @@ import { buildRig, computeJoints, jointScreen } from '../../art/rig.js';
 import { makePose } from '../../art/poses.js';
 import { drawHeadPortrait } from '../../art/portraits.js';
 import { audio } from '../../engine/audio.js';
+import { dsin, dcos } from '../../engine/trig.js';
 import { rad } from '../../engine/math.js';
 
 // GDD 2.4 hues, re-spaced for value (ART_STYLE section 0.1). Every extra key is part of the palette object so farPalette()
@@ -637,7 +638,7 @@ function swingBall(f) {
   if (pr && pr.removeMe) f.pipProj = null;
   const t = f.anim.time - SWING_AT;
   const a = rad(90 + SWING_DEG * Math.max(0, t));
-  const cx = f.x + f.facing * (3 + SWING_R * Math.sin(a)), cy = 54 - SWING_R * Math.cos(a);
+  const cx = f.x + f.facing * (3 + SWING_R * dsin(a)), cy = 54 - SWING_R * dcos(a);
   if (f.pipBall) { const e = f.pipBall; e.x = cx; e.z = f.z; e.y = Math.max(0, cy - e.h * 0.5); e.facing = -f.facing; }
   if (f.pipProj) { const p = f.pipProj; p.x = cx; p.y = Math.max(2, cy); p.z = f.z; p.life = 600; p.facing = f.facing; }
 }
