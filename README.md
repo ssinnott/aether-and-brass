@@ -99,10 +99,16 @@ section count and the factions you will be fighting. Left/right chooses, attack 
 goes back. A board you have not opened yet shows a padlock plate and the board you have to clear to open
 it; confirming it buzzes instead of starting a run.
 
-Board 1 is always open, and clearing a board opens the next one for good — the results screen announces it
-with a **NEW BOARD OPEN** plate, and cleared boards keep your best rank and score on their plaque. Progress
-is saved in the browser's `localStorage` under `aetherAndBrass.progress.v1`; if storage is unavailable
-(private-mode browsers, `file://` pages) the game still plays, it just starts every session on board 1.
+Board 1 is always open, and clearing a board opens the next one for good. The results screen announces it
+with a **NEW BOARD OPEN** plate, and dismissing the plaque drops you back onto BOARD SELECT to watch it
+happen: the new board's plaque is still sealed, the padlock rattles itself apart, the hatch splits into two
+retracting doors, the `? ? ? ? ?` resolves letter by letter into the board's name and a **STAGE 2 OPEN**
+stamp lands as the music comes back in. Attack or start skips the flourish. Cleared boards keep your best
+rank and score on their plaque.
+
+Progress is saved in the browser's `localStorage` under `aetherAndBrass.progress.v1`; if storage is
+unavailable (private-mode browsers, `file://` pages) the game still plays, it just starts every session on
+board 1.
 
 `?stage=N` links straight to a board and opens it for that page load, so a shared link works on a fresh
 save. `?unlockall=1` opens every board for one page load without touching the save, and

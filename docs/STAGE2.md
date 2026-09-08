@@ -251,8 +251,10 @@ New music tracks (`src/engine/audio/music.js`): the **Calderwick motif D–F–A
 START on the title screen opens **BOARD SELECT** (`src/game/screens/boardselect.js`), one brass plaque per
 registered board. Stage 2 starts **locked**: its plaque shows a padlock plate, `? ? ? ? ?` and CLEAR STAGE 1 TO
 OPEN, and confirming it buzzes rather than starting a run. Clearing Stage 1 opens it for good — the results screen
-announces it, and the plaque then carries the board's name, its three sections, THE STORMCROWS and your best rank.
-Unlocks persist in `localStorage` via `src/game/progress.js`.
+announces it, and dismissing the plaque returns to BOARD SELECT to play the unlock on Stage 2's own plaque (the
+padlock rattles apart, the hatch retracts as two doors, `? ? ? ? ?` resolves into THE STORM ABOVE CALDERWICK and a
+STAGE 2 OPEN stamp lands). The plaque then carries the board's name, its three sections, THE STORMCROWS and your
+best rank. Unlocks persist in `localStorage` via `src/game/progress.js`.
 
 `?stage=2` still jumps straight to the board and opens it for that page load, so a direct link works on a fresh
 save, and it works with the usual debug params (`?skipTo=gameplay&stage=2&bot=1&godmode=1`); `?unlockall=1` opens

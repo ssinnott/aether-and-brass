@@ -380,7 +380,12 @@ their ids added to `art/backgrounds/index.js`), a `preview` block for its select
 ### Board unlocks (`game/progress.js`)
 Board 1 is always selectable; board N opens once board N-1 has been cleared. `ResultsScreen` calls
 `progress.markCleared(stage.id, { score, rank })` on a clear (never on a defeat) and announces whatever
-that opened. State persists to `localStorage` under `aetherAndBrass.progress.v1` as
+that opened. Dismissing such a clear does `reset('boardselect', { reveal: <stageId> })` instead of
+returning to the title, and `BoardSelectScreen` plays the unlock on that plaque: a fixed frame-timed
+sequence (`RV` in `screens/boardselect.js` — hold, rattle, snap, peel, name, stamp) that draws the plaque
+still sealed, breaks the padlock, retracts the hatch as two doors over the vignette, resolves the name out
+of scrambled glyphs and lands a STAGE N OPEN stamp with the music. Attack or start ends it early; either way
+the screen settles into ordinary selection with the cursor already on the new board. State persists to `localStorage` under `aetherAndBrass.progress.v1` as
 `{ version: 1, boards: { <stageId>: { cleared, score, rank } } }`, and **every** access is guarded — a
 browser that throws on storage reads as "nothing cleared yet" and the game stays playable on board 1.
 `allowSession(i)` / `unlockAllForSession()` open boards for one page load only and are never written back,
@@ -467,7 +472,8 @@ debug mode) — tests fail on any error.
   1. `boot`: title screen renders, START reaches BOARD SELECT and then character select, zero errors.
   1b. `boards`: BOARD SELECT lists every registered board, a locked board refuses to start, a recorded
      clear opens the next board and survives a page reload, the results screen names the board it cleared
-     and reports the unlock, and `?unlockall=1` / `?resetprogress=1` behave.
+     and reports the unlock, dismissing it hands off to the plaque reveal (which runs, is skippable, and
+     leaves a startable board), and `?unlockall=1` / `?resetprogress=1` behave.
   2. `select`: navigate select, pick every character (4 runs), start gameplay, zero errors.
   3. `combat`: for each character, spawn near enemies, script attacks (combo, jump attack,
      dash attack, special, super, grab/throw), assert enemy hp decreases, assert hits land.

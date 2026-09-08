@@ -141,6 +141,35 @@ const scenarios = {
       assert(sum.unlockedStageId === 'stage2', `clearing board 1 reports board 2 as newly opened (got ${sum.unlockedStageId})`);
       await g.shot('07-results-unlock');
     });
+    // dismissing a clear that opened a board hands off to BOARD SELECT and plays the reveal on that plaque
+    await withPage(server, 'seed=1&skipTo=results', async (g) => {
+      await g.step(240);                                      // let the rows roll and the rank land
+      await g.press(0, { start: true }, 2, 20);               // dismiss the plaque
+      assert((await g.screen()) === 'boardselect', 'dismissing an unlocking clear goes to BOARD SELECT');
+      let sum = await g.summary();
+      assert(sum.revealing === true, 'the reveal is running on arrival');
+      assert(sum.revealIndex === 1, `the reveal targets the board that just opened (got ${sum.revealIndex})`);
+      await g.step(20); await g.shot('08-reveal-rattle');
+      await g.step(55); await g.shot('09-reveal-doors');
+      await g.step(45); await g.shot('10-reveal-name');
+      await g.step(40); await g.shot('11-reveal-stamp');
+      await g.step(45);
+      sum = await g.summary();
+      assert(sum.revealing === false, 'the reveal finishes and hands back to normal selection');
+      assert((await g.screen()) === 'boardselect', 'the selector stays up once the reveal is done');
+      await g.press(0, { attack: true }, 2, 45);
+      assert((await g.screen()) === 'select', 'the board the reveal just opened starts a run');
+    });
+    // the flourish is skippable
+    await withPage(server, 'seed=1&skipTo=results', async (g) => {
+      await g.step(240);
+      await g.press(0, { start: true }, 2, 20);
+      await g.step(20);
+      await g.press(0, { attack: true }, 2, 6);
+      const sum = await g.summary();
+      assert(sum.revealing === false, 'attack skips the reveal flourish');
+      assert((await g.screen()) === 'boardselect', 'skipping the reveal leaves the selector up');
+    });
     // ?unlockall=1 opens every board for the page load; ?resetprogress=1 wipes the save again
     await withPage(server, 'seed=1&unlockall=1', async (g) => {
       await g.step(60);

@@ -3,7 +3,8 @@
 // (rank from score only per RECONCILIATION; D ceiling after a lost continue countdown), victory poses (win anims),
 // auto-return after 600f, PRESS START.
 // Clearing a board records it in game/progress.js, which is what opens the next board on BOARD SELECT; when this run
-// opened one, a plate announces it under the totals.
+// opened one, a plate announces it under the totals and dismissing the plaque hands off to BOARD SELECT so the
+// unlock plays out on the newly opened board's own plaque instead of dropping straight back to the title.
 import { VIEW_W, VIEW_H, UI } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
@@ -76,7 +77,12 @@ export class ResultsScreen extends Screen {
     for (let p = 0; p < 2; p++) if (inp.joined(p) && (inp.pressed(p, 'start') || inp.pressed(p, 'attack'))) go = true;
     if (this.game.options.bot) go = this.frame > BOT_HOLD;
     else if (this.stamp > AUTO_RETURN) go = true;
-    if (go && this.frame > 30) { this.leaving = true; audio.play('menu_confirm'); this.game.fadeTo(() => this.game.reset('title'), 0.06); }
+    if (go && this.frame > 30) {
+      this.leaving = true; audio.play('menu_confirm');
+      // a clear that opened a board goes to BOARD SELECT to play the reveal; everything else returns to the title
+      const reveal = this.unlocked && this.game.factories.boardselect ? this.unlocked.id : '';
+      this.game.fadeTo(() => (reveal ? this.game.reset('boardselect', { reveal }) : this.game.reset('title')), 0.06);
+    }
   }
   /** "NEW BOARD OPEN" plate: what this clear unlocked, and where to find it. */
   drawUnlock(ctx, f) {
