@@ -76,7 +76,7 @@ const DETAIL_BASELINE = Object.freeze({
 /** Animation names whose keys stand on the floor. An ALLOWLIST: audit()'s air-state blocklist regex misses the
  *  custom names the Sootborn and Stormcrows use ('hop', 'flee', 'panic', 'stagger') and fires on run pass keys. */
 const GROUND_ANIMS = /^(idle|walk|attack[1-9]|taunt|grab|grabHold|grabHit|throw|throwBack|hurt|land)$/;
-/** computeJoints() rounds exactly these through S = Math.round. weaponTip and grip are deliberately unsnapped. */
+/** computeJoints() snaps exactly these through S. weaponTip and grip are deliberately unsnapped. */
 const SNAPPED_JOINTS = Object.freeze(['hipN', 'hipF', 'kneeN', 'kneeF', 'ankleN', 'ankleF', 'shoulderN', 'shoulderF',
   'elbowN', 'elbowF', 'wristN', 'wristF', 'handN', 'handF', 'torso', 'neck', 'head']);
 
@@ -205,11 +205,17 @@ function censusRegion(hook) {
 /** Pose-audit metrics for one keyframe (SNAP / GRIP / FLOOR, promoted from tools/sheet.js audit()). */
 function auditFrame(A, rig, pose, animName, index, where) {
   const p = rig.p, J = H.computeJoints(rig, pose), a = A.audit;
-  // Asserted unconditionally, NOT gated on rig.snap: §1 and §9 require whole-pixel joints at 1x, so turning
-  // build.snap off is itself the defect this half exists to catch (a fractional joint blurs the 1 px outline).
+  // Asserted unconditionally, NOT gated on rig.snap: §1 and §9 require whole-pixel joints, so turning build.snap
+  // off is itself the defect this half exists to catch (a fractional joint blurs the 1 px outline).
+  // WHOLE-PIXEL MEANS DEVICE PIXEL, not rig-local pixel. A rig at scale 1.15 whose joints are local integers lands
+  // on x.15 boundaries once ctx.scale() has been applied, which is exactly the blur this rule exists to prevent;
+  // the local integers it used to demand were the wrong grid for 34 of the 38 rigs. The contract is now
+  // `Number.isInteger(j * pxScale)` — the joint falls on a device pixel at the scale the rig is drawn at.
+  const g = rig.pxScale || 1;
+  const onGrid = (v) => Math.abs(v * g - Math.round(v * g)) < 1e-6;
   for (const k of SNAPPED_JOINTS) {
     const j = J[k];
-    if (!Number.isInteger(j.x) || !Number.isInteger(j.y)) a.snap.push(`${where} ${k} = (${fmt(j.x, 3)}, ${fmt(j.y, 3)})`);
+    if (!onGrid(j.x) || !onGrid(j.y)) a.snap.push(`${where} ${k} = (${fmt(j.x, 3)}, ${fmt(j.y, 3)}) at scale ${g} -> device (${fmt(j.x * g, 3)}, ${fmt(j.y * g, 3)})`);
   }
   // GRIP: only meaningful when the rig actually carries a two-handed weapon — every other rig repurposes pose.grip
   // as an unrelated 0..1 channel (the Regent Engine's stagger, the firebrand's pilot light, the wrangler's whip).

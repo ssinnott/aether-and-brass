@@ -2,11 +2,12 @@
 // Local space: authored facing right, origin at the feet centre, y negative = up. Angles in degrees:
 // limb 0 = hanging down, positive = swings forward (toward facing). torso/head positive = lean forward.
 //
-// Rendering rules (see art/shading.js): 1px near-black outline, 3-tone cel bands with a top-left light, integer-
-// snapped joints at scale 1, optional per-rig secondary-motion chains (art/secondary.js) and weapon smear arcs.
+// Rendering rules (see art/shading.js): 1px near-black outline, 3-tone cel bands with a top-left light, joints
+// snapped to the DEVICE pixel grid at any rig scale, optional per-rig secondary-motion chains (art/secondary.js)
+// and weapon smear arcs.
 // Public API (backward compatible): buildRig, drawRig, jointScreen, computeJoints, markFull, DEFAULT_PROPORTIONS.
 // New build fields (all optional): outlineWidth (default 1), shading (false = flat fills), ramp {hi, sh, rim},
-// snap (false = no integer snapping), smearColor, hairStyle ('short'|'bald'), jaw, face { noMouth, eyeY, pupil, brow }.
+// snap (false = no device-grid snapping), smearColor, hairStyle ('short'|'bald'), jaw, face { noMouth, eyeY, pupil, brow }.
 // New proportions: bulge (0..1 limb taper, default 0.5), neckR. New weapon fields: twoHanded + grip (px along the
 // weapon where the far hand goes, negative = behind the near hand toward the pommel; the far arm is solved with 2-bone
 // IK when pose.grip > 0 and its fist is drawn on the handle at the joint it actually reached), headAt (px from the near
@@ -89,6 +90,15 @@ export function buildRig(build = {}) {
     col(hex) { return rig.override || hex; },
     // ---- shading / pixel-sprite state ----
     shading: build.shading !== false, ramp: { ...RAMP, ...(build.ramp || {}) }, tones: new Map(), snap: build.snap !== false,
+    /**
+     * Device-pixel scale of the last drawRig ((o.scale || 1) * rig.scale). Joints snap on THIS grid, not the rig's
+     * local one — the game renders 1:1 into the 640x360 internal canvas and blits it at a whole-number scale, so
+     * one internal pixel IS one sprite pixel and `sc` is the only scale between rig space and that grid.
+     * Defaults to the rig's own scale so the six places that call computeJoints() outside a draw (portraits, the
+     * heroes' import-time floor solve, the contact sheets, the invariant suite) snap on a sane grid rather than
+     * on whatever the previous draw happened to leave behind.
+     */
+    pxScale: build.scale || 1,
     /** Unit vector toward the light in the CURRENT part space (updated by enter/leave). */
     light: { x: LIGHT_X, y: LIGHT_Y },
     smearColor: build.smearColor || null, hairStyle: build.hairStyle || 'short', jaw: build.jaw, faceOpts: build.face || null,
@@ -100,18 +110,27 @@ export function buildRig(build = {}) {
 
 const SIDES = ['N', 'F'];
 const NOOP = (v) => v;
+// Snap to the DEVICE pixel grid: round(v * sc) / sc, where sc is rig.pxScale. Module scope (and so a mutable
+// module-level grid) because computeJoints runs per rig per frame and is never re-entrant, and rig.js allocates
+// nothing per draw.
+let SNAP_G = 1;
+const SNAP = (v) => Math.round(v * SNAP_G) / SNAP_G;
 function angLerp(a, b, t) { let d = (b - a) % 360; if (d > 180) d -= 360; else if (d < -180) d += 360; return a + d * t; }
 
 /** Compute joint positions (root space, before root offset/rotation) for a resolved pose into rig.joints. */
 export function computeJoints(rig, pose) {
-  const p = rig.p, J = rig.joints, hipY = rig.hipY, S = rig.snap ? Math.round : NOOP;
+  const p = rig.p, J = rig.joints, hipY = rig.hipY;
+  SNAP_G = rig.pxScale || 1;
+  const S = rig.snap ? SNAP : NOOP;
   const ta = pose.torso.rot;
   // legs (attached to the hips, unaffected by torso lean)
   for (let i = 0; i < 2; i++) {
     const side = SIDES[i];
     const leg = side === 'N' ? pose.legR : pose.legL, foot = side === 'N' ? pose.footR : pose.footL;
     const hip = J['hip' + side], knee = J['knee' + side], ankle = J['ankle' + side], ang = J['leg' + side];
-    hip.x = side === 'N' ? p.hipX : -p.hipX; hip.y = hipY;
+    // The hips were the one pair never put through S: they are authored as whole numbers, which looked snapped
+    // while the grid was rig-local and is not on the device grid (hipX 4 at scale 0.85 lands on device x 3.4).
+    hip.x = S(side === 'N' ? p.hipX : -p.hipX); hip.y = S(hipY);
     ang.upper = leg.upper; ang.lower = leg.upper + leg.lower; ang.foot = ang.lower * 0.35 + foot.rot;
     knee.x = S(hip.x + Math.sin(rad(ang.upper)) * p.upperLeg); knee.y = S(hip.y + Math.cos(rad(ang.upper)) * p.upperLeg);
     ankle.x = S(knee.x + Math.sin(rad(ang.lower)) * p.lowerLeg); ankle.y = S(knee.y + Math.cos(rad(ang.lower)) * p.lowerLeg);
@@ -282,7 +301,8 @@ function drawTorso(ctx, rig, pose) {
 
 function drawHips(ctx, rig, pose) {
   const p = rig.p, pal = rig.palette, hooks = rig.parts;
-  enter(ctx, rig, 0, rig.hipY, 0);
+  // same device grid as the hip joints, so the belt's edges land where the thigh roots do
+  enter(ctx, rig, 0, rig.joints.hipN.y, 0);
   if (hooks.hips) hooks.hips(ctx, rig, pose, info(rig, 'hips', false, pal, 0, 0, pal.secondary, p.hip, 11));
   else drawBelt(ctx, rig, p.hip, pal.secondary, pal.dark, pal.accent);
   leave(ctx, rig);
@@ -399,12 +419,16 @@ function stepChains(rig, pose) {
  */
 export function drawRig(ctx, rig, pose, o) {
   const P = pose && pose.__full ? pose : copyPose(pose, SCRATCH_POSE, true);
-  computeJoints(rig, P);
   const facing = o.facing || 1, sc = (o.scale || 1) * rig.scale;
+  // The draw scale has to be known BEFORE the joints are computed: they snap on the device grid it defines, and
+  // the outline is authored in device pixels, so its stroke width is divided by the scale ctx.scale() will apply.
+  rig.pxScale = sc;
+  rig.ow = (rig.build.outlineWidth != null ? rig.build.outlineWidth : 1) / sc;
+  computeJoints(rig, P);
   const squash = P.squash, stretch = P.stretch === 1 && squash !== 1 ? 1 / squash : P.stretch;
   const fs = facing * sc * squash, ss = sc * stretch;
   const t = rig.tf; t.x = Math.round(o.x); t.y = Math.round(o.y); t.fs = fs; t.ss = ss;
-  t.rx = rig.snap ? Math.round(P.root.x) : P.root.x; t.ry = rig.snap ? Math.round(P.root.y) : P.root.y;
+  t.rx = rig.snap ? Math.round(P.root.x * sc) / sc : P.root.x; t.ry = rig.snap ? Math.round(P.root.y * sc) / sc : P.root.y;
   t.c = Math.cos(rad(P.root.rot)); t.s = Math.sin(rad(P.root.rot));
   rig.facing = facing;
   rig.light.x = LIGHT_X; rig.light.y = LIGHT_Y;

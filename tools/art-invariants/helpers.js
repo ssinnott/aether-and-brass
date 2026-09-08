@@ -474,7 +474,10 @@ export function wrapHooks(rig, ctx) {
 }
 
 /** Mutable per-rig state written by AI/procedural code, snapshotted so a determinism check can restore it. */
-const RIG_STATE_KEYS = ['tick', 'chainFrame', 'tell', 'look', 'coil', 'showBomb', 'shieldStripped', 'wings', 'fired', 'override', 'facing', 'lastPose'];
+// 'ow' and 'pxScale' are in this list because drawRig WRITES them (the outline width is divided by the draw scale,
+// and the joint grid is that scale). Without them a single recorded draw leaves rig.ow at 1/sc for the rest of the
+// process, and palette/outline's `rig.ow !== 1` check silently becomes dependent on which tier ran first.
+const RIG_STATE_KEYS = ['tick', 'chainFrame', 'tell', 'look', 'coil', 'showBomb', 'shieldStripped', 'wings', 'fired', 'override', 'facing', 'lastPose', 'ow', 'pxScale'];
 
 /** Snapshot the mutable rig state a draw touches. */
 export function snapshotRigState(rig) {

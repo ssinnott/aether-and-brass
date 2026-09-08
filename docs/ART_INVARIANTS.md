@@ -210,7 +210,9 @@ Every numeric bound in the suite was measured over all 28 subjects *before* it w
 the reference range — never fitted, never trimmed to make the control fail. Three shapes recur:
 
 1. **Exact contracts** — no tolerance, because reference measures one value with no exceptions: `rig.ow === 1`
-   (28/28), `snap` integers on 17 joints (28/28), zero gradients or patterns (28/28), zero non-white fills in the
+   (28/28), `snap` puts 17 joints on the **device** pixel grid — `Number.isInteger(j * rig.pxScale)` — at every rig
+   scale (38/38; before the device-grid pass this was `Number.isInteger(j)`, which is the same contract only for the
+   four rigs at scale 1), zero gradients or patterns (28/28), zero non-white fills in the
    flash pass (~74k fills), `paletteFar === farPalette(palette, farShade, farDesat)`, the 18 part-hook names.
 2. **Bands with slack outside the reference range** — e.g. sleeve/primary `d >= 0.18` against a reference floor of
    0.208 (rook) and a control measurement of 0.000; idle loop 50-56f (the guide's own band, and reference measures

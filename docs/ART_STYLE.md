@@ -68,7 +68,8 @@ the renderer (`src/art/rig.js`, `shading.js`, `rigParts.js`) so every rig gets i
 Chunky 16-bit arcade sprite (Shredder's Revenge / Metal Slug energy): big heads, big hands, big boots; one crisp
 **1 px near-black outline** around every silhouette *and every internal part boundary*; **flat cel tones** (highlight /
 base / shadow on the big shapes, base + shadow on anything narrower than 8 px) laid down as hard bands with a
-**top-left light**; no gradients, no soft alpha except smears and steam; joints snapped to whole pixels at 1×;
+**top-left light**; no gradients, no soft alpha except smears and steam; joints snapped to whole **device** pixels
+at whatever scale the rig is drawn at;
 **everything moves** — idle breathes, cloth and hair lag, weapons smear, hits overshoot and hold. Readability beats
 detail: §0 wins every argument.
 
@@ -300,7 +301,11 @@ Timing numbers (startup/active/recovery) come from the GDD and never change for 
   clips (each clip ≈ 3 fills in software raster; prefer `celCapsule`/`celBall`/`celTaper`, which use offset shapes and
   no clip), chains (each segment is a cel shape). Cap a rig at ~45 cel shapes + ~140 flat 1-px rects (1-px rects are
   nearly free); put detail in rects, not extra shapes. Shading is ~20 % of Brunhild's raster cost, the outlines ~30 %.
-* Snapping: leave `build.snap` on (default) — sub-pixel joints blur the 1 px outline.
+* Snapping: leave `build.snap` on (default) — sub-pixel joints blur the 1 px outline. Snapping is on the **device**
+  grid (`round(v * rig.pxScale) / rig.pxScale`, where `pxScale` is `(o.scale || 1) * rig.scale`), not the rig's local
+  one. Only the four heroes are at `scale: 1`; every enemy is 0.77–2.45, so local-integer joints landed on fractional
+  device pixels and the 1 px outline smeared across two. For the same reason `rig.ow` is the authored outline width
+  **divided by** the draw scale, so the stroke is exactly one device pixel wide after `ctx.scale()`.
 
 ## 10. Contact-sheet workflow
 
