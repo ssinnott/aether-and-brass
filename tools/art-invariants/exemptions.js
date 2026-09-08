@@ -30,6 +30,29 @@ export const EXEMPTIONS = [
   { rule: 'geom/far-palette-leak', subject: 'sootborn:hulk', reason: '2026-09-07: pre-existing leak, src/content/enemies/common.js gobHand paints the GOB.iron wrist chains from the module constant on both sides (3 colours x 79 keyframes) - farTone the chain links; NOT a licence to weaken the rule' },
   { rule: 'geom/far-palette-leak', subject: 'boss:vane#2', reason: '2026-09-07: pre-existing leak, src/content/enemies/boss.js vaneHand paints the 3x3 BLADE knuckle glint on the FAR fist from the module constant (88 keyframes) - use tones(rig, inf.pal.metal).hi' },
 
+  // --- palette/value-ladder-adjacent, the head/hair pair on the five Gleanings. They have NO HAIR: the head hook
+  // is gleanHood (src/content/enemies/gleaningRig.js), a sackcloth hood drawn from the module constant GLEAN.night,
+  // and nothing in gleaningRig.js or gleaning.js reads pal.hair at all - verified by grep and by the recorder.
+  // `hair` is set equal to `skin` so the key names the hood's own value instead of inheriting the hero brown, which
+  // is why the pair measures 0.000: it is comparing a palette key against itself, not two parts that touch.
+  // WHY THIS IS NOT A RULE FIX. The obvious predicate - skip a pair when the rig overrides the hook it comes from -
+  // would skip nearly every pair on nearly every rig, because all 38 subjects hook torso, hips, hand and foot; the
+  // rule would keep its name and check nothing. And the draw stream cannot separate "draws no hair" from "draws
+  // hair in the skin colour", which is a real defect that must keep firing. So this is response 3, per case.
+  { rule: 'palette/value-ladder-adjacent', subject: 'gleaning:chaff', reason: '2026-09-08: no hair on this rig - parts.head is gleanHood, a sackcloth hood painted from GLEAN.night, and no Gleaning code path reads pal.hair. palette.hair is set to the hood value so the key is not the inherited hero brown; the head/hair pair therefore compares a key with itself and is not an adjacency that exists on screen' },
+  { rule: 'palette/value-ladder-adjacent', subject: 'gleaning:winnow', reason: '2026-09-08: same as gleaning:chaff - hooded, no hair part, palette.hair names the hood value. The head/hair pair does not exist on this rig' },
+  { rule: 'palette/value-ladder-adjacent', subject: 'gleaning:thresher', reason: '2026-09-08: same as gleaning:chaff - hooded, no hair part, palette.hair names the hood value. The head/hair pair does not exist on this rig' },
+  { rule: 'palette/value-ladder-adjacent', subject: 'gleaning:sickle', reason: '2026-09-08: same as gleaning:chaff - hooded, no hair part, palette.hair names the hood value. The head/hair pair does not exist on this rig' },
+  { rule: 'palette/value-ladder-adjacent', subject: 'gleaning:harvestman', reason: '2026-09-08: same as gleaning:chaff - hooded, no hair part, palette.hair names the hood value. The Harvestman draws a real jaw through build.jawFace, but still no hair' },
+
+  // --- palette/value-ladder-adjacent, the Powder Bosun's arm. He has no sleeve: `crow.bareArm` (stormcrow.js:281)
+  // says his sleeve IS his skin - he is the one rate who works with his arms rolled out - so palette.sleeve is set
+  // to CROW.skin deliberately and the armLower/armUpper pair measures 0.000 because the arm is ONE material for its
+  // whole length. That is the correct reading of the art: section 0.1 asks for a light sleeve so the arm reads
+  // against the torso, and a bare arm already does, against a navy smock. His other four ladder rungs pass, and his
+  // beard was re-spaced in this same pass (0.150 -> 0.319) rather than exempted.
+  { rule: 'palette/value-ladder-adjacent', subject: 'stormcrow:bosun', reason: '2026-09-08: no sleeve - crow.bareArm makes this rate\'s sleeve his skin (palette.sleeve is CROW.skin by intent), so armLower/armUpper is one material and 0.000 is the right measurement, not a defect. His beard/face rung was FIXED in the same pass rather than exempted' },
+
   // --- geom/limb-crossings, the Hoister's far arm. Not a rank carrier and not a band on a bone at all: the mark the
   // rule measures is a hoist CHAIN, a prop drawn through a limb hook because that is where it hangs from. The rule
   // anticipates exactly this rig in its own source (rules/geometry.js:368 - "several rigs hook a limb to draw

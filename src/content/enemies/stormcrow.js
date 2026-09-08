@@ -174,7 +174,7 @@ const crimperAnims = crowAnims(CRIMP_CARRY, CRIMP_STANCE, {
 const crimper = def({
   variant: 'crimper', name: 'DECK CRIMPER', role: 'rusher', hp: 45, damage: 1, speed: 1.2, score: 150, drops: 'none',
   build: { ...BASE.build, clan: WATCH.crimper,
-    palette: { ...CROW_PAL, hair: '#4A3226', rank: WATCH.crimper },
+    palette: { ...CROW_PAL, sleeve: '#EBDFC2', hair: '#4A3226', rank: WATCH.crimper },
     // rating: ONE rank carrier, the armband. The bandana is a dirty rag (hatBandana draws it neutral) and the
     // scarf is plain strap leather — nothing above his collar says anything about rank. NOT CROW.rope: that is the
     // exact colour of the boarding-line coil on the same shoulder and only 6.5% off the throat it sits under, so
@@ -226,7 +226,7 @@ const corsair = def({
   build: { ...BASE.build, scale: 0.93, clan: WATCH.corsair,
     // teal at the same value, chroma only (L* 49.7 -> 47.9, s 44 -> 70); the trousers leave the neutral core and
     // the hair comes up off the outline (#33241F was 4.0 Oklab L* over it, so his own line died in his hair).
-    palette: { ...CROW_PAL, primary: '#21696E', sleeve: '#C9B79A', secondary: '#5F80C4', hair: '#4A382A', rank: WATCH.corsair },
+    palette: { ...CROW_PAL, primary: '#21696E', sleeve: '#F2DCBA', secondary: '#5F80C4', hair: '#4A382A', rank: WATCH.corsair },
     proportions: { ...CROW_PROPS, headR: 8, torsoW: 19, torsoH: 26, hip: 16, upperLeg: 18, lowerLeg: 17, upperArm: 15, lowerArm: 14, armR: 3.8, legR: 4.6 },
     // petty officer: armband + hatband, the first rate whose colour reaches the head. The scarf goes neutral
     // strap — it used to wear the Crimper's old rank red, which is exactly how the ladder went soft.
@@ -241,7 +241,7 @@ const corsair = def({
 
 // ---------------------------------------------------------------- C3 Powder Bosun: bald, bearded, powder smock + keg
 // Barrel-chested and short-legged, planted wide; the only one with bare arms to the shoulder and a beard.
-const BOSUN_CARRY = { armR: [30, 22], weapon: 10, armL: [-22, -14] };
+const BOSUN_CARRY = { armR: [30, 22], weapon: -8, armL: [-22, -14] };
 const BOSUN_STANCE = { lean: 9, head: -1, legR: [14, 6], legL: [-14, 8] };
 const bosunAnims = crowAnims(BOSUN_CARRY, BOSUN_STANCE, {
   // chain shot: 26f winding the chain up over his head -> a full circle that hits BOTH sides -> 30f punish
@@ -274,7 +274,7 @@ const bosun = def({
     // his smock was the hole in the faction ladder: #5A5560 is 11% saturated, i.e. effectively achromatic, so on
     // every polychrome stage his biggest mass fell in the lattice cells the ground already owned. Storm navy at
     // his own value (L* 45.8 -> 43.2) fills it without going warm - warm here would flatten the rank ladder.
-    palette: { ...CROW_PAL, primary: '#454C7A', sleeve: CROW.skin, secondary: '#5E80C6', hair: '#A79C88', rank: WATCH.bosun },
+    palette: { ...CROW_PAL, primary: '#454C7A', sleeve: CROW.skin, secondary: '#5E80C6', hair: '#857D6E', rank: WATCH.bosun },
     proportions: { ...CROW_PROPS, headR: 9.5, neckR: 4, torsoW: 27, torsoH: 25, hip: 23, upperLeg: 13, lowerLeg: 12, legR: 6, armR: 5, handR: 5.4, footL: 13, footH: 6, bulge: 0.6 },
     // gunner: waist sash, brow band, smock collar — all cloth, and the widest rank field on the deck. NO armband
     // and no rank cuff: his `sleeve` is his own bare skin, and a warm band on warm tan fails ART_STYLE section 0.1.
@@ -395,7 +395,7 @@ const marine = def({
   variant: 'marine', name: 'IRONWING MARINE', role: 'elite', hp: 190, damage: 1, speed: 0.7, score: 1000, drops: 'food_small',
   build: { ...BASE.build, scale: 1.31, clan: WATCH.marine,
     // navy at the same value, chroma only (L* 40.3 -> 35.5, s 50 -> 70); hair off the ink (#2A2018 was 1.6 L* over it)
-    palette: { ...CROW_PAL, primary: '#203A6B', sleeve: '#BFAE90', secondary: '#5474B4', metal: '#A6B6D0', hair: '#4A3226', rank: WATCH.marine },
+    palette: { ...CROW_PAL, primary: '#203A6B', sleeve: '#EFE6D0', secondary: '#5474B4', metal: '#A6B6D0', hair: '#4A3226', rank: WATCH.marine },
     proportions: { ...CROW_PROPS, headR: 9, torsoW: 24, torsoH: 25, hip: 20, upperLeg: 15, lowerLeg: 14, legR: 5.6, armR: 4.6, handR: 5.2, footL: 13, footH: 6, bulge: 0.35 },
     // marine: SEALED, and the top of both ladders. A big head with a small eye (lens 0.85) behind a short grilled
     // iron muzzle — the inverted lens sizes are what stop two pewter heads reading as the same man. Six rank
