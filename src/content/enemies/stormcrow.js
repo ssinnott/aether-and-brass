@@ -43,14 +43,22 @@ const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kb
 /** drawFace options for the one variant with a beard over his mouth (ART_STYLE section 6). */
 const BEARDED = { noMouth: true };
 /**
- * THE RATE LADDER. One warm ramp, heated a step per rate — ash rust, brick red, ember orange, flame amber, signal
- * gold (~L* 41 / 48 / 58 / 70 / 82, chroma climbing with it). It survives a squint, a 0.5x downscale and
- * colourblindness because it is a brightness ramp, not five arbitrary hues, and every rung is a hue-family jump
- * from its own coat (rust vs slate-blue, brick vs teal, ember vs grey-plum, amber vs violet, gold vs navy).
+ * THE RATE LADDER. One warm ramp, heated a step per rate — brick rust, ember red, flame orange, signal amber, hot
+ * gold. It survives a squint, a 0.5x downscale and colourblindness because it is a brightness ramp, not five
+ * arbitrary hues, and every rung is a hue-family jump from its own coat (rust vs slate-blue, ember vs teal, flame
+ * vs grey-plum, amber vs violet, gold vs navy).
+ * Relative luminance 17.3 / 21.2 / 29.6 / 40.2 / 64.8 and hue 13 / 20 / 28 / 34 / 44 degrees: BOTH climb at every
+ * rung, so no two rates collapse into one step. Three of the five numbers are load-bearing:
+ *  - rung 1 was 13.0, which on a 61.5 canvas sleeve read as a plain leather strap and left the ladder starting at
+ *    nothing on the 0.5x squint. It is lifted, not recoloured: the Crimper still carries ONE mark, on the armband.
+ *  - rungs 2 and 3 were 11% and 9 degrees apart, i.e. one orange twice; they are now 28% and 8 degrees apart.
+ *  - rung 5 was #F6C24A, inside 25% of board 2's own deck-rail hazard chevrons (#C4913A / #A28642) that the
+ *    Marine's crest passes in front of at head height. #F8CE58 clears both, without going so pale that its cel
+ *    highlight cap turns the crest into a second near-white mark competing with the sighting lens.
  * Each variant carries it in BOTH `build.clan` and `palette.rank` — same literal; `palette.rank` is what the limb
  * hooks read, because farPalette shades it once at buildRig so the far arm's band darkens for free.
  */
-export const WATCH = { crimper: '#9C4F3C', corsair: '#BE4E2E', bosun: '#D46E28', galewright: '#E89A34', marine: '#F6C24A' };
+export const WATCH = { crimper: '#B8563C', corsair: '#C9612C', bosun: '#DE7A22', galewright: '#E89A34', marine: '#F8CE58' };
 
 // ---------------------------------------------------------------- projectiles
 /** Harpoon on a reel line: a pewter dart trailing rope back the way it came (pale once batted back). */
@@ -168,8 +176,10 @@ const crimper = def({
   build: { ...BASE.build, clan: WATCH.crimper,
     palette: { ...CROW_PAL, hair: '#4A3226', rank: WATCH.crimper },
     // rating: ONE rank carrier, the armband. The bandana is a dirty rag (hatBandana draws it neutral) and the
-    // scarf is plain rope — nothing above his collar says anything about rank.
-    crow: { head: 'bandana', coat: 'jerkin', hair: 'crop', scarf: CROW.rope, scarfLen: 2 },
+    // scarf is plain strap leather — nothing above his collar says anything about rank. NOT CROW.rope: that is the
+    // exact colour of the boarding-line coil on the same shoulder and only 6.5% off the throat it sits under, so
+    // collar, coil and sleeve merged into one pale mass. CROW.strap is 66% off his skin and 60% off the coil.
+    crow: { head: 'bandana', coat: 'jerkin', hair: 'crop', scarf: CROW.strap, scarfLen: 2 },
     weapon: { attach: 'handR', length: 50, draw: drawBoatHook, headAt: 44 },
     accessories: [{ attach: 'back', draw: crowLines }, { attach: 'torso', draw: crowScarf }] },
   anims: crimperAnims,
@@ -319,12 +329,13 @@ const galewright = def({
   build: { ...BASE.build, scale: 0.92, clan: WATCH.galewright,
     palette: { ...CROW_PAL, primary: '#4A3F68', sleeve: '#B9AECB', secondary: '#8A8296', hair: '#9A86C0', glow: CROW.spark, rank: WATCH.galewright },
     proportions: { ...CROW_PROPS, headR: 8, torsoW: 19, torsoH: 28, hip: 16, neck: 4, upperLeg: 17, lowerLeg: 16, armR: 3.6, legR: 4.6 },
-    // warrant specialist: SEALED. A small head with a big eye (lens 1.15) under a swept storm cowl and a long keel
-    // beak. Four rank carriers: the brow band inside the brass fitting, the duster's gorget, both armbands and the
-    // trouser lace — head / throat / arm / leg, all of it in front. No rank cuff (her rod hand is already a stack of
-    // warm copper rings) and nothing on the cowl behind her, where amber would read as coil charge.
-    // `hair: 'loose'` is gone with the standing hair.
-    crow: { head: 'visor', coat: 'duster', sealed: true, cowl: 'storm', beak: 'keel', lens: 1.15,
+    // warrant specialist: SEALED. A small head with a BIG eye (lens 1.35 against the Marine's 0.85) under a swept
+    // storm cowl and a long keel beak — with nothing sitting on the eye row any more, the lens is the largest and
+    // brightest mark on her head, which is the whole point of the sealed helm. Four rank carriers: the brow band on
+    // the cold pewter strap, the duster's gorget, both armbands and the trouser lace — head / throat / arm / leg,
+    // all of it in front. No rank cuff (her rod hand is already a stack of warm copper rings) and nothing on the
+    // cowl behind her, where amber would read as coil charge. `hair: 'loose'` is gone with the standing hair.
+    crow: { head: 'visor', coat: 'duster', sealed: true, cowl: 'storm', beak: 'keel', lens: 1.35,
       gorget: true, lace: true, scarf: '#C9BEA6', scarfLen: 3, tailLen: 28 },
     weapon: { attach: 'handR', length: 42, draw: drawCoilRod, headAt: 34 },
     accessories: [{ attach: 'back', draw: crowRods }, { attach: 'back', draw: crowTails }, { attach: 'torso', draw: crowScarf }] },
@@ -361,14 +372,13 @@ const marineAnims = crowAnims(MARINE_CARRY, MARINE_STANCE, {
     r: { armR: [22, 20], weapon: 6, armL: [0, 62], torso: 24, head: 4, root: [4, 2], legR: [38, 18], legL: [-28, 30], face: 'grit' },
   }),
 });
-/** The wing-plate is a rig flag, so stripping it is visible for the rest of the fight; the sealed helm vents. */
+/**
+ * The wing-plate is a rig flag, so stripping it is visible for the rest of the fight. There is deliberately NO
+ * stagger particle: it burst at y 54, which on a 1.31-scale rig is his cuirass and not his helm, and it fired on
+ * exactly the frames where the lens is already stuttering violet — two violet marks on one enemy. The lens carries
+ * the stagger on its own (crowVisorMask reads FACE.dazed).
+ */
 const marineHooks = {
-  onUpdate(f, world) {
-    BASE_HOOKS.onUpdate(f, world);
-    if (f.aiState === 'STAGGER' && world && (world.frame & 7) === 0) {
-      particles.burst('spark', f.x + f.facing * 8, 54, f.z, 1, { speed: 1, up: 0.5, color: CROW.spark });
-    }
-  },
   onShieldStripped(f, world) {
     if (!world) return;
     particles.burst('debris', f.x, 44, f.z, 12, { speed: 3.4, up: 2.4, color: CROW.pewter, sizeJitter: 2 });

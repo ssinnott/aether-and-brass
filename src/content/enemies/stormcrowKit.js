@@ -9,7 +9,10 @@
 // of them ends with ONE crowTell() on that glass, so the wind-up tell is the same violet light on all five heads.
 // On the two sealed heads the dome, the crest and the mask belong to crowHelmShell / crowVisorMask (they must sit
 // BEHIND the mask plate, and the hat hook draws last); `hatVisor` / `hatHelm` keep only what goes above the
-// hairline and on top of the dome (the Galewright's brass fitting and rank brow band, the Marine's dome rim).
+// hairline and on top of the dome (the Galewright's storm ridge and rank brow strap, the Marine's dome rim).
+// On a sealed head the hat is the LAST thing drawn over the lens, so its geometry is a hard constraint, not a
+// preference: nothing a hat draws may reach the eye row, or it buries the lens shutter that is the helm's only
+// expression and the head renders identically in idle, angry and shout.
 // Back pieces are the second lever: a rope coil, a line drum, a powder keg, two lightning rods and the wing-pack.
 import { celRect, celBall, celPoly, celCapsule, tones, rimTop } from '../../art/shading.js';
 import { getChain } from '../../art/secondary.js';
@@ -73,25 +76,32 @@ function hatLoupe(ctx, rig, r) {
   ctx.beginPath(); ctx.arc(cx, cy, 3.4, 0, TAU); ctx.fillStyle = rig.col(rig.tell ? CROW.glassHot : '#5B7A6A'); ctx.fill();
   if (rig.override) return;
   ctx.fillStyle = rig.col('#FFFFFF'); ctx.fillRect(cx - 3, cy - 3, 2, 2);
-  // the brow strap is his rank band (it ignored `band:` entirely before this pass); laid into the leather so a
-  // 1px strap edge still frames it
-  rankBand(ctx, rig, R(-r) - 1, R(-r * 1.12) + 1, R(r * 2) + 2, rankH(rig, 5));
+  // the brow strap is his rank band, laid INTO the leather so the strap frames it on all four sides. It is kept to
+  // strap width on purpose: at full head width x 5 units on a 1.15-scale 9.5r head it was a ~22x6px bar, the
+  // biggest rank field on the deck, and a rate-3 line trooper out-signalled the rate-4 elite above him.
+  rankBand(ctx, rig, R(-r * 0.75), R(-r * 1.12) + 1, R(r * 1.5), rankH(rig, 3));
   crowTell(ctx, rig, r, cx, cy);
 }
 /**
- * C4 Galewright, ABOVE THE HAIRLINE ONLY: a pewter keel ridge on the crown and A's brass brow fitting with her rank
- * band laid into it. The dome, the storm cowl, the keel beak and the lens are crowHelmShell / crowVisorMask — the
- * old standing hair and the monocular tube are gone, and the tube's glass became the lens in the face hook, which
- * is now what carries the 36-frame gale charge (it grows and lights with rig.coil).
+ * C4 Galewright, ABOVE THE HAIRLINE ONLY: a pewter storm ridge on the crown and a brow strap carrying her rank band.
+ * The dome, the storm cowl, the keel beak and the lens are crowHelmShell / crowVisorMask.
+ * Three things are load-bearing here and none of them may be walked back:
+ *  - EVERYTHING CLEARS THE EYE ROW. The furniture sits at local y -14..-9 on her r=8 head, so the lens (-6..4, and
+ *    -8..6 at full coil), its 2x2 specular and the pewterDark shutter that IS her expression are all uncovered.
+ *    Laid at -r*1.06 it covered the shutter outright and her idle / angry / shout heads rendered byte-identical.
+ *  - THE STRAP IS COLD. A's brass fitting is gone: rank amber (40.2), brass (36.0) and the pewter dome (37.4) are
+ *    three values inside 11% of each other, so a band dropped into a brass frame made one warm slab and the head
+ *    stopped reading as sealed. On CROW.pewterDark (13.1) the band is 67% off its frame and the lens still wins.
+ *  - THE RIDGE IS THE TELL. It rears up with `rig.coil` across the 36-frame gale charge, which is the SILHOUETTE
+ *    component A carried on her standing hair; a lens that only grows two rows is not a lane-wide wind-up.
  */
 function hatVisor(ctx, rig, r) {
   if (!(rig.build.crow || EMPTY).sealed) return;
-  celRect(ctx, rig, R(-r * 0.35), R(-r * 1.62), R(r * 0.95), 5, 1, CROW.pewter, 0.34, 0.3);
-  celRect(ctx, rig, R(-r) - 1, R(-r * 1.06), R(r * 2) + 2, 6, 2, CROW.brass, 0.36, 0.34);
+  const k = 1 + (rig.coil || 0) * 0.55;
+  celPoly(ctx, rig, [R(-r * 0.45), R(-r * 1.45), R(-r * 0.2), R(-r * 2.2 * k), R(r * 0.3), R(-r * 2.3 * k), R(r * 0.6), R(-r * 1.45)], CROW.pewter, 0.34, 0.3);
+  celRect(ctx, rig, R(-r * 0.95), R(-r * 1.75), R(r * 1.9), 6, 2, CROW.pewterDark, 0.34, 0.3);
   if (rig.override) return;
-  // her rank band laid INTO A's brass fitting, so the brass reads as the frame round it
-  rankBand(ctx, rig, R(-r * 0.9), R(-r * 1.02), R(r * 1.8), rankH(rig, 4));
-  ctx.fillStyle = tones(rig, CROW.brass).deep; ctx.fillRect(R(-r) - 1, R(-r * 1.06) + 5, R(r * 2) + 2, 1);
+  rankBand(ctx, rig, R(-r * 0.7), R(-r * 1.64), R(r * 1.4), rankH(rig, 4));
 }
 /**
  * C5 Ironwing Marine, ABOVE THE HAIRLINE ONLY: the dome rim light and the rank brow band. The crest, the dome, the

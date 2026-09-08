@@ -38,13 +38,6 @@ function drawWinch(ctx, rig) {
   const p = rig.p, hw = R(p.torsoW / 2), H = p.torsoH, x = -hw - 9, y = -R(H * 0.84);
   // drum cradle across the shoulders
   celRect(ctx, rig, x - 5, y - 3, R(p.torsoW) + 12, 13, 4, CROW.pewterDark, 0.36, 0.3);
-  // phase 1's rank rides the MACHINE, not the woman: a gold-framed band across the drum cradle. In phase 2 the
-  // drum is gone and the same colour turns up on her sash, her braid tie and her cuffs — same rank, relocated,
-  // which is the whole point of the phase change.
-  if (!rig.override) {
-    ctx.fillStyle = rig.col(crowRank(rig)); ctx.fillRect(x - 4, y + 1, R(p.torsoW) + 10, 8);
-    ctx.fillStyle = rig.col(CROW.goldDark); ctx.fillRect(x - 4, y + 9, R(p.torsoW) + 10, 2);
-  }
   // the chain drum itself, spinning
   const a = rig.jammed ? 0 : (rig.chainOut ? rig.tick * 0.42 : rig.tick * 0.06);
   ctx.save(); ctx.translate(x + 4, y + 4); ctx.rotate(a);
@@ -55,6 +48,16 @@ function drawWinch(ctx, rig) {
     ctx.fillStyle = tones(rig, DRUM).deep; ctx.fillRect(-13, -2, 26, 3);
   }
   ctx.restore();
+  // phase 1's rank rides the MACHINE, not the woman: a gold-framed strap over the drum's outer face. In phase 2 the
+  // drum is gone and the same colour turns up on her sash, her braid tie and her cuffs — same rank, relocated,
+  // which is the whole point of the phase change.
+  // It has to sit here, on the drum and left of x = -hw - 2. The cradle is 100% hidden: the drum ball covers it out
+  // to x -31 and the breastplate covers everything from -15 rightward, so the old band across the cradle top drew
+  // nothing at all and phase 1 read as having no rank.
+  if (!rig.override) {
+    ctx.fillStyle = rig.col(crowRank(rig)); ctx.fillRect(x - 7, y + 1, 14, 5);
+    ctx.fillStyle = rig.col(CROW.goldDark); ctx.fillRect(x - 7, y + 6, 14, 3);
+  }
   // boom arm: up behind the shoulder, over the top of her head, out to a fairlead in front of the mask
   celCapsule(ctx, rig, x - 1, y, x + 3, -R(H * 2.05), 4.5, CROW.copper, 0.3);
   celCapsule(ctx, rig, x + 3, -R(H * 2.05), hw + 16, -R(H * 1.6), 4, CROW.copper, 0.3);
@@ -122,7 +125,9 @@ const WINCH_BUILD = {
   scale: 1.5, palette: SKREE_PAL, outline: CROW.outline, outlineWidth: 1,
   proportions: { ...CROW_PROPS, headR: 9, torsoW: 26, torsoH: 26, hip: 22, upperLeg: 14, lowerLeg: 13, legR: 6, armR: 5, handR: 5.4, footL: 13, footH: 6, bulge: 0.5 },
   parts: { ...CROW_PARTS, hat: skreePlate }, clan: RANK, smearColor: '#DCE6F4',
-  crow: { coat: 'plate', hair: 'crop', flag: true, cuff: true, lace: true },
+  // no rank cuff and no trouser lace: phase 1's rank is on the WINCH. Warm cuffs and a red trouser seam put the
+  // same loud band on the woman that phase 2 is supposed to introduce, and flattened the machine -> person read.
+  crow: { coat: 'plate', hair: 'crop', flag: true },
   weapon: { attach: 'handR', length: 44, draw: drawBoardingAxe, headAt: 34 },
   accessories: [{ attach: 'back', draw: drawWinch }],
 };
