@@ -50,9 +50,9 @@ export function createLoop({ update, render, testMode = false, canUpdate = null 
 
   const loop = {
     testMode,
-    /** Start the rAF loop (no-op in testMode). */
-    start() {
-      if (testMode || running) return;
+    /** Start the rAF loop. No-op in testMode unless `force` is set (netplay tests need the real gated loop). */
+    start(force = false) {
+      if ((testMode && !force) || running) return;
       running = true;
       last = performance.now();
       acc = 0;

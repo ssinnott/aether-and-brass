@@ -15,6 +15,7 @@ import { GameplayScreen } from './game/screens/gameplay.js';
 import { IntroScreen } from './game/screens/intro.js';
 import { PauseScreen } from './game/screens/pause.js';
 import { GameOverScreen } from './game/screens/gameover.js';
+import { LobbyScreen } from './game/screens/lobby.js';
 import { ResultsScreen } from './game/screens/results.js';
 import { createNetSession } from './net/session.js';
 import { CHARACTERS } from './content/characters/index.js';
@@ -85,6 +86,7 @@ function boot() {
   game.registerScreen('select', (g) => new SelectScreen(g));
   game.registerScreen('intro', (g) => new IntroScreen(g));
   game.registerScreen('gallery', (g) => new GalleryScreen(g));
+  game.registerScreen('lobby', (g) => new LobbyScreen(g));
   game.registerScreen('gameplay', (g) => new GameplayScreen(g));
   game.registerScreen('pause', (g) => new PauseScreen(g));
   game.registerScreen('gameover', (g) => new GameOverScreen(g));
@@ -173,7 +175,10 @@ function boot() {
     toggleDebug() { showDebug = !showDebug; return showDebug; },
     /** Online co-op state for tools/playtest.js. */
     netState() { return net ? { state: net.state, room: net.room, slot: net.localSlot, delay: net.delay, waiting: net.waiting, frame: net.ls ? net.ls.frame : -1, desync: net.ls ? net.ls.desync : null, reason: net.endReason } : null; },
-    startNet(o) { return game.startNet ? game.startNet(o) : null; },
+    /** Netplay tests need the real gated rAF loop; autotest otherwise leaves it stopped. */
+    startLoop() { loop.start(true); return true; },
+    stopLoop() { loop.stop(); return true; },
+    gated() { return loop.gated; },
   });
   Object.defineProperties(hooks, {
     /** Live World of the current gameplay screen (null when none). */
@@ -183,9 +188,11 @@ function boot() {
   });
 
   // ---- initial screen ----
-  const start = options.skipTo && game.factories[options.skipTo] ? options.skipTo : 'title';
+  // ?room=CODE (or ?host=1) is an invite link: go straight to the lobby, already connecting.
+  const invited = !!(options.room || options.host);
+  const start = options.skipTo && game.factories[options.skipTo] ? options.skipTo : invited ? 'lobby' : 'title';
   try {
-    game.push(start, { chars: options.chars });
+    game.push(start, { chars: options.chars, autoRoom: invited });
   } catch (e) { recordError(e); if (start !== 'title') game.reset('title'); }
   hooks.ready = true;
   if (options.autotest) render(); else loop.start();

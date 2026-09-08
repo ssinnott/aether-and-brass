@@ -50,6 +50,24 @@ export class GameplayScreen extends Screen {
     for (const s of opt.spawn || []) this.spawnEnemy(s.type, s.variant, s.dx, s.dz);
     if (!params.resume && !(opt.section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);
   }
+  /**
+   * Netplay status over the scene: a stall while the peer's input is late, and the banner shown
+   * when a session ends and the bot takes over slot 2.
+   */
+  drawNetStatus(ctx) {
+    const net = this.game.net;
+    if (!net) return;
+    if (net.active && net.waiting) {
+      const f = this.frame;
+      ctx.fillStyle = 'rgba(10,6,20,0.55)'; ctx.fillRect(0, VIEW_H / 2 - 22, VIEW_W, 44);
+      drawTextOutlined(ctx, 'WAITING FOR PLAYER ' + (net.remoteSlot + 1), VIEW_W / 2, VIEW_H / 2 - 14, { size: 2, color: '#4DF0E0', outline: '#0a3a38', align: 'center' });
+      drawTextOutlined(ctx, '.'.repeat(1 + ((f >> 4) % 3)), VIEW_W / 2, VIEW_H / 2 + 6, { size: 2, color: '#4DF0E0', outline: '#0a3a38', align: 'center' });
+    } else if (net.state === 'ended' && net.endReason && this.frame - (this.netEndedAt || (this.netEndedAt = this.frame)) < 240) {
+      ctx.fillStyle = 'rgba(10,6,20,0.6)'; ctx.fillRect(0, 40, VIEW_W, 30);
+      drawTextOutlined(ctx, String(net.endReason).toUpperCase(), VIEW_W / 2, 44, { size: 1, color: UI.red, outline: '#2a0808', align: 'center' });
+      drawTextOutlined(ctx, 'PLAYER 2 IS NOW A BOT', VIEW_W / 2, 58, { size: 1, color: UI.paper, outline: '#2a0808', align: 'center' });
+    }
+  }
   /** Swap the backdrop (StageRunner calls this on section changes). */
   setBackdrop(b) { this.backdrop = b; this.world.backdrop = b; }
   /** Add a player for character index `ci` in slot `slot`. */
@@ -136,6 +154,7 @@ export class GameplayScreen extends Screen {
     this.world.draw(ctx);
     this.runner.draw(ctx);
     this.hud.draw(ctx);
+    this.drawNetStatus(ctx);
     if (window.__game && window.__game.debug) this.world.drawDebug(ctx);
     if (this.gameOverTimer > 0 && !this.gameOverShown) {
       ctx.fillStyle = `rgba(0,0,0,${Math.min(0.5, this.gameOverTimer / GAME_OVER_DELAY * 0.5)})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H);

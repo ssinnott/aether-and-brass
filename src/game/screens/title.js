@@ -13,8 +13,8 @@ import { AnimPlayer } from '../animation.js';
 import { ENV } from '../../art/palettes.js';
 import { STAGES } from '../../content/stage/index.js';
 
-const MENU = ['START (1P)', 'START (2P)', 'BOARD', 'DIFFICULTY', 'MUTE'];
-const I_BOARD = 2, I_DIFF = 3, I_MUTE = 4;
+const MENU = ['START (1P)', 'START (2P)', 'ONLINE CO-OP', 'BOARD', 'DIFFICULTY', 'MUTE'];
+const I_ONLINE = 2, I_BOARD = 3, I_DIFF = 4, I_MUTE = 5;
 export const DIFFICULTIES = ['easy', 'normal', 'hard'];
 // tiered city: [x, top, w] terraces, front row darker
 const FAR_TOWERS = [[0, 236, 44], [48, 214, 30], [84, 246, 60], [150, 222, 26], [182, 206, 50], [240, 232, 34], [280, 218, 40], [326, 240, 30], [362, 210, 56], [424, 230, 40], [470, 216, 30], [506, 244, 50], [562, 222, 40], [608, 236, 40]],
@@ -84,6 +84,10 @@ export class TitleScreen extends Screen {
       this.starting = true;
       audio.play('menu_confirm');
       this.game.fadeTo(() => this.game.replace('select'), 0.08);
+    } else if (i === I_ONLINE) {
+      this.starting = true;
+      audio.play('menu_confirm');
+      this.game.fadeTo(() => this.game.replace('lobby'), 0.08);
     } else if (i === I_BOARD) this.cycleBoard(1);
     else if (i === I_DIFF) this.cycleDifficulty(1);
     else { audio.toggleMute(); audio.play('menu_confirm'); }
@@ -148,9 +152,9 @@ export class TitleScreen extends Screen {
     const board = STAGES[this.boardIndex];
     drawText(ctx, `STAGE ${this.boardIndex + 1}: ${board.name}`, 320, 146, { size: 1, color: '#4DF0E0', align: 'center' });
     // menu on a translucent plate
-    rrect(ctx, 200, 158, 240, 80, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
+    rrect(ctx, 200, 156, 240, 94, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
     for (let i = 0; i < MENU.length; i++) {
-      const sel = i === this.cursor, y = 163 + i * 14;
+      const sel = i === this.cursor, y = 161 + i * 14;
       let label = MENU[i];
       if (i === I_BOARD) label = `BOARD  < ${this.boardIndex + 1} OF ${STAGES.length} >`;
       if (i === I_DIFF) label = `DIFFICULTY  < ${this.difficulty.toUpperCase()} >`;
@@ -158,7 +162,7 @@ export class TitleScreen extends Screen {
       if (sel) { gear(ctx, 320 - drawTextWidth(label) / 2 - 12, y + 4, 5, 6, UI.brass, '#3a2010', 1, f * 0.05, 1.5); }
       drawText(ctx, label, 320, y, { size: 1, color: sel ? UI.white : UI.steel, align: 'center' });
     }
-    if ((f % 60) < 40) drawTextOutlined(ctx, 'PRESS START', 320, 242, { size: 2, color: '#ffffff', outline: '#3a2010', thickness: 1, align: 'center' });
+    if ((f % 60) < 40) drawTextOutlined(ctx, 'PRESS START', 320, 254, { size: 2, color: '#ffffff', outline: '#3a2010', thickness: 1, align: 'center' });
     // P2 status + compact controls legend on the walkway
     const p2 = this.game.input.joined(1);
     if (p2 && this.p2Flash > 0 && (f % 10) < 6) drawText(ctx, 'P2 JOINED!', 320, 266, { size: 1, color: UI.p2, align: 'center' });
