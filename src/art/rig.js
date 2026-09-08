@@ -26,8 +26,8 @@
 import { rad } from '../engine/math.js';
 import { PALETTES, farPalette } from './palettes.js';
 import { SCRATCH_POSE, copyPose } from './poses.js';
-import { LIGHT_X, LIGHT_Y, RAMP, tones, celCapsule, contactCapsule } from './shading.js';
-import { drawLimbSegs, drawFist, drawBoot, drawTorsoShape, drawBelt, drawNeck, drawSkull, drawFace, drawStick } from './rigParts.js';
+import { LIGHT_X, LIGHT_Y, RAMP, tones, celTaper, contactCapsule } from './shading.js';
+import { drawLimbSegs, limbRadii, drawFist, drawBoot, drawTorsoShape, drawBelt, drawNeck, drawSkull, drawFace, drawStick } from './rigParts.js';
 import { stepChain, resetChain } from './secondary.js';
 
 /** Reference proportions at scale 1 (~72-76 px tall). */
@@ -247,10 +247,13 @@ function drawLeg(ctx, rig, pose, side) {
   const hooks = rig.parts;
   contactCapsule(ctx, rig, hip.x, hip.y, knee.x, knee.y, p.legR); contactCapsule(ctx, rig, knee.x, knee.y, ankle.x, ankle.y, p.legR - 0.5);
   if (hooks.legUpper || hooks.legLower) {
+    // A rig may hook one half of a limb and leave the other generic. The generic half is built from the SAME radius
+    // profile the one-path limb uses, so the two halves meet at the knee without a step.
+    const [rA, rB, rC] = limbRadii(p.legR, p.legR - 0.5, p.bulge);
     if (hooks.legUpper) { enter(ctx, rig, hip.x, hip.y, -ang.upper); hooks.legUpper(ctx, rig, pose, info(rig, 'legUpper', far, pal, p.upperLeg, p.legR, pal.secondary)); leave(ctx, rig); }
-    else celCapsule(ctx, rig, hip.x, hip.y, knee.x, knee.y, p.legR, pal.secondary);
+    else { const s0 = sunk(hip, knee, p.legR * 0.35); celTaper(ctx, rig, s0.x, s0.y, knee.x, knee.y, rA, rB, pal.secondary); }
     if (hooks.legLower) { enter(ctx, rig, knee.x, knee.y, -ang.lower); hooks.legLower(ctx, rig, pose, info(rig, 'legLower', far, pal, p.lowerLeg, p.legR - 1, pal.secondary)); leave(ctx, rig); }
-    else celCapsule(ctx, rig, knee.x, knee.y, ankle.x, ankle.y, p.legR - 0.5, pal.secondary);
+    else celTaper(ctx, rig, knee.x, knee.y, ankle.x, ankle.y, rB, rC, pal.secondary);
   } else {
     // root sunk into the pelvis: the thigh starts under the hip block rather than on its edge
     drawLimbSegs(ctx, rig, sunk(hip, knee, p.legR * 0.35), knee, ankle, p.legR, p.legR - 0.5, pal.secondary, pal.secondary, false, p.bulge);
@@ -279,10 +282,11 @@ function drawArm(ctx, rig, pose, side, withWeapon) {
   const hooks = rig.parts, sleeve = pal.sleeve || pal.primary;
   contactCapsule(ctx, rig, sh.x, sh.y, el.x, el.y, p.armR); contactCapsule(ctx, rig, el.x, el.y, hd.x, hd.y, p.armR + 0.5);
   if (hooks.armUpper || hooks.armLower) {
+    const [rA, rB, rC] = limbRadii(p.armR, p.armR + 0.5, p.bulge);
     if (hooks.armUpper) { enter(ctx, rig, sh.x, sh.y, -ang.upper); hooks.armUpper(ctx, rig, pose, info(rig, 'armUpper', far, pal, p.upperArm, p.armR, sleeve)); leave(ctx, rig); }
-    else celCapsule(ctx, rig, sh.x, sh.y, el.x, el.y, p.armR, sleeve);
+    else { const s0 = sunk(sh, el, p.armR * 0.45); celTaper(ctx, rig, s0.x, s0.y, el.x, el.y, rA, rB, sleeve); }
     if (hooks.armLower) { enter(ctx, rig, el.x, el.y, -ang.lower); hooks.armLower(ctx, rig, pose, info(rig, 'armLower', far, pal, p.lowerArm, p.armR - 0.5, pal.skin)); leave(ctx, rig); }
-    else celCapsule(ctx, rig, el.x, el.y, wr.x, wr.y, p.armR + 0.5, pal.skin);
+    else celTaper(ctx, rig, el.x, el.y, wr.x, wr.y, rB, rC, pal.skin);
   } else {
     // root sunk into the torso. Only the TUBE moves: the shoulder hook below still enters at the true joint, so a
     // rig's epaulette or pauldron stays where its author put it.

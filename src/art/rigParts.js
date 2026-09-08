@@ -8,6 +8,19 @@ import { FACE } from './poses.js';
 const R = Math.round;
 
 /**
+ * The one radius profile a limb has: [root, joint, tip]. Widest at the shoulder or hip, ONE shared radius at the
+ * elbow or knee, narrowest at the wrist or ankle. Exported because a rig may hook one half of a limb and leave the
+ * other to the default renderer — rig.js builds the generic half from these same numbers so the two halves meet
+ * without a step, which is the defect (a forearm ~15 % fatter than the end of the bicep) that inked a collar into
+ * every elbow before any outline was drawn.
+ * @returns {[number, number, number]}
+ */
+export function limbRadii(r1, r2, bulge = 0) {
+  const base = (r1 + r2) / 2;
+  return [base * (1 + 0.16 * bulge), base * (1 - 0.10 * bulge), base * (1 - 0.20 * bulge)];
+}
+
+/**
  * A whole limb as ONE shape (root space): shoulder -> elbow -> wrist, or hip -> knee -> ankle.
  *
  * It used to be five or six separately outlined objects — a ball cap at the shoulder, two tapered capsules, a cuff
@@ -27,10 +40,7 @@ const R = Math.round;
  * objects this function exists to stop drawing.
  */
 export function drawLimbSegs(ctx, rig, a, b, c, r1, r2, fill1, fill2, capAtA = true, bulge = 0) {
-  const base = (r1 + r2) / 2;
-  const rA = base * (1 + 0.16 * bulge);   // shoulder / hip: the widest point
-  const rB = base * (1 - 0.10 * bulge);   // elbow / knee: ONE radius, shared by both segments
-  const rC = base * (1 - 0.20 * bulge);   // wrist / ankle: narrowest
+  const [rA, rB, rC] = limbRadii(r1, r2, bulge);
   const nodes = [[a.x, a.y, rA], [b.x, b.y, rB], [c.x, c.y, rC]];
   const tube = () => {
     ctx.beginPath();

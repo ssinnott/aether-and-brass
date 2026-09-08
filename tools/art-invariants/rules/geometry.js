@@ -292,7 +292,11 @@ function scanLimbs(A, rig, pose, J, ops, tf, outline, where) {
   }
   const ranges = H.headSpace(ops, LIMB_HOOKS);
   if (ranges.length) A.crossings.hooked = true;
-  for (const rg of ranges) {
+  // Only measure marks on an UNDISTORTED keyframe. A squash/stretch pose scales the whole sprite on one axis --
+  // hurtAir #1 flattens every mark on the cast to zero height -- so measuring a band's width there reports the
+  // transient, not the art, and would condemn a 7 px joint ring as a 1 px hairline.
+  const undistorted = pose.squash === 1 && pose.stretch === 1;
+  for (const rg of undistorted ? ranges : []) {
     const geom = LIMB_GEOM[rg.hook];
     if (!geom) continue;
     const far = !!(ops[rg.start] && ops[rg.start].far);

@@ -416,10 +416,14 @@ export function makeRecorder(opts = {}) {
     quadraticCurveTo(cx, cy, x, y) { push(cx, cy); push(x, y); },
     bezierCurveTo(c1x, c1y, c2x, c2y, x, y) { push(c1x, c1y); push(c2x, c2y); push(x, y); },
     arcTo(x1, y1, x2, y2) { push(x1, y1); push(x2, y2); },
-    arc(cx, cy, r) { push(cx - r, cy - r); push(cx + r, cy + r); },
-    ellipse(cx, cy, rx, ry) { push(cx - rx, cy - ry); push(cx + rx, cy + ry); },
-    rect(x, y, w, h) { push(x, y); push(x + w, y + h); },
-    roundRect(x, y, w, h) { push(x, y); push(x + w, y + h); },
+    // A circle's device bounding box is a square around its transformed centre, NOT the transform of two opposite
+    // corners of its local box. Pushing two corners made a rotated circle measure as a sliver -- a 8 px joint ring
+    // on a running leg recorded as 1.05 x 12.05 -- which every size-based rule then read as a hairline. Rects have
+    // the same problem: their hull needs all four corners once the space is rotated.
+    arc(cx, cy, r) { const c = apply(m, cx, cy), R = r * uniform(); path.push(c.x - R, c.y - R, c.x + R, c.y + R); },
+    ellipse(cx, cy, rx, ry) { const c = apply(m, cx, cy), RX = rx * sx(), RY = ry * sy(), R = Math.max(RX, RY); path.push(c.x - R, c.y - R, c.x + R, c.y + R); },
+    rect(x, y, w, h) { push(x, y); push(x + w, y); push(x + w, y + h); push(x, y + h); },
+    roundRect(x, y, w, h) { push(x, y); push(x + w, y); push(x + w, y + h); push(x, y + h); },
 
     fill() { rec('fill', { bbox: bboxOf(path), started }); },
     stroke() { rec('stroke', { bbox: bboxOf(path), started }); },
