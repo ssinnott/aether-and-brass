@@ -38,7 +38,13 @@ the renderer (`src/art/rig.js`, `shading.js`, `rigParts.js`) so every rig gets i
    purpose, and `geom/outline-stroke-contract` enforces the narrowness: the clip must contain the fill and the
    clipped path must have been inked, so an unoutlined fill in open space is still an error.
    The test to apply when in doubt: *would a reader call these two things separate objects?* Sleeve and forearm, no
-   — one arm. Gauntlet and forearm, yes — outline it. **Contact shadow:** the renderer draws a translucent
+   — one arm. Gauntlet and forearm, yes — outline it.
+   **Draw order is part of the boundary.** Because every part inks its own outline, *which part is drawn last* is
+   what says which one is in front — so an appendage goes **after** the mass it grips and **before** the mass that
+   should overlap it. A hand drawn before its weapon hides behind the haft instead of closing around it; a near leg
+   drawn after the hip block is painted onto the front of the body instead of emerging from inside it; an ear drawn
+   over its own skull is a triangle inked on a cheek. All three were real, and all three were one line each.
+   Enforced by `geom/appendage-layering` (**error** — this one is cheap to get right and expensive to look at). **Contact shadow:** the renderer draws a translucent
    dark capsule (`build.contactShadow`, default alpha 0.3, `false` = off) under every arm and leg segment, so a limb
    crossing the torso, the far leg or a back accessory gets a darker 1 px contact edge on top of its outline.
 3. **Far limbs darker and greyer.** `rig.paletteFar = farPalette(palette, farShade, farDesat)` — `build.farShade` 0.62
@@ -66,6 +72,23 @@ the renderer (`src/art/rig.js`, `shading.js`, `rigParts.js`) so every rig gets i
 7. **Less clutter — the 2 px floor.** Anything under 2 px at 1× is noise: no 1 px rivets, knuckle notches, gauge
    needles, studs or wrap stripes; bands ≥ 3 px, buckles ≥ 3×3, toe caps ≥ 4 px, glow slots ≥ 6 px; one buckle per
    boot, one seam per garment, one shape per material.
+   **One crossing per limb.** A limb is one object. Every band drawn across it is another line the eye has to parse
+   before it can decide the limb is a limb, and a limb wearing three of them reads as a stack of parts — which is
+   what "the arms don't read as arms" meant. So: **at most one material crossing per limb segment, at least 4 px on
+   its short side, positioned at a joint** (elbow, wrist, knee, ankle), where an arm really does change. Keep the ONE
+   that carries the faction — the Stormcrow wing armband, a rank cuff, the Marine's shoulder plate — and drop the
+   rest. Which mark survives is an art decision per rig, not a mechanical one: a generic band cannot stand in for the
+   Galewright's coils. Enforced by `geom/limb-crossings` (warn).
+   *Rank carriers are the exception, and must be argued.* Where a mark encodes something the player has to read —
+   the Stormcrow rank ladder, whose pixel areas `tools/stormcrow-pixels.mjs` audits as Bosun < Galewright < Marine,
+   or a cuff a boss deliberately switches off so its return marks a phase change — the second crossing is carrying
+   information, not decoration. Record it as an exemption in `tools/art-invariants/exemptions.js` with that reason.
+   Do not silently delete a rank carrier to satisfy the count; that trades a readability problem for a gameplay one.
+   **The mark budget.** A rig may not paint more marks on any one keyframe than its class allows: hero 140,
+   human-machine 145, organic-mook 130, boss 180 (`geom/mark-budget`, warn). These are a ratchet, set just above the
+   cast's measured maxima after the readability pass — hero 126, human-machine 133, organic-mook 120, boss 166.
+   Raising one is a decision to argue in review, not a way to make a new rig pass. `node tools/art-check.js --census`
+   prints the current table, bucketed by the hook each mark came from.
 8. **Squint test + audit.** Render the 1× idle / walk / hit frames, downscale to 0.5× and upscale ×6 nearest: a person
    with the weapon must still be visible. `window.__sheet.audit()` (`weapon.headAt` = px from the near hand to the
    weapon-head centre) must print no new `GRIP` / `FLOOR` flags; `mode=cast&enemies=1&bg=docks` must keep every rig

@@ -110,7 +110,8 @@ function headDisc(rig, pose) {
   const sq = pose.squash, st = pose.stretch === 1 && sq !== 1 ? 1 / sq : pose.stretch;
   const fs = rig.scale * sq, ss = rig.scale * st;
   const c = Math.cos(rad(pose.root.rot)), s = Math.sin(rad(pose.root.rot));
-  const rx = rig.snap ? Math.round(pose.root.x) : pose.root.x, ry = rig.snap ? Math.round(pose.root.y) : pose.root.y;
+  const g = rig.pxScale || rig.scale || 1;
+  const rx = rig.snap ? Math.round(pose.root.x * g) / g : pose.root.x, ry = rig.snap ? Math.round(pose.root.y * g) / g : pose.root.y;
   return {
     x: (J.head.x * c - J.head.y * s + rx) * fs,
     y: (J.head.x * s + J.head.y * c + ry) * ss,
@@ -118,6 +119,26 @@ function headDisc(rig, pose) {
     r: rig.p.headR * rig.scale * 1.7,
   };
 }
+
+/** Project a rig-space joint into the same device space the recorder's bboxes live in (drawRig's root transform). */
+function jointDev(rig, pose, j, out) {
+  const sq = pose.squash, st = pose.stretch === 1 && sq !== 1 ? 1 / sq : pose.stretch;
+  const fs = rig.scale * sq, ss = rig.scale * st;
+  const c = Math.cos(rad(pose.root.rot)), s = Math.sin(rad(pose.root.rot));
+  const g = rig.pxScale || rig.scale || 1;
+  const rx = rig.snap ? Math.round(pose.root.x * g) / g : pose.root.x, ry = rig.snap ? Math.round(pose.root.y * g) / g : pose.root.y;
+  out.x = (j.x * c - j.y * s + rx) * fs;
+  out.y = (j.x * s + j.y * c + ry) * ss;
+  return out;
+}
+
+/** The joint a crossing on this limb hook should sit on, and the segment it runs along. */
+const LIMB_GEOM = Object.freeze({
+  armUpper: { joints: ['shoulder', 'elbow'], from: 'shoulder', to: 'elbow' },
+  armLower: { joints: ['elbow', 'wrist'], from: 'elbow', to: 'wrist' },
+  legUpper: { joints: ['hip', 'knee'], from: 'hip', to: 'knee' },
+  legLower: { joints: ['knee', 'ankle'], from: 'knee', to: 'ankle' },
+});
 
 /**
  * Wrap every part hook, accessory and weapon draw with a transform/save-depth balance probe BEFORE the recorder's
@@ -186,6 +207,14 @@ function emptyAnalysis() {
       alphaMarks: 0,
       region: { limb: 0, head: 0, torso: 0, weapon: 0, accessory: 0, default: 0 },
     },
+    /**
+     * §0.7 one shape per material. Keyed by HOOK (and by hook+material for the geometry clauses), never by the
+     * measured value — a limb is inspected on every keyframe of every animation, so keying on a number would
+     * produce one finding per keyframe instead of one per defect.
+     */
+    crossings: { hooked: false, over: new Map(), thin: new Map(), offJoint: new Map(), worst: 0 },
+    /** §0.2 draw order: an appendage must come after the mass it grips and before the mass that overlaps it. */
+    layering: { armed: false, handEarly: [], legLate: [] },
   };
 }
 
@@ -238,6 +267,131 @@ function auditFrame(A, rig, pose, animName, index, where) {
     if (-boot > a.float.v) { a.float.v = -boot; a.float.where = where; }
   }
   return J;
+}
+
+const LIMB_HOOKS = Object.freeze(['armUpper', 'armLower', 'legUpper', 'legLower']);
+const JD_A = { x: 0, y: 0 }, JD_B = { x: 0, y: 0 };
+
+/**
+ * §0.7 material crossings on a limb, and §0.2 appendage draw order. Both read the SAME recorded stream the rest of
+ * the pass reads; nothing is drawn twice.
+ *
+ * A CROSSING is a maximal run of consecutive marks sharing one colour whose palette key differs from the limb's own
+ * material. Grouping by run is what collapses a band drawn as base+shadow+highlight into the one band a viewer
+ * sees. Colours in no tone family (a module constant painted straight onto the limb) get a synthetic key rather
+ * than being skipped — skipping them is precisely how a rig with a hard-coded band measures as having none.
+ */
+function scanLimbs(A, rig, pose, J, ops, tf, outline, where) {
+  // colour -> palette key, over both the near and far families
+  const keyOf = new Map();
+  for (const table of [tf.byKey, tf.farByKey]) {
+    for (const key of Object.keys(table)) {
+      const t = table[key];
+      for (const band of ['base', 'hi', 'sh', 'rim', 'deep']) if (t[band] && !keyOf.has(t[band])) keyOf.set(t[band], key);
+    }
+  }
+  const ranges = H.headSpace(ops, LIMB_HOOKS);
+  if (ranges.length) A.crossings.hooked = true;
+  for (const rg of ranges) {
+    const geom = LIMB_GEOM[rg.hook];
+    if (!geom) continue;
+    const far = !!(ops[rg.start] && ops[rg.start].far);
+    const side = far ? 'F' : 'N';
+    const marks = [];
+    for (let i = rg.start; i <= rg.end && i < ops.length; i++) {
+      const e = ops[i];
+      if ((e.op !== 'fill' && e.op !== 'fillRect') || !e.bbox) continue;
+      if (e.alpha != null && e.alpha < 1) continue;
+      const raw = colourOf(e);
+      if (raw == null || isRgba(raw)) continue;
+      const c = H.normHex(raw);
+      if (c === outline) continue;
+      marks.push({ e, c, key: keyOf.get(c) || `<constant ${c}>`, area: e.bbox.w * e.bbox.h });
+    }
+    if (marks.length < 2) continue;
+    // the limb's own material is whatever the biggest mark on it is made of
+    let main = marks[0];
+    for (const m of marks) if (m.area > main.area) main = m;
+    // Group by MATERIAL, not by run. "One shape per material" counts materials, and a band drawn as base + shadow
+    // is one band however many ops it takes — as is a band whose halves are separated in the stream by another
+    // colour, which run-grouping miscounts as two.
+    const byKey = new Map();
+    for (const m of marks) {
+      if (m.key === main.key) continue;
+      if (!byKey.has(m.key)) byKey.set(m.key, []);
+      byKey.get(m.key).push(m);
+    }
+    if (!byKey.size) continue;
+    const a = jointDev(rig, pose, J[geom.from + side], JD_A);
+    const b = jointDev(rig, pose, J[geom.to + side], JD_B);
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    // A CROSSING spans the limb. A mark that does not is a detail — a rivet, a stud, a buckle — and it belongs to
+    // geom/detail-floor, not here. Without this test every 1 px rivet on a bracer reads as a material band.
+    const limbW = (rg.hook.startsWith('arm') ? rig.p.armR : rig.p.legR) * 2 * rig.scale;
+    const crossings = [];
+    for (const [key, list] of byKey) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const m of list) {
+        x0 = Math.min(x0, m.e.bbox.x0); y0 = Math.min(y0, m.e.bbox.y0);
+        x1 = Math.max(x1, m.e.bbox.x1); y1 = Math.max(y1, m.e.bbox.y1);
+      }
+      // long enough to span the limb AND thick enough to be a shape rather than a hairline. A hairline that runs
+      // the length of a limb is real, but it is a detail-floor problem (§0.7), not a material crossing.
+      if (Math.max(x1 - x0, y1 - y0) < limbW * 0.6) continue;
+      if (Math.min(x1 - x0, y1 - y0) < 1) continue;
+      crossings.push({ key, x0, y0, x1, y1 });
+    }
+    if (!crossings.length) continue;
+    if (crossings.length > A.crossings.worst) A.crossings.worst = crossings.length;
+    if (crossings.length > 1) {
+      const prev = A.crossings.over.get(rg.hook);
+      if (!prev || crossings.length > prev.n) {
+        A.crossings.over.set(rg.hook, { n: crossings.length, keys: crossings.map((r) => r.key), material: main.key, where, frames: (prev ? prev.frames : 0) + 1 });
+      } else { prev.frames++; }
+    }
+    for (const r of crossings) {
+      const { x0, y0, x1, y1 } = r;
+      const id = `${rg.hook} ${r.key}`;
+      const shortSide = Math.min(x1 - x0, y1 - y0);
+      if (shortSide < 4) {
+        const p = A.crossings.thin.get(id);
+        if (!p || shortSide < p.v) A.crossings.thin.set(id, { v: shortSide, where, frames: (p ? p.frames : 0) + 1 });
+        else p.frames++;
+      }
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      const d = Math.min(Math.hypot(cx - a.x, cy - a.y), Math.hypot(cx - b.x, cy - b.y));
+      const bound = len * 0.35;
+      // "mid-bone" is only a meaningful complaint when the mark IS on the bone. Several rigs hook a limb to draw
+      // machinery that extends well past it (Pip's frame, the Hoister's pistons); for those the bone is not where
+      // the art lives and the test would fire on every keyframe of correct work.
+      const t = ((cx - a.x) * (b.x - a.x) + (cy - a.y) * (b.y - a.y)) / (len * len);
+      if (t >= 0 && t <= 1 && d > bound) {
+        const p = A.crossings.offJoint.get(id);
+        // keep the worst OVERSHOOT, not the worst distance: the bound moves with the limb's projected length
+        if (!p || d - bound > p.v - p.bound) A.crossings.offJoint.set(id, { v: d, bound, where, frames: (p ? p.frames : 0) + 1 });
+        else p.frames++;
+      }
+    }
+  }
+
+  // ---- §0.2 appendage draw order ----
+  const order = H.headSpace(ops, ['hand', 'weapon', 'hips', 'foot', 'legUpper', 'legLower']);
+  const nearFirst = (name) => {
+    for (const r of order) if (r.hook === name && !(ops[r.start] && ops[r.start].far)) return r.start;
+    return -1;
+  };
+  const nearLast = (names) => {
+    let out = -1;
+    for (const r of order) if (names.includes(r.hook) && !(ops[r.start] && ops[r.start].far)) out = Math.max(out, r.end);
+    return out;
+  };
+  const hand = nearFirst('hand'), weapon = nearFirst('weapon');
+  if (weapon >= 0) {
+    A.layering.armed = true;
+    if (hand >= 0 && hand < weapon) A.layering.handEarly.push(`${where}: hand range opens at op ${hand}, weapon at op ${weapon}`);
+  }
+  const hips = nearFirst('hips'), legEnd = nearLast(['foot', 'legUpper', 'legLower']);
+  if (hips >= 0 && legEnd >= 0 && legEnd > hips) A.layering.legLate.push(`${where}: hips range opens at op ${hips}, the near leg is still drawing at op ${legEnd}`);
 }
 
 /** Scan one recorded command stream for every op-log rule. */
@@ -445,7 +599,7 @@ export function analyse(subject) {
       for (let i = 0; i < frames.length; i++) {
         const frame = frames[i], where = `${name} #${i}`;
         const pose = H.resolvePose(frame);
-        auditFrame(A, rig, pose, name, i, where);
+        const JF = auditFrame(A, rig, pose, name, i, where);
         const hd = headDisc(rig, pose);
         const before = H.snapshotRigState(rig);
         let first = null, second = null;
@@ -470,6 +624,7 @@ export function analyse(subject) {
         }
         A.frames++;
         const normalOps = scanFrame(A, rig, first.ops, { outline, bases, tf, glowBases, glowRamp, farAllow, headDisc: hd }, where);
+        scanLimbs(A, rig, pose, JF, first.ops, tf, outline, where);
 
         // §3 hit flash: while rig.override is set only outline + flat fill may be drawn. The non-offscreen branch
         // never touches rig.override, so setting it by hand needs no DOM.
@@ -843,7 +998,82 @@ export const RULES = [
       return out;
     },
   },
+  {
+    id: 'geom/mark-budget',
+    section: 'ART_STYLE §0.7, §9',
+    severity: 'warn',
+    describe: 'Keep the number of painted marks per keyframe inside the class budget.',
+    check(subject) {
+      const A = analyse(subject), c = A.census;
+      const bound = MARK_BUDGET[subject.class];
+      const f = Math.max(1, A.frames);
+      const detail = [
+        `worst keyframe ${c.marks.max} marks @ ${c.marks.at}; mean ${fmt(c.marks.sum / f, 1)} over ${A.frames} keyframes`,
+        `by region: limb ${fmt(c.region.limb / f, 1)}, head ${fmt(c.region.head / f, 1)}, torso ${fmt(c.region.torso / f, 1)}, `
+          + `weapon ${fmt(c.region.weapon / f, 1)}, accessory ${fmt(c.region.accessory / f, 1)}, default renderer ${fmt(c.region.default / f, 1)}`,
+        `${fmt(c.small3.sum / f, 1)} marks per keyframe are under 3 px; ${c.outlined.max} are separately outlined at the worst keyframe`,
+        `budget for class '${subject.class}': ${bound == null ? 'none' : bound}`,
+      ];
+      if (bound == null) return [{ severity: 'info', message: `no mark budget for class '${subject.class}'`, detail }];
+      if (c.marks.max > bound) return [{ message: `${c.marks.max} marks on one keyframe, over the '${subject.class}' budget of ${bound}`, detail, where: c.marks.at }];
+      return [{ severity: 'info', message: `mark budget ok (${c.marks.max} of ${bound} worst keyframe)`, detail }];
+    },
+  },
+  {
+    id: 'geom/limb-crossings',
+    section: 'ART_STYLE §0.7, §5',
+    severity: 'warn',
+    describe: 'Cross a limb with at most one material band, at least 4 px wide, sitting on a joint.',
+    check(subject) {
+      const A = analyse(subject), c = A.crossings;
+      // The 13 rigs with no limb hooks draw their limbs through the default renderer, which paints exactly one
+      // material change by construction (drawLimbSegs). There is nothing to inspect and nothing to get wrong.
+      if (!c.hooked) return [{ severity: 'info', message: 'limbs are drawn by the default renderer; one material change by construction' }];
+      const detail = [
+        '§0.7: one shape per material. A limb is one object; every extra band across it is another line the eye has to parse',
+        'before deciding the limb is a limb. Keep the ONE that carries the faction — a rank cuff, a wing armband — and',
+        `put it on a joint, where an arm really does change.  worst limb this rig: ${c.worst} crossing(s)`,
+      ];
+      const out = [];
+      for (const [hook, v] of c.over) {
+        out.push({ message: `${hook} carries ${v.n} material crossings (bound 1): ${v.keys.join(' + ')} over its own ${v.material}`, detail, where: `${v.where} (+${v.frames - 1} more keyframes)` });
+      }
+      for (const [id, v] of c.thin) out.push({ message: `${id} crossing is ${fmt(v.v, 1)} px on its short side (bound 4)`, detail, where: `${v.where} (+${v.frames - 1} more)` });
+      for (const [id, v] of c.offJoint) out.push({ message: `${id} crossing sits ${fmt(v.v, 1)} px from the nearest joint (bound ${fmt(v.bound, 1)}) — mid-bone, not on a joint`, detail, where: `${v.where} (+${v.frames - 1} more)` });
+      if (!out.length) out.push({ severity: 'info', message: `limb crossings ok (worst limb carries ${c.worst})`, detail });
+      return out;
+    },
+  },
+  {
+    id: 'geom/appendage-layering',
+    section: 'ART_STYLE §0.2',
+    severity: 'error',
+    describe: 'Draw an appendage after the mass it grips and before the mass that overlaps it.',
+    check(subject) {
+      const A = analyse(subject), L = A.layering;
+      const detail = [
+        '§0.2: draw order is what makes a grip and a joint read. A hand drawn before its weapon hides behind the haft',
+        'instead of closing around it; a near leg drawn after the hip block is painted onto the front of the body',
+        'instead of emerging from inside it.',
+      ];
+      const out = [];
+      if (L.handEarly.length) out.push({ message: `the hand is drawn before the weapon on ${L.handEarly.length} keyframe(s), so the fist hides behind the haft`, detail: detail.concat(L.handEarly.slice(0, 4)), where: L.handEarly[0] });
+      if (L.legLate.length) out.push({ message: `the near leg is still drawing after the hip block on ${L.legLate.length} keyframe(s), so the thigh sits on top of the belt`, detail: detail.concat(L.legLate.slice(0, 4)), where: L.legLate[0] });
+      if (!out.length) out.push({ severity: 'info', message: `appendage layering ok${L.armed ? ' (hand after weapon, leg under hips)' : ' (unarmed; leg under hips)'}`, detail });
+      return out;
+    },
+  },
 ];
+
+/**
+ * §0.7 / §9 marks-per-keyframe ceiling, by class. A RATCHET, not a discovered constant: each number is the class
+ * maximum measured by `art-check --census` immediately after the readability pass landed, plus about 8 % of head
+ * room. Its job is to stop the density creeping back, so raising an entry is a decision to be argued in review, not
+ * a way to make a new rig pass. Measured maxima at the time of writing: hero 126 (rook stagger #1),
+ * human-machine 133 (stormcrow:corsair stagger #0), organic-mook 120 (chandler:limeburner stagger #0),
+ * boss 166 (midboss:grubbik stagger #2). Before the pass those same maxima were 163 / 163 / 143 / 190.
+ */
+const MARK_BUDGET = Object.freeze({ hero: 140, 'human-machine': 145, 'organic-mook': 130, boss: 180 });
 
 /** Guide statements this module ships in a corrected form; each is a doc bug to file, not a failing rig. */
 export { DOC_BUGS, T as THRESHOLDS, DETAIL_BASELINE };
