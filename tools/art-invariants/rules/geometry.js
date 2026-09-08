@@ -171,7 +171,35 @@ function emptyAnalysis() {
     detail: { studs: 0, studsAt: '-', sub2: 0, sub2Hooks: new Map() },
     glow: { ramp: new Map(), marks: 0, big: 0, bigCored: 0, uncored: new Map() },
     budget: { cel: { v: 0, where: '-' }, clip: { v: 0, where: '-' }, cmd: { v: 0, where: '-' }, fills: 0, strokes: 0, rects: 0 },
+    census: {
+      marks: { sum: 0, max: 0, at: '-' },
+      small3: { sum: 0, max: 0, at: '-' },
+      outlined: { max: 0, at: '-' },
+      // Translucent marks are counted SEPARATELY and never folded into `marks`: the eight per-keyframe
+      // contactCapsule fills vanish the moment a rig sets contactShadow off, and folding them in would book a
+      // free ~8-mark "improvement" that is not a density change at all.
+      alphaMarks: 0,
+      region: { limb: 0, head: 0, torso: 0, weapon: 0, accessory: 0, default: 0 },
+    },
   };
+}
+
+/**
+ * Mark census buckets, by the hook the mark was drawn inside. `default` is load-bearing and must not be folded into
+ * torso: the 13 rigs with no limb hooks draw their whole arm and leg tubes through the default renderer, where the
+ * marks carry hook === null — calling those "torso" reports a hero as all body and no limbs.
+ */
+const CENSUS_LIMB = new Set(['armUpper', 'armLower', 'legUpper', 'legLower', 'hand', 'foot', 'shoulder']);
+const CENSUS_HEAD = new Set(['head', 'face', 'beard', 'hair', 'hat', 'neck']);
+const CENSUS_TORSO = new Set(['torso', 'hips', 'back']);
+function censusRegion(hook) {
+  if (!hook) return 'default';
+  if (CENSUS_LIMB.has(hook)) return 'limb';
+  if (CENSUS_HEAD.has(hook)) return 'head';
+  if (CENSUS_TORSO.has(hook)) return 'torso';
+  if (hook === 'weapon') return 'weapon';
+  if (hook.startsWith('accessory')) return 'accessory';
+  return 'default';
 }
 
 /** Pose-audit metrics for one keyframe (SNAP / GRIP / FLOOR, promoted from tools/sheet.js audit()). */
@@ -209,6 +237,7 @@ function scanFrame(A, rig, ops, ctx3, where) {
   const parentColours = new Map();     // hook -> colours already painted under an outline in this frame
   const nearCols = new Map(), farCols = new Map();
   let cel = 0, clip = 0, cmd = 0, studs = 0;
+  let marks = 0, small3 = 0;
 
   for (let k = 0; k < draw.length; k++) {
     const e = draw[k], hook = e.hook || '';
@@ -220,6 +249,19 @@ function scanFrame(A, rig, ops, ctx3, where) {
     else if (e.op === 'stroke') { A.budget.strokes++; cmd++; }
     else if (e.op === 'clip') { clip++; cmd++; }
     else if (e.op === 'fillRect') { A.budget.rects++; cmd++; }
+
+    // ---- mark census: every opaque painted mark, bucketed by the hook it came from
+    if ((e.op === 'fill' || e.op === 'fillRect') && e.bbox) {
+      if (e.alpha != null && e.alpha < 1) {
+        A.census.alphaMarks++;
+      } else {
+        marks++;
+        A.census.region[censusRegion(e.hook)]++;
+        // device-space short side: a rect knows its own W/H, a path fill is measured from its bbox
+        const shortSide = e.op === 'fillRect' ? Math.min(Math.abs(e.W), Math.abs(e.H)) : Math.min(e.bbox.w, e.bbox.h);
+        if (shortSide < 3) small3++;
+      }
+    }
 
     // ---- §0.2 outline contract: outlinePath is "stroke at 2*ow, then fill the same path"
     if (e.op === 'stroke' && c === outline) {
@@ -321,6 +363,12 @@ function scanFrame(A, rig, ops, ctx3, where) {
     if (!near) continue;
     for (const c of set) if (near.has(c)) bump(A.leak.identity, `${c} in ${hook} (identical on the near and far side)`);
   }
+
+  const C = A.census;
+  C.marks.sum += marks; C.small3.sum += small3;
+  if (marks > C.marks.max) { C.marks.max = marks; C.marks.at = where; }
+  if (small3 > C.small3.max) { C.small3.max = small3; C.small3.at = where; }
+  if (cel > C.outlined.max) { C.outlined.max = cel; C.outlined.at = where; }
 
   if (studs > A.detail.studs) { A.detail.studs = studs; A.detail.studsAt = where; }
   if (cel > A.budget.cel.v) { A.budget.cel.v = cel; A.budget.cel.where = where; }

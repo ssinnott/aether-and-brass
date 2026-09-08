@@ -164,6 +164,55 @@ async function runRenderTier(modules, subjects, findings, timings, ctx = {}) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Mark census: how many marks each rig paints per keyframe, and where they land. A MEASUREMENT, not a gate —
+ * it never reports a finding and never fails a run. It is what the ART_STYLE mark budget is calibrated from, and
+ * what a before/after of a readability pass is argued with.
+ *
+ * It reuses the geometry tier's cached single pass (analyse()), so it costs nothing beyond that walk and can never
+ * disagree with the rules that read the same numbers.
+ * @param {{ subject?: string[] }} [options]
+ * @returns {Promise<object>} { subjects, totals, byClass }
+ */
+export async function runCensus(options = {}) {
+  const t0 = Date.now();
+  const all = collectSubjects();
+  const subjects = filterSubjects(all, options.subject || []);
+  const { analyse } = await import('./rules/geometry.js');
+  const rows = subjects.map((s) => {
+    const A = analyse(s);
+    const f = Math.max(1, A.frames);
+    const c = A.census;
+    return {
+      id: s.id, class: s.class, faction: s.faction, scale: s.rig ? s.rig.scale : null, frames: A.frames,
+      marks: { mean: +(c.marks.sum / f).toFixed(1), max: c.marks.max, at: c.marks.at },
+      small3: { mean: +(c.small3.sum / f).toFixed(1), max: c.small3.max, at: c.small3.at },
+      outlined: { max: c.outlined.max, at: c.outlined.at },
+      alphaMarks: +(c.alphaMarks / f).toFixed(1),
+      region: Object.fromEntries(Object.entries(c.region).map(([k, v]) => [k, +(v / f).toFixed(1)])),
+    };
+  });
+  const mean = (pick) => (rows.length ? +(rows.reduce((a, r) => a + pick(r), 0) / rows.length).toFixed(1) : 0);
+  const byClass = {};
+  for (const r of rows) {
+    const k = r.class || 'unclassed';
+    if (!byClass[k]) byClass[k] = { rigs: 0, maxMarks: 0, at: '-', meanMarks: 0 };
+    const b = byClass[k];
+    b.rigs++; b.meanMarks += r.marks.mean;
+    if (r.marks.max > b.maxMarks) { b.maxMarks = r.marks.max; b.at = `${r.id} ${r.marks.at}`; }
+  }
+  for (const k of Object.keys(byClass)) byClass[k].meanMarks = +(byClass[k].meanMarks / byClass[k].rigs).toFixed(1);
+  return {
+    subjects: rows,
+    totals: {
+      subjects: rows.length, frames: rows.reduce((a, r) => a + r.frames, 0), durationMs: Date.now() - t0,
+      meanMarks: mean((r) => r.marks.mean), meanSmall3: mean((r) => r.small3.mean),
+      meanLimb: mean((r) => r.region.limb), meanHead: mean((r) => r.region.head), meanDefault: mean((r) => r.region.default),
+    },
+    byClass,
+  };
+}
+
+/**
  * Run the suite.
  * @param {{ subject?: string[], only?: string[], render?: boolean, moduleSpecs?: string[], exemptions?: object[] }} [options]
  *   subject/only are already comma-split selector lists; an empty list means "everything".
