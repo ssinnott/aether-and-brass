@@ -278,7 +278,8 @@ export function makeEnemyDef(base, v) {
 // Upgraded cel-shaded automaton parts + the shared base animation set used by content/enemies/brassbound.js. Every hook draws in
 // the local space rig.js sets up (limbs: origin at the joint, +y along the segment; hand/weapon: +x along the forearm; torso:
 // origin at the hip centre, y up negative; head: origin at the head centre). Far-side parts colour from `inf.pal`.
-import { celRect, celBall, celPoly, celPath, celCapsule, tones, band } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celPath, celCapsule, tones, band, outlinePath } from '../../art/shading.js';
+import { pathTaperedCapsule } from '../../art/shapes.js';
 import { drawFist } from '../../art/rigParts.js';
 import { FACE } from '../../art/poses.js';
 import { pathGear } from '../../art/shapes.js';
@@ -365,11 +366,40 @@ export function brassPauldronB(ctx, rig, pose, inf) {
   if (rig.override) return;
   ctx.fillStyle = tones(rig, inf.pal.accent).deep; ctx.fillRect(dx - 1, dy - 1, 3, 3);
 }
-/** Ball-jointed limb segment (any limb hook): dark-steel bar with a brass ball at the joint. */
+/**
+ * Ball-jointed limb segment (any limb hook): a dark-steel bar whose brass ball joint is part of the SAME shape.
+ *
+ * It used to be two separately outlined objects — a capsule, then a ball painted on top of it — so every automaton
+ * wore a dark ring around all four of its joints and a limb read as a chain of parts. The bar and the ball now go
+ * into one path, stroked once and filled once (ART_STYLE §0.2), and the brass is painted inside that silhouette
+ * afterwards as a colour change with no line of its own. The clip is what DECLARES that: §0.2's material-change
+ * exception, and geom/outline-stroke-contract with it, only accepts an unoutlined fill when it is clipped inside a
+ * path that has itself been inked. Leaving it out because the ball happens to sit inside the union geometrically
+ * is how a real boundary gets faked by accident later.
+ *
+ * The brass boss is deliberately kept. It is this faction's ONE material crossing per segment (§0.7), it is ~8 px
+ * across, and it sits exactly on the joint — which is what the rule asks for. Losing it would cost the Brassbound
+ * the thing that says "machine" at a glance.
+ */
 export function brassLimbB(ctx, rig, pose, inf) {
   const r = inf.r, pal = inf.pal;
-  celCapsule(ctx, rig, 0, r * 0.6, 0, inf.len - 1, r - 0.5, pal.secondary, 0); // clip-free bar (perf: no celRect clips on limbs)
-  celBall(ctx, rig, 0, 0, r * 0.95, pal.joint || pal.accent, false);
+  const rb = r - 0.5, len = inf.len - 1, jr = r * 0.95;
+  const silhouette = () => {
+    ctx.beginPath();
+    pathTaperedCapsule(ctx, 0, r * 0.6, 0, len, rb, rb, true);
+    ctx.moveTo(jr, 0); ctx.arc(0, 0, jr, 0, Math.PI * 2);
+  };
+  silhouette();
+  outlinePath(ctx, rig);
+  ctx.fillStyle = rig.col(tones(rig, pal.secondary).base);
+  ctx.fill();
+  if (rig.override) return;
+  ctx.save();
+  silhouette(); ctx.clip();
+  ctx.beginPath(); ctx.arc(0, 0, jr, 0, Math.PI * 2);
+  ctx.fillStyle = tones(rig, pal.joint || pal.accent).base;
+  ctx.fill();
+  ctx.restore();
 }
 /** Plate boot (ankle space): steel plate with a deep sole and a brass toe cap. */
 export function brassFootB(ctx, rig, pose, inf) {
