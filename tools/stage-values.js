@@ -73,6 +73,8 @@ const SQUADS = {
   brassbound: ['footman', 'sapper', 'halberdier', 'warden'],
   sootborn: ['cutthroat', 'slinger', 'firebrand', 'hulk'],
   stormcrow: ['crimper', 'corsair', 'bosun', 'marine'],
+  gleaning: ['chaff', 'winnow', 'thresher', 'harvestman'],
+  chandler: ['wickboy', 'tallyman', 'limeburner', 'resurrectionist'],
 };
 /** Where the squad stands: internal (640x360) screen x, and the depth z (0 = far, 140 = near). Spread across the frame
  *  and across the floor band so every actor sits over a different passage of backdrop. */
