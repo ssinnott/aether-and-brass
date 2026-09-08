@@ -1,7 +1,7 @@
 // Default part renderers for rig.js, drawn as chunky cel-shaded pixel-sprite shapes (1px outline, 3-tone bands,
 // top-left light). Every function draws in the part's local space set up by rig.js and allocates nothing.
 // Content may import these to compose custom parts (e.g. draw the default boot and add a strap).
-import { celCapsule, celBall, celRect, celPoly, celPath, tones, flat, pathRR, rimRect, rimTop, outlinePath, wantSh } from './shading.js';
+import { celCapsule, celBall, celRect, celPoly, celPath, tones, pathRR, rimRect, rimTop, outlinePath, wantSh } from './shading.js';
 import { pathTaperedCapsule } from './shapes.js';
 import { FACE } from './poses.js';
 
@@ -125,40 +125,63 @@ export function drawNeck(ctx, rig, n, h, skin, r = 3.5) {
   celCapsule(ctx, rig, n.x, n.y, n.x + (h.x - n.x) * 0.5, n.y + (h.y - n.y) * 0.5, r, skin, 0);
 }
 
-/** Skull + jaw + ear + nose (head space). Hair cap drawn over the top/back with clumps. */
-export function drawSkull(ctx, rig, r, skin, hair, opts = null) {
-  const jaw = opts && opts.jaw != null ? opts.jaw : 0.35;
-  // skull: ellipse with a squared jaw toward the chin
-  ctx.beginPath();
+// ---- head path pieces, appended into one path by drawSkull (head space, rig faces +x) ----------------------
+function pathSkull(ctx, r, jaw) {
   ctx.ellipse(0, -r * 0.05, r, r * 0.98, 0, Math.PI * 1.02, Math.PI * 2.02);
   ctx.lineTo(r * 0.98, r * jaw); ctx.lineTo(r * 0.6, r * 0.95); ctx.lineTo(-r * 0.55, r * 0.95); ctx.lineTo(-r * 0.98, r * jaw);
   ctx.closePath();
-  celPath(ctx, rig, skin, 0, 0, r, 0.3, 0.3);
-  // ear
-  celBall(ctx, rig, -r * 0.55, r * 0.15, R(r * 0.26), skin, false);
-  // nose (profile bump); opts.noNose for rigs that draw their own (Brunhild's big wedge sits below the eye row)
-  if (!(opts && opts.noNose)) {
-    ctx.beginPath(); ctx.moveTo(r * 0.7, r * 0.05); ctx.lineTo(r * 1.15, r * 0.3); ctx.lineTo(r * 0.7, r * 0.45); ctx.closePath();
-    flat(ctx, rig, skin);
-    if (!rig.override) { ctx.fillStyle = tones(rig, skin).sh; ctx.fillRect(R(r * 0.75), R(r * 0.4), 3, 1); }
-  }
-  if (hair && !(opts && opts.noHair)) drawHairCap(ctx, rig, r, hair, opts && opts.hairStyle);
 }
-
-/** Hair mass: a cap over the top/back of the skull with 3 shaded clumps. */
-export function drawHairCap(ctx, rig, r, hair, style = 'short') {
-  const b = R(r * 0.72);
-  if (style === 'bald') return;
-  ctx.beginPath();
+/**
+ * Ear. Pushed out to -0.88r so it actually breaks the skull's contour: at the old -0.55r the circle sits ENTIRELY
+ * inside the skull outline at every head size, so in a union path it would contribute nothing to the silhouette
+ * and simply vanish. As a bump it costs no outlined object and still reads as an ear.
+ */
+function pathEar(ctx, r) {
+  const er = R(r * 0.26);
+  ctx.moveTo(-r * 0.88 + er, r * 0.15);
+  ctx.arc(-r * 0.88, r * 0.15, er, 0, Math.PI * 2);
+}
+function pathNose(ctx, r) {
+  ctx.moveTo(r * 0.7, r * 0.05); ctx.lineTo(r * 1.15, r * 0.3); ctx.lineTo(r * 0.7, r * 0.45); ctx.closePath();
+}
+function pathHair(ctx, r) {
   ctx.moveTo(r * 0.62, -r * 0.62);
   ctx.lineTo(r * 0.3, -r * 0.9); ctx.lineTo(r * 0.05, -r * 1.02); ctx.lineTo(-r * 0.35, -r * 0.98); ctx.lineTo(-r * 0.8, -r * 0.7);
   ctx.lineTo(-r * 1.02, -r * 0.2); ctx.lineTo(-r * 1.0, r * 0.25); ctx.lineTo(-r * 0.8, r * 0.1); ctx.lineTo(-r * 0.7, -r * 0.35);
   ctx.lineTo(-r * 0.3, -r * 0.62); ctx.lineTo(r * 0.15, -r * 0.6);
   ctx.closePath();
+}
+
+/**
+ * Skull + jaw + ear + nose as ONE path (head space): stroke the union once, fill it once, exactly as drawLimbSegs
+ * does for a limb. The ear and the nose become bumps in the head's contour instead of a ball and a wedge inked onto
+ * a face — a head was four separately outlined objects, which is what made faces read as a bundle of shapes.
+ * `opts.noNose` for rigs that draw their own (Brunhild's wedge sits below the eye row); `opts.noHair` / `hairStyle`.
+ */
+export function drawSkull(ctx, rig, r, skin, hair, opts = null) {
+  const jaw = opts && opts.jaw != null ? opts.jaw : 0.35;
+  const style = (opts && opts.hairStyle) || rig.hairStyle;
+  const hairOn = !!hair && !(opts && opts.noHair) && style !== 'bald';
+  ctx.beginPath();
+  pathSkull(ctx, r, jaw);
+  pathEar(ctx, r);
+  if (!(opts && opts.noNose)) pathNose(ctx, r);
+  celPath(ctx, rig, skin, 0, 0, r, 0.3, 0.3);
+  if (hairOn) drawHairCap(ctx, rig, r, hair, style);
+}
+
+/** Hair mass: a cap over the top/back of the skull. The three 1-2 px clump marks are gone — under the mark floor. */
+export function drawHairCap(ctx, rig, r, hair, style = 'short') {
+  if (style === 'bald') return;
+  ctx.beginPath(); pathHair(ctx, r);
   celPath(ctx, rig, hair, -r * 0.2, -r * 0.5, r, 0.4, 0.3);
-  if (rig.override) return;
-  ctx.fillStyle = tones(rig, hair).sh; ctx.fillRect(R(-r * 0.6), R(-r * 0.75), 1, 3); ctx.fillRect(R(-r * 0.1), R(-r * 0.9), 1, 2);
-  ctx.fillStyle = tones(rig, hair).hi; ctx.fillRect(R(-r * 0.45), -b - 2, 3, 1);
+}
+
+/** One brow as a single slanted bar of thickness `t`: (x0,y0) -> (x1,y1). Inherits the current fillStyle. */
+function brow(ctx, x0, y0, x1, y1, t) {
+  ctx.beginPath();
+  ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x1, y1 + t); ctx.lineTo(x0, y0 + t);
+  ctx.closePath(); ctx.fill();
 }
 
 /**
@@ -166,14 +189,19 @@ export function drawHairCap(ctx, rig, r, hair, style = 'short') {
  * Head space, rig faces right; the near eye sits at +x. `opts.noMouth` for bearded rigs, `opts.eyeY` to move the eye line.
  */
 export function drawFace(ctx, rig, r, face, opts = null) {
-  // readability pass: features scale with the head. Heads of radius >= 9.5 (or opts.big) get 5x4 / 4x4 eye whites with
-  // 2x2 pupils and 2px brows; smaller heads keep the 4x3 / 3x3 whites, 1x2 pupils and 1px brows.
+  // readability pass: the WHITES scale with the head — radius >= 9.5 (or opts.big) gets 5x4 / 4x4, smaller heads
+  // keep 4x3 / 3x3. Pupils and brows do NOT scale: they are 3 px everywhere, because below that they are erased by
+  // the section 0.7 mark floor and the face loses its eyes.
   const big = opts && opts.big != null ? !!opts.big : r >= 9.5;
   const ink = rig.col(rig.outline), white = rig.col('#f8f4ec'), ey = R(-r * 0.15) + (opts && opts.eyeY || 0);
   const ex = R(r * 0.45), fx = R(-r * 0.12) - (big ? 1 : 0), pupil = rig.col(opts && opts.pupil || '#1a1418');
   const angry = face === FACE.angry || face === FACE.shout || face === FACE.grit;
   const closed = face === FACE.closed || face === FACE.happy;
-  const ew = big ? 5 : 4, fw = big ? 4 : 3, eh = big ? 4 : 3, pw = big ? 2 : 1, bt = big ? 2 : 1;
+  // Pupil width and brow thickness have DIFFERENT constraints and must not share a number.
+  // A pupil below 3 px does not survive the section 0.7 mark floor, and a face whose pupils the floor has eaten
+  // has no eyes at all. A brow at 3 px is not a brow, it is a lid: it lands on the eye and the whole socket reads
+  // as one dark slab. So pupils are 3 px flat, brows stay 2 px, and the brow row sits clear of the whites.
+  const ew = big ? 5 : 4, fw = big ? 4 : 3, eh = big ? 4 : 3, pw = 3, bt = 2;
   if (face === FACE.dazed) {
     ctx.fillStyle = ink;
     for (let i = 0; i < 3; i++) { ctx.fillRect(ex - 1 + i, ey - 1 + i, 1, 1); ctx.fillRect(ex + 1 - i, ey - 1 + i, 1, 1); ctx.fillRect(fx - 1 + i, ey - 1 + i, 1, 1); ctx.fillRect(fx + 1 - i, ey - 1 + i, 1, 1); }
@@ -184,7 +212,9 @@ export function drawFace(ctx, rig, r, face, opts = null) {
   } else {
     // whites + pupils (pupils look toward facing; hurt = wide eyes with small pupils)
     const wide = face === FACE.hurt ? 1 : 0;
-    ctx.fillStyle = white; ctx.fillRect(ex - 1, ey - 1 - wide, ew, eh + wide); ctx.fillRect(fx - 1, ey - 1 - wide, fw, eh + wide);
+    // the whites grow with the pupil, or a 3 px pupil swallows them and the eye reads as a solid dot. They grow
+    // DOWNWARD only: growing upward would push the white under the brow row and reintroduce the lid.
+    ctx.fillStyle = white; ctx.fillRect(ex - 1, ey - 1 - wide, ew + 1, eh + wide + 1); ctx.fillRect(fx - 1, ey - 1 - wide, fw + 1, eh + wide + 1);
     ctx.fillStyle = pupil;
     if (face === FACE.hurt) { ctx.fillRect(ex + 1, ey, pw, 1); ctx.fillRect(fx, ey, pw, 1); }
     else { ctx.fillRect(ex + 1, ey - (angry ? 0 : 1), pw, 2); ctx.fillRect(fx, ey - (angry ? 0 : 1), pw, 2); }
@@ -193,8 +223,10 @@ export function drawFace(ctx, rig, r, face, opts = null) {
   // brows (stepped)
   ctx.fillStyle = rig.col(opts && opts.brow || rig.palette.hair || ink);
   const by = ey - 3 - (big ? 1 : 0);
-  if (angry) { ctx.fillRect(ex - 2, by - 1, 2, bt); ctx.fillRect(ex, by, 2, bt); ctx.fillRect(ex + 2, by + 1, ew - 3, bt); ctx.fillRect(fx - 1, by, 2, bt); ctx.fillRect(fx + 1, by + 1, fw - 2, bt); }
-  else if (face === FACE.hurt) { ctx.fillRect(ex - 2, by, 2, bt); ctx.fillRect(ex, by - 1, ew - 2, bt); ctx.fillRect(fx - 1, by, 1, bt); ctx.fillRect(fx, by - 1, fw - 1, bt); }
+  // An angry brow was a staircase of five 1-2 px rects. One slanted bar is the same expression in one mark, and
+  // reads at play size instead of dissolving into a smudge.
+  if (angry) { brow(ctx, ex - 2, by - 1, ex + ew - 1, by + 1, bt); brow(ctx, fx - 1, by, fx + fw - 1, by + 1, bt); }
+  else if (face === FACE.hurt) { brow(ctx, ex - 2, by + 1, ex + ew - 2, by - 1, bt); brow(ctx, fx - 1, by + 1, fx + fw - 1, by - 1, bt); }
   else if (face === FACE.happy) { ctx.fillRect(ex - 2, by - 1, ew, bt); ctx.fillRect(fx - 1, by - 1, fw, bt); }
   else { ctx.fillRect(ex - 2, by, ew, bt); ctx.fillRect(fx - 1, by, fw, bt); }
   if (opts && opts.noMouth) return;
