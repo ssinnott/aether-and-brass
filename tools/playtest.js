@@ -55,6 +55,52 @@ async function withPage(server, params, fn, { viewport = { width: 1280, height: 
   }
 }
 
+/**
+ * Two pages in ONE browser context, for the online co-op scenario. They must share a context or
+ * BroadcastChannel cannot reach between them (each browser.newPage() gets its own implicit context),
+ * and the pages then establish a real WebRTC data channel over loopback ICE candidates.
+ */
+async function withPair(server, hostParams, guestParams, fn, { viewport = { width: 1280, height: 720 } } = {}) {
+  const browser = await chromium.launch();
+  const ctx = await browser.newContext({ viewport });
+  const errs = [];
+  const pages = [];
+  try {
+    for (const params of [hostParams, guestParams]) {
+      const page = await ctx.newPage();
+      page.on('pageerror', (e) => errs.push('pageerror: ' + e.message));
+      page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); if (process.env.KEEP) console.log('   [browser]', m.text()); });
+      await page.goto(`http://localhost:${server.port}/index.html?autotest=1&${params}`, { waitUntil: 'load' });
+      await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 15000 });
+      pages.push(page);
+    }
+    await fn(pages[0], pages[1], makeApi(pages[0]), makeApi(pages[1]));
+    // A scenario may deliberately close a page (testing disconnect), so skip those.
+    for (const p of pages) if (!p.isClosed()) for (const e of await makeApi(p).errors()) errs.push(e);
+    assert(errs.length === 0, `no runtime errors in the netplay pair ${errs.length ? JSON.stringify(errs.slice(0, 3)) : ''}`);
+  } catch (e) {
+    failures++; results.push(`  FAIL: netplay scenario crashed: ${e.message}`); console.log(`  FAIL: netplay scenario crashed: ${e.message}`);
+    if (errs.length) console.log('   browser errors:', errs.slice(0, 5));
+    try { if (pages[0]) await pages[0].screenshot({ path: path.join(SHOTS, 'netplay-crash.png') }); } catch { /* ignore */ }
+  } finally {
+    await browser.close();
+  }
+}
+
+/** Focus a page, press ready, and wait until that page has actually registered it. A backgrounded
+ * page suspends rAF, so the press must be confirmed before the next page steals focus. */
+async function readyUp(page) {
+  await page.bringToFront();
+  for (let i = 0; i < 20; i++) {
+    await page.keyboard.press('KeyF');
+    try {
+      await page.waitForFunction(() => { const n = window.__game.game.net; return !!(n && n.lobby && n.lobby.myReady); }, null, { timeout: 1000 });
+      return true;
+    } catch { /* the page had not ticked yet; press again */ }
+  }
+  return false;
+}
+
 function makeApi(page) {
   return {
     step: (n) => page.evaluate((k) => window.__game.step(k), n),
@@ -80,6 +126,139 @@ function makeApi(page) {
 }
 
 const scenarios = {
+  // 0c. Co-op progress belongs to the PAIRING, not to either player. A new group starts on board 1
+  // however far either player has got solo, the host's board choice still wins, and nothing a group
+  // does can touch either player's solo save.
+  async netboard(server) {
+    const ROOM = 'NETBRD';
+    // The host arrives on board 2 (?stage=2 is its own session key); the guest has a clean save.
+    await withPair(server, `room=${ROOM}&transport=broadcast&host=1&stage=2`, `room=${ROOM}&transport=broadcast`, async (hostPage, guestPage, H, G) => {
+      for (const p of [hostPage, guestPage]) await p.evaluate(() => window.__game.startLoop());
+      for (const p of [hostPage, guestPage]) await p.waitForFunction(() => ((window.__game.netState() || {}).state === 'lobby'), null, { timeout: 20000 });
+
+      const before = await guestPage.evaluate(() => window.__game.progressState());
+      assert(before.isGroup && /^g:/.test(before.scope), `the lobby switched to the pairing's own progress scope (${before.scope})`);
+      assert(before.unlockedCount === 1, 'a brand new group starts with exactly one board open');
+      assert(before.unlocked[1] === false, 'the guest has not opened board 2 in this group');
+      const hostScope = await hostPage.evaluate(() => window.__game.progressState().scope);
+      assert(hostScope === before.scope, 'both peers derive the same group scope from the same two ids');
+      await guestPage.waitForFunction(() => ((window.__game.game.net || {}).lobby || {}).stage === 2, null, { timeout: 10000 });
+      assert(true, "the guest's lobby follows the host's board choice before the match starts");
+
+      for (const p of [hostPage, guestPage]) assert(await readyUp(p), 'the page registered its ready press');
+      for (const p of [hostPage, guestPage]) await p.waitForFunction(() => ((window.__game.netState() || {}).state === 'playing'), null, { timeout: 20000 });
+      await guestPage.waitForFunction(() => ((window.__game.netState() || {}).frame || -1) > 60, null, { timeout: 20000 });
+
+      // game.options is a copy of the boot options; beginMatch writes the session's board there.
+      const stages = await Promise.all([hostPage, guestPage].map((p) => p.evaluate(() => window.__game.game.options.stage)));
+      assert(stages[0] === 2 && stages[1] === 2, `both peers run the host's board (host ${stages[0]}, guest ${stages[1]})`);
+      const after = await guestPage.evaluate(() => window.__game.progressState());
+      assert(after.unlocked[1] === true, "the guest can play the host's board for this session");
+      assert(after.solo[1] === false, "the co-op session did not open board 2 on the guest's SOLO progress");
+      assert(!after.saved || !/"boards":\{".+"/.test(after.saved), `nothing was written to the guest's save on disk (${after.saved})`);
+      const st = await Promise.all([hostPage, guestPage].map((p) => p.evaluate(() => window.__game.netState())));
+      assert(st[0].desync === null && st[1].desync === null, 'no desync while running a board only the host had unlocked');
+      await G.shot('23-netplay-shared-board');
+    });
+  },
+
+  // 0b. The GUEST losing the host. This is the mirror of the netplay scenario's disconnect and it
+  // is the case that hard-coding slot 1 got wrong: on the guest the remote player is slot 0, and
+  // clearing both virtuals would also move the guest onto the other keyboard bindings mid-run.
+  async netdrop(server) {
+    const ROOM = 'NETDRP';
+    await withPair(server, `room=${ROOM}&transport=broadcast&host=1`, `room=${ROOM}&transport=broadcast`, async (hostPage, guestPage, H, G) => {
+      for (const p of [hostPage, guestPage]) await p.evaluate(() => window.__game.startLoop());
+      for (const p of [hostPage, guestPage]) await p.waitForFunction(() => ((window.__game.netState() || {}).state === 'lobby'), null, { timeout: 20000 });
+      for (const p of [hostPage, guestPage]) assert(await readyUp(p), 'the page registered its ready press');
+      for (const p of [hostPage, guestPage]) await p.waitForFunction(() => ((window.__game.netState() || {}).state === 'playing'), null, { timeout: 20000 });
+      await guestPage.waitForFunction(() => ((window.__game.netState() || {}).frame || -1) > 60, null, { timeout: 20000 });
+
+      await hostPage.close();
+      await guestPage.waitForFunction(() => ((window.__game.netState() || {}).state === 'ended'), null, { timeout: 20000 });
+      const after = await guestPage.evaluate(() => {
+        const w = window.__game.world, n = window.__game.game.net;
+        return { bots: (w.players || []).map((p) => !!(p && p.bot)), slot: n.localSlot, screen: window.__game.screen(), errs: window.__game.errors.length };
+      });
+      assert(after.slot === 1, 'the guest owns slot 1');
+      assert(after.bots[0] === true, 'the guest hands the REMOTE slot (0) to the bot, not its own character');
+      assert(after.bots[1] === false, "the guest's own character is still player-controlled");
+      assert(after.screen === 'gameplay' && after.errs === 0, 'the guest keeps playing with no errors');
+
+      // ...and the guest must still be driving its own character from its own keyboard (WASD),
+      // not the P2 bindings it would fall back to if both virtuals had simply been cleared.
+      await guestPage.bringToFront();
+      const x0 = await guestPage.evaluate(() => Math.round(window.__game.world.players[1].x));
+      await guestPage.keyboard.down('KeyD');
+      await guestPage.evaluate(() => new Promise((r) => setTimeout(r, 900)));
+      await guestPage.keyboard.up('KeyD');
+      const x1 = await guestPage.evaluate(() => Math.round(window.__game.world.players[1].x));
+      assert(x1 > x0, `the guest still moves on its own WASD keys after the host vanished (${x0} -> ${x1})`);
+    });
+  },
+
+  // 0. Online co-op end to end: two pages, a real WebRTC data channel, a synchronised match.
+  async netplay(server) {
+    const ROOM = 'NETTST';
+    await withPair(server, `room=${ROOM}&transport=broadcast&host=1`, `room=${ROOM}&transport=broadcast`, async (hostPage, guestPage, H, G) => {
+      const netState = (p) => p.evaluate(() => window.__game.netState());
+      const waitNet = async (p, want, ms = 20000) => {
+        await p.waitForFunction((w) => { const n = window.__game.netState(); return n && n.state === w; }, want, { timeout: ms });
+      };
+      // Both pages boot straight into the lobby from the ?room= invite link and connect.
+      assert((await H.screen()) === 'lobby' && (await G.screen()) === 'lobby', 'an invite link boots both pages into the lobby');
+      for (const p of [hostPage, guestPage]) await p.evaluate(() => window.__game.startLoop());
+      await Promise.all([waitNet(hostPage, 'lobby'), waitNet(guestPage, 'lobby')]);
+      const hs = await netState(hostPage), gs = await netState(guestPage);
+      assert(hs.slot === 0 && gs.slot === 1, `the host owns slot 0 and the guest slot 1 (got ${hs.slot}/${gs.slot})`);
+      assert(hs.room === ROOM && gs.room === ROOM, 'both peers agree on the room code');
+      await H.shot('20-lobby');
+
+      // Ready up on both sides; the host then broadcasts the session parameters.
+      for (const p of [hostPage, guestPage]) assert(await readyUp(p), 'the page registered its ready press');
+      await Promise.all([waitNet(hostPage, 'playing'), waitNet(guestPage, 'playing')]);
+      assert(true, 'both peers reached the playing state');
+      assert((await H.screen()) === 'gameplay' && (await G.screen()) === 'gameplay', 'both peers are in gameplay');
+
+      // Let the match run under lockstep, then compare frames and desync state.
+      await hostPage.waitForFunction(() => window.__game.netState().frame > 120, null, { timeout: 20000 });
+      const h2 = await netState(hostPage), g2 = await netState(guestPage);
+      assert(h2.desync === null && g2.desync === null, `no checksum desync after ${h2.frame} frames (host ${JSON.stringify(h2.desync)} guest ${JSON.stringify(g2.desync)})`);
+      assert(Math.abs(h2.frame - g2.frame) <= h2.delay + 2, `peers stay in lockstep (host f${h2.frame}, guest f${g2.frame}, delay ${h2.delay})`);
+      assert(h2.delay >= 2, `a sane input delay was negotiated (${h2.delay} frames)`);
+
+      // Real key presses on the guest must move the guest's own character on BOTH machines.
+      const posOf = async (p, slot) => (await p.evaluate((s) => { const pl = window.__game.summary().players; return pl && pl[s] ? Math.round(pl[s].x) : null; }, slot));
+      const before = await posOf(hostPage, 1);
+      await guestPage.bringToFront();
+      await guestPage.keyboard.down('KeyD');
+      await hostPage.waitForFunction((f) => window.__game.netState().frame > f, h2.frame + 90, { timeout: 20000 });
+      await guestPage.keyboard.up('KeyD');
+      const afterOnHost = await posOf(hostPage, 1), afterOnGuest = await posOf(guestPage, 1);
+      assert(before !== null && afterOnHost !== null, 'both slots exist on the host');
+      assert(afterOnHost > before, `the guest's key press moved player 2 on the HOST's machine (${before} -> ${afterOnHost})`);
+      assert(Math.abs(afterOnHost - afterOnGuest) <= 60, `both machines agree on player 2's position (host ${afterOnHost}, guest ${afterOnGuest})`);
+      await H.shot('21-netplay-host');
+      await G.shot('22-netplay-guest');
+
+      // Closing the guest must hand slot 2 to the bot rather than freezing the host.
+      const f3 = (await netState(hostPage)).frame;
+      await guestPage.close();
+      await hostPage.waitForFunction(() => { const n = window.__game.netState(); return n && n.state === 'ended'; }, null, { timeout: 20000 });
+      const h4 = await netState(hostPage);
+      assert(h4.state === 'ended', `the host detects the disconnect (${h4.reason})`);
+      const botOn = await hostPage.evaluate(() => { const p = window.__game.world && window.__game.world.players; return !!(p && p[1] && p[1].bot); });
+      assert(botOn, 'slot 2 was handed to the bot so the run survives the disconnect');
+      // The simulation must come off the lockstep gate and keep running on its own.
+      const posA = await posOf(hostPage, 0);
+      await hostPage.waitForFunction(() => window.__game.summary().screen === 'gameplay', null, { timeout: 5000 });
+      await hostPage.evaluate(() => new Promise((r) => setTimeout(r, 1500)));
+      const stillFine = await hostPage.evaluate(() => window.__game.errors.length === 0 && window.__game.screen() === 'gameplay');
+      assert(stillFine, 'the host keeps playing single-handed after the disconnect, with no errors');
+      assert(posA !== null && f3 > 0, `the match had run ${f3} lockstep frames before the disconnect`);
+    });
+  },
+
   // 1. Title screen renders.
   async boot(server) {
     await withPage(server, 'seed=1', async (g) => {

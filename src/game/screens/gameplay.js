@@ -50,6 +50,24 @@ export class GameplayScreen extends Screen {
     for (const s of opt.spawn || []) this.spawnEnemy(s.type, s.variant, s.dx, s.dz);
     if (!params.resume && !(opt.section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);
   }
+  /**
+   * Netplay status over the scene: a stall while the peer's input is late, and the banner shown
+   * when a session ends and the bot takes over slot 2.
+   */
+  drawNetStatus(ctx) {
+    const net = this.game.net;
+    if (!net) return;
+    if (net.active && net.waiting) {
+      const f = this.frame;
+      ctx.fillStyle = 'rgba(10,6,20,0.55)'; ctx.fillRect(0, VIEW_H / 2 - 22, VIEW_W, 44);
+      drawTextOutlined(ctx, 'WAITING FOR PLAYER ' + (net.remoteSlot + 1), VIEW_W / 2, VIEW_H / 2 - 14, { size: 2, color: '#4DF0E0', outline: '#0a3a38', align: 'center' });
+      drawTextOutlined(ctx, '.'.repeat(1 + ((f >> 4) % 3)), VIEW_W / 2, VIEW_H / 2 + 6, { size: 2, color: '#4DF0E0', outline: '#0a3a38', align: 'center' });
+    } else if (net.state === 'ended' && net.endReason && this.frame - (this.netEndedAt || (this.netEndedAt = this.frame)) < 240) {
+      ctx.fillStyle = 'rgba(10,6,20,0.6)'; ctx.fillRect(0, 40, VIEW_W, 30);
+      drawTextOutlined(ctx, String(net.endReason).toUpperCase(), VIEW_W / 2, 44, { size: 1, color: UI.red, outline: '#2a0808', align: 'center' });
+      drawTextOutlined(ctx, 'PLAYER 2 IS NOW A BOT', VIEW_W / 2, 58, { size: 1, color: UI.paper, outline: '#2a0808', align: 'center' });
+    }
+  }
   /** Swap the backdrop (StageRunner calls this on section changes). */
   setBackdrop(b) { this.backdrop = b; this.world.backdrop = b; }
   /** Add a player for character index `ci` in slot `slot`. */
@@ -68,9 +86,13 @@ export class GameplayScreen extends Screen {
   update() {
     super.update();
     const inp = this.game.input, world = this.world;
+    // Under netplay both slots are established by the lobby and every input arrives through the
+    // lockstep mask. joinPressed() and globalPressed() are local keyboard edges that never reach
+    // the peer, so acting on them here would advance one peer's simulation and not the other's.
+    const online = !!(this.game.net && this.game.net.active);
     // P2 drop-in (any P2-only key); the join key itself never doubles as a pause press
     let joinedNow = false;
-    if (!inp.joined(1) && inp.joinPressed(1) && this.players.length < 2) {
+    if (!online && !inp.joined(1) && inp.joinPressed(1) && this.players.length < 2) {
       inp.setJoined(1, true); joinedNow = true;
       const ci = this.game.options.chars[1] != null ? this.game.options.chars[1] : 1;
       this.addPlayer(ci, 1);
@@ -78,7 +100,8 @@ export class GameplayScreen extends Screen {
       this.hud.showBanner('P2 JOINS!', '', 60);
     }
     // pause: Escape (global) or a joined player's start button
-    let pause = inp.globalPressed('pause');
+    // Escape is folded into the `start` bit by the net session, so pause is a simulated event.
+    let pause = !online && inp.globalPressed('pause');
     for (let i = 0; i < 2 && !pause; i++) if (inp.joined(i) && !(i === 1 && joinedNow) && inp.pressed(i, 'start')) pause = true;
     if (pause && this.game.factories.pause && !this.gameOverShown) { this.game.audio.play('pause'); this.game.push('pause'); return; }
     this.time++;
@@ -131,13 +154,20 @@ export class GameplayScreen extends Screen {
     this.world.draw(ctx);
     this.runner.draw(ctx);
     this.hud.draw(ctx);
+    this.drawNetStatus(ctx);
     if (window.__game && window.__game.debug) this.world.drawDebug(ctx);
     if (this.gameOverTimer > 0 && !this.gameOverShown) {
       ctx.fillStyle = `rgba(0,0,0,${Math.min(0.5, this.gameOverTimer / GAME_OVER_DELAY * 0.5)})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
       drawTextOutlined(ctx, 'ALL HEROES DOWN', VIEW_W / 2, 150, { size: 3, color: UI.red, outline: '#2a1010', thickness: 1, align: 'center' });
     }
   }
-  exit() { this.game.players = []; if (this.runner) this.runner.dispose(); }
+  exit() {
+    // Any way out of the match ends the session: quitting to title, the results screen, a reset.
+    // Without this the lockstep pump keeps injecting the peer's masks into the title screen menu.
+    if (this.game.net && this.game.net.active) this.game.net.end('left the match');
+    this.game.players = [];
+    if (this.runner) this.runner.dispose();
+  }
 
   // ---------- window.__game hooks ----------
   summary() {

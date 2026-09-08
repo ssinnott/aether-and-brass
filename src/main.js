@@ -16,7 +16,9 @@ import { GameplayScreen } from './game/screens/gameplay.js';
 import { IntroScreen } from './game/screens/intro.js';
 import { PauseScreen } from './game/screens/pause.js';
 import { GameOverScreen } from './game/screens/gameover.js';
+import { LobbyScreen } from './game/screens/lobby.js';
 import { ResultsScreen } from './game/screens/results.js';
+import { createNetSession } from './net/session.js';
 import { progress } from './game/progress.js';
 import { CHARACTERS } from './content/characters/index.js';
 import { ENEMY_LIST, ENEMY_GALLERY } from './content/enemies/index.js';
@@ -46,6 +48,11 @@ export function parseOptions(search = window.location.search) {
     // which board to play: 1-based stage number (see content/stage/index.js). Honoured outside dev mode too so a
     // link can point straight at a board, and it opens that board on BOARD SELECT for this page load (game/progress.js).
     stage: q.has('stage') ? (parseInt(q.get('stage'), 10) || 1) : 1,
+    // Online co-op invite links: ?room=CODE joins that room, ?host=1 hosts it, ?transport= picks
+    // the signalling strategy (mqtt by default; broadcast is same-machine tabs and the e2e test).
+    room: (q.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8),
+    host: flag('host'),
+    transport: ['mqtt', 'broadcast', 'manual'].includes(q.get('transport')) ? q.get('transport') : 'mqtt',
     // open every board on BOARD SELECT for this page load; `resetprogress` wipes the saved unlocks instead.
     unlockall: flag('unlockall'),
     resetprogress: flag('resetprogress'),
@@ -89,6 +96,7 @@ function boot() {
   game.registerScreen('select', (g) => new SelectScreen(g));
   game.registerScreen('intro', (g) => new IntroScreen(g));
   game.registerScreen('gallery', (g) => new GalleryScreen(g));
+  game.registerScreen('lobby', (g) => new LobbyScreen(g));
   game.registerScreen('gameplay', (g) => new GameplayScreen(g));
   game.registerScreen('pause', (g) => new PauseScreen(g));
   game.registerScreen('gameover', (g) => new GameOverScreen(g));
@@ -97,13 +105,25 @@ function boot() {
   let showDebug = options.debug;
   let frameCounter = 0;
 
+  /** The live online co-op session, or null in single player. Screens reach it as `game.net`. */
+  let net = null;
+  game.createNet = (o) => {
+    net = createNetSession({ game, input, ...o });
+    game.net = net;
+    return net;
+  };
+
   function update() {
     try {
       touch.update();
+      // Netplay drives both slots from the lockstep buffers, so the local devices are sampled and
+      // the delayed masks injected before input.update() turns them into edges.
+      if (net && net.active) net.beforeStep();
       input.update();
       if (input.globalPressed('mute')) audio.toggleMute();
       if (input.globalPressed('debug')) showDebug = !showDebug;
       game.update();
+      if (net && net.active) net.afterStep(hooks.world);
       frameCounter++;
     } catch (e) { recordError(e); }
   }
@@ -112,7 +132,8 @@ function boot() {
     ctx.font = '10px monospace'; ctx.textBaseline = 'top';
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, VIEW_H - 12, 210, 12);
     ctx.fillStyle = '#9f9';
-    ctx.fillText(`fps ${loop.fps} f${frameCounter} scr:${game.screenId()} p:${particles.count} rng:${(rng.state >>> 0).toString(16).slice(0, 6)}`, 2, VIEW_H - 11);
+    const nd = net && net.ls ? ` net:${net.state} f${net.ls.frame} d${net.delay} rtt${Math.round(net.rtt || 0)}${net.waiting ? ' WAIT' : ''}` : '';
+    ctx.fillText(`fps ${loop.fps} f${frameCounter} scr:${game.screenId()} p:${particles.count} rng:${(rng.state >>> 0).toString(16).slice(0, 6)}${nd}`, 2, VIEW_H - 11);
     if (hooks.errors.length) {
       ctx.fillStyle = 'rgba(140,0,0,0.85)'; ctx.fillRect(0, 0, VIEW_W, 12 * Math.min(4, hooks.errors.length) + 4);
       ctx.fillStyle = '#fff';
@@ -122,13 +143,18 @@ function boot() {
   }
   function render() {
     try {
+      // Runs every rAF even while the simulation is gated: a stalled peer must keep retransmitting
+      // its input window or two peers stalled on the same frame deadlock permanently.
+      if (net) net.pump();
       game.draw(ctx);
       touch.draw(ctx);
       if (showDebug || hooks.errors.length) drawDebug();
     } catch (e) { recordError(e); }
     view.present();
   }
-  const loop = createLoop({ update, render, testMode: options.autotest });
+  // In netplay the fixed step waits for the peer's input; rendering is never gated, so the game
+  // keeps drawing a "waiting" overlay instead of freezing.
+  const loop = createLoop({ update, render, testMode: options.autotest, canUpdate: () => !net || !net.active || net.canStep() });
 
   // ---- window.__game (section 12 + 15). Screen-specific hooks delegate to the top screen when it implements them. ----
   const delegate = (name, fallback) => (...args) => {
@@ -157,6 +183,21 @@ function boot() {
     fillMeter: delegate('fillMeter', undefined),
     facePlayerToNearestEnemy: delegate('facePlayerToNearestEnemy', undefined),
     toggleDebug() { showDebug = !showDebug; return showDebug; },
+    /** Online co-op state for tools/playtest.js. */
+    netState() { return net ? { state: net.state, room: net.room, slot: net.localSlot, delay: net.delay, waiting: net.waiting, frame: net.ls ? net.ls.frame : -1, desync: net.ls ? net.ls.desync : null, reason: net.endReason } : null; },
+    /** Board-unlock state, for tools/playtest.js. `solo` and `saved` prove co-op left the solo save alone. */
+    progressState() {
+      let saved = null;
+      try { saved = window.localStorage.getItem('aetherAndBrass.progress.v1'); } catch (e) { saved = null; }
+      const here = progress.scope;
+      const readAt = (sc) => { progress.setScope(sc); const u = [0, 1, 2, 3].map((i) => progress.isUnlocked(i)); progress.setScope(here); return u; };
+      return { scope: here, isGroup: progress.isGroup, unlockedCount: progress.unlockedCount(),
+        unlocked: [0, 1, 2, 3].map((i) => progress.isUnlocked(i)), solo: readAt('solo'), saved };
+    },
+    /** Netplay tests need the real gated rAF loop; autotest otherwise leaves it stopped. */
+    startLoop() { loop.start(true); return true; },
+    stopLoop() { loop.stop(); return true; },
+    gated() { return loop.gated; },
   });
   Object.defineProperties(hooks, {
     /** Live World of the current gameplay screen (null when none). */
@@ -166,9 +207,11 @@ function boot() {
   });
 
   // ---- initial screen ----
-  const start = options.skipTo && game.factories[options.skipTo] ? options.skipTo : 'title';
+  // ?room=CODE (or ?host=1) is an invite link: go straight to the lobby, already connecting.
+  const invited = !!(options.room || options.host);
+  const start = options.skipTo && game.factories[options.skipTo] ? options.skipTo : invited ? 'lobby' : 'title';
   try {
-    game.push(start, { chars: options.chars });
+    game.push(start, { chars: options.chars, autoRoom: invited });
   } catch (e) { recordError(e); if (start !== 'title') game.reset('title'); }
   hooks.ready = true;
   if (options.autotest) render(); else loop.start();
