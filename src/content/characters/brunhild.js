@@ -206,7 +206,7 @@ const build = {
   scale: 1, palette: PAL, outline: '#1E1A22', outlineWidth: 1, smearColor: '#D9C9A8',
   // readability knobs at their defaults, spelled out because this file is the reference (ART_STYLE section 0):
   // contact shadow under every limb, far limbs 38 % darker / 25 % greyer, two tones on parts thinner than 8 px
-  contactShadow: true, farShade: 0.62, farDesat: 0.25, thinR: 4,
+  farShade: 0.62, farDesat: 0.25,
   // 68 px tall, 3 heads: a 22 px head so the big-face features (5x4 eyes, 2 px brows) and the goggles get their rows
   proportions: { headR: 11, neck: 2, torsoW: 30, torsoH: 22, hip: 26, upperArm: 12, lowerArm: 11, armR: 6, handR: 5, upperLeg: 10, lowerLeg: 10, legR: 6.5, footL: 13, footH: 6, shoulderX: 3, hipX: 5 },
   parts: { head: drawHead, face: drawFaceBeard, torso: drawTorso, hips: drawHips, foot: drawBootB, hand: drawHand },

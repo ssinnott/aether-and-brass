@@ -188,7 +188,7 @@ function portrait(ctx, x, y, s) {
 
 const build = {
   scale: 1, palette: PAL, outline: '#1E1A22', outlineWidth: 1, smearColor: '#E8E8F0',
-  contactShadow: true, farShade: 0.62, farDesat: 0.25, thinR: 4,
+  farShade: 0.62, farDesat: 0.25,
   // 79 px tall, ~4 heads: 20 px head (big-face rows + hat), broad-shouldered 24 px coat, long legs
   proportions: { headR: 10, neck: 3, torsoW: 24, torsoH: 25, hip: 20, upperArm: 13, lowerArm: 12, armR: 4.5, handR: 5, upperLeg: 15, lowerLeg: 15, legR: 5.5, footL: 12, footH: 5, shoulderX: 3, hipX: 4, bulge: 0.5, neckR: 3.5 },
   parts: { head: drawHead, face: drawFaceRook, beard: drawBeard, hat: drawTricorne, torso: drawTorso, hips: drawHips, foot: drawBootR, hand: drawHand, shoulder: drawEpaulette },

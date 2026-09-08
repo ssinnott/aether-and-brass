@@ -246,7 +246,7 @@ const build = {
   scale: 1, palette: PAL, outline: INK, outlineWidth: 1, smearColor: '#E8D8A0',
   // the far claw arm and far piston leg are pushed 45 % darker and greyer (ART_STYLE 0.3) and every near limb crossing the
   // chassis gets a heavier contact shadow, so the two arms and the two legs never merge into one scaffold
-  contactShadow: 0.42, farShade: 0.55, farDesat: 0.32, thinR: 4,
+  farShade: 0.55, farDesat: 0.32,
   // 85 px tall scaffold: 26 x 30 frame, 15 + 14 piston arms with 7 px claws, 13 + 13 piston legs on 13 px plates; the gnome's
   // 18 px head sits 10 px above the frame (neck) so her body fits inside the cage; bulge 0 = machine limbs
   // shoulderX 11 (torso half-width is 13): the claw arms are mounted on the OUTSIDE of the chassis, near arm in front of the

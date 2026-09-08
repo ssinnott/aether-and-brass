@@ -334,7 +334,7 @@ function engineBoiler(ctx, rig) {
 }
 
 const ENGINE_BUILD = {
-  scale: 2.45, palette: ENGINE_PAL, outline: OL, outlineWidth: 1, ramp: { sh: 0.6 }, thinR: 5, hiMin: 7, contactShadow: true, smearColor: STEEL,
+  scale: 2.45, palette: ENGINE_PAL, outline: OL, outlineWidth: 1, ramp: { sh: 0.6 }, smearColor: STEEL,
   proportions: { headR: 8, neck: 3, neckR: 5, torsoW: 32, torsoH: 31, hip: 22, upperArm: 15, lowerArm: 13, armR: 5.5, handR: 5.5,
     upperLeg: 16, lowerLeg: 15, legR: 5.5, footL: 16, footH: 6, shoulderX: 15, hipX: 6, bulge: 0 },
   parts: { torso: engineBarrel, hips: engineHub, neck: engineCollar, head: engineDome, face: noFace, shoulder: engineShoulder,
@@ -707,7 +707,7 @@ function vaneDropped(ctx, rig, pose) {
 }
 
 const VANE_BUILD = {
-  scale: 1.15, palette: VANE_PAL, outline: '#191622', outlineWidth: 1, thinR: 4, hiMin: 6, contactShadow: true, smearColor: BLADE,
+  scale: 1.15, palette: VANE_PAL, outline: '#191622', outlineWidth: 1, smearColor: BLADE,
   face: { brow: '#6E6E7A', eyeY: -1 }, hairStyle: 'bald', jaw: 0.3,
   proportions: { headR: 8.5, neck: 3.5, neckR: 3, torsoW: 19, torsoH: 27, hip: 15, upperArm: 14, lowerArm: 13, armR: 3.8, handR: 4.6,
     upperLeg: 17, lowerLeg: 17, legR: 4.6, footL: 11, footH: 5, shoulderX: 3, hipX: 4, bulge: 0.35 },

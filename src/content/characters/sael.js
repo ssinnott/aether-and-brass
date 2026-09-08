@@ -158,7 +158,7 @@ function drawSatchel(ctx, rig) {
 }
 
 const build = {
-  scale: 1, palette: PAL, outline: '#1E1A22', outlineWidth: 1, smearColor: '#BFEFFF', contactShadow: true, farShade: 0.62, farDesat: 0.25, thinR: 4,
+  scale: 1, palette: PAL, outline: '#1E1A22', outlineWidth: 1, smearColor: '#BFEFFF', farShade: 0.62, farDesat: 0.25,
   face: { brow: BROW, big: true },
   // 81 px tall, ~4 heads: long legs (17 + 17), slim 17 px torso, thin limbs, big 19 px head so the goggles and face get their rows
   proportions: { headR: 9.5, neck: 3, torsoW: 17, torsoH: 24, hip: 14, upperArm: 14, lowerArm: 13, armR: 3.5, handR: 4.5, upperLeg: 17, lowerLeg: 17, legR: 4.5, footL: 11, footH: 5, shoulderX: 2, hipX: 3, bulge: 0.55, neckR: 3 },

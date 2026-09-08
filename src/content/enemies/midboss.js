@@ -297,7 +297,7 @@ function hoistCockpit(ctx, rig, pose, inf) {
 }
 
 const HOISTER_BUILD = {
-  scale: 1.9, palette: HOISTER_PAL, outline: OL, outlineWidth: 1, ramp: { sh: 0.6 }, thinR: 5, hiMin: 7, contactShadow: true, smearColor: STEEL,
+  scale: 1.9, palette: HOISTER_PAL, outline: OL, outlineWidth: 1, ramp: { sh: 0.6 }, smearColor: STEEL,
   proportions: { headR: 8, neck: 10, torsoW: 30, torsoH: 22, hip: 26, upperArm: 13, lowerArm: 12, armR: 6, handR: 5, upperLeg: 10, lowerLeg: 10, legR: 6, footL: 14, footH: 6, shoulderX: 15, hipX: 8, bulge: 0, neckR: 3 },
   parts: { torso: hoistChassis, hips: hoistHips, neck: hoistSeat, head: hoistCockpit, face: gobFace, hat: grubGear, shoulder: hoistShoulder,
     armUpper: hoistArmUpper, armLower: hoistArmLower, hand: hoistClaw, legUpper: hoistLegUpper, legLower: hoistLegLower, foot: hoistFoot },
@@ -491,7 +491,7 @@ function drawLedger(ctx, rig) {
   band(ctx, rig, -hw - 9, -2, 11, 4, BRASSY, 1);   // brass clasp on leather: a material change, widened 2 -> 4 to take ink
 }
 const GRUBBIK_BUILD = {
-  scale: 1.0, palette: GRUBBIK_PAL, outline: GOB.outline, outlineWidth: 1, thinR: 4, contactShadow: true, clan: BAND, smearColor: '#E8D8A0',
+  scale: 1.0, palette: GRUBBIK_PAL, outline: GOB.outline, outlineWidth: 1, clan: BAND, smearColor: '#E8D8A0',
   gob: { tunic: 'waistcoat', shirt: SHIRT, shorts: SHORTS },
   proportions: { ...GOB_PROPS, headR: 11, neck: 2, torsoW: 22, torsoH: 22, hip: 18, upperArm: 15, lowerArm: 14, armR: 4.2, handR: 5, upperLeg: 11, lowerLeg: 10, legR: 5, footL: 10, footH: 5 },
   parts: { ...GOB_PARTS, armLower: gobCuffArm, hat: grubGear },

@@ -38,8 +38,13 @@ export const DEFAULT_PROPORTIONS = Object.freeze({
 
 /** Far-limb darkening (brightness factor) and desaturation; build.farShade / build.farDesat override. */
 const FAR_SHADE = 0.62, FAR_DESAT = 0.25;
-/** Default contact-shadow alpha (build.contactShadow: true | false | number). */
-const CONTACT_ALPHA = 0.3;
+/**
+ * Default contact-shadow alpha (build.contactShadow: true | false | number). OFF by default: the translucent dark
+ * capsule under every limb segment was eight extra marks per keyframe whose whole job was to separate a limb from
+ * what it crosses — which a 1 px outline that actually lands on the pixel grid now does on its own, without the
+ * soft grey haze. A rig that genuinely needs it can still set build.contactShadow: true (or a number).
+ */
+const CONTACT_ALPHA = 0;
 // Flash / tint offscreen: must contain every rig pose (Regent Engine at scale 2.4 spans x -205..165, y -267..162 around the feet;
 // dodge rolls rotate the body below the feet line), otherwise hit flashes render as clipped silhouettes.
 const OFF_W = 480, OFF_H = 480, OFF_OX = 240, OFF_OY = 300;
@@ -73,7 +78,7 @@ export function buildRig(build = {}) {
     build, scale: build.scale || 1, p, palette,
     paletteFar: farPalette(palette, build.farShade != null ? build.farShade : FAR_SHADE, build.farDesat != null ? build.farDesat : FAR_DESAT),
     /** Contact-shadow alpha under near limbs (0 = off). */
-    contactAlpha: cs === false ? 0 : typeof cs === 'number' ? cs : CONTACT_ALPHA,
+    contactAlpha: cs === false ? 0 : cs === true ? 0.3 : typeof cs === 'number' ? cs : CONTACT_ALPHA,
     /** Shading budget (see shading.js): thinR = radius below which cel parts get 2 tones; hiMin = smallest half-extent
      *  of a clipped shape that gets a highlight cap; flatR = radius below which a part is one flat tone; tonesN = 2
      *  (build.tones: 2) drops every highlight cap so the only light marks are explicit rimRect / rimTop rims. */
