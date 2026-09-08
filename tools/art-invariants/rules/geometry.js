@@ -162,7 +162,7 @@ const CACHE = new WeakMap();
 function emptyAnalysis() {
   return {
     frames: 0,
-    outline: { badPaired: new Map(), unpaired: new Map(), bareFills: new Map() },
+    outline: { badPaired: new Map(), unpaired: new Map(), bareFills: new Map(), bareRects: new Map() },
     leak: { palette: new Map(), identity: new Map() },
     flash: { bad: new Map(), notShorter: [] },
     hygiene: { gradients: [], nondet: [], balance: new Set(), lightBad: [] },
@@ -282,7 +282,12 @@ function scanFrame(A, rig, ops, ctx3, where) {
 
     // ---- §0.2 a faked internal boundary: a big fill in a palette base colour, no outline, different from the
     // colour of the outlined shape it sits inside (a same-colour re-fill is a cut-back, not a new boundary).
-    if (e.op === 'fill' && e.bbox && c) {
+    // Mutation testing found that a faked boundary drawn with ctx.fillRect walked straight past this check,
+    // which only looked at path fills. Widening the ERROR to cover rects fires on the reference cast too (264
+    // substantial unoutlined accent rects on Brunhild alone, mostly weapon bands), so it cannot be an error
+    // without re-cutting the calibration. The rect case is therefore collected separately and reported by
+    // geom/outline-rect-boundary at warn severity: visible, and honest about which content it lands on.
+    if ((e.op === 'fill' || e.op === 'fillRect') && e.bbox && c) {
       const prev = draw[k - 1];
       const outlined = prev && prev.op === 'stroke' && H.normHex(prev.strokeStyle) === outline;
       if (outlined) {
@@ -291,7 +296,20 @@ function scanFrame(A, rig, ops, ctx3, where) {
       } else if (e.alpha >= 1 && bases.has(c) && !glowBases.has(c) && c !== '#ffffff') {
         const local = e.bbox.half / (e.scale || 1);
         const hiMin = rig.hiMin != null ? rig.hiMin : 6;
-        if (local >= hiMin && !(parentColours.get(hook) || new Set()).has(c)) {
+        // half-extent is half the LONGER side, which is the right measure for a path fill but not for a rect: a
+        // 17x2 binding band on a weapon haft has a half-extent of 8.5 px while being a thin detail line, not a
+        // region that could fake a boundary. So a rect must also be substantial on its SHORT side. (Widening the
+        // check to fillRect without this fired 418 times on Brunhild alone, all of them weapon bands.)
+        // half is the half-DIAGONAL, the right size measure for a path fill but not for a rect: a 16x5 binding
+        // band has a half-diagonal of 8.4 px while being a thin detail line, so a rect must also be substantial
+        // on its short side before it could read as a region that fakes a boundary.
+        const minSide = Math.min(e.bbox.x1 - e.bbox.x0, e.bbox.y1 - e.bbox.y0) / (e.scale || 1);
+        const fresh = !(parentColours.get(hook) || new Set()).has(c);
+        if (e.op === 'fillRect') {
+          if (local >= hiMin && minSide >= hiMin && fresh) {
+            bump(A.outline.bareRects, `${hook || '<default renderer>'} ${c} ${fmt(minSide, 1)}x${fmt(local * 2, 1)} px`);
+          }
+        } else if (local >= hiMin && fresh) {
           bump(A.outline.bareFills, `${hook || '<default renderer>'} ${c} half-extent ${fmt(local, 1)} px >= hiMin ${hiMin}`);
         }
       }
@@ -595,6 +613,30 @@ export const RULES = [
       if (segments > T.maxSegments) out.push({ message: `${segments} chain segments (bound ${T.maxSegments}; §9 counts each segment as a cel shape)`, detail: table });
       out.push({ severity: 'info', message: `${names.length} chain(s), ${segments} segments`, detail: table });
       return out;
+    },
+  },
+
+  {
+    id: 'geom/outline-rect-boundary',
+    section: 'ART_STYLE \u00a70.2',
+    severity: 'warn',
+    describe: 'Outline internal boundaries painted with fillRect, not just those painted as path fills.',
+    check(subject) {
+      const A = analyse(subject);
+      if (!A || !A.outline) return [];
+      if (!A.outline.bareRects.size) return [{ severity: 'info', message: 'no unoutlined rect boundaries' }];
+      return [{
+        message: `${total(A.outline.bareRects)} rect fill(s) paint a new internal boundary with no outline`,
+        detail: [
+          'Same defect as geom/outline-stroke-contract, drawn with ctx.fillRect instead of a path fill: a rect at or',
+          'above hiMin on BOTH sides, in a palette base colour, unoutlined, and a different colour from the outlined',
+          'shape it sits inside. Found by mutation testing, which showed the error-severity rule missed it entirely.',
+          'It is a WARNING rather than an error because it also fires on the stage-1 reference cast that defines the',
+          'invariants (Brunhild alone has 264, mostly weapon bands). Promoting it to error is a deliberate art',
+          'decision -- add the outlines to the reference first, then raise the severity -- not a threshold tweak.',
+          ...topLines(A.outline.bareRects),
+        ],
+      }];
     },
   },
 

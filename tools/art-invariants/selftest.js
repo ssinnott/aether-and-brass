@@ -88,6 +88,9 @@ expect('geom/draw-budget', 'brassbound:footman', (s) => { const t = s.build.part
 expect('geom/rest-pose-open', 'brassbound:duelist', (s) => { s.build.weapon = { ...s.build.weapon, headAt: 90 }; }, 'weapon head dragged to the floor');
 expect('geom/glow-flat-and-cored', 'brassbound:footman', (s) => { const t = s.build.parts.torso; s.build.parts = { ...s.build.parts, torso(ctx, rig, pose, inf) { const r = t && t(ctx, rig, pose, inf); if (!rig.override && rig.palette.glow) { ctx.fillStyle = tones(rig, rig.palette.glow).hi; ctx.fillRect(-3, -3, 6, 6); } return r; } }; }, 'ramped glow tone');
 
+// sael, not brunhild: brunhild already trips this rule at baseline (weapon bands), so mutating her would prove
+// nothing. sael is clean, so a 12x12 unoutlined accent rect is the whole signal.
+expect('geom/outline-rect-boundary', 'sael', (s) => { const t = s.build.parts.torso; s.build.parts = { ...s.build.parts, torso(ctx, rig, pose, inf) { const r = t && t(ctx, rig, pose, inf); if (!rig.override) { ctx.fillStyle = rig.col(rig.palette.accent); ctx.fillRect(-6, -6, 12, 12); } return r; } }; }, 'unoutlined 12x12 accent rect');
 expect('geom/outline-coloured-seam', 'brassbound:footman', (s) => { const t = s.build.parts.torso; s.build.parts = { ...s.build.parts, torso(ctx, rig, pose, inf) { const r = t && t(ctx, rig, pose, inf); if (!rig.override) { ctx.fillStyle = rig.outline; ctx.fillRect(-8, 0, 16, 1); } return r; } }; }, 'outline-coloured 16x1 seam');
 expect('anim/hitbox-placement', 'brunhild', (s) => { for (const f of s.anims.idle.frames) f.hitbox = { id: 'x', x: 10, y: -20, w: 20, h: 20 }; }, 'hitbox on idle');
 expect('anim/locomotion-shape', 'sael', (s) => { for (const f of s.anims.run.frames) { f.pose.torso = { ...(f.pose.torso || {}), rot: 0 }; f.pose.legN = { upper: 0, lower: 0 }; f.pose.legF = { upper: 0, lower: 0 }; } }, 'run with no lean or stride');

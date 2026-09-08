@@ -311,3 +311,35 @@ codebase — `farShade()` in `src/art/palettes.js` is the real one.)
 - **The `--only` and `--subject` filters can hide pairwise findings** (see §3). CI should run the suite unfiltered.
 - **`anim/attack-face-aggressive` is currently silent on the whole cast** — 16 subjects skip it as expressionless
   and the rest pass. It has teeth (the selftest proves it), but it is doing less work than its name suggests.
+
+## Known gaps (mutation testing, 24 injected defects, 12 caught)
+
+The suite was mutation-tested by injecting defects and checking whether it fired. It caught 12 of 24. The misses
+are recorded here rather than quietly left, because a suite's blind spots are part of its contract:
+
+| defect injected | why it survived |
+| --- | --- |
+| smear removed from a swing hit key | `anim/attack-beats` is warn-only; no error covers smear |
+| `punish: true` removed from a recovery key | **no rule reads `punish`** |
+| one ground key left without `legR`/`legL` | `anim/legs-explicit` has a budget of 1, so the first offence is free |
+| 140 deg jump between adjacent non-smear keys | no rule; the hold clause is scoped to `attack1..attack4` |
+| boots given the same value as trousers at a different hue | `palette/value-ladder-adjacent` silent on the mutated pair |
+| aether cyan re-exported from `src/art/palettes.js` | the rule greps `src/content` for the literal |
+| near-miss cyan `#4CEFE1` (RGB distance 2) | the rule matches the literal, not a distance |
+| outline dropped from a shape drawn with `fillRect` | now reported by `geom/outline-rect-boundary` (warn) |
+| outline dropped where the colour is a module constant | the check is gated on palette base colours |
+| second highlight band stacked on a limb | no rule |
+| rig floating 6 px off the floor on a ground key | `geom/pose-audit` did not fire |
+| hat moved down onto the eye row | the eye-row rule was dropped as too false-positive-prone |
+
+### The calibration ceiling
+
+`geom/outline-rect-boundary` is a warning, not an error, and the reason is worth stating plainly. Widening the
+faked-boundary check to cover `fillRect` fires on the stage-1 reference cast as well: 264 substantial unoutlined
+accent rects on Brunhild alone, mostly weapon bands. The suite is calibrated so that reference content defines
+the invariants and must report zero errors -- which is right for consistency, but it means the suite cannot set a
+quality ceiling above what we already draw. Where the reference itself fakes boundaries, the suite has been
+taught to accept it.
+
+Promoting this rule to error is therefore an art decision, not a threshold tweak: outline the reference cast
+first, then raise the severity.
