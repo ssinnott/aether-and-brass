@@ -79,8 +79,6 @@ export class LobbyScreen extends Screen {
     });
     this.net = net;
     net.lobby.myChar = this.charCursor;
-    // The host's save decides which boards this session can play (see net/session.js beginMatch).
-    if (this.isHost) net.lobby.stage = this.game.options.stage || 1;
     // The address bar must hold a GUEST-facing link. Sharing our own URL would carry host=1, and
     // two hosts in a room never see each other: signal.js filters by role, so both sit waiting.
     if (this.isHost && this.mode !== 'manual' && typeof history !== 'undefined' && history.replaceState) {
@@ -97,7 +95,7 @@ export class LobbyScreen extends Screen {
     else if (this.mode !== 'manual') this.status = this.isHost ? 'WAITING FOR PLAYER 2' : 'CONNECTING';
   }
 
-  /** Board indices the HOST has unlocked. The guest never picks; it follows. */
+  /** Board indices this GROUP has unlocked. The host picks; the guest follows. */
   boardOptions() { return STAGES.map((_, i) => i).filter((i) => progress.isUnlocked(i)); }
 
   cycleBoard(dir) {
@@ -109,7 +107,17 @@ export class LobbyScreen extends Screen {
   }
 
   onNetState(s) {
-    if (s === 'lobby') { this.phase = 'lobby'; this.status = ''; this.killOverlay(); this.game.audio.play('join'); }
+    if (s === 'lobby') {
+      this.phase = 'lobby'; this.status = ''; this.killOverlay(); this.game.audio.play('join');
+      // Only now are the player ids exchanged, so only now does progress read this PAIRING's
+      // unlocks (game/progress.js). A new group starts on board 1 however far either player has got
+      // solo; a `?stage=N` link is still a key to that board, so honour it when it is open.
+      if (this.isHost) {
+        const opts = this.boardOptions();
+        const wanted = (this.game.options.stage || 1) - 1;
+        this.net.setStage((opts.includes(wanted) ? wanted : opts[0] || 0) + 1);
+      }
+    }
     else if (s === 'ended') { this.phase = 'error'; this.error = (this.net && (this.net.error || this.net.endReason)) || 'disconnected'; }
   }
 
@@ -263,7 +271,9 @@ export class LobbyScreen extends Screen {
       const opts = this.boardOptions().length;
       drawText(ctx, this.isHost ? `BOARD  < ${bi + 1} OF ${opts} >` : "HOST'S BOARD", 160, 178, { size: 1, color: UI.brass });
       drawText(ctx, board ? board.name : '?', 250, 178, { size: 1, color: UI.paper });
-      if (!this.isHost && !progress.isUnlocked(bi)) drawText(ctx, 'OPENED FOR THIS SESSION', 320, 192, { size: 1, color: '#7ef07e', align: 'center' });
+      // Co-op progress belongs to the pairing, not to either player's solo save.
+      drawText(ctx, opts > 1 ? `YOUR GROUP HAS OPENED ${opts} BOARDS TOGETHER` : 'A NEW GROUP STARTS ON BOARD 1 - CLEAR IT TOGETHER TO OPEN THE NEXT',
+        320, 192, { size: 1, color: opts > 1 ? '#7ef07e' : UI.steel, align: 'center' });
       drawText(ctx, this.net.lobby.myReady ? 'JUMP: CHANGE YOUR MIND'
         : this.isHost ? 'LEFT/RIGHT: HERO    UP/DOWN: BOARD    ATTACK: READY' : 'LEFT/RIGHT: PICK YOUR HERO    ATTACK: READY',
         320, 208, { size: 1, color: UI.brass, align: 'center' });

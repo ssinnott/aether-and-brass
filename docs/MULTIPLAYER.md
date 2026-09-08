@@ -27,17 +27,28 @@ input masks over a WebRTC data channel, with no server we operate.
 | UI | `src/game/screens/lobby.js` | Host/join, hero pick, host's board pick, ready; `?room=CODE` invite links |
 | Tests | `tools/nettest.js`, `tools/playtest.js` | Pure-Node suites plus a two-page end-to-end match |
 
-### Shared state: board unlocks
+### Shared state: board unlocks are per-group
 
 Board unlocks (`src/game/progress.js`) live in each player's own `localStorage`, so the two
-peers genuinely disagree about what is playable — and a lockstep peer cannot simulate a board
-it will not load. **The host's game is the one being played:**
+peers genuinely disagree about what is playable — and a lockstep peer cannot simulate a board it
+will not load. Rather than have one player's save leak into the other's, **co-op is its own
+campaign**: progress is namespaced by scope, and a pairing earns its own way up from board 1.
 
-- The host picks the board in the lobby, from the boards *they* have unlocked.
-- `START` carries that board; on receiving it the guest calls `progress.allowSession(index)`,
-  which opens it **for that page load only and is never written back to their save**.
-- The guest still earns the board honestly: `results.js` records the clear on both peers, so
-  clearing it together unlocks it permanently for both.
+- Each install mints a stable random **player id** (`localStorage`, never sent anywhere but to
+  the peer). The **group scope** is a hash of the two ids sorted, so the same two people land in
+  the same scope every time they play — no accounts, no server.
+- `HELLO` exchanges the ids; both peers derive the same key and call `progress.setScope()`. The
+  lobby's board picker then reads *the group's* unlocks, not either player's solo save.
+- A new pairing starts on board 1 however far either player has got alone. Clearing a board
+  together opens the next one **for that group**.
+- `results.js` records the clear into whichever scope is active, so a co-op clear advances the
+  group and touches neither player's solo progress. `net.end()` restores the solo scope.
+- The host's board choice still wins on any drift (one player closed the tab before results):
+  the guest gets a page-load-only key, **scoped to the group** so it cannot show up unlocked on
+  their own BOARD SELECT. `?stage=N` links stay global — a link is a key whoever is playing.
+
+The identity is per-browser-profile: clearing site data, or playing from another machine, mints
+a new id and the pairing reads as a new group. Unavoidable without accounts.
 
 Anything else in `progress` stays local — it is read at screen boundaries, never inside the
 simulation, so it cannot desync a match.
@@ -57,7 +68,9 @@ copy-paste path are the verified ones.
   to lobby, host on slot 0 and guest on slot 1, 120+ frames with no desync and peers within
   delay+2, a key press on the guest moving player 2 **on the host's machine** with both
   agreeing on the position, a disconnect handing slot 2 to the bot (from either side), and a
-  guest playing a board only the host had unlocked without their save being rewritten.
+  guest playing the host's board without their own solo progress or save being touched, and
+  `npm run nettest progress` covering scope isolation, the v1 save migration and the
+  storage-blocked fallback.
 - The full existing suite (200 checks) passes unchanged, so the determinism work is invisible
   in single player.
 

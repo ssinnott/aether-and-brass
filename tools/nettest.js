@@ -1,7 +1,7 @@
 // Pure-Node tests for the online co-op layer (docs/MULTIPLAYER.md). No browser, no network.
 //
 //   node tools/nettest.js              run every suite
-//   node tools/nettest.js trig proto   run selected suites (trig mqtt proto lockstep)
+//   node tools/nettest.js trig proto   run selected suites (trig mqtt proto lockstep checksum signal progress)
 //
 // These cover the parts that must be provably correct before anything is on the wire: deterministic
 // trig, the MQTT signalling codec, the input/message wire format, and the lockstep frame scheduler
@@ -22,6 +22,23 @@ function rngOf(seed) {
   let s = seed >>> 0;
   return () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
+
+/** A localStorage stand-in, so the progress suite can exercise persistence and migration in Node. */
+function fakeStorage(seed = {}) {
+  const map = new Map(Object.entries(seed));
+  globalThis.window = {
+    localStorage: {
+      getItem: (k) => (map.has(k) ? map.get(k) : null),
+      setItem: (k, v) => map.set(k, String(v)),
+      removeItem: (k) => map.delete(k),
+    },
+  };
+  return map;
+}
+
+let progressModule = 0;
+/** A fresh copy of progress.js, so each case starts with an unread save. */
+const freshProgress = () => import(`../src/game/progress.js?t=${++progressModule}`);
 
 const suites = {
   // ---- engine/trig.js: must match Math.* closely enough to be invisible, using only exact ops ----
@@ -148,6 +165,87 @@ const suites = {
     ok([...codes].every((c) => /^[23456789BCDFGHJKMNPQRSTVWXYZ]{6}$/.test(c)), 'room codes avoid vowels and ambiguous glyphs');
   },
 
+  // ---- game/progress.js: co-op progress belongs to the pairing, not to either player's solo save ----
+  async progress() {
+    const KEY = 'aetherAndBrass.progress.v1';
+    const A = 'aaaa111122223333', B = 'bbbb4444555566667', C = 'cccc88889999aaaa';
+
+    {
+      fakeStorage();
+      const { progress: p, SOLO_SCOPE } = await freshProgress();
+      ok(p.scope === SOLO_SCOPE && !p.isGroup, 'reads and writes default to the solo scope');
+      ok(p.groupScope(A, B) === p.groupScope(B, A), 'the group key is the same whoever hosts');
+      ok(p.groupScope(A, B) !== p.groupScope(A, C), 'a different partner is a different group');
+      ok(/^g:[0-9a-f]{8}$/.test(p.groupScope(A, B)), 'the group key is short and readable in a save file');
+      const id = p.playerId();
+      ok(/^[0-9a-f]{16}$/.test(id) && p.playerId() === id, 'the player id is stable within a page load');
+    }
+
+    {
+      const disk = fakeStorage();
+      const { progress: p } = await freshProgress();
+      p.markCleared('stage1', { score: 100, rank: 'A' });
+      ok(p.isCleared('stage1') && p.unlockedCount() >= 2, 'a solo clear opens the next board');
+
+      p.setScope(p.groupScope(A, B));
+      ok(!p.isCleared('stage1'), 'a brand new group starts from scratch - the solo clear is invisible to it');
+      ok(p.unlockedCount() === 1, 'a new group has exactly one board open');
+      p.markCleared('stage1', { score: 5, rank: 'C' });
+      ok(p.isCleared('stage1') && p.unlockedCount() >= 2, 'clearing together opens the next board for the group');
+
+      p.setScope(null);
+      ok(p.record('stage1').score === 100, 'the co-op clear did not overwrite the solo score');
+      ok(p.scope === 'solo', 'setScope(null) returns to solo');
+
+      p.setScope(p.groupScope(A, C));
+      ok(!p.isCleared('stage1'), 'a different pairing is a different campaign');
+
+      const saved = JSON.parse(disk.get(KEY));
+      ok(saved.version === 2 && saved.scopes.solo && saved.scopes[p.groupScope(A, B)], 'both scopes are persisted side by side');
+      ok(saved.scopes.solo.boards.stage1.score === 100 && saved.scopes[p.groupScope(A, B)].boards.stage1.score === 5, 'each scope keeps its own score');
+    }
+
+    {
+      // A session key from a URL is global (a link is a key, whoever plays); a co-op host's board
+      // choice is scoped, so it can never show up unlocked on the guest's own solo BOARD SELECT.
+      fakeStorage();
+      const { progress: p } = await freshProgress();
+      const g = p.groupScope(A, B);
+      p.allowSession(1, g);
+      p.setScope(g);
+      ok(p.isUnlocked(1), "a co-op host's board is playable inside the group");
+      p.setScope(null);
+      ok(!p.isUnlocked(1), 'and is NOT unlocked on the solo board select');
+      p.setScope(p.groupScope(A, C));
+      ok(!p.isUnlocked(1), 'nor for a different pairing');
+      p.setScope(null);
+      p.allowSession(1);
+      ok(p.isUnlocked(1), 'a ?stage=N link opens the board globally');
+      p.setScope(g);
+      ok(p.isUnlocked(1), '...in every scope, because a link is a key whoever is playing');
+    }
+
+    {
+      // Anyone who already played has a v1 save. It must come back as their solo progress.
+      fakeStorage({ [KEY]: JSON.stringify({ version: 1, boards: { stage1: { cleared: true, score: 4200, rank: 'S' } } }) });
+      const { progress: p } = await freshProgress();
+      ok(p.isCleared('stage1') && p.record('stage1').score === 4200, 'a v1 save migrates into the solo scope with its score');
+      ok(p.unlockedCount() >= 2, 'the migrated clear still opens the next board');
+      p.setScope(p.groupScope(A, B));
+      ok(!p.isCleared('stage1'), 'the migrated progress does not leak into a co-op group');
+    }
+
+    {
+      // Storage can be unavailable (private mode, file://). Progress is a convenience, never a gate.
+      globalThis.window = { get localStorage() { throw new Error('blocked'); } };
+      const { progress: p } = await freshProgress();
+      ok(p.unlockedCount() === 1 && p.isUnlocked(0), 'with storage blocked the game still offers board 1');
+      ok(p.markCleared('stage1', { score: 1 }) !== undefined, 'marking a clear with storage blocked does not throw');
+      ok(/^[0-9a-f]{16}$/.test(p.playerId()), 'a player id is still minted, just not remembered');
+      delete globalThis.window;
+    }
+  },
+
   // ---- net/lockstep.js: two peers over a lossy, reordering link must never diverge ----
   lockstep() {
     // Two peers driven by independent input streams across a simulated link.
@@ -232,7 +330,7 @@ const names = wanted.length ? wanted : Object.keys(suites);
 for (const n of names) {
   if (!suites[n]) { console.log(`unknown suite ${n} (have: ${Object.keys(suites).join(' ')})`); failures++; continue; }
   console.log(`\n${n}:`);
-  suites[n]();
+  await suites[n]();
 }
 console.log(failures ? `\n${failures} failure(s)` : '\nall net tests passed');
 process.exit(failures ? 1 : 0);

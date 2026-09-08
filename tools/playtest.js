@@ -126,9 +126,9 @@ function makeApi(page) {
 }
 
 const scenarios = {
-  // 0c. Board unlocks are per-player localStorage, so the peers disagree about what is playable.
-  // The host's game is the one being played: their board wins, and the guest is lent a key to it
-  // for the session only, without their save being touched.
+  // 0c. Co-op progress belongs to the PAIRING, not to either player. A new group starts on board 1
+  // however far either player has got solo, the host's board choice still wins, and nothing a group
+  // does can touch either player's solo save.
   async netboard(server) {
     const ROOM = 'NETBRD';
     // The host arrives on board 2 (?stage=2 is its own session key); the guest has a clean save.
@@ -137,7 +137,11 @@ const scenarios = {
       for (const p of [hostPage, guestPage]) await p.waitForFunction(() => ((window.__game.netState() || {}).state === 'lobby'), null, { timeout: 20000 });
 
       const before = await guestPage.evaluate(() => window.__game.progressState());
-      assert(before.unlocked[1] === false, 'the guest has NOT unlocked board 2 on their own save');
+      assert(before.isGroup && /^g:/.test(before.scope), `the lobby switched to the pairing's own progress scope (${before.scope})`);
+      assert(before.unlockedCount === 1, 'a brand new group starts with exactly one board open');
+      assert(before.unlocked[1] === false, 'the guest has not opened board 2 in this group');
+      const hostScope = await hostPage.evaluate(() => window.__game.progressState().scope);
+      assert(hostScope === before.scope, 'both peers derive the same group scope from the same two ids');
       await guestPage.waitForFunction(() => ((window.__game.game.net || {}).lobby || {}).stage === 2, null, { timeout: 10000 });
       assert(true, "the guest's lobby follows the host's board choice before the match starts");
 
@@ -149,8 +153,9 @@ const scenarios = {
       const stages = await Promise.all([hostPage, guestPage].map((p) => p.evaluate(() => window.__game.game.options.stage)));
       assert(stages[0] === 2 && stages[1] === 2, `both peers run the host's board (host ${stages[0]}, guest ${stages[1]})`);
       const after = await guestPage.evaluate(() => window.__game.progressState());
-      assert(after.unlocked[1] === true, 'the guest can play the board for this session');
-      assert(!after.saved || !/stage2|"boards":\{".+"/.test(after.saved), `the guest's save on disk was not rewritten (${after.saved})`);
+      assert(after.unlocked[1] === true, "the guest can play the host's board for this session");
+      assert(after.solo[1] === false, "the co-op session did not open board 2 on the guest's SOLO progress");
+      assert(!after.saved || !/"boards":\{".+"/.test(after.saved), `nothing was written to the guest's save on disk (${after.saved})`);
       const st = await Promise.all([hostPage, guestPage].map((p) => p.evaluate(() => window.__game.netState())));
       assert(st[0].desync === null && st[1].desync === null, 'no desync while running a board only the host had unlocked');
       await G.shot('23-netplay-shared-board');

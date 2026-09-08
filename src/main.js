@@ -185,11 +185,14 @@ function boot() {
     toggleDebug() { showDebug = !showDebug; return showDebug; },
     /** Online co-op state for tools/playtest.js. */
     netState() { return net ? { state: net.state, room: net.room, slot: net.localSlot, delay: net.delay, waiting: net.waiting, frame: net.ls ? net.ls.frame : -1, desync: net.ls ? net.ls.desync : null, reason: net.endReason } : null; },
-    /** Board-unlock state, for tools/playtest.js: `saved` proves nothing was written to disk. */
+    /** Board-unlock state, for tools/playtest.js. `solo` and `saved` prove co-op left the solo save alone. */
     progressState() {
       let saved = null;
       try { saved = window.localStorage.getItem('aetherAndBrass.progress.v1'); } catch (e) { saved = null; }
-      return { unlockedCount: progress.unlockedCount(), unlocked: [0, 1, 2, 3].map((i) => progress.isUnlocked(i)), saved };
+      const here = progress.scope;
+      const readAt = (sc) => { progress.setScope(sc); const u = [0, 1, 2, 3].map((i) => progress.isUnlocked(i)); progress.setScope(here); return u; };
+      return { scope: here, isGroup: progress.isGroup, unlockedCount: progress.unlockedCount(),
+        unlocked: [0, 1, 2, 3].map((i) => progress.isUnlocked(i)), solo: readAt('solo'), saved };
     },
     /** Netplay tests need the real gated rAF loop; autotest otherwise leaves it stopped. */
     startLoop() { loop.start(true); return true; },

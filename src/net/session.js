@@ -59,6 +59,8 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     rttReady: false,
     /** Set when the peer reports a different protocol version. */
     versionMismatch: false,
+    /** The progress scope this pairing plays in (game/progress.js), set once ids are exchanged. */
+    groupScope: '',
     /**
      * Lobby state. `stage` is the HOST's board: unlocks are per-player localStorage, so the two
      * peers do not agree on what is playable. The host's game is the one being played, so the host
@@ -107,7 +109,8 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
       trickle: transport !== 'manual',
       onOpen: () => {
         // Version first: a peer on a cached older bundle must be told, not silently desynced.
-        sendCtl(encodeJson(MSG.HELLO, { v: PROTOCOL_VERSION }));
+        // The player id names the co-op progress scope (game/progress.js) and goes nowhere else.
+        sendCtl(encodeJson(MSG.HELLO, { v: PROTOCOL_VERSION, id: progress.playerId() }));
         net.lobby.peerHere = true;
         setState('lobby');
         sendLobby();
@@ -175,11 +178,12 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     net.delay = Math.max(1, delay);
     net.ls = createLockstep({ localSlot: net.localSlot, delay: net.delay });
     game.options.stage = stage || 1;
-    // Board unlocks live in each player's own localStorage, so the guest may never have opened the
-    // board the host picked. The host's game is the one being played: give the guest a key to it
-    // for this page load only (progress.js allowSession is never written back to their save). They
-    // still earn the board properly if they clear it - results.js records the clear on both peers.
-    progress.allowSession((stage || 1) - 1);
+    // Both peers read the same group scope, so they normally agree on what is open. They can drift
+    // (one player closed the tab before the results screen recorded a clear), so the host's choice
+    // still wins: give the guest a key to this board for the page load only, scoped to this group so
+    // it cannot appear unlocked on their own solo BOARD SELECT. Nothing is written back, and
+    // results.js records the clear into the GROUP scope on both peers.
+    progress.allowSession((stage || 1) - 1, net.groupScope);
     game.options.difficulty = ['easy', 'normal', 'hard'][difficulty] || 'normal';
     game.options.chars = [chars[0], chars[1]];
     game.options.netplay = true;
@@ -207,7 +211,13 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     if (!m) return;
     switch (m.type) {
       case MSG.HELLO:
-        if (m.v !== PROTOCOL_VERSION) { net.versionMismatch = true; net.end('different game version - both reload the page'); }
+        if (m.v !== PROTOCOL_VERSION) { net.versionMismatch = true; net.end('different game version - both reload the page'); break; }
+        // This pairing has its own board progress, starting from board 1 and earning its own way up.
+        // Both peers derive the same key from the same two ids, so they agree without being told.
+        if (m.id) {
+          net.groupScope = progress.groupScope(progress.playerId(), m.id);
+          progress.setScope(net.groupScope);
+        }
         break;
       case MSG.LOBBY:
         net.lobby.theirChar = m.char | 0;
@@ -327,6 +337,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     setState('ended');
     net.waiting = false;
     game.options.netplay = false;
+    progress.setScope(null);    // back to this player's own solo progress
     // Hand the REMOTE slot to the bot - on the guest that is slot 0, not slot 1. Clearing both
     // virtuals would also drop the local player onto the other binding set (arrows / J K U L O I)
     // mid-run, so the local slot keeps being driven from their own keyboard by netEndPump().
