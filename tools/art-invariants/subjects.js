@@ -6,7 +6,7 @@
 // distinct rig with its own animation table. Phases that only re-skin the AI (no build) are not rigs and are skipped.
 import { buildRig } from '../../src/art/rig.js';
 import { CHARACTERS } from '../../src/content/characters/index.js';
-import { BRASSBOUND, SOOTBORN, STORMCROWS, midboss, boss, midboss2, boss2 } from '../../src/content/enemies/index.js';
+import { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2 } from '../../src/content/enemies/index.js';
 import { classOf } from './helpers.js';
 
 /** Stable subject id for an enemy/boss def: always `${type}:${variant}` (the boss defs' own `id` is the short slug). */
@@ -40,7 +40,7 @@ function make(kind, id, name, def, build, anims, phase) {
 export function collectSubjects() {
   const out = [];
   for (const def of CHARACTERS) out.push(make('character', def.id, def.name, def, def.build, def.anims));
-  for (const def of [...BRASSBOUND, ...SOOTBORN, ...STORMCROWS]) {
+  for (const def of [...BRASSBOUND, ...SOOTBORN, ...STORMCROWS, ...GLEANINGS, ...CHANDLERS]) {
     out.push(make('enemy', subjectId(def), def.name, def, def.build, def.anims));
   }
   for (const def of BOSS_DEFS) {

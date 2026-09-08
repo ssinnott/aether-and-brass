@@ -542,10 +542,16 @@ export const RULES = [
         });
       }
       if (isAnchor(subject)) {
+        // Only a KEYFRAME's face is a FACE name. `face` is also a legitimate build-config field elsewhere -- the
+        // Chandlery's rig switches on chand.face ('none' | 'bare' | masked) to pick a skull treatment -- and those
+        // objects never reach P(), so validating them against the FACE enum is a false positive. A keyframe is
+        // recognised by the company it keeps: a pose builder call, or another pose key on the same line.
+        const POSE_CONTEXT = /\b(?:K|P|FK)\(|\b(?:legR|legL|armR|armL|torso|head|root|squash|stretch|grip|weapon)\s*:/;
         for (const h of grepContent(/face:\s*'[^']*'/)) {
+          if (!POSE_CONTEXT.test(h.text)) continue;
           for (const m of h.text.match(/face:\s*'[^']*'/g) || []) {
             const nm = m.replace(/face:\s*'/, '').replace(/'$/, '');
-            if (!names.includes(nm)) out.push(finding(`face: '${nm}' is not a FACE name (P() collapses it to 0 at build time)`, `FACE: ${names.join(', ')}`, `${h.path}:${h.line}`));
+            if (!names.includes(nm)) out.push(finding(`face: '${nm}' at ${h.path}:${h.line} is not a FACE name (P() collapses it to 0 at build time)`, `FACE: ${names.join(', ')}`, `${h.path}:${h.line}`));
           }
         }
       }
