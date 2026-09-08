@@ -318,7 +318,10 @@ const HOOKLINE = { style: 'bolt', chained: true, speed: 7, damage: 8, type: 'med
   } };
 /**
  * Slate tally-board on the chest: one fresh chalk stroke every time it robs somebody (torso accessory).
- * Chalk on SLATE is light (L* 84 on 18); CHALK.sickle is the mark on the pale silk and is deliberately dark there.
+ * Chalk on SLATE is light (L* 87 on 30); CHALK.sickle is the mark on the pale silk and is deliberately dark there.
+ * The slate itself is UNCHANGED by the readability pass and was measured before it was left alone: at Oklab L* 29.6
+ * it clears the outline by 16 and now sits 14 under the lifted coat it hangs on, up from 9 — the palette move did
+ * this panel's job for it, so the panel does not move.
  */
 const TALLY_CHALK = '#CFD6E2';
 function drawTallyBoard(ctx, rig) {
