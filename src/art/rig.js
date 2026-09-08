@@ -27,7 +27,7 @@ import { rad } from '../engine/math.js';
 import { PALETTES, farPalette } from './palettes.js';
 import { SCRATCH_POSE, copyPose } from './poses.js';
 import { LIGHT_X, LIGHT_Y, RAMP, tones, celCapsule, contactCapsule } from './shading.js';
-import { drawLimbSegs, drawCuff, drawFist, drawBoot, drawTorsoShape, drawBelt, drawNeck, drawSkull, drawFace, drawStick } from './rigParts.js';
+import { drawLimbSegs, drawFist, drawBoot, drawTorsoShape, drawBelt, drawNeck, drawSkull, drawFace, drawStick } from './rigParts.js';
 import { stepChain, resetChain } from './secondary.js';
 
 /** Reference proportions at scale 1 (~72-76 px tall). */
@@ -252,7 +252,6 @@ function drawArm(ctx, rig, pose, side, withWeapon) {
     else celCapsule(ctx, rig, el.x, el.y, wr.x, wr.y, p.armR + 0.5, pal.skin);
   } else {
     drawLimbSegs(ctx, rig, sh, el, wr, p.armR, p.armR + 0.5, sleeve, pal.skin, true, p.bulge);
-    drawCuff(ctx, rig, el, wr, p.armR + 0.5, sleeve);
   }
   if (hooks.shoulder) { enter(ctx, rig, sh.x, sh.y, J.torsoAngle); hooks.shoulder(ctx, rig, pose, info(rig, 'shoulder', far, pal, 0, p.armR + 1, pal.accent)); leave(ctx, rig); }
   // hand space: +x along the forearm direction (plus hand.rot); weapons draw along +x.

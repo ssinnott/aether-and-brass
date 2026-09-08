@@ -28,7 +28,17 @@ the renderer (`src/art/rig.js`, `shading.js`, `rigParts.js`) so every rig gets i
    a light shirt colour so the arms read against the torso. GDD colours are hue references — re-space the values.
 2. **One 1 px outline on every boundary, internal ones included.** Every part strokes its own outline
    (`outlinePath` under the fill), so draw order gives internal boundaries for free; never fake one with a tone seam,
-   and keep an outline on every accessory that overlaps the body. **Contact shadow:** the renderer draws a translucent
+   and keep an outline on every accessory that overlaps the body.
+   **Exception — a material change inside one silhouette.** A boundary separates two *objects*. A colour change
+   *within* one object is not a boundary and must not carry a line: an arm is one thing whether or not the sleeve
+   ends halfway down it, and inking that transition is what made limbs read as a bicep object stacked on a forearm
+   object. So a fill **clipped inside a path that has itself been stroked** in the outline colour is a material
+   change and correctly has no line of its own — the silhouette is carrying the ink. This is exactly how
+   `drawLimbSegs` puts skin below the elbow and `drawSkull` puts hair on a head. The exception is narrow on
+   purpose, and `geom/outline-stroke-contract` enforces the narrowness: the clip must contain the fill and the
+   clipped path must have been inked, so an unoutlined fill in open space is still an error.
+   The test to apply when in doubt: *would a reader call these two things separate objects?* Sleeve and forearm, no
+   — one arm. Gauntlet and forearm, yes — outline it. **Contact shadow:** the renderer draws a translucent
    dark capsule (`build.contactShadow`, default alpha 0.3, `false` = off) under every arm and leg segment, so a limb
    crossing the torso, the far leg or a back accessory gets a darker 1 px contact edge on top of its outline.
 3. **Far limbs darker and greyer.** `rig.paletteFar = farPalette(palette, farShade, farDesat)` — `build.farShade` 0.62
@@ -149,7 +159,8 @@ facing right. `info` (`{ name, far, pal, len, r, w, h, color }`) is a reusable o
 (`src/art/shading.js`): `celRect`, `celPoly`, `celBall`, `celCapsule`, `celTaper`, `celPath` (any path you traced),
 `flat`, `outlinePath`, `rimRect`, `rimTop`, `wantHi`, `wantSh`, `tones`, `pathRR`. Default renderers (`src/art/rigParts.js`) are exported so you can
 compose: `drawBoot`, `drawFist`, `drawBelt`, `drawSkull`, `drawHairCap`, `drawFace`, `drawMouth`, `drawTorsoShape`,
-`drawLimbSegs`, `drawCuff`, `drawNeck`, `drawStick`.
+`drawLimbSegs`, `drawNeck`, `drawStick`. (`drawCuff` is gone: the sleeve cuff was a ring drawn across the forearm,
+one of the internal lines that stopped an arm reading as an arm.)
 
 Part hooks: `head face beard hair hat neck torso hips back shoulder armUpper armLower hand legUpper legLower foot weapon
 smear`. Accessories: `{ attach: 'head'|'torso'|'back'|'hip'|'handR'|'handL'|'root', layer?: 'back', draw(ctx, rig, pose) }`

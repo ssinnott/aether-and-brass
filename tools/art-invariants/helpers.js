@@ -377,6 +377,10 @@ export function makeRecorder(opts = {}) {
       strokeStyle: typeof style.strokeStyle === 'string' ? style.strokeStyle : String(style.strokeStyle),
       lineWidth: style.lineWidth, alpha: style.globalAlpha, scale: uniform(),
       hook: hook ? hook.name : null, far: hook ? !!hook.far : false, depth: hooks.length,
+      // save/restore depth at the moment of the op. `depth` is the HOOK stack; this is the graphics-state stack,
+      // and it is the only way to tell whether a clip set earlier is still in effect for this op — which is what
+      // separates "a fill that cuts back inside an outlined silhouette" from "a fill that fakes a new boundary".
+      sd: stack.length,
       ...extra,
     };
     ops.push(e);

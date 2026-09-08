@@ -145,6 +145,11 @@ function wrapBalance(rig, out) {
   return () => { rig.parts = parts; rig.accessories = accessories; rig.weapon = weapon; };
 }
 
+/** Does device-space bbox `outer` contain `inner`, allowing `pad` px of slack for the outline stroke and rounding? */
+function contains(outer, inner, pad = 0) {
+  return outer.x0 - pad <= inner.x0 && outer.y0 - pad <= inner.y0 && outer.x1 + pad >= inner.x1 && outer.y1 + pad >= inner.y1;
+}
+
 /** Stable signature of a recorded command stream, for the determinism comparison. */
 function streamSignature(ops) {
   const out = [];
@@ -244,11 +249,21 @@ function scanFrame(A, rig, ops, ctx3, where) {
   const nearCols = new Map(), farCols = new Map();
   let cel = 0, clip = 0, cmd = 0, studs = 0;
   let marks = 0, small3 = 0;
+  // Clip regions currently in effect, innermost last, plus whether each was INKED — set from a path that had just
+  // been stroked in the outline colour. A fill inside an inked clip is a material change within an already-outlined
+  // silhouette (ART_STYLE §0.2), not a new boundary someone forgot to outline.
+  const clips = [];
+  const inkedPaths = [];   // bboxes of outline strokes seen so far this frame
 
   for (let k = 0; k < draw.length; k++) {
     const e = draw[k], hook = e.hook || '';
     const raw = colourOf(e);
     const c = raw == null ? null : H.normHex(raw);
+
+    // a clip lapses when the graphics state it was set in is restored
+    while (clips.length && clips[clips.length - 1].sd > (e.sd || 0)) clips.pop();
+    if (e.op === 'stroke' && c === outline && e.bbox) inkedPaths.push(e.bbox);
+    if (e.op === 'clip' && e.bbox) clips.push({ sd: e.sd || 0, bbox: e.bbox, inked: inkedPaths.some((b) => contains(b, e.bbox, 2)) });
 
     // ---- budget counters
     if (e.op === 'fill') { A.budget.fills++; cmd++; }
@@ -341,7 +356,13 @@ function scanFrame(A, rig, ops, ctx3, where) {
       if (outlined) {
         if (!parentColours.has(hook)) parentColours.set(hook, new Set());
         parentColours.get(hook).add(c);
-      } else if (e.alpha >= 1 && bases.has(c) && !glowBases.has(c) && c !== '#ffffff') {
+      } else if (e.alpha >= 1 && bases.has(c) && !glowBases.has(c) && c !== '#ffffff'
+        && !clips.some((cl) => cl.inked && contains(cl.bbox, e.bbox, 1))) {
+        // ^ §0.2 material-change exception: a fill CLIPPED INSIDE a silhouette that was itself stroked in the
+        // outline colour is a colour change within one outlined shape, not a faked boundary — the silhouette is
+        // carrying the ink. This is how a limb reads as one continuous arm with skin below the elbow instead of a
+        // bicep object stacked on a forearm object. It stays narrow deliberately: the clip must contain the fill,
+        // and the clipped path must have been inked, so an unoutlined fill in open space still fails.
         const local = e.bbox.half / (e.scale || 1);
         const hiMin = rig.hiMin != null ? rig.hiMin : 6;
         // half-extent is half the LONGER side, which is the right measure for a path fill but not for a rect: a

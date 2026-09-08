@@ -1,32 +1,77 @@
 // Default part renderers for rig.js, drawn as chunky cel-shaded pixel-sprite shapes (1px outline, 3-tone bands,
 // top-left light). Every function draws in the part's local space set up by rig.js and allocates nothing.
 // Content may import these to compose custom parts (e.g. draw the default boot and add a strap).
-import { celCapsule, celTaper, celBall, celRect, celPoly, celPath, tones, flat, pathRR, rimRect, rimTop } from './shading.js';
+import { celCapsule, celBall, celRect, celPoly, celPath, tones, flat, pathRR, rimRect, rimTop, outlinePath, wantSh } from './shading.js';
+import { pathTaperedCapsule } from './shapes.js';
 import { FACE } from './poses.js';
 
 const R = Math.round;
 
 /**
- * Upper + lower limb capsules (root space). Forearms/shins are drawn slightly thicker than the upper segment.
- * `bulge` (0..1, from proportions.bulge) tapers each segment toward its far end: thighs/upper arms swell at the
- * hip/shoulder, shins/forearms narrow toward the ankle/wrist — the "heroic" silhouette for taller builds.
+ * A whole limb as ONE shape (root space): shoulder -> elbow -> wrist, or hip -> knee -> ankle.
+ *
+ * It used to be five or six separately outlined objects — a ball cap at the shoulder, two tapered capsules, a cuff
+ * ring, and a shadow band restarting inside each segment — which is why an arm read as a stack of parts rather than
+ * as an arm. Worse, the radii did not meet: the upper segment ended at r1*0.94 while the lower one STARTED at
+ * r2*1.04 (r2 = r1 + 0.5), so the forearm was visibly fatter than the end of the bicep and the mismatch inked
+ * itself into a collar at the elbow before any outline was drawn.
+ *
+ * Now the subpaths are appended into one path, stroked ONCE and filled ONCE: the stroke does cross the internal
+ * seams, and the fill immediately covers them. What survives is the outer contour. A second material below the
+ * elbow, and the shadow, are then painted CLIPPED INSIDE that silhouette, so they are colour changes within one
+ * outlined shape rather than new outlined objects — see ART_STYLE §0.2.
+ *
+ * `bulge` (0..1, proportions.bulge) drives one radius profile down the whole limb: widest at the root, narrowest at
+ * the wrist/ankle, with a single shared radius at the joint so there is no step.
+ * `capAtA` is kept for call-site compatibility and is now unused — the shoulder/hip disc it drew was one of the
+ * objects this function exists to stop drawing.
  */
 export function drawLimbSegs(ctx, rig, a, b, c, r1, r2, fill1, fill2, capAtA = true, bulge = 0) {
-  if (capAtA) celBall(ctx, rig, a.x, a.y, r1 + 1, fill1, false); // shoulder / hip cap so the joint reads as a sleeve
-  if (bulge > 0) {
-    celTaper(ctx, rig, a.x, a.y, b.x, b.y, r1 * (1 + 0.14 * bulge), r1 * (1 - 0.06 * bulge), fill1);
-    celTaper(ctx, rig, b.x, b.y, c.x, c.y, r2 * (1 + 0.04 * bulge), r2 * (1 - 0.22 * bulge), fill2);
-  } else {
-    celCapsule(ctx, rig, a.x, a.y, b.x, b.y, r1, fill1);
-    celCapsule(ctx, rig, b.x, b.y, c.x, c.y, r2, fill2);
-  }
-}
+  const base = (r1 + r2) / 2;
+  const rA = base * (1 + 0.16 * bulge);   // shoulder / hip: the widest point
+  const rB = base * (1 - 0.10 * bulge);   // elbow / knee: ONE radius, shared by both segments
+  const rC = base * (1 - 0.20 * bulge);   // wrist / ankle: narrowest
+  const nodes = [[a.x, a.y, rA], [b.x, b.y, rB], [c.x, c.y, rC]];
+  const tube = () => {
+    ctx.beginPath();
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const p = nodes[i], q = nodes[i + 1];
+      pathTaperedCapsule(ctx, p[0], p[1], q[0], q[1], p[2], q[2], true);
+    }
+  };
+  tube();
+  outlinePath(ctx, rig);                  // strokes the internal seam too...
+  ctx.fillStyle = rig.col(tones(rig, fill1).base);
+  ctx.fill();                             // ...and this covers it
+  if (rig.override || !rig.shading) return;
 
-/** Sleeve cuff band around the elbow end of the forearm (root space, along the limb b->c). */
-export function drawCuff(ctx, rig, b, c, r, hex) {
-  const dx = c.x - b.x, dy = c.y - b.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
-  const x0 = b.x + ux * 1, y0 = b.y + uy * 1, x1 = b.x + ux * 4, y1 = b.y + uy * 4;
-  celCapsule(ctx, rig, x0, y0, x1, y1, r + 0.5, hex, 0);
+  ctx.save();
+  tube(); ctx.clip();                     // everything below stays inside the limb silhouette
+  const mid = Math.floor(nodes.length / 2);
+  const two = fill2 !== fill1;
+  if (two) {                              // skin below the elbow: a colour change with no line of its own
+    ctx.beginPath();
+    for (let i = mid; i < nodes.length - 1; i++) {
+      const p = nodes[i], q = nodes[i + 1];
+      pathTaperedCapsule(ctx, p[0], p[1], q[0], q[1], p[2], q[2], true);
+    }
+    ctx.fillStyle = tones(rig, fill2).base; ctx.fill();
+  }
+  if (wantSh(rig, rA)) {                  // ONE shadow down the limb, not one per segment restarting at the joint
+    const lx = rig.light.x, ly = rig.light.y, k = 0.6;
+    const band = (list, tone) => {
+      ctx.beginPath();
+      for (let i = 0; i < list.length - 1; i++) {
+        const p = list[i], q = list[i + 1];
+        pathTaperedCapsule(ctx, p[0] - lx * (p[2] - p[2] * k), p[1] - ly * (p[2] - p[2] * k),
+          q[0] - lx * (q[2] - q[2] * k), q[1] - ly * (q[2] - q[2] * k), p[2] * k, q[2] * k, true);
+      }
+      ctx.fillStyle = tone; ctx.fill();
+    };
+    if (!two) band(nodes, tones(rig, fill1).sh);
+    else { band(nodes.slice(0, mid + 1), tones(rig, fill1).sh); band(nodes.slice(mid), tones(rig, fill2).sh); }
+  }
+  ctx.restore();
 }
 
 /** Mitten fist with a thumb (hand space: +x along the forearm, origin at the wrist). */
