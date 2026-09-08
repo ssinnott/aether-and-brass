@@ -245,6 +245,17 @@ function drawLeg(ctx, rig, pose, side) {
   leave(ctx, rig);
 }
 
+/**
+ * The fist (or the rig's `hand` hook) in hand space. Module scope, not a closure inside drawArm: this file
+ * allocates nothing per draw. `skip` is the far hand of a two-handed grip, which the weapon arm draws on the
+ * handle instead.
+ */
+function drawHandPart(ctx, rig, pose, hooks, pal, p, far, skip) {
+  if (skip) return;
+  if (hooks.hand) hooks.hand(ctx, rig, pose, info(rig, 'hand', far, pal, 0, p.handR, pal.skin));
+  else drawFist(ctx, rig, p.handR, pal.skin);
+}
+
 function drawArm(ctx, rig, pose, side, withWeapon) {
   const J = rig.joints, p = rig.p, pal = side === 'N' ? rig.palette : rig.paletteFar, far = side === 'F';
   const sh = J['shoulder' + side], el = J['elbow' + side], wr = J['wrist' + side], hd = J['hand' + side], ang = J['arm' + side];
@@ -278,10 +289,6 @@ function drawArm(ctx, rig, pose, side, withWeapon) {
     else drawFist(ctx, rig, p.handR, palO.skin);
     ctx.restore(); setLight(rig, handAng);
   }
-  if (!(twoHanded && !weaponHere && withWeapon)) {
-    if (hooks.hand) hooks.hand(ctx, rig, pose, info(rig, 'hand', far, pal, 0, p.handR, pal.skin));
-    else drawFist(ctx, rig, p.handR, pal.skin);
-  }
   if (weaponHere) {
     ctx.save(); ctx.rotate(rad(pose.weapon.rot)); setLight(rig, handAng + pose.weapon.rot);
     if (rig.weapon.draw) rig.weapon.draw(ctx, rig, pose);
@@ -289,6 +296,9 @@ function drawArm(ctx, rig, pose, side, withWeapon) {
     else drawStick(ctx, rig, rig.weapon.length || 30, pal.metal, pal.dark);
     ctx.restore(); setLight(rig, handAng);
   }
+  // The hand draws AFTER the weapon, so it closes around the grip instead of hiding behind it. A fist under its
+  // own weapon is the single most common "why does that look wrong" in the cast: 692 px of hand disappeared.
+  drawHandPart(ctx, rig, pose, hooks, pal, p, far, twoHanded && !weaponHere && withWeapon);
   leave(ctx, rig);
 }
 
@@ -387,8 +397,10 @@ function drawBody(ctx, rig, pose) {
   drawLeg(ctx, rig, pose, 'F');
   drawArm(ctx, rig, pose, 'F', true);
   drawTorso(ctx, rig, pose);
-  drawHips(ctx, rig, pose);
+  // The near leg goes UNDER the hip block, not over it. A thigh painted on top of the belt reads as a leg stuck to
+  // the front of the body; with the hips over it, the leg emerges from inside the pelvis the way a leg does.
   drawLeg(ctx, rig, pose, 'N');
+  drawHips(ctx, rig, pose);
   drawHead(ctx, rig, pose);
   drawSmear(ctx, rig, pose);
   drawArm(ctx, rig, pose, 'N', true);

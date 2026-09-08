@@ -549,13 +549,16 @@ function gobEar(ctx, rig, x, y, r, ang, col) {
   if (!rig.override) { ctx.beginPath(); ctx.moveTo(-GR(r * 0.3), -GR(r * 0.2)); ctx.lineTo(-GR(r * 0.9), -GR(r * 0.5)); ctx.lineTo(-GR(r * 0.3), GR(r * 0.1)); ctx.closePath(); ctx.fillStyle = tones(rig, col).sh; ctx.fill(); }
   ctx.restore();
 }
-/** Oversized goblin skull (head space): far ear behind, ball skull, near ear, big wedge nose BELOW the eye row. */
+/** Oversized goblin skull (head space): BOTH ears behind the ball skull, big wedge nose BELOW the eye row. */
 export function gobHead(ctx, rig, pose, inf) {
   const r = inf.r, pal = inf.pal;
   const ch = gobChain(rig, 'ear', 1, { joint: 'head', rest: [-1, 0], stiffness: 0.22, damping: 0.6, gain: 1.6, rotGain: 0.5, maxAng: 24 });
+  // Both ears go UNDER the skull. The near ear used to be painted on top of it, which put a triangle of ink across
+  // the cheek and over the far eye — the ear read as a shape stuck onto the face instead of one growing out from
+  // behind it. Drawn first, the skull covers its base and only the blade of the ear shows, which is an ear.
   gobEar(ctx, rig, GR(-r * 0.55), GR(-r * 0.2), r, ch.ang[0] - 6, rig.paletteFar.skin);
-  celBall(ctx, rig, 0, 0, r, pal.skin);
   gobEar(ctx, rig, GR(-r * 0.4), GR(-r * 0.05), r * 0.95, ch.ang[0] * 0.8, pal.skin);
+  celBall(ctx, rig, 0, 0, r, pal.skin);
   ctx.beginPath(); ctx.moveTo(GR(r * 0.55), GR(-r * 0.05)); ctx.lineTo(GR(r * 1.55), GR(r * 0.3)); ctx.lineTo(GR(r * 0.6), GR(r * 0.62)); ctx.closePath();
   celPath(ctx, rig, pal.skin, r * 0.9, r * 0.3, r * 0.5, 0.42, 0);
   if (rig.override) return;
