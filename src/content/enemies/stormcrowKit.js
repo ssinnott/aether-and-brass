@@ -14,7 +14,7 @@
 // preference: nothing a hat draws may reach the eye row, or it buries the lens shutter that is the helm's only
 // expression and the head renders identically in idle, angry and shout.
 // Back pieces are the second lever: a rope coil, a line drum, a powder keg, two lightning rods and the wing-pack.
-import { celRect, celBall, celPoly, celCapsule, tones, rimTop } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celCapsule, tones, rimTop, band } from '../../art/shading.js';
 import { getChain } from '../../art/secondary.js';
 import { rad } from '../../engine/math.js';
 import {
@@ -24,7 +24,7 @@ import {
 
 const R = Math.round, TAU = Math.PI * 2;
 const EMPTY = {};
-const WOOD = '#7A5230', WOOD_D = '#54371F', IRON = '#6E7684', KEG = '#6A4A32';
+const WOOD = '#7A5230', WOOD_D = '#54371F', IRON = '#647294', KEG = '#584038';   // the keg down to the neutral ceiling and out of the stages' amber cells
 const WOOD_F = farTone(WOOD);
 
 // ---------------------------------------------------------------- headgear (head space, facing right)
@@ -79,7 +79,7 @@ function hatLoupe(ctx, rig, r) {
   // the brow strap is his rank band, laid INTO the leather so the strap frames it on all four sides. It is kept to
   // strap width on purpose: at full head width x 5 units on a 1.15-scale 9.5r head it was a ~22x6px bar, the
   // biggest rank field on the deck, and a rate-3 line trooper out-signalled the rate-4 elite above him.
-  rankBand(ctx, rig, R(-r * 0.75), R(-r * 1.12) + 1, R(r * 1.5), rankH(rig, 3));
+  rankBand(ctx, rig, R(-r * 0.68), R(-r * 1.12) + 1, R(r * 1.36), rankH(rig, 3));
   crowTell(ctx, rig, r, cx, cy);
 }
 /**
@@ -101,7 +101,11 @@ function hatVisor(ctx, rig, r) {
   celPoly(ctx, rig, [R(-r * 0.45), R(-r * 1.45), R(-r * 0.2), R(-r * 2.2 * k), R(r * 0.3), R(-r * 2.3 * k), R(r * 0.6), R(-r * 1.45)], CROW.pewter, 0.34, 0.3);
   celRect(ctx, rig, R(-r * 0.95), R(-r * 1.75), R(r * 1.9), 6, 2, CROW.pewterDark, 0.34, 0.3);
   if (rig.override) return;
-  rankBand(ctx, rig, R(-r * 0.7), R(-r * 1.64), R(r * 1.4), rankH(rig, 4));
+  // WIDENED 1.4r -> 1.6r (the pewterDark frame runs -0.95r..0.95r, so it still frames the band on all four sides).
+  // tools/stormcrow-pixels.mjs is the arbiter and it is measured in RATE order, not registry order: her rank field
+  // has to out-signal the Bosun below her, and at 1.4r it did not (galewright 1.285 % of actor pixels against his
+  // 1.320 %). Re-run that census after touching any rank carrier on any rate.
+  rankBand(ctx, rig, R(-r * 0.8), R(-r * 1.64), R(r * 1.6), rankH(rig, 4));
 }
 /**
  * C5 Ironwing Marine, ABOVE THE HAIRLINE ONLY: the dome rim light and the rank brow band. The crest, the dome, the
@@ -123,10 +127,12 @@ export function crowHat(ctx, rig, pose, inf) {
 /** C1: a coil of boarding line with the grapnel hooked through it, slung on the shoulder. */
 export function crowLines(ctx, rig) {
   const p = rig.p, hw = R(p.torsoW / 2), x = -hw - 3, y = -R(p.torsoH * 0.5);
-  celBall(ctx, rig, x, y, 8, CROW.rope, true);
+  celBall(ctx, rig, x, y, 8, CROW.rope, false);
   if (!rig.override) {
+    // the coil's eye. The two 1px winding lines that used to sit across it are gone: 14x1 and 12x1 marks are under
+    // section 0.7's floor, they were the largest single source of sub-2px noise on the Crimper, and the ball's own
+    // cel shadow already says "wound rope".
     ctx.fillStyle = rig.col(CROW.coatDark); ctx.beginPath(); ctx.arc(x, y, 3, 0, TAU); ctx.fill();
-    ctx.fillStyle = tones(rig, CROW.rope).sh; ctx.fillRect(x - 7, y - 1, 14, 1); ctx.fillRect(x - 6, y + 3, 12, 1);
   }
   celPoly(ctx, rig, [x - 2, y - 12, x + 3, y - 13, x + 4, y - 6, x - 1, y - 6], CROW.pewter, 0.34, 0.3);
   if (rig.override) return;
@@ -137,23 +143,20 @@ export function crowLines(ctx, rig) {
 export function crowReel(ctx, rig) {
   const p = rig.p, hw = R(p.torsoW / 2), x = -hw - 4, y = -R(p.torsoH * 0.62);
   celRect(ctx, rig, x - 4, y, 13, 18, 3, IRON, 0.36, 0.3);
-  celBall(ctx, rig, x + 2, y + 2, 6, CROW.rope, true);
+  celBall(ctx, rig, x + 2, y + 2, 6, CROW.rope, false);
   if (rig.override) return;
-  const t = tones(rig, CROW.rope);
-  ctx.fillStyle = t.sh;
-  for (let i = 0; i < 3; i++) ctx.fillRect(x - 3, y + 4 + i * 4, 11, 1);
+  // (the three 1px drum windings are gone with the Crimper's: under the 2px floor, and the drum's cel shadow does it)
   ctx.strokeStyle = rig.col(CROW.rope); ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(x + 8, y + 4); ctx.quadraticCurveTo(0, y - 4, R(p.torsoW * 0.5), R(-p.torsoH * 0.3)); ctx.stroke();
-  ctx.fillStyle = rig.col(CROW.brass); ctx.fillRect(x - 4, y + 14, 13, 3);
+  band(ctx, rig, x - 4, y + 14, 13, 4, CROW.brass);   // drum band: brass on iron, INKED and at the 4px floor
 }
 /** C3: a half-keg of powder strapped across the back with two iron hoops and a slow match. */
 export function crowKeg(ctx, rig) {
   const p = rig.p, hw = R(p.torsoW / 2), x = -hw - 5, y = -R(p.torsoH * 0.86);
   celRect(ctx, rig, x - 4, y, 16, R(p.torsoH * 0.72), 6, KEG, 0.4, 0.28);
   if (rig.override) return;
-  const t = tones(rig, IRON);
-  ctx.fillStyle = t.base; ctx.fillRect(x - 4, y + 3, 16, 3); ctx.fillRect(x - 4, y + R(p.torsoH * 0.52), 16, 3);
-  ctx.fillStyle = t.sh; ctx.fillRect(x - 4, y + 5, 16, 1);
+  band(ctx, rig, x - 4, y + 3, 16, 4, IRON);
+  band(ctx, rig, x - 4, y + R(p.torsoH * 0.52), 16, 4, IRON);
   ctx.strokeStyle = rig.col(CROW.rope); ctx.lineWidth = 2; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(x + 8, y + 1); ctx.quadraticCurveTo(x + 16, y - 8, x + 10, y - 12); ctx.stroke();
   ctx.fillStyle = rig.col('#FF9A30'); ctx.fillRect(x + 8, y - 14, 3, 3);
@@ -188,8 +191,8 @@ export function crowRods(ctx, rig) {
   }
   if (rig.override) return;
   const t = tones(rig, CROW.copper);
-  ctx.fillStyle = t.hi; ctx.fillRect(x - 4, y + 2, 9, 2);
-  ctx.fillStyle = t.deep; ctx.fillRect(x - 4, y + 8, 9, 2);
+  ctx.fillStyle = t.hi; ctx.fillRect(x - 4, y + 2, 9, 3);
+  ctx.fillStyle = t.deep; ctx.fillRect(x - 4, y + 8, 9, 3);
   if (k <= 0.05) return;
   ctx.strokeStyle = rig.col(CROW.spark); ctx.lineWidth = 1.5;
   for (let i = 0; i < 2; i++) {
@@ -207,18 +210,18 @@ export function drawBoatHook(ctx, rig, pose, inf) {
   celPoly(ctx, rig, [34, -3, 48, -4, 55, 0, 48, 4, 34, 3], CROW.pewter, 0.36, 0.32);
   celPoly(ctx, rig, [40, -3, 41, -14, 47, -16, 50, -11, 45, -10, 44, -2], CROW.pewter, 0.34, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(CROW.rope); ctx.fillRect(-8, -3, 10, 6); ctx.fillRect(24, -3, 4, 6);
-  ctx.fillStyle = tones(rig, far ? WOOD_F : WOOD).deep; ctx.fillRect(2, -1, 22, 2);
+  band(ctx, rig, -8, -3, 10, 6, CROW.rope); ctx.fillStyle = rig.col(CROW.rope); ctx.fillRect(24, -3, 4, 6);
+  ctx.fillStyle = tones(rig, far ? WOOD_F : WOOD).deep; ctx.fillRect(2, -1, 22, 3);
 }
 /** Line gun: a stubby harpoon launcher with a wooden stock and a reel drum; the harpoon seats until `rig.fired`. */
 export function drawLineGun(ctx, rig) {
   celPoly(ctx, rig, [-12, -2, -4, -6, 16, -6, 18, 6, -4, 6, -10, 3], WOOD, 0.38, 0.3);
   celRect(ctx, rig, 2, -6, 20, 8, 2, IRON, 0.36, 0.32);
-  celBall(ctx, rig, 4, 5, 5, CROW.brass, true);
+  celBall(ctx, rig, 4, 5, 5, CROW.brass, false);   // its 2x2 cel dot is a stud under the floor at 0.93 scale
   if (!rig.fired) celPoly(ctx, rig, [18, -3, 38, -3, 44, 0, 38, 3, 18, 3], CROW.pewter, 0.34, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(CROW.rope); ctx.fillRect(2, 3, 10, 2);
-  ctx.fillStyle = tones(rig, IRON).deep; ctx.fillRect(6, -4, 14, 2);
+  ctx.fillStyle = rig.col(CROW.rope); ctx.fillRect(2, 3, 10, 3);
+  ctx.fillStyle = tones(rig, IRON).deep; ctx.fillRect(6, -4, 14, 3);
 }
 /** Chain shot: a leather grip, four swinging links and two iron balls (Powder Bosun). */
 export function drawChainShot(ctx, rig, pose) {
@@ -236,8 +239,8 @@ export function drawChainShot(ctx, rig, pose) {
 export function drawCoilRod(ctx, rig) {
   const k = rig.coil || 0;
   celCapsule(ctx, rig, -9, 0, 26, 0, 3, CROW.pewterDark, 0.3);
-  for (let i = 0; i < 4; i++) celBall(ctx, rig, 7 + i * 5, 0, 3.4, CROW.copper, false);
-  celBall(ctx, rig, 33, 0, 5 + k * 2.5, k > 0.05 ? CROW.sparkPale : CROW.glass, true);
+  for (let i = 0; i < 3; i++) celBall(ctx, rig, 8 + i * 6, 0, 3.4, CROW.copper, false);
+  celBall(ctx, rig, 33, 0, 5 + k * 2.5, k > 0.05 ? CROW.sparkPale : CROW.glass, false);
   if (rig.override || k <= 0.05) return;
   ctx.strokeStyle = rig.col(CROW.spark); ctx.lineWidth = 1.5;
   for (let i = 0; i < 3; i++) {
@@ -254,8 +257,8 @@ export function drawBoardingAxe(ctx, rig, pose, inf) {
   celPoly(ctx, rig, [22, -15, 33, -14, 39, -4, 36, 7, 28, 12, 22, 6, 25, -3], CROW.pewter, 0.34, 0.34);
   celPoly(ctx, rig, [22, -3, 12, -9, 12, 3], CROW.pewterDark, 0.34, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = tones(rig, CROW.pewter).deep; ctx.fillRect(26, 1, 9, 2);
-  ctx.fillStyle = rig.col(CROW.rope); ctx.fillRect(-6, -3, 8, 6);
+  ctx.fillStyle = tones(rig, CROW.pewter).deep; ctx.fillRect(26, 1, 9, 3);
+  band(ctx, rig, -6, -3, 8, 6, CROW.rope);
   rimTop(ctx, rig, 25, -13, 35, -5, CROW.pewter);
 }
 /**
@@ -269,10 +272,10 @@ export function drawWingShield(ctx, rig) {
   for (let i = 0; i < 3; i++) {
     const y = -18 + i * 13;
     celPoly(ctx, rig, [-1, y, 9, y + 2, 11, y + 9, -1, y + 11], hot ? CROW.sparkPale : CROW.pewter, 0.34, 0.34);
-    if (!rig.override) { ctx.fillStyle = tones(rig, hot ? CROW.sparkPale : CROW.pewter).deep; ctx.fillRect(1, y + 5, 8, 2); }
+    if (!rig.override) { ctx.fillStyle = tones(rig, hot ? CROW.sparkPale : CROW.pewter).deep; ctx.fillRect(1, y + 5, 8, 3); }
   }
   if (rig.override) return;
-  ctx.fillStyle = rig.col(crowRank(rig)); ctx.fillRect(0, -3, 7, 7);
+  band(ctx, rig, 0, -3, 7, 7, crowRank(rig));
   ctx.fillStyle = rig.col(CROW.brass); ctx.fillRect(1, -1, 4, 3);
 }
 

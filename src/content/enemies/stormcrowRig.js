@@ -37,7 +37,7 @@
 // weapon: +x along the forearm; torso: origin at the hip centre, y up negative; head: origin at the head centre).
 // Far-side parts colour from `inf.pal` (module constants go through farTone once, at module level).
 import { P, FACE } from '../../art/poses.js';
-import { celRect, celBall, celPoly, celCapsule, celTaper, tones, rimTop } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celCapsule, celTaper, tones, rimTop, band, flat } from '../../art/shading.js';
 import { drawFist, drawSkull, drawFace, drawBelt } from '../../art/rigParts.js';
 import { farShade } from '../../art/palettes.js';
 import { getChain } from '../../art/secondary.js';
@@ -48,20 +48,38 @@ const EMPTY = {};
 
 /** Stormcrow colour constants. */
 export const CROW = {
-  coat: '#4C5C82', coatDark: '#33405C',
-  leather: '#6A4C34', leatherDark: '#4A3524', strap: '#8A6A44',
-  canvas: '#D8CDB2', canvasSh: '#A99C80', duck: '#8C99AE',
-  pewter: '#9AA6B4', pewterDark: '#5C6675', copper: '#A8763F', brass: '#C89B3C',
+  // STORM NAVY, and the chroma is the faction. The coat family used to sit at 42% saturation and 6.5 Oklab chroma,
+  // i.e. inside the low-chroma core of the colour lattice that every polychrome backdrop also occupies - which is
+  // why a Stormcrow lost 30-39% of its pixels into the ground on five of seven sections. Hue and value are HELD
+  // (265 deg, L* 40.6 / 33.8); only chroma moves, and it moves COOL: every gram of warm chroma on this rig belongs
+  // to the rank ladder and nothing else may compete with it (see the RANK note above).
+  coat: '#2C4682', coatDark: '#1E3468',
+  // THE LEATHER IS A NEUTRAL AND IT WAS NOT BEHAVING LIKE ONE. At s51 the strap family was over the 40% ceiling
+  // this palette sets for everything that is not an identity mass, and - worse - it sat in the same warm amber
+  // wedge six of the seven stages are built out of, so the belts, brims, patches and pouches landed in lattice
+  // cells the ground already owned on four to six sections each. Pulled under the ceiling and, on the darkest
+  // step, a shade toward the faction's own plum boot; at that value the hue barely reads and the collision goes.
+  // It also takes warm chroma OFF the body, which is the one thing the rank ladder needs (see RANK above).
+  leather: '#614438', leatherDark: '#422F33', strap: '#7A6258',
+  // the duck trousers are the rig's LIGHT step (L* 56-64 against the coat's 33-48 and the canvas sleeve's 85): the
+  // faction straddles every stage's floor band from above and below instead of sitting inside it. They are the
+  // SECOND identity mass, so they carry real chroma (s 46-53) rather than the old near-achromatic slate.
+  canvas: '#D8CDB2', canvasSh: '#A99C80', duck: '#6F8CCC',
+  // pewter and pewterDark keep their value and stay NEUTRAL (both under the 40% ceiling), but carry enough cool
+  // chroma to be separable from a grey ground; they are steel, not a blue uniform.
+  pewter: '#85A0D2', pewterDark: '#4E637F', copper: '#9E7248', brass: '#C89B3C',
   glass: '#BBD4E8', glassHot: '#FFF4CE',
   // sealed-helm set: the gun-metal beak, the WARM taupe mask plate that keeps pewter off gun (only ~17% apart in
   // luminance, so they may never touch), and the two dead states of the sighting lens.
-  gun: '#7E8A9C', mask: '#6A5F55', glassDim: '#7E93A6', glassDead: '#4E5460',
+  gun: '#7286A8', mask: '#6A5F55', glassDim: '#7E93A6', glassDead: '#4E5460',
   // flag-rank hardware: the dark-gold edge that frames a boss's rank band and no line trooper's
   goldDark: '#8A6A26',
-  boot: '#4C3A44',
-  skin: '#E2AE83', hair: '#3A2A24', beard: '#7A6E5E',
+  boot: '#4C3450',   // the same dark plum at the same value, with enough chroma to be separable from a grey ground
+  // hair lifted off the ink (#3A2A24 was 6.5 Oklab L* over the outline, so its own line died in it) and an
+  // actually GREY privateer beard: at s23 the old one was a warm neutral sitting in four stages' own cells.
+  skin: '#E2AE83', hair: '#46352A', beard: '#6E6E68',
   wine: '#8E2F38', spark: '#9B7BFF', sparkPale: '#D7CBFF',
-  rope: '#C0A87C', outline: '#1B1E28',
+  rope: '#B8A484', outline: '#1B1E28',
 };
 /** Far-side copies of the module constants (never darken twice: far parts pick these, near parts the originals). */
 export const farTone = (hex) => farShade(hex, 0.62, 0.25);
@@ -85,11 +103,15 @@ export const rankH = (rig, n) => Math.max(n || 3, Math.ceil(3 / (rig.build.scale
  */
 export function rankBand(ctx, rig, x, y, w, h) {
   const c = crowRank(rig);
-  ctx.fillStyle = rig.col(c); ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = tones(rig, c).sh; ctx.fillRect(x, y + h - 1, w, 1);
-  // the flag frame goes through the SAME 3px floor as the band it frames - a literal 2 here was 2.4px on the
-  // Admiral and 2.3px on phase 3, i.e. under section 0.7, which is why it read as the sash's own shadow
-  if (crowFlag(rig)) { ctx.fillStyle = rig.col(CROW.goldDark); ctx.fillRect(x, y + h, w, rankH(rig, 2)); }
+  // INKED, not a bare fill: cloth over plate is a MATERIAL change and section 0.2 says it carries the line. band()
+  // is one stroke + one fill and ZERO clips, so the ink costs no clip budget - and outlining a rank mark changes no
+  // hex at all while making an elite's band read harder against its own sleeve, which STRENGTHENS the ladder.
+  // The flag frame is drawn INSIDE the same inked field (one device, one outline) with a 1px seam at the join:
+  // stroking a 2-3px gold bar on its own edges would leave a line and no gold, failing section 0.7 harder.
+  const flag = crowFlag(rig), fh = flag ? rankH(rig, 2) : 0;
+  band(ctx, rig, x, y, w, h + fh, c);
+  ctx.fillStyle = tones(rig, c).sh; ctx.fillRect(R(x), R(y) + R(h) - 1, R(w), 1);
+  if (flag) { ctx.fillStyle = rig.col(CROW.goldDark); ctx.fillRect(R(x), R(y) + R(h), R(w), fh); }
 }
 /** The sealed-helm kit, or null. The ONE predicate every sealed branch keys off: unsealed rigs never set it. */
 const sealedOf = (rig) => { const k = rig.build.crow; return k && k.sealed ? k : null; };
@@ -237,7 +259,7 @@ export function crowVisorMask(ctx, rig, r, pose, k) {
   ctx.fillStyle = rig.col(CROW.outline); ctx.fillRect(fx - 1, cy - 1, 3, 2);
   if (shut > 0) { ctx.fillStyle = rig.col(CROW.pewterDark); ctx.fillRect(cx + dx - lr + 1, cy - lr, lr * 2 - 2, Math.min(shut, lr * 2)); }
   // the same 2x2 white pixel crowGoggles puts on every other head in the faction
-  if (!down && shut < lr) { ctx.fillStyle = rig.col('#FFFFFF'); ctx.fillRect(cx + dx - R(lr * 0.75), cy - R(lr * 0.8), 2, 2); }
+  if (!down && shut < lr) { ctx.fillStyle = rig.col('#FFFFFF'); ctx.fillRect(cx + dx - R(lr * 0.75), cy - R(lr * 0.8), 3, 2); }
   // f. one detail mark per beak, and one only (section 0.7)
   // the grille lives on the BEAK, clear of the brass socket's lower edge (r*0.46 vs the socket bottom at ~0.42r):
   // punched through the socket it read as black chips bitten out of the head's one focal ring.
@@ -316,7 +338,7 @@ export function crowCoat(ctx, rig, pose, inf) {
     celPoly(ctx, rig, [-hw + 1, -H + 3, hw - 1, -H + 3, hw + 2, 2, -hw - 2, 2], CROW.canvas, 0.36, 0.3);
     celPoly(ctx, rig, [-hw - 2, -H + 5, -hw + 2, -H - 1, hw - 2, -H - 1, hw + 2, -H + 5, hw + 1, R(-H * 0.34), R(W * 0.16), R(-H * 0.26), R(-W * 0.14), R(-H * 0.4), -hw - 1, R(-H * 0.3)], pal.primary, 0.36, 0.28);
     if (rig.override) return;
-    ctx.fillStyle = rig.col(CROW.canvasSh); ctx.fillRect(-hw + 2, R(-H * 0.2), W - 4, 2);
+    ctx.fillStyle = rig.col(CROW.canvasSh); ctx.fillRect(-hw + 2, R(-H * 0.2), W - 4, 3);
   } else if (cut === 'smock') {
     celPoly(ctx, rig, [-hw - 3, -H + 6, -hw + 2, -H - 1, hw - 2, -H - 1, hw + 3, -H + 6, hw + 4, 2, -hw - 4, 2], pal.primary, 0.36, 0.28);
     // canvas powder apron: light, narrow, hung from a neck cord
@@ -348,9 +370,9 @@ export function crowCoat(ctx, rig, pose, inf) {
     celPoly(ctx, rig, [-hw - 2, -H + 4, -hw + 1, -H - 1, hw - 1, -H - 1, hw + 2, -H + 4, hw + 3, 2, -hw - 3, 2], pal.primary, 0.36, 0.28);
     celPoly(ctx, rig, [-hw - 3, -H + 2, -hw + 2, -H - 2, hw - 2, -H - 2, hw + 3, -H + 2, hw + 2, R(-H * 0.52), -hw - 2, R(-H * 0.52)], CROW.coatDark, 0.4, 0.22);
     if (rig.override) return;
-    ctx.fillStyle = rig.col(CROW.canvas);
-    ctx.beginPath(); ctx.moveTo(R(-W * 0.2), -H + 1); ctx.lineTo(R(W * 0.2), -H + 1); ctx.lineTo(0, R(-H * 0.5)); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = tones(rig, CROW.coatDark).deep; ctx.fillRect(-hw + 1, R(-H * 0.52), W - 2, 1);
+    // the lapel V is a bare fill introducing a new internal boundary: flat() strokes the outline under it (§0.2).
+    ctx.beginPath(); ctx.moveTo(R(-W * 0.2), -H + 1); ctx.lineTo(R(W * 0.2), -H + 1); ctx.lineTo(0, R(-H * 0.5)); ctx.closePath();
+    flat(ctx, rig, CROW.canvas);
   }
   crowChest(ctx, rig, W, H, t);
 }
@@ -375,9 +397,9 @@ export function crowHips(ctx, rig, pose, inf) {
   // rank sash wound above the belt: on the widest hips in the faction this is the biggest single rank field on the
   // deck. fillRect, not celRect, so it never leaks into the smear or hit-flash pass.
   if (k.sash) { const sh = rankH(rig, 5); rankBand(ctx, rig, -hw, -5 - sh, hip, sh); }
-  const t = tones(rig, CROW.leather);
-  ctx.fillStyle = t.base; ctx.fillRect(-hw - 2, -3, 7, 8);
-  ctx.fillStyle = t.sh; ctx.fillRect(-hw - 2, 3, 7, 2);
+  // hip pouch: leather on duck trousers, INKED (§0.2). Its 7x2 shadow strip went with the line that replaced it -
+  // a 2px mark under the noise floor whose only job was to fake the edge the outline now draws properly.
+  band(ctx, rig, -hw - 2, -3, 7, 8, CROW.leather);
 }
 /**
  * Sleeve with the WING ARMBAND above the elbow (armUpper hook). It used to be one shared wine for the whole faction;
@@ -390,10 +412,12 @@ export function crowArmUpper(ctx, rig, pose, inf) {
   // `crow.bareArm`: the Powder Bosun's sleeve IS his skin, and a warm band on warm tan fails section 0.1 - his
   // rank rides cloth only (sash, brow band, smock collar).
   if (rig.override || (rig.build.crow || EMPTY).bareArm) return;
-  const rank = inf.pal.rank || CROW.wine, h = rankH(rig, 4);
-  ctx.fillStyle = rig.col(rank); ctx.fillRect(-r, R(len * 0.5), r * 2, h);
-  ctx.fillStyle = tones(rig, rank).sh; ctx.fillRect(-r, R(len * 0.5) + h - 1, r * 2, 1);
-  ctx.fillStyle = rig.col(inf.far ? farTone(CROW.brass) : CROW.brass); ctx.fillRect(-1, R(len * 0.5) + 1, 2, 2);
+  const rank = inf.pal.rank || CROW.wine, h = rankH(rig, 4), y = R(len * 0.5);
+  // INKED (section 0.2): the armband is cloth on canvas, and it is the one rank carrier every rate above the
+  // Crimper shares - it has to survive against the sleeve behind it, not blend into it.
+  band(ctx, rig, -r, y, r * 2, h, rank);
+  ctx.fillStyle = tones(rig, rank).sh; ctx.fillRect(R(-r), y + h - 1, R(r * 2), 1);
+  ctx.fillStyle = rig.col(inf.far ? farTone(CROW.brass) : CROW.brass); ctx.fillRect(-1, y + 1, 3, 3);
 }
 /** Bare forearm rolled out of the sleeve, with the sleeve turned back into a 3px cuff (armLower hook). */
 export function crowArmLower(ctx, rig, pose, inf) {
@@ -402,9 +426,12 @@ export function crowArmLower(ctx, rig, pose, inf) {
   if (rig.override) return;
   // petty officer and up turn the cuff out in the rank colour; ratings keep a plain sleeve cuff
   const h = rankH(rig, 4);
-  const cuff = tones(rig, (rig.build.crow || EMPTY).cuff ? (pal.rank || CROW.wine) : (pal.sleeve || pal.primary));
-  ctx.fillStyle = cuff.base; ctx.fillRect(R(-r) - 1, 0, r * 2 + 2, h);
-  ctx.fillStyle = cuff.sh; ctx.fillRect(R(-r) - 1, h - 1, r * 2 + 2, 1);
+  const col = (rig.build.crow || EMPTY).cuff ? (pal.rank || CROW.wine) : (pal.sleeve || pal.primary);
+  // INKED: cloth turned back over a bare forearm is the sharpest material change on the arm, and this one line is
+  // shared by all five rates AND by Skree and Kestrel through CROW_PARTS - it was the single largest unoutlined
+  // fill on the faction (8-9 px x 13 px, on every keyframe, on both arms).
+  band(ctx, rig, R(-r) - 1, 0, r * 2 + 2, h, col);
+  ctx.fillStyle = tones(rig, col).sh; ctx.fillRect(R(-r) - 1, h - 1, R(r * 2) + 2, 1);
 }
 /** Fingerless flight glove: bare knuckles with a leather strap across the back of the hand (hand hook). */
 export function crowHand(ctx, rig, pose, inf) {
@@ -418,9 +445,13 @@ export function crowHand(ctx, rig, pose, inf) {
  * darkens for free through farPalette (this is why the rank colour is a palette key and not a module constant).
  */
 function crowLace(ctx, rig, inf, y0, len) {
-  if (rig.override || !(rig.build.crow || EMPTY).lace) return;
-  ctx.fillStyle = rig.col(inf.pal.rank || CROW.wine);
-  ctx.fillRect(R(-inf.r * 0.95), y0, rankH(rig, 3), len);
+  // NEAR LEG ONLY. On the far leg the stripe is farPalette's 38%-darker copy of the rank colour laid on the
+  // 38%-darker copy of the trousers: two dark values against each other, which reads as nothing and costs two cel
+  // shapes and two ink strokes a keyframe on the two rigs that already carry the most rank in the faction.
+  if (rig.override || inf.far || !(rig.build.crow || EMPTY).lace) return;
+  // the trouser lace runs the whole length of the leg, so its footprint is large however narrow the stripe is:
+  // it takes the line (§0.2), and it is widened to 4 px so there is something for the line to bound.
+  band(ctx, rig, R(-inf.r * 0.95), y0, rankH(rig, 4), len, inf.pal.rank || CROW.wine);
 }
 /** Thigh: tapered so it swells at the hip and narrows into the knee (legUpper hook). */
 export function crowLegUpper(ctx, rig, pose, inf) {
@@ -432,9 +463,10 @@ export function crowLegLower(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, pal = inf.pal;
   celCapsule(ctx, rig, 0, 0, 0, len, r, pal.secondary, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(inf.far ? LEATHER_F : CROW.leather); ctx.fillRect(R(-r) - 1, -1, r * 2 + 2, 4);
-  ctx.fillStyle = rig.col(inf.far ? STRAP_F : CROW.strap); ctx.fillRect(R(-r) - 1, 3, r * 2 + 2, 1);
-  crowLace(ctx, rig, inf, 5, len - 6);
+  // knee patch: leather over duck trousers, INKED. The 1px strap highlight that used to sit under it is gone -
+  // it was below the 2px detail floor and the outline says the same thing at full strength.
+  band(ctx, rig, R(-r) - 1, -1, r * 2 + 2, 4, inf.far ? LEATHER_F : CROW.leather);
+  crowLace(ctx, rig, inf, 6, len - 7);
 }
 /** Flight boot: dark plum leather with a turned-down canvas cuff and a pewter toe cap (foot hook, ankle space). */
 export function crowBoot(ctx, rig, pose, inf) {
@@ -442,9 +474,11 @@ export function crowBoot(ctx, rig, pose, inf) {
   celPoly(ctx, rig, [-heel, -h - 3, toe - 5, -h - 3, toe, -h + 2, toe, 2, -heel, 2], pal.dark, 0.36, 0.26);
   if (rig.override) return;
   const t = tones(rig, pal.dark);
-  ctx.fillStyle = rig.col(inf.far ? ROPE_F : CROW.rope); ctx.fillRect(-heel, -h - 3, toe + heel - 4, 3);
-  ctx.fillStyle = rig.col(inf.far ? PEWTER_F : CROW.pewter); ctx.fillRect(toe - 6, -h + 2, 6, 4);
-  ctx.fillStyle = t.deep; ctx.fillRect(-heel, 1, toe + heel, 2);
+  // the turned-down canvas cuff is widened from 3 to 4 px (section 0.7's band floor); at that width it and the
+  // 6x4 toe cap are both under what an outline can bound, so they stay tone-separated marks rather than inked ones.
+  ctx.fillStyle = rig.col(inf.far ? ROPE_F : CROW.rope); ctx.fillRect(R(-heel), R(-h) - 3, R(toe + heel) - 4, 4);
+  ctx.fillStyle = rig.col(inf.far ? PEWTER_F : CROW.pewter); ctx.fillRect(R(toe) - 6, R(-h) + 2, 6, 4);
+  ctx.fillStyle = t.deep; ctx.fillRect(R(-heel), 1, R(toe + heel), 2);
 }
 
 // ---------------------------------------------------------------- shared kit: scarf, coat tails
@@ -490,7 +524,7 @@ export function crowWings(ctx, rig) {
       const t = tones(rig, i ? CROW.coatDark : CROW.pewterDark);
       ctx.fillStyle = t.hi;
       for (let s = 0; s < 3; s++) ctx.fillRect(R(-6 - s * (L / 3)), -4 + s, 2, 8 - s * 2);
-      ctx.fillStyle = rig.col(CROW.canvasSh); ctx.fillRect(R(-L + 3), -3, R(L * 0.6), 2);
+      ctx.fillStyle = rig.col(CROW.canvasSh); ctx.fillRect(R(-L + 3), -3, R(L * 0.6), 3);
     }
     ctx.restore();
   }

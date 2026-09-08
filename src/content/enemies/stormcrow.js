@@ -198,7 +198,7 @@ const corsairAnims = crowAnims(CORSAIR_CARRY, CORSAIR_STANCE, {
     w1: { armR: [66, -18], weapon: -44, armL: [56, 40], torso: -2, head: 2, root: [-2, 0], legR: [12, 8], legL: [-16, 10], face: 'angry' },
     w2: { armR: [86, -8], weapon: -10, armL: [72, 46], torso: 2, head: 3, root: [-4, 0], legR: [10, 8], legL: [-18, 12], face: 'angry', squash: 0.98, stretch: 1.02 },
     h: { armR: [92, -4], weapon: 4, armL: [76, 44], torso: 6, head: 4, root: [-5, 0], legR: [14, 6], legL: [-20, 14], face: 'shout', squash: 0.97, stretch: 1.03 },
-    smear: { from: 10, to: -4, a: 0.3, r: 46 },
+    smear: { from: 16, to: -6, a: 0.3, r: 46 },   // 22 deg: a recoil is a small arc, but under 20 the smear rule reads it as radians
     hold: { armR: [82, 6], weapon: -6, armL: [64, 40], torso: -4, head: 0, root: [-8, 0], legR: [16, 6], legL: [-22, 16], face: 'shout' },
     r: { armR: [40, 30], weapon: -8, armL: [-18, 10], torso: 6, head: 0, root: [-2, 1], legR: [12, 6], legL: [-16, 12], face: 'grit' },
   }),
@@ -224,7 +224,9 @@ const corsairHooks = {
 const corsair = def({
   variant: 'corsair', name: 'LINE CORSAIR', role: 'ranged', hp: 40, damage: 1, speed: 1.15, score: 200, drops: 'none',
   build: { ...BASE.build, scale: 0.93, clan: WATCH.corsair,
-    palette: { ...CROW_PAL, primary: '#3E6B6E', sleeve: '#C9B79A', secondary: '#7E8AA0', hair: '#33241F', rank: WATCH.corsair },
+    // teal at the same value, chroma only (L* 49.7 -> 47.9, s 44 -> 70); the trousers leave the neutral core and
+    // the hair comes up off the outline (#33241F was 4.0 Oklab L* over it, so his own line died in his hair).
+    palette: { ...CROW_PAL, primary: '#21696E', sleeve: '#C9B79A', secondary: '#5F80C4', hair: '#4A382A', rank: WATCH.corsair },
     proportions: { ...CROW_PROPS, headR: 8, torsoW: 19, torsoH: 26, hip: 16, upperLeg: 18, lowerLeg: 17, upperArm: 15, lowerArm: 14, armR: 3.8, legR: 4.6 },
     // petty officer: armband + hatband, the first rate whose colour reaches the head. The scarf goes neutral
     // strap — it used to wear the Crimper's old rank red, which is exactly how the ladder went soft.
@@ -269,7 +271,10 @@ const bosunAnims = crowAnims(BOSUN_CARRY, BOSUN_STANCE, {
 const bosun = def({
   variant: 'bosun', name: 'POWDER BOSUN', role: 'bruiser', hp: 85, damage: 1, speed: 0.85, score: 300, drops: 'none',
   build: { ...BASE.build, scale: 1.15, clan: WATCH.bosun,
-    palette: { ...CROW_PAL, primary: '#5A5560', sleeve: CROW.skin, secondary: '#7C8496', hair: '#A79C88', rank: WATCH.bosun },
+    // his smock was the hole in the faction ladder: #5A5560 is 11% saturated, i.e. effectively achromatic, so on
+    // every polychrome stage his biggest mass fell in the lattice cells the ground already owned. Storm navy at
+    // his own value (L* 45.8 -> 43.2) fills it without going warm - warm here would flatten the rank ladder.
+    palette: { ...CROW_PAL, primary: '#454C7A', sleeve: CROW.skin, secondary: '#5E80C6', hair: '#A79C88', rank: WATCH.bosun },
     proportions: { ...CROW_PROPS, headR: 9.5, neckR: 4, torsoW: 27, torsoH: 25, hip: 23, upperLeg: 13, lowerLeg: 12, legR: 6, armR: 5, handR: 5.4, footL: 13, footH: 6, bulge: 0.6 },
     // gunner: waist sash, brow band, smock collar — all cloth, and the widest rank field on the deck. NO armband
     // and no rank cuff: his `sleeve` is his own bare skin, and a warm band on warm tan fails ART_STYLE section 0.1.
@@ -309,7 +314,7 @@ const galewrightAnims = crowAnims(GALE_CARRY, GALE_STANCE, {
     w1: { armR: [28, 72], weapon: 0, armL: [28, 72], torso: -10, head: -6, root: [-3, 2], legR: [10, 10], legL: [-14, 10], face: 'angry' },
     w2: { armR: [16, 88], weapon: -4, armL: [16, 88], torso: -18, head: -4, root: [-5, 3], legR: [8, 14], legL: [-14, 14], squash: 1.06, stretch: 0.94, face: 'angry' },
     h: { armR: [81, 0], weapon: 5, armL: [69, 0], torso: 14, head: 4, root: [2, 0], legR: [34, 10], legL: [-30, 30], face: 'shout', squash: 0.94, stretch: 1.07 },
-    smear: { from: 4, to: -5, a: 0.4, r: 48 },
+    smear: { from: 12, to: -10, a: 0.4, r: 48 },  // 22 deg, as above
     hold: { armR: [81, 2], weapon: 13, armL: [69, 2], torso: 16, head: 5, root: [3, 0], legR: [34, 10], legL: [-30, 30], face: 'shout' },
     r: { armR: [68, 10], weapon: 4, armL: [56, 10], torso: 8, head: 0, root: [2, 1], legR: [26, 10], legL: [-24, 24], face: 'grit' },
   }),
@@ -327,7 +332,8 @@ const galeHooks = {
 const galewright = def({
   variant: 'galewright', name: 'GALEWRIGHT', role: 'elite', hp: 90, damage: 1, speed: 1, score: 500, drops: 'meter',
   build: { ...BASE.build, scale: 0.92, clan: WATCH.galewright,
-    palette: { ...CROW_PAL, primary: '#4A3F68', sleeve: '#B9AECB', secondary: '#8A8296', hair: '#9A86C0', glow: CROW.spark, rank: WATCH.galewright },
+    // violet held at hue 290-295, chroma only (duster s 39 -> 60 at L* 33.7, trousers s 13 -> 35)
+    palette: { ...CROW_PAL, primary: '#382A68', sleeve: '#B8A6D6', secondary: '#7466BC', hair: '#9A86C0', glow: CROW.spark, rank: WATCH.galewright },
     proportions: { ...CROW_PROPS, headR: 8, torsoW: 19, torsoH: 28, hip: 16, neck: 4, upperLeg: 17, lowerLeg: 16, armR: 3.6, legR: 4.6 },
     // warrant specialist: SEALED. A small head with a BIG eye (lens 1.35 against the Marine's 0.85) under a swept
     // storm cowl and a long keel beak — with nothing sitting on the eye row any more, the lens is the largest and
@@ -388,7 +394,8 @@ const marineHooks = {
 const marine = def({
   variant: 'marine', name: 'IRONWING MARINE', role: 'elite', hp: 190, damage: 1, speed: 0.7, score: 1000, drops: 'food_small',
   build: { ...BASE.build, scale: 1.31, clan: WATCH.marine,
-    palette: { ...CROW_PAL, primary: '#36486B', sleeve: '#BFAE90', secondary: '#6E7A90', metal: '#AEB9C6', hair: '#2A2018', rank: WATCH.marine },
+    // navy at the same value, chroma only (L* 40.3 -> 35.5, s 50 -> 70); hair off the ink (#2A2018 was 1.6 L* over it)
+    palette: { ...CROW_PAL, primary: '#203A6B', sleeve: '#BFAE90', secondary: '#5474B4', metal: '#A6B6D0', hair: '#4A3226', rank: WATCH.marine },
     proportions: { ...CROW_PROPS, headR: 9, torsoW: 24, torsoH: 25, hip: 20, upperLeg: 15, lowerLeg: 14, legR: 5.6, armR: 4.6, handR: 5.2, footL: 13, footH: 6, bulge: 0.35 },
     // marine: SEALED, and the top of both ladders. A big head with a small eye (lens 0.85) behind a short grilled
     // iron muzzle — the inverted lens sizes are what stop two pewter heads reading as the same man. Six rank

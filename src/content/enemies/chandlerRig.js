@@ -19,7 +19,7 @@
 // the forearm; torso: hip centre, y up negative; head: head centre). Far-side parts colour from `inf.pal`.
 // SFX: this faction ships no new sounds (see the CANONICAL_SFX list) — the shutter is 'gear_slip', the bellows and
 // the slake 'steam' / 'steam_vent', the hand-bell 'chime', the cork 'bomb_bat', the lamp going out 'prop_break'.
-import { celRect, celBall, celPoly, celCapsule, tones, rimTop } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celCapsule, tones, rimTop, band } from '../../art/shading.js';
 import { drawFist, drawBoot, drawSkull, drawFace } from '../../art/rigParts.js';
 import { getChain } from '../../art/secondary.js';
 import { jointScreen } from '../../art/rig.js';
@@ -35,19 +35,42 @@ const R = Math.round, TAU = Math.PI * 2;
 
 /** Chandlery colour constants (L* in the spec order: the game's first pale-bodied faction; darks at the extremities only). */
 export const CH = {
-  outline: '#20180F',      // pitch tallow, a warm tar-black
-  limedust: '#C2AE84',     // the long buttoned waxed-canvas coat (palette.primary)
+  outline: '#20180F',      // pitch tallow, a warm tar-black (Oklab L* 21.6; every BASE tone below clears it by >= 9)
+  // IDENTITY MASS 1 — tallow. Hue and Oklab lightness held from #C2AE84, chroma only (L* 75.8 -> 70.9, s 32 -> 62):
+  // tallow is a yellow wax and 62 % is what tallow actually looks like. It sits ABOVE every floor band in the game
+  // (max 68) so the coat, the thighs and the caps clear the stage from above.
+  limedust: '#C29B4A',     // the long buttoned waxed-canvas coat (palette.primary)
   quicklime: '#E6ECDC',    // apron panel, sleeve wraps, gaiters, the dust on every boot (palette.sleeve)
-  leather: '#7C5F3C',      // belts, straps, cart shafts, bracers (palette.secondary)
-  rubber: '#2B2620',       // hose, gauntlets, respirator bar, boots, kiln body (palette.dark) — SMALL AREAS ONLY
-  pewter: '#6C7A74',       // tongs, shovel, cane ferrule, tally-tag, lamp bodies (palette.metal)
+  // IDENTITY MASS 2 — the same waxed duck at a much darker step, re-read as harness leather. It used to be the
+  // faction's BIGGEST mass while being a listed neutral (36 % of the Wickboy's painted area against 18 % of tallow),
+  // which is the assignment inversion the readability pass exists to fix, so the CHROMA (s 52 -> 71) stays.
+  // The LIGHTNESS does not: #62451C sat at Oklab L* 41.4, which is INSIDE every plank band in the game rather than
+  // below it (Sootfoot plank #443629 L* 34.4, dE 8.0; the dark plank row #3A2E24 dE 11.2; Gas-Halls WOOD_D #4C3A28
+  // dE 5.9) -- the tool's own LOST threshold is dE 10, so the faction's biggest mass was merged into four floor
+  // tones at once and chandler/Sootfoot-Docks became the worst-reading row in the game at 44.7 % lost.
+  // #7A561E holds the saturation (s 75, Oklab C 6.90 -> 8.42, i.e. chroma actually up) and gives the lightness back:
+  // L* 47.3, dE 14.0 / 17.2 against the two plank rows, both clear of LOST. A lightness sweep over L* 48-56 measured
+  // on all seven sections picks 48: faction mean lost% 30.1 / overlap 38.9, against 30.5 / 40.7 at 53 and 30.3 / 41.2
+  // at 56 -- above 50 the harness walks into the Mooring Spine's own #8A7A5A band (that row's overlap goes 31 -> 43).
+  leather: '#7A561E',      // apron panel, belts, straps, bracers, cart shafts (palette.secondary)
+  // #2B2620 was Oklab L* 27.2 against a 21.6 outline — dL 5.6, i.e. the respirator bar, the boots and the gauntlets
+  // were drawing an outline their own fill then swallowed. #38312B is dL 10.3 and still a near-neutral (s 23).
+  rubber: '#38312B',       // hose, gauntlets, respirator bar, boots, kiln body (palette.dark) — SMALL AREAS ONLY
+  // the greened pewter the file always claimed it was: hue and Oklab lightness held exactly (L* 56.6 -> 57.0),
+  // chroma 1.9 -> 4.4. It is 15-20 % of the two big rigs and at C 1.9 all of that mass sat in the lattice's
+  // achromatic core, which every polychrome backdrop in the game also occupies. s27 keeps it a NEUTRAL.
+  pewter: '#5E8072',       // tongs, shovel, cane ferrule, tally-tag, lamp bodies (palette.metal)
   lime: '#D8FF6E',         // the lamp, the floor cone, the tether, the rite rim
   hot: '#FFD27A',          // 1-2px hot core inside every lime glow (ART_STYLE 4)
   dead: '#3A3A34',         // dead lamp glass
   idleGlass: '#8FA34A',    // lamp lit but idle
   skin: '#DFC7A8', hair: '#6B5A44', shade: '#5E8A46',
 };
-/** Value ladder: limedust coat > quicklime apron / wraps / gaiters > leather bracers and belts > rubber boots, gloves, mask. */
+/**
+ * Value ladder (Oklab L*): quicklime wraps / gaiters 93.4 > limedust coat and thighs 70.9 > leather apron, belts and
+ * bracers 47.3 > rubber boots, gloves, mask 31.9 > pitch-tallow ink 21.6. Four rungs, none closer than 15 L*, and
+ * only the rubber rung is inside a stage floor band -- it is the one that is deliberately SMALL AREAS ONLY.
+ */
 export const CH_PAL = {
   skin: CH.skin, hair: CH.hair, primary: CH.limedust, sleeve: CH.quicklime, secondary: CH.leather,
   accent: CH.pewter, metal: CH.pewter, dark: CH.rubber, glow: CH.lime,
@@ -57,8 +80,19 @@ export const CH_PROPS = {
   headR: 9, neck: 3, neckR: 3, torsoW: 22, torsoH: 25, hip: 19, upperArm: 14, lowerArm: 14, armR: 4.5, handR: 5,
   upperLeg: 14, lowerLeg: 13, legR: 5, footL: 12, footH: 5, bulge: 0.35, shoulderX: 3, hipX: 4,
 };
-/** Per-variant wax seal on the tally-tag (build.clan). */
-export const CLAN = { wickboy: '#E8D9A8', tallyman: '#F2F0E4', limeburner: '#A8482A', purser: '#D08A2E', resurrectionist: '#5B5F62' };
+/**
+ * THE COMPANY LADDER — the variant's wax seal on the tally-tag and on one shape >= 4 px elsewhere on the rig
+ * (Wickboy bucket band, Tallyman ledger spine, Limeburner kiln band, Purser cap cockade, Resurrection Man cart
+ * lashing). Three of the five used to be ACHROMATIC (#F2F0E4 s6, #5B5F62 s7, #E8D9A8 s28) and the ladder was
+ * monotone in nothing, so the rank mark said nothing on three of five men. Re-spaced fodder -> grabber so Oklab
+ * CHROMA climbs STRICTLY with the rate — 9.2 / 10.7 / 13.4 / 14.1 / 14.5 — and every rung stays out of the coat's
+ * own hue family (okH 84) and >= 12 L* from the GROUND it is painted on: the lead tally-tag is pewter at L* 56.6,
+ * and the Purser's cockade rides his dark officer crown, which is why his amber may sit at the coat's own value.
+ * The Limeburner's kiln red is held exactly; the Purser's company amber keeps its hue and value and moves only
+ * chroma (#D08A2E -> #D68C24) so the top of the ladder stays strict. Re-run tools/chandler-census.mjs after any
+ * edit here: the ladder is carried by AREA as well as chroma, and the five variants are five different sizes.
+ */
+export const CLAN = { wickboy: '#5F7A3E', tallyman: '#316AA2', limeburner: '#A8482A', purser: '#D68C24', resurrectionist: '#622E86' };
 
 const EMPTY = Object.freeze({});
 // jaw 0.62 (not 0.44): the respirator bar eats the middle of the head, so the chin polygon has to reach far enough
@@ -139,7 +173,13 @@ export function chHat(ctx, rig, pose, inf) {
   // brim trimmed from r*1.5 (13.5 px, a shelf) to r*1.25
   celPoly(ctx, rig, [R(-r * 1.1), y - 1, R(r * 1.2), y - 2, R(r * 1.25), y + 2, R(-r * 1.1), y + 2], col, 0.4, 0.2);
   if (rig.override) return;
-  if (peaked) { ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(R(-r * 0.2), y - crown + 3, 4, 4); }
+  // THE OFFICER CAP IS THE PURSER'S RUNG of the company ladder — a hat band across the base of the crown plus the
+  // wax cockade above it, both in the variant's own colour and both inked. It used to be one pewter stud, which is
+  // why the elite carried less rank area than the fodder's bucket band (tools/chandler-census.mjs).
+  if (peaked) {
+    band(ctx, rig, R(-r * 0.95), y - 4, R(r * 1.9), 4, rig.build.clan || CH.pewter, 1);
+    band(ctx, rig, R(-r * 0.2), y - crown + 3, 4, 4, rig.build.clan || CH.pewter, 1);
+  }
   // Tallyman: the green celluloid eyeshade is the UNDERSIDE of the brim, not a second dark band across the eyes
   if (ch.shade) { ctx.fillStyle = rig.col(CH.shade); ctx.fillRect(R(-r * 0.6), y, R(r * 1.7), 2); }
 }
@@ -151,7 +191,9 @@ function chTallyTag(ctx, rig, x, y) {
   // grey smudge of dirt at the collar (§3 'joints snapped to whole pixels', §5 'integer coordinates for every detail')
   ctx.fillStyle = rig.col(CH.pewter);
   ctx.fillRect(x - 4, y - 2, 2, 1); ctx.fillRect(x - 2, y - 1, 2, 2);
-  ctx.fillStyle = rig.col(rig.build.clan || CLAN.wickboy); ctx.fillRect(x - 1, y + 3, 3, 3);
+  // the wax seal is a MATERIAL on the lead tag, so it takes the line (0.2) and goes to 4x4: at 3x3 unoutlined it
+  // was the rank read of three variants and read as one stray warm pixel at 1x
+  band(ctx, rig, x - 1, y + 2, 4, 4, rig.build.clan || CLAN.wickboy, 1);
 }
 /** Long buttoned waxed-canvas coat with a flaring skirt, a quicklime apron panel and the tally-tag at the throat. */
 export function chTorso(ctx, rig, pose, inf) {
@@ -174,9 +216,9 @@ export function chHips(ctx, rig, pose, inf) {
   const hip = inf.w, hw = R(hip / 2), pal = inf.pal;
   celRect(ctx, rig, -hw, -5, hip, 11, 3, pal.secondary, 0.4, 0.2);
   if (rig.override) return;
-  // ONE seam: a 3 px quicklime top edge that breaks the leather apron above from the leather belt block. The old
-  // t.deep bottom band is gone — the thigh below is limedust now (chLegUpper), so nothing needs separating there.
-  ctx.fillStyle = rig.col(pal.sleeve); ctx.fillRect(-hw + 1, -5, hip - 2, 3);
+  // ONE seam: a quicklime top edge that breaks the leather apron above from the leather belt block. Quicklime on
+  // leather is a MATERIAL change, so it takes 1 px of ink (0.2) and 4 px of colour rather than 3 (0.7).
+  band(ctx, rig, -hw + 1, -5, hip - 2, 4, pal.sleeve, 1);
   ctx.fillStyle = rig.col(pal.metal); ctx.fillRect(0, -5, 4, 5);
 }
 /** Leather bracer with a quicklime sleeve wrap at the elbow (limb space: origin at the elbow, +y along the forearm). */
@@ -184,8 +226,9 @@ export function chArmLower(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, pal = inf.pal;
   celRect(ctx, rig, -r, 0, r * 2, len + 1, r, pal.secondary, 0.4, 0.2);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.sleeve); ctx.fillRect(-r, 0, r * 2, 4);
-  ctx.fillStyle = tones(rig, pal.sleeve).sh; ctx.fillRect(-r, 3, r * 2, 1);
+  // the quicklime sleeve wrap is cloth over leather: inked, not faked. The 1 px tone line that used to sit under it
+  // was doing the line's job badly and is gone (0.2 / 0.7).
+  band(ctx, rig, -r, 0, r * 2, 4, pal.sleeve, 1);
 }
 /**
  * Limedust canvas trousers with a leather knee strap (limb space: origin at the hip).
@@ -196,15 +239,16 @@ export function chLegUpper(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, pal = inf.pal;
   celRect(ctx, rig, -r, 0, r * 2, len + 1, r, pal.primary, 0.4, 0.25);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.secondary); ctx.fillRect(-r, len - 3, r * 2, 4);   // the knee strap
+  band(ctx, rig, -r, len - 3, r * 2, 4, pal.secondary, 1);   // the knee strap: leather on canvas takes the line
 }
 /** Quicklime gaiter over the shin with one leather strap (limb space: origin at the knee). */
 export function chLegLower(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, pal = inf.pal;
   celRect(ctx, rig, -r, 0, r * 2, len + 1, r, pal.sleeve, 0.4, 0.25);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.secondary); ctx.fillRect(-r, len - 7, r * 2, 3);
-  ctx.fillStyle = tones(rig, pal.secondary).deep; ctx.fillRect(-r, len - 4, r * 2, 1);
+  // 4 px and inked, not 3 px with a tone line under it: a 3 px band that takes an outline on both edges leaves
+  // 1 px of colour and fails 0.7 harder than the missing line did (0.2 / corollary d)
+  band(ctx, rig, -r, len - 7, r * 2, 4, pal.secondary, 1);
 }
 /** Rubber boot with a pewter buckle and a cap of lime dust on the toe (ankle space, toe toward +x). */
 export function chFoot(ctx, rig, pose, inf) {
@@ -219,8 +263,9 @@ export function chFoot(ctx, rig, pose, inf) {
 export function chHand(ctx, rig, pose, inf) {
   drawFist(ctx, rig, inf.r, inf.far ? inf.pal.secondary : inf.pal.dark);
   if (rig.override) return;
-  // 3 px, not 2: the cuff is the only thing separating the far fist from the far forearm it shares a hex with
-  ctx.fillStyle = rig.col(inf.pal.sleeve); ctx.fillRect(R(-inf.r * 0.6) - 2, R(-inf.r), 3, R(inf.r * 2));
+  // 4 px and inked: the cuff is the ONLY thing separating the far fist from the far forearm it shares a hex with,
+  // and at 3 px unoutlined it was the single most repeated faked boundary in the faction
+  band(ctx, rig, R(-inf.r * 0.6) - 2, R(-inf.r), 4, R(inf.r * 2), inf.pal.sleeve, 1);
 }
 /** Complete Chandlery part table. */
 export const CH_PARTS = { head: chHead, face: chFace, hat: chHat, torso: chTorso, hips: chHips, armLower: chArmLower, legUpper: chLegUpper, legLower: chLegLower, foot: chFoot, hand: chHand };

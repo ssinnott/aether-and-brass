@@ -101,6 +101,20 @@ the joint, shins and forearms narrow — and `neckR` for thick or thin necks.
 * **Outline:** 1 px, colour `build.outline` (heroes `#1E1A22`, Brassbound `#1A1E24`, Sootborn `#1E1A14`). Draw it via the
   helpers (`outlinePath`) — a stroke 2·ow wide *under* the fill so exactly 1 px shows. Internal seams are 1 px of the
   `sh`/`deep` tone, not outline colour.
+* **What the outline costs, and why that is not a bug.** §0.2 puts a 1 px near-black line on every silhouette *and
+  every internal boundary*, so ink and the shadow bands under it are a large, deliberate share of a rig's pixels —
+  measured on the differenced actor masks of `tools/stage-values.js`, **10–27 % of every actor, 17 % across the
+  cast**. Two consequences, both measured, both to be quoted rather than re-litigated:
+  * **Actor saturation.** Near-black is unsaturated, so any mean taken over *every* actor pixel is dragged down by
+    obeying §0.2. `stage-values` reports `actS` over the whole mask and `actSC` over the coloured mass only (Oklab
+    L ≥ 0.25). Reference figures read off somebody else's screenshot are measured on the most saturated 4 % of the
+    frame (`maskFromSaturation`) and are **not** comparable with `actS`; compare them with the `--reflike` column,
+    which runs that same proxy mask on our own frame.
+  * **Colour-space reservation.** Near-black is also the one region of the Oklab lattice that every dark stage
+    occupies, so the ink lands in a claimed cell almost by construction. On the Cold Sovereign the outline alone is
+    6–18 % of a faction's colour mass and the single largest colliding cell for six of eleven groups.
+    `stage-values --cells` names the colliding masses; `ovlapC` is the same number over the mass a palette edit can
+    actually move. **Chase `ovlapC`, report `ovlap`.**
 * **Far limbs:** the rig passes `rig.paletteFar` (`farPalette`: 0.62 × brightness, 25 % desaturated, slightly cool) to far
   parts; do not darken twice. `build.farShade` / `build.farDesat` override; `farTone(hex, f, desat)` for module constants.
 * **Value rule (readability pass):** every pair of *adjacent* parts differs by ≥ 25 % luminance **or** a hue-family

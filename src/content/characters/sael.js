@@ -19,8 +19,18 @@ import { rad } from '../../engine/math.js';
 
 // skin: light warm  hair: near-white  primary: teal coat  sleeve: cool light shirt  secondary: slate trousers
 // accent: brass trim  metal: light steel blade  dark: near-black boots  glow: electro-arc
-const PAL = { skin: '#F5E0C8', hair: '#EAF2F7', primary: '#2F6F8F', sleeve: '#A9C8D6', secondary: '#4A5A72', accent: '#D9B45B', metal: '#D8DCE0', dark: '#1C2A33', glow: '#8FE3FF' };
-const LEATHER = '#6B4A2E', GLOVE = '#7A4E2E', GLOVE_FAR = farShade(GLOVE, 0.62, 0.25), LENS = '#9BC1E8', SCARF = '#C74E4E', ARC = '#8FE3FF', WHITE = '#FFFFFF', BROW = '#8A9AA8';
+// Saturation pass: teal is her whole identity and it was carrying almost none of it. Hue and Oklab lightness are held
+// and only CHROMA moves - coat #2F6F8F -> #1D698F (s 67 -> 80, L* 51.4 -> 49.4) and shirt #A9C8D6 -> #78B9D6
+// (s 21 -> 44, L* 81.4 -> 75.3), so the coat is still the same teal and the sleeve still the light de-blobbing mass.
+// Two consequences were then forced by measurement rather than taste:
+//   trousers #4A5A72 -> #384860, because a darker coat left the two masses at the same luma (palette/value-ladder
+//     -adjacent primary/secondary fell to 0.015 against the hero baseline 0.059); at L* 39.8 they are also the dark
+//     anchor the section floor bands never occupy, and they are still a near-neutral slate (C 4.6).
+//   boots #1C2A33 -> #1A3746, because at Oklab L* 27.6 they sat 5.0 L* off the #1E1A22 outline: the line was drawn
+//     round the boot and then swallowed by it. #1A3746 clears the ink by 9.5 L* and is still a near-black boot.
+// LEATHER #6B4A2E -> #6B5542: a strap is a NEUTRAL and had no business carrying 57 % saturation next to a 21 % shirt.
+const PAL = { skin: '#F5E0C8', hair: '#EAF2F7', primary: '#1D698F', sleeve: '#78B9D6', secondary: '#384860', accent: '#D9B45B', metal: '#D8DCE0', dark: '#1A3746', glow: '#8FE3FF' };
+const LEATHER = '#6B5542', GLOVE = '#7A4E2E', GLOVE_FAR = farShade(GLOVE, 0.62, 0.25), LENS = '#9BC1E8', SCARF = '#C74E4E', ARC = '#8FE3FF', WHITE = '#FFFFFF', BROW = '#8A9AA8';
 const R = Math.round, TAU = Math.PI * 2;
 
 // ---------------------------------------------------------------------------------------------------------------

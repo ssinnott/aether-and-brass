@@ -18,7 +18,7 @@ import {
   CROW, CROW_PAL, CROW_PROPS, crowTails, crowScarf, crowTell, FK, makeCrowBase, crowStrike,
 } from './stormcrowRig.js';
 import { CROW_PARTS } from './stormcrowKit.js';
-import { celRect, celBall, celPoly, celCapsule, tones, rimTop } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celCapsule, tones, rimTop, flat, band } from '../../art/shading.js';
 import { getChain } from '../../art/secondary.js';
 import { pathPoly, paint, circle } from '../../art/shapes.js';
 import { rad } from '../../engine/math.js';
@@ -28,7 +28,15 @@ const R = Math.round, TAU = Math.PI * 2;
 /** Torso outlines: the full admiral's coat, and the ragged waistcoat left of it in phase 3. */
 const COAT_PTS = (hw, H) => [-hw - 3, -H + 4, -hw + 1, -H - 1, hw - 1, -H - 1, hw + 3, -H + 4, hw + 4, 2, -hw - 4, 2];
 const TORN_PTS = (hw, H, W) => [-hw - 1, -H + 5, -hw + 2, -H - 1, hw - 2, -H - 1, hw + 1, -H + 5, hw + 2, R(-H * 0.2), hw - 1, 2, R(W * 0.2), R(-H * 0.12), R(-W * 0.12), 2, -hw - 2, R(-H * 0.16)];
-const GOLD = '#D8AE52', GOLD_DK = '#8A6A26', COAT = '#2A3556', COAT_DK = '#1A2138';
+// THE ADMIRAL'S COAT, hue held at 224 deg, chroma only. COAT_DK is 19.5% of the final boss - the cape, the bicorne and
+// the coat's own dark panel - and at #1A2138 it was Oklab L* 25.3 against the outline #1B1E28 at L* 23.7, i.e. dL 1.6:
+// the line under the largest mass on the rig was drawn and then swallowed, which is exactly the defect that makes a
+// sealed Stormcrow read as one blob at squint. The instinct here is to push it DOWN to clear the Cold Sovereign's floor
+// band from below; #101B38 measures Oklab L* 23.0, BELOW its own ink, which trades a stage collision for a self-
+// collision. So the ladder moves UP and OUT instead: COAT_DK #223163 (L* 32.9, dL 9.2, C 9.0) and COAT #253A72
+// (L* 36.3, dL 12.6, C 10.0) - two chromatic steps, both clear of the line, both out of the lattice's neutral core,
+// and the coat's Rec-601 luminance still 0.547 clear of the trousers so the boss value ladder is unchanged.
+const GOLD = '#D8AE52', GOLD_DK = '#8A6A26', COAT = '#253A72', COAT_DK = '#223163';
 /**
  * FLAG RANK. The line rates climb a warm heat ramp and top out at the Ironwing Marine's signal gold on cloth
  * (stormcrow.js WATCH); flag rank does NOT continue that ramp, it steps out of it — the Wing's RED, in a gold
@@ -50,9 +58,13 @@ function bicorne(ctx, rig, pose, inf) {
   const r = inf.r;
   celPoly(ctx, rig, [R(-r * 2.1), R(-r * 0.78), R(-r * 1.2), R(-r * 1.62), R(r * 0.1), R(-r * 1.9), R(r * 1.4), R(-r * 1.6), R(r * 2.2), R(-r * 0.74), R(r * 0.7), R(-r * 1.06), R(-r * 0.7), R(-r * 1.06)], COAT_DK, 0.34, 0.28);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(GOLD);
-  ctx.fillRect(R(-r * 1.5), R(-r * 1.02), R(r * 3), 3);
-  ctx.beginPath(); ctx.moveTo(R(r * 0.2), R(-r * 1.74)); ctx.lineTo(R(r * 0.85), R(-r * 1.12)); ctx.lineTo(R(-r * 0.45), R(-r * 1.12)); ctx.closePath(); ctx.fill();
+  // The gold lace band and the cockade are MATERIAL changes on felt and both take 1 px of ink (ART_STYLE 0.2, 0.7):
+  // the cord was a bare 3 px fillRect (inking that leaves 1 px of gold, which fails 0.7 harder than the missing line),
+  // so it is widened to 4 and drawn with band(); the cockade was a bare beginPath/fill and is the file's one
+  // outline-stroke-contract error - flat() strokes the outline under it for the cost of one stroke.
+  band(ctx, rig, R(-r * 1.5), R(-r * 1.04), R(r * 3), 4, GOLD);
+  ctx.beginPath(); ctx.moveTo(R(r * 0.2), R(-r * 1.74)); ctx.lineTo(R(r * 0.85), R(-r * 1.12)); ctx.lineTo(R(-r * 0.45), R(-r * 1.12)); ctx.closePath();
+  flat(ctx, rig, GOLD);
   ctx.fillStyle = rig.col(SASH); ctx.fillRect(R(r * 0.1), R(-r * 1.5), 4, 5);
   rimTop(ctx, rig, R(-r * 1.9), R(-r * 0.9), R(r * 0.1), R(-r * 1.82), '#3A4256');
   const cx = R(r * 0.45), cy = R(-r * 1.24);

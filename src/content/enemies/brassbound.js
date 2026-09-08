@@ -6,7 +6,7 @@
 // Type traits: 1.5x damage from throws, gear-slip stagger every 4th hit, wind-up key spins while acting and stops when staggered,
 // lens + core turn red on every tell. Death: six parts fly out and the aether core pops cyan.
 import { makeEnemyDef, frontBox, BRASS, FK, BRASS_OUTLINE, BRASS_PAL, BRASS_PROPS, BRASS_PARTS, BRASS_KEY, makeBrassBase, brassPuff } from './common.js';
-import { celRect, celBall, celPoly, tones, outlinePath } from '../../art/shading.js';
+import { celRect, celBall, celPoly, tones, outlinePath, band } from '../../art/shading.js';
 import { getChain } from '../../art/secondary.js';
 import { rrect, circle, pathPoly, paint, gear } from '../../art/shapes.js';
 import { rad } from '../../engine/math.js';
@@ -15,7 +15,11 @@ import { particles } from '../../engine/particles.js';
 import { TEAM } from '../../constants.js';
 
 const R = Math.round, TAU = Math.PI * 2;
-const WOOD = '#6A4426', IRON = '#4A4E5A', LIGHT = '#C8D0D8', BOMB = '#2A2E38', HOT = '#FFD27A', CAPE = '#2E4A6B';
+/** Crest blade point list, module-level: ART_STYLE 9 forbids allocating inside a draw. */
+const CREST_PTS = [-5, 0, 5, 0, 3, -6, 0, -11, -4, -8];
+// LIGHT is the light-steel blade edge on the halberd and the mace: a cool near-neutral (s 25), not the sky blue
+// (s 35) this pass had made of it. Cold metals, ART_STYLE 4.
+const WOOD = '#6A5236', IRON = '#3A4A5A', LIGHT = '#9EB5D3', BOMB = '#2C3654', HOT = '#FFD27A', CAPE = '#2E4A6B';
 const LENS = BRASS.lens;
 const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
 
@@ -25,7 +29,7 @@ function drawClub(ctx, rig) {
   celRect(ctx, rig, -4, -2, 16, 4, 1, WOOD, 0.4, 0);
   celPoly(ctx, rig, [10, -3, 20, -5, 26, -3, 27, 3, 20, 5, 10, 3], '#8A5C32', 0.38, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(IRON); ctx.fillRect(12, -4, 3, 8);
+  band(ctx, rig, 12, -4, 4, 8, IRON);
 }
 /** 56px halberd: long shaft, trapezoid axe blade, spike and back hook (light steel). */
 function drawHalberd(ctx, rig) {
@@ -34,7 +38,7 @@ function drawHalberd(ctx, rig) {
   celPoly(ctx, rig, [46, -2, 62, 0, 46, 2], LIGHT, 0.4, 0);
   celPoly(ctx, rig, [34, 4, 40, 4, 38, 10, 33, 8], LIGHT, 0.4, 0);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(rig.palette.accent); ctx.fillRect(28, -3, 4, 6);
+  band(ctx, rig, 28, -3, 4, 6, rig.palette.accent);
 }
 /** Copper spanner (Sapper's melee tool). */
 function drawWrench(ctx, rig) {
@@ -50,7 +54,7 @@ function drawMace(ctx, rig) {
   outlinePath(ctx, rig); ctx.fillStyle = rig.col(tones(rig, LIGHT).sh); ctx.fill();
   celBall(ctx, rig, 28, 0, 7, LIGHT, true);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(rig.palette.accent); ctx.fillRect(-6, -2, 4, 4);
+  ctx.fillStyle = rig.col(rig.palette.accent); ctx.fillRect(-6, -2, 4, 4); // pommel: rivet-class detail, under hiMin
 }
 /** Chrome rapier: verdigris guard ball, thin 38px blade with a light edge. */
 function drawRapier(ctx, rig) {
@@ -66,11 +70,12 @@ function drawRapier(ctx, rig) {
 function drawShield(ctx, rig) {
   if (rig.shieldStripped) return;
   const tell = rig.tell;
-  celRect(ctx, rig, -13, -9, 32, 18, 4, '#9AA4B2', 0.36, 0.3);
+  celRect(ctx, rig, -13, -9, 32, 18, 4, '#889DB8', 0.36, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(tell ? LENS : '#3A3A44'); ctx.fillRect(-10, -6, 26, 12);
-  ctx.fillStyle = tones(rig, tell ? LENS : '#3A3A44').sh; ctx.fillRect(-10, 3, 26, 3);
-  ctx.fillStyle = rig.col(tell ? '#B6FFF8' : '#5B2A86'); ctx.fillRect(-9, -1, 24, 3);
+  // gunmetal face on a light-steel rim is a material change on the biggest slab in the cast: it takes ink (0.2).
+  band(ctx, rig, -10, -6, 26, 12, tell ? LENS : '#2F384A', 2);
+  ctx.fillStyle = tones(rig, tell ? LENS : '#2F384A').sh; ctx.fillRect(-10, 3, 26, 3); // form seam inside the face
+  band(ctx, rig, -9, -2, 24, 5, tell ? '#B6FFF8' : (rig.build.stripe || '#5B2A86'));   // regiment band, widened 3 -> 5
   celBall(ctx, rig, 3, 0, 3, rig.palette.accent, false);
 }
 /** One cape segment (trapezoid x0..x1 at the top, x2..x3 at y=h): outlined flat fill + an inset shadow band, no clip (perf). */
@@ -97,7 +102,7 @@ function drawBombPack(ctx, rig) {
   celRect(ctx, rig, x0, y0, 12, h, 3, '#5A3A22', 0.4, 0.25);
   for (let i = 0; i < 3; i++) celBall(ctx, rig, x0 + 6, y0 + 5 + i * 7, 4, BOMB, i === 0);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(rig.palette.accent); ctx.fillRect(x0 + 1, y0 + h - 5, 10, 3);
+  band(ctx, rig, x0 + 1, y0 + h - 6, 10, 4, rig.palette.accent);
   if ((rig.tick & 4) === 0) { ctx.fillStyle = rig.col(HOT); ctx.fillRect(x0 + 8, y0 - 1, 2, 2); }
 }
 /** Bomb held in the off hand while lobbing (handL accessory; `rig.showBomb` is set by the Sapper's onUpdate hook). */
@@ -114,7 +119,7 @@ function drawCrest(ctx, rig) {
   const ch = getChain(rig, 'crest', 1, { joint: 'head', rest: [0, -1], stiffness: 0.14, damping: 0.68, gain: 1.4, rotGain: 0.4, maxAng: 26 });
   celRect(ctx, rig, -r - 1, -r - 2, r * 2 + 2, 4, 1, rig.palette.accent, 0.4, 0);
   ctx.save(); ctx.translate(0, -r - 1); ctx.rotate(rad(ch.ang[0]));
-  celPoly(ctx, rig, [-5, 0, 5, 0, 3, -6, 0, -11, -4, -8], rig.build.stripe || '#8A2E2E', 0.4, 0.25);
+  celPoly(ctx, rig, CREST_PTS, rig.build.stripe || '#8A1F1F', 0.4, 0.25);
   ctx.restore();
 }
 /** Chrome half-mask over the jaw (head accessory). */
@@ -122,7 +127,7 @@ function drawHalfMask(ctx, rig) {
   const r = rig.p.headR;
   celRect(ctx, rig, -R(r * 0.4), 2, R(r * 1.5), R(r * 0.95), 2, '#B8C4CE', 0.36, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(rig.palette.accent); ctx.fillRect(-R(r * 0.4) + 1, 2, R(r * 1.5) - 2, 2);
+  band(ctx, rig, -R(r * 0.4) + 1, 3, R(r * 1.5) - 2, 4, rig.palette.accent); // verdigris rank band, widened 2 -> 4 and inked
 }
 /** Shoulder smokestack puffing every 16 draws (torso accessory, front layer, rises from behind the far shoulder). */
 function drawStack(ctx, rig) {
@@ -155,9 +160,9 @@ const BOMB_SPEC = { style: 'bomb', aimAt: true, flight: 48, gravity: 0.4, noCont
 /** Tower shield lying on the floor after a launcher strips it. */
 function drawFallenShield(ctx, p, sx, sy) {
   ctx.save(); ctx.translate(sx, sy - 3); ctx.rotate(p.facing * 0.2);
-  rrect(ctx, -20, -8, 40, 16, 4, '#9AA4B2', BRASS_OUTLINE, 1);
-  rrect(ctx, -16, -5, 32, 10, 2, '#3A3A44', BRASS_OUTLINE, 1);
-  ctx.fillStyle = '#5B2A86'; ctx.fillRect(-14, -1, 28, 3); circle(ctx, 2, 0, 3, '#C89B3C', BRASS_OUTLINE, 1);
+  rrect(ctx, -20, -8, 40, 16, 4, '#889DB8', BRASS_OUTLINE, 1);
+  rrect(ctx, -16, -5, 32, 10, 2, '#2F384A', BRASS_OUTLINE, 1);
+  ctx.fillStyle = '#5B2A86'; ctx.fillRect(-14, -2, 28, 4); circle(ctx, 2, 0, 3, '#C89B3C', BRASS_OUTLINE, 1);
   ctx.restore();
 }
 const PART_DRAW = [
@@ -192,7 +197,7 @@ function mkBuild(o) {
 }
 const BASE = {
   type: 'brassbound', faction: 'brassbound', walkSpeed: 1.5, throwDamageMult: 1.5,
-  build: mkBuild({ stripe: '#3E5C8A' }),
+  build: mkBuild({ stripe: '#2A5C8A' }),
   sfx: { hurt: 'brass_hit', death: 'brass_death', tell: 'brass_tell' },
   ai: { attackRange: 40, zTolerance: 12, retreatChance: 0.15, attackCooldown: [45, 90], aggression: 0.6, staggerEvery: 4, staggerFrames: 30, firstAttackDelay: 50, flank: false },
 };
@@ -220,7 +225,7 @@ const footmanAnims = { ...makeBrassBase(C_FOOT), swing: { loop: false, frames: [
 ] } };
 const footman = variant({
   variant: 'footman', name: 'TIN FOOTMAN', role: 'fodder', hp: 40, damage: 1, speed: 1.0, score: 150, drops: 'none',
-  build: mkBuild({ stripe: '#3E5C8A', weapon: { attach: 'handR', length: 26, draw: drawClub, headAt: 20 } }), anims: footmanAnims,
+  build: mkBuild({ stripe: '#2A5C8A', weapon: { attach: 'handR', length: 26, draw: drawClub, headAt: 20 } }), anims: footmanAnims,
   ai: { attackRange: 34, attacks: [{ anim: 'swing', range: 44, weight: 1 }], maxAttackers: 2 },
 });
 
@@ -247,7 +252,7 @@ const halbAnims = { ...makeBrassBase(C_HALB, { weaponFloor: 0 }), thrust: { loop
 ] } };
 const halberdier = variant({
   variant: 'halberdier', name: 'BRASS HALBERDIER', role: 'bruiser', hp: 70, damage: 1, speed: 0.8, score: 300, drops: 'none',
-  build: mkBuild({ scale: 1.1, stripe: '#8A2E2E', palette: { primary: '#C9A227', accent: '#7A5A16', skin: '#7E8A98' },
+  build: mkBuild({ scale: 1.1, stripe: '#8A1F1F', palette: { primary: '#C9A227', accent: '#7A5A16', skin: '#698698' },
     weapon: { attach: 'handR', length: 58, draw: drawHalberd, headAt: 44 }, accessories: [{ attach: 'head', draw: drawCrest }] }),
   anims: halbAnims, traits: { armorFrontOnly: true, armorHits: 1 },
   ai: { attackRange: 55, zTolerance: 12, attacks: [{ anim: 'thrust', range: 66, minRange: 30, weight: 3 }, { anim: 'sweep', range: 46, weight: 2 }], attackCooldown: [50, 100] },
@@ -281,7 +286,7 @@ function sapperDeath(f, world) {
 }
 const sapper = variant({
   variant: 'sapper', name: 'COPPER SAPPER', role: 'ranged', hp: 50, damage: 1, speed: 1.1, score: 200, drops: 'none',
-  build: mkBuild({ scale: 0.9, stripe: '#E8C547', palette: { primary: '#B87333', accent: '#5A3A22', skin: '#7E8A98' }, weapon: { attach: 'handR', length: 20, draw: drawWrench, headAt: 16 },
+  build: mkBuild({ scale: 0.9, stripe: '#E8C547', palette: { primary: '#B87333', accent: '#5A3A22', skin: '#698698' }, weapon: { attach: 'handR', length: 20, draw: drawWrench, headAt: 16 },
     accessories: [{ attach: 'back', draw: drawBombPack }, { attach: 'handL', draw: drawHeldBomb }] }),
   anims: sapperAnims,
   hooks: { onDeath: sapperDeath, onUpdate: (f) => { f.rig.showBomb = f.anim.name === 'lob' && f.anim.frameIndex <= 1; } },
@@ -313,7 +318,7 @@ function wardenShieldStripped(f, world) {
 }
 const warden = variant({
   variant: 'warden', name: 'IRON WARDEN', role: 'elite', hp: 180, damage: 1, speed: 0.7, score: 1000, drops: 'meter', elite: true, lyingFrames: 50,
-  build: mkBuild({ scale: 1.45, stripe: '#5B2A86', palette: { primary: '#3A3A44', secondary: '#6E7A88', sleeve: '#6E7A88', skin: '#8593A0', accent: '#9AA4B2', joint: '#C89B3C' },
+  build: mkBuild({ scale: 1.45, stripe: '#5B2A86', palette: { primary: '#313649', secondary: '#5B6C7D', sleeve: '#5B6C7D', skin: '#728C9F', accent: '#889DB8', joint: '#C89B3C' },
     proportions: { torsoW: 24, torsoH: 27, hip: 20, armR: 4.5, legR: 5 }, weapon: { attach: 'handR', length: 36, draw: drawMace, headAt: 28 },
     accessories: [{ attach: 'handL', draw: drawShield }, { attach: 'torso', draw: drawStack }] }),
   anims: wardenAnims, traits: { jumpAttackTakenMult: 1.5, grabbable: false, grabbableByGrappler: true },
@@ -349,7 +354,7 @@ const duelistAnims = { ...makeBrassBase(C_DUEL, { weaponFloor: -10 }), lunge: { 
 ] } };
 const duelist = variant({
   variant: 'duelist', name: 'CHROME DUELIST', role: 'elite', hp: 90, damage: 1, speed: 1.2, score: 500, drops: 'none',
-  build: mkBuild({ stripe: '#2E6B52', palette: { primary: '#DDE6EE', accent: '#2E6B52', skin: '#7E8A98' }, proportions: { armR: 3.2, torsoW: 20, handR: 4 }, smear: '#E8F4FF',
+  build: mkBuild({ stripe: '#1F6B4C', palette: { primary: '#DDE6EE', accent: '#1F6B4C', skin: '#698698' }, proportions: { armR: 3.2, torsoW: 20, handR: 4 }, smear: '#E8F4FF',
     weapon: { attach: 'handR', length: 44, draw: drawRapier, headAt: 30 }, accessories: [{ attach: 'back', draw: drawCape }, { attach: 'head', draw: drawHalfMask }] }),
   anims: duelistAnims,
   hooks: { onUpdate: (f) => { f.rig.stanceFlash = f.inStance ? f.stanceTimer : 0; } },

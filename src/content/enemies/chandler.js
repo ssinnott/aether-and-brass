@@ -15,7 +15,7 @@ import { P, FK, frontBox, areaBox, makeEnemyDef } from './common.js';
 import {
   CH, CH_PAL, CH_PROPS, CH_PARTS, CLAN, BASE_HOOKS, makeChandlerBase, drawLamp, drawRiteRim, riteSourceGone, isClient, riteFlash,
 } from './chandlerRig.js';
-import { celRect, celBall, celPoly, tones } from '../../art/shading.js';
+import { celRect, celBall, celPoly, tones, band } from '../../art/shading.js';
 import { farShade } from '../../art/palettes.js';
 import { getChain } from '../../art/secondary.js';
 import { pathPoly, paint } from '../../art/shapes.js';
@@ -27,14 +27,18 @@ import { ST } from '../../constants.js';
 const R = Math.round;
 const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
 const LOW = { low: true }, BEHIND = { behind: true };
-// WOOD is a pale ash, 33 pts over harness leather (it used to be 21 pts under §0.1's 25 % floor in the same warm-brown
-// family, so the stave, the crook and the bracer that holds them read as one continuous brown).
-// TARP is dirty canvas, 26 pts under quicklime, so the cart's cargo does not read as more apron.
-// KILN / CART are now ACCENT hexes — the ironwork, the chimney collar, the grate frame, the hub — not the drum and box
-// bodies, which are pewter and leather (§4: this faction is pale, the darks live at the extremities).
-const WOOD = '#B79A6A', TARP = '#B0AE96', KILN = '#3A322A', DRAM = '#2E4A38', CART = '#332C24';
-/** The far-side value of the Tallyman's ledger board: accessories get no `info`, so the constant is precomputed. */
-const LEDGER_FAR = farShade(CH.quicklime, 0.62, 0.25), LEDGER_FAR_INK = farShade(CH.leather, 0.62, 0.25);
+// WOOD is a BLEACHED ash, 11 Oklab L* over the tallow coat and 40 over harness leather. #B79A6A sat at L* 70.1
+// against a coat that is now L* 70.9, so the stave and the crook would have vanished into the shoulder they are
+// carried across; #D3C2A0 also drops it from s42 to s24, back under the neutral ceiling where a tool belongs.
+// TARP is dirty canvas, 19 pts under quicklime, so the cart's cargo does not read as more apron.
+// KILN / CART are ACCENT hexes — the ironwork, the chimney collar, the grate frame, the hub — not the drum and box
+// bodies, which are pewter and leather (§4: this faction is pale, the darks live at the extremities). KILN moves to
+// a COLD iron so it no longer sits within 0.4 L* of the (newly lifted) rubber it is bolted to, and CART lifts from
+// L* 29.8 to 33.8 so the cart ironwork clears the #20180F outline by more than 9 L* like every other base tone.
+const WOOD = '#D9C08E', TARP = '#B0AE96', KILN = '#394249', DRAM = '#2E4A38', CART = '#3E362C';
+/** The far-side value of the Tallyman's ledger board and its bound spine: accessories get no `info`, so both are
+ * precomputed (a module constant painted at full strength on a far part is exactly what far-palette-leak catches). */
+const LEDGER_FAR = farShade(CH.quicklime, 0.62, 0.25), LEDGER_CLAN = farShade(CLAN.tallyman, 0.62, 0.25);
 
 // ================================================================ tools (hand space: +x along the forearm)
 /** Wickboy: 56px lighting-pole, leather-bound, with the faction's only lamp carried ABOVE the head and a live wick. */
@@ -53,7 +57,10 @@ function drawStave(ctx, rig) {
   celRect(ctx, rig, -6, -2, 44, 4, 2, WOOD, 0.4, 0.25);
   if (rig.override) return;
   ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(32, -3, 4, 6);
-  ctx.fillStyle = rig.col(CH.quicklime); ctx.fillRect(6, -2, 2, 4); ctx.fillRect(16, -2, 2, 4); ctx.fillRect(26, -2, 2, 4);
+  // the gradations are the TALLYMAN'S rung of the company ladder: the rod is the only thing he carries that is his
+  // own, and in chalk-white they were three more pale marks on the palest rig in the game (census: 208 px, the
+  // second-lowest rank mark in the faction). Same three marks, 3 px wide, in the company's ledger blue.
+  ctx.fillStyle = rig.col(CLAN.tallyman); ctx.fillRect(6, -2, 3, 4); ctx.fillRect(16, -2, 3, 4); ctx.fillRect(26, -2, 3, 4);
 }
 /** Limeburner: the wide lime shovel — the only Chandler tool that is a slab rather than a stick. */
 function drawShovel(ctx, rig) {
@@ -61,7 +68,7 @@ function drawShovel(ctx, rig) {
   celPoly(ctx, rig, [18, -13, 36, -15, 42, 0, 36, 15, 18, 13], CH.pewter, 0.36, 0.3);
   if (rig.override) return;
   ctx.fillStyle = tones(rig, CH.pewter).deep; ctx.fillRect(20, -2, 18, 3);
-  ctx.fillStyle = rig.col(CH.quicklime); ctx.fillRect(30, -8, 6, 5);
+  band(ctx, rig, 30, -8, 6, 5, CH.quicklime, 1);        // caked lime on the blade: quicklime on pewter takes the line
 }
 /** Purser: 38px pewter-ferruled swagger cane, dark shaft, knob at the pommel. */
 function drawCane(ctx, rig) {
@@ -79,8 +86,8 @@ function drawTongs(ctx, rig, pose) {
   celPoly(ctx, rig, [20, -3, 34, -4 - j, 44, -2 - j, 37, 3 - j, 25, 1], CH.pewter, 0.38, 0.3);
   celPoly(ctx, rig, [20, 3, 34, 4 + j, 44, 2 + j, 37, -3 + j, 25, -1], CH.pewter, 0.38, 0.25);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(CH.rubber); ctx.fillRect(-14, -3, 18, 6);   // rubber grip
-  ctx.fillStyle = rig.col(CH.leather); ctx.fillRect(16, -4, 5, 8);   // the pivot collar
+  band(ctx, rig, -14, -3, 18, 6, CH.rubber, 2);   // rubber grip — the biggest faked boundary on any Chandler tool
+  band(ctx, rig, 16, -4, 5, 8, CH.leather, 1);    // the pivot collar
 }
 
 // ================================================================ waist loads and lamps (accessories)
@@ -90,7 +97,7 @@ function drawBucket(ctx, rig) {
   celPoly(ctx, rig, [-hw - 9, -2, -hw + 1, -3, -hw, 8, -hw - 8, 7], CH.pewter, 0.4, 0.25);
   celPoly(ctx, rig, [hw - 1, -1, hw + 10, -4, hw + 11, 4, hw, 6], CH.leather, 0.4, 0.2);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(CLAN.wickboy); ctx.fillRect(-hw - 7, -1, 7, 3);
+  band(ctx, rig, -hw - 7, -2, 6, 4, CLAN.wickboy, 1);   // the Wickboy's rung: the smallest on the ladder, as fodder's should be
   ctx.fillStyle = rig.col(CH.rubber); ctx.fillRect(hw + 3, -2, 6, 3);
 }
 /** Tallyman: shepherd's crook over the right shoulder with the lamp swinging from the hook (back layer, torso space). */
@@ -111,7 +118,9 @@ function drawLedger(ctx, rig) {
   // and the closeup showed two identical white slabs on the chest with no way to tell the arm from the item (§5).
   celRect(ctx, rig, -1, -13, 11, 15, 1, LEDGER_FAR, 0.4, 0.25);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(LEDGER_FAR_INK); ctx.fillRect(-1, -13, 3, 15);
+  // the bound spine is the Tallyman's rung of the company ladder: 4 px of far-shaded ledger blue with the line
+  // under it, not 3 px of unoutlined brown that read as the board's own shadow
+  band(ctx, rig, -1, -13, 4, 15, LEDGER_CLAN, 1);
   ctx.fillStyle = tones(rig, LEDGER_FAR).sh;
   for (let i = 0; i < 3; i++) ctx.fillRect(3, -10 + i * 4, 6, 2);
 }
@@ -124,9 +133,10 @@ function drawKiln(ctx, rig) {
   celRect(ctx, rig, hw + 2, -19, 6, 8, 2, KILN, 0.4, 0.3);              // the rubber chimney collar
   drawLamp(ctx, rig, hw + 7, 1, 1.3);                                    // 8x9 of glass, over §0.7's 6 px floor
   if (rig.override) return;
-  ctx.fillStyle = rig.col(CLAN.limeburner); ctx.fillRect(hw - 1, -11, 16, 3);
-  // ONE window in a 3px grate frame instead of three 2px bars laid across a 6px glass (which read as a smudge at 1x)
-  ctx.fillStyle = rig.col(KILN); ctx.fillRect(hw + 1, -8, 13, 3); ctx.fillRect(hw + 1, 7, 13, 3);
+  band(ctx, rig, hw - 1, -12, 16, 4, CLAN.limeburner, 1);   // the Limeburner's rung: kiln red, 4 px, inked
+  // ONE window in a grate frame instead of three 2px bars laid across a 6px glass (which read as a smudge at 1x);
+  // cold iron on a greened pewter drum is a MATERIAL change, so both bars carry the line
+  band(ctx, rig, hw + 1, -8, 13, 4, KILN, 1); band(ctx, rig, hw + 1, 7, 13, 4, KILN, 1);
 }
 /** Limeburner: the corrugated hose, a 3-segment chain from the respirator down over the shoulder into the kiln. */
 function drawHose(ctx, rig) {
@@ -139,8 +149,7 @@ function drawHose(ctx, rig) {
   ctx.save(); ctx.translate(R(p.torsoW * 0.46), -p.torsoH + 3);
   for (let i = 0; i < ch.n; i++) {
     ctx.rotate(rad(ch.ang[i] + 12));
-    ctx.fillStyle = rig.col(rig.outline); ctx.fillRect(-4, 0, 8, 11);
-    ctx.fillStyle = rig.col(CH.rubber); ctx.fillRect(-3, 0, 6, 10);
+    band(ctx, rig, -3, 0, 6, 10, CH.rubber, 2);   // the halo used to be a hand-painted rect behind a bare fill
     if (!flash) {
       ctx.fillStyle = t.deep; ctx.fillRect(-3, 4, 6, 2); ctx.fillRect(-3, 8, 6, 2);
       ctx.fillStyle = t.hi; ctx.fillRect(-3, 0, 2, 4);
@@ -154,11 +163,13 @@ function drawBandolier(ctx, rig) {
   const p = rig.p, H = p.torsoH, hw = R(p.torsoW / 2), left = rig.drams != null ? rig.drams : 8;
   celPoly(ctx, rig, [-hw - 2, -H + 3, -hw + 3, -H + 1, hw + 4, R(-H * 0.26), hw + 2, R(-H * 0.26) + 6], CH.leather, 0.4, 0.2);
   // the bottles are OUTLINED and stand proud of the coat edge, and they draw during the flash: filled black the Purser
-  // used to be a torso with two bars and a cap tab, and the emptying row was a colour read only (§11 silhouette test)
+  // used to be a torso with two bars and a cap tab, and the emptying row was a colour read only (§11 silhouette test).
+  // band(), not celRect: eight 3x5 bottles cost eight CLIPS through celRect and put idle#0 at 29 against a bound of
+  // 28, and a clipped tone band on a 3x5 mark buys nothing anyway (§0.7).
   for (let i = 0; i < 8; i++) {
     if (i >= left) continue;
     const u = i / 7;
-    celRect(ctx, rig, R(-hw + 2 + u * (hw * 2 + 5)), R(-H + 2 + u * (H * 0.6)), 3, 5, 1, DRAM, 0.4, 0);
+    band(ctx, rig, R(-hw + 2 + u * (hw * 2 + 5)), R(-H + 2 + u * (H * 0.6)), 3, 5, DRAM, 1);
   }
   if (rig.override) return;
   ctx.fillStyle = tones(rig, CH.leather).deep; ctx.fillRect(R(-hw + 2), R(-H + 4), R(hw * 1.6), 1);
@@ -188,8 +199,10 @@ function drawCart(ctx, rig) {
   drawLamp(ctx, rig, 0, 0, 1.1);
   ctx.restore();
   if (rig.override) return;
-  ctx.fillStyle = rig.col(CART); ctx.fillRect(x + 6, y - 20, 22, 3);       // the tarp lashing
-  ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(x + 5, y + 5, 6, 6);    // the wheel hub
+  // his rung of the company ladder — a 14 px strap, not a 26 px stripe: at full cart width a flat saturated bar on
+  // the biggest rig in the faction out-shouted the lime lamp, which is the one thing on a Chandler that must win
+  band(ctx, rig, x + 9, y - 20, 14, 4, CLAN.resurrectionist, 1);
+  band(ctx, rig, x + 5, y + 5, 6, 6, CH.pewter, 1);                // the wheel hub
   ctx.fillStyle = tones(rig, CH.leather).deep; ctx.fillRect(x + 2, y - 5, 30, 2); // the plank seam
 }
 
@@ -406,7 +419,10 @@ const wickboy = def({
 
 // ================================================================ C2 TALLYMAN: the one that points at you
 const TAL_CARRY = { armR: [30, 28], weapon: 1, armL: [18, 44] };
-const TAL_CHAND = { cap: 'flat', shade: true, rites: ['tally'], lampJoint: 'shoulderN', lampDX: 5, lampDY: -15, selfConeDX: 26, cool: (f) => f.tallyCd, find: (f) => f.target || null };
+// capCol per variant: the three caps that used to be limedust are now four different DARK near-neutrals (all under
+// the 40 % ceiling), so the head separates from a torso that is the same garment, and five men in one coat still
+// read as five men. The chroma stays on the company ladder (build.clan), never on the hat.
+const TAL_CHAND = { cap: 'flat', capCol: '#46505E', shade: true, rites: ['tally'], lampJoint: 'shoulderN', lampDX: 5, lampDY: -15, selfConeDX: 26, cool: (f) => f.tallyCd, find: (f) => f.target || null };
 const RAP_BOX = frontBox(42, hit(9, 'medium', 5, 0, 16, { id: 'rap' }));
 /** The plumb-weight lands where you WERE 18 frames ago; friendly, so you can bait it onto a Limeburner, and reflectable
  *  for 16 — onReflect flattens the lob so a batted weight actually travels back down the lane. */
@@ -501,7 +517,7 @@ const tallyman = def({
 // weapon -46 -> -31: at -46 the shovel blade lay straight across the hip kiln in every rest pose, hiding the one
 // thing that identifies him (§0.6: nothing crosses the load in a rest pose).
 const LIM_CARRY = { armR: [24, 30], weapon: -31, armL: [-28, -12] };
-const LIM_CHAND = { cap: 'flat', rites: ['slake'], lampJoint: 'torso', lampDX: 16, lampDY: 0, selfConeDX: 30, find: findCrust, cool: (f) => f.attackCooldown };
+const LIM_CHAND = { cap: 'flat', capCol: '#6A4F44', rites: ['slake'], lampJoint: 'torso', lampDX: 16, lampDY: 0, selfConeDX: 30, find: findCrust, cool: (f) => f.attackCooldown };
 const SLAM_BOX = frontBox(58, hit(14, 'knockdown', 5, 5, 24, { id: 'slam' }));
 const SCOOP_BOX = frontBox(50, hit(10, 'medium', 6, 0, 18, { id: 'scoop' }), LOW);
 const SLAKE_BOX = areaBox(46, hit(6, 'medium', 8, 0, 16, { id: 'slake' }));
@@ -574,7 +590,7 @@ const limeburner = def({
 
 // ================================================================ C4 PURSER: the one that makes the crowd swing harder
 const PUR_CARRY = { armR: [30, 24], weapon: -21, armL: [-40, -60] };
-const PUR_CHAND = { cap: 'peaked', rites: ['dram'], lampJoint: 'torso', lampDX: 13, lampDY: 4, selfConeDX: 28, find: findDose, find2: findDose2, cool: (f) => f.attackCooldown };
+const PUR_CHAND = { cap: 'peaked', capCol: '#3E4A42', rites: ['dram'], lampJoint: 'torso', lampDX: 13, lampDY: 4, selfConeDX: 28, find: findDose, find2: findDose2, cool: (f) => f.attackCooldown };
 const CANE_BOX = frontBox(50, hit(12, 'light', 4, 0, 16, { id: 'cane' }));
 const FLICK_BOX = frontBox(46, hit(10, 'medium', 5, 0, 18, { id: 'flick' }), BEHIND);
 const purserAnims = Object.assign(makeChandlerBase(PUR_CARRY, { stoop: 0, head: 0, weaponFloor: -26, gait: 'parade' }), {

@@ -14,12 +14,15 @@ import {
 } from './stormcrowRig.js';
 import { CROW_PARTS, drawBoardingAxe, IRON } from './stormcrowKit.js';
 import { frontBox, areaBox } from './common.js';
-import { celRect, celBall, celPoly, celCapsule, tones, rimTop } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celCapsule, tones, rimTop, band } from '../../art/shading.js';
 import { pathPoly, paint, circle, capsule } from '../../art/shapes.js';
 import { particles } from '../../engine/particles.js';
 
 const R = Math.round, TAU = Math.PI * 2;
-const DRUM = '#6A5E44', CHAIN = '#8A94A2', HOT = '#FFD27A';
+// The drum is a NEUTRAL and it was sitting in the stage: at Oklab L* 48.6 / hue 41 it landed inside the Cold
+// Sovereign's own warm floor band (measured bgHue 73, bgV 42), so the largest single shape on the harness collided
+// with the ground it stands on. Hue held, dropped 7 L* to clear the band from below - which a neutral is free to do.
+const DRUM = '#544A34', CHAIN = '#8A94A2', HOT = '#FFD27A';
 /**
  * Flag rank (see boss2.js): the quartermaster is the first Stormcrow to wear the Wing's RED in a gold frame rather
  * than a line rate's heat-ramp colour. Hers is the lighter, hotter of the two boss reds; the Admiral's is deeper.
@@ -54,9 +57,14 @@ function drawWinch(ctx, rig) {
   // It has to sit here, on the drum and left of x = -hw - 2. The cradle is 100% hidden: the drum ball covers it out
   // to x -31 and the breastplate covers everything from -15 rightward, so the old band across the cradle top drew
   // nothing at all and phase 1 read as having no rank.
+  // Both halves of the device are MATERIAL changes on the drum and take 1 px of ink (ART_STYLE 0.2): they were two
+  // bare fillRects, and the 3 px dark-gold underside was thin enough to read as the red's own shading rather than as
+  // the frame that says flag rank. Drawn as a framed plate instead - a 4 px gold ground with the rank cloth inset on
+  // it - so the frame clears the 0.7 floor on all four sides and the cloth sits in it. band() costs one stroke each
+  // and no clip.
   if (!rig.override) {
-    ctx.fillStyle = rig.col(crowRank(rig)); ctx.fillRect(x - 7, y + 1, 14, 5);
-    ctx.fillStyle = rig.col(CROW.goldDark); ctx.fillRect(x - 7, y + 6, 14, 3);
+    band(ctx, rig, x - 8, y, 16, 11, CROW.goldDark, 2);
+    band(ctx, rig, x - 6, y + 2, 12, 6, crowRank(rig), 1);
   }
   // boom arm: up behind the shoulder, over the top of her head, out to a fairlead in front of the mask
   celCapsule(ctx, rig, x - 1, y, x + 3, -R(H * 2.05), 4.5, CROW.copper, 0.3);
@@ -119,7 +127,17 @@ function drawGrapnel(ctx, p, sx, sy) {
 }
 
 // ---------------------------------------------------------------- builds
-const SKREE_PAL = { ...CROW_PAL, primary: '#3A4256', sleeve: '#C9BDA0', secondary: '#7E8798', metal: '#B4BECA', hair: '#3A2620', rank: RANK };
+/**
+ * Storm navy, hue held at 220-268 deg, chroma only. The coat (#3A4256, Oklab C 3.6) and the duck trousers (#7E8798,
+ * C 2.8) both sat in the low-chroma core of the colour lattice every polychrome backdrop also occupies, so nearly half
+ * this rig had no chroma to be separated by however it was lit; they go to C 6.7 and C 9.3 at the same hue, the coat
+ * a shade darker and the duck at its own lightness to within 0.4 L*, which straddles the floor band instead of
+ * sitting in it. The hair was
+ * Oklab L* 29.1 against the outline #1B1E28 at L* 23.7 - dL 5.4, a hole where the line dies - and joins the Stormcrow
+ * crimper's #4A3226 family at dL 10.5. Nothing warm moves: the rank ladder's chroma is the rank's alone. The coat move
+ * also clears the palette/value-ladder-adjacent warning this rig has carried on torso/hips (0.509 -> 0.566, bound 0.525).
+ */
+const SKREE_PAL = { ...CROW_PAL, primary: '#2C3E62', sleeve: '#C9BDA0', secondary: '#7282BE', metal: '#B4BECA', hair: '#4A3226', rank: RANK };
 /** Phase 1: the winch. Squat and top-heavy under the drum — short legs, wide hips, a barrel of a torso. */
 const WINCH_BUILD = {
   scale: 1.5, palette: SKREE_PAL, outline: CROW.outline, outlineWidth: 1,
@@ -158,7 +176,7 @@ const winchAnims = Object.assign(makeCrowBase(WC, WINCH_STANCE), {
     w1: { armR: [36, 54], weapon: 19, armL: [-34, -18], torso: 4, head: -6, root: [-3, 1], legR: [18, 10], legL: [-18, 12], face: 'angry' },
     w2: { armR: [56, 44], weapon: 19, armL: [-46, -12], torso: -6, head: -8, root: [-7, 1], legR: [14, 12], legL: [-22, 14], squash: 0.98, stretch: 1.02, face: 'angry' },
     h: { armR: [64, -6], weapon: 5, armL: [-40, 20], torso: 22, head: 6, root: [7, 1], legR: [42, 12], legL: [-32, 32], face: 'shout', squash: 1.04, stretch: 0.97 },
-    smear: { from: -4, to: 10, a: 0.4, r: 62 },
+    smear: { from: -9, to: 15, a: 0.4, r: 62 },   // 24 deg about the same centre: a 14 deg sweep is under the ART_STYLE 8 floor of 20
     hold: { armR: [65, -4], weapon: 11, armL: [-42, 20], torso: 25, head: 7, root: [8, 1], legR: [42, 12], legL: [-32, 32], face: 'shout' },
     r: { armR: [28, 30], weapon: -3, armL: [-26, 10], torso: 14, head: 0, root: [3, 2], legR: [30, 12], legL: [-26, 26], face: 'grit' },
   }),

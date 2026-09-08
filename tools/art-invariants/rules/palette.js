@@ -17,7 +17,7 @@ import { farShade } from '../../../src/art/palettes.js';
 import { FACE } from '../../../src/art/poses.js';
 import { CHARACTERS } from '../../../src/content/characters/index.js';
 import { BRASSBOUND, SOOTBORN, STORMCROWS } from '../../../src/content/enemies/index.js';
-import { BRASS, SOOT, GOB } from '../../../src/content/enemies/common.js';
+import { BRASS, SOOT, GOB, BRASS_PAL } from '../../../src/content/enemies/common.js';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -352,6 +352,19 @@ export const RULES = [
         const want = { steel: '#7F8C99', darkSteel: '#4A5563', brass: '#C89B3C', lens: '#4DF0E0' };
         for (const k of Object.keys(want)) {
           if (hx(BRASS[k]) !== hx(want[k])) out.push(finding(`BRASS.${k} is ${BRASS[k]}, not the documented ${want[k]}`, 'src/content/enemies/common.js holds the Brassbound base colours (ART_STYLE 4)', `common.js BRASS.${k}`));
+        }
+        // ... and the same contract on the palette that is actually PAINTED. BRASS.brass has no live Brassbound call
+        // site (the legacy brassHead / brassTorso / brassFoot are dead), so the guard above can stay green while every
+        // joint on every rig is a different gold -- which is exactly what happened. BRASS_PAL is what the rigs wear.
+        if (hx(BRASS_PAL.accent) !== hx(BRASS.brass) || hx(BRASS_PAL.joint) !== hx(BRASS.brass)) {
+          out.push(finding(`BRASS_PAL brass is accent ${BRASS_PAL.accent} / joint ${BRASS_PAL.joint}, not the documented ${BRASS.brass}`,
+            'ART_STYLE 4: the Brassbound wear cold metals plus BRASS joints; ~40 gold discs per rig is where this faction goes candy', 'common.js BRASS_PAL.accent/joint'));
+        }
+        // "cold metals": every steel step the faction paints is a NEUTRAL. 40 % is the ceiling this palette sets for
+        // anything that is not an identity mass, and steel plate is not an identity mass -- the regiment stripe is.
+        for (const k of ['primary', 'sleeve', 'secondary', 'skin', 'metal']) {
+          const st = Math.round(hsv(BRASS_PAL[k]).s * 100);
+          if (st > 40) out.push(finding(`BRASS_PAL.${k} ${BRASS_PAL[k]} is ${st} % saturated`, 'ART_STYLE 4 keeps the Brassbound COLD METAL: every steel step stays a neutral (<= 40 %)', `common.js BRASS_PAL.${k}`));
         }
       } else if (type === 'sootborn') {
         signature('clan', 'clan colour');

@@ -11,7 +11,7 @@
 // clockwork fist ratchet. Rig flags set by hooks.onUpdate: sawFast, sawJam, cannonCharge, cannonVent, watch, boltTell,
 // fistOut, coreT (eased core-cover opening). `face: dazed` is the "down and out" read: Vane's hat and cane drop.
 import { FK, frontBox, makeBrassBase, noFace } from './common.js';
-import { celRect, celBall, celPoly, celCapsule, celPath, tones, flat, rimTop, pathRR } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celCapsule, celPath, tones, flat, rimTop, pathRR, band } from '../../art/shading.js';
 import { drawFist, drawBoot, drawSkull, drawFace } from '../../art/rigParts.js';
 import { getChain } from '../../art/secondary.js';
 import { FACE } from '../../art/poses.js';
@@ -20,16 +20,48 @@ import { rad } from '../../engine/math.js';
 import { particles } from '../../engine/particles.js';
 
 const R = Math.round, TAU = Math.PI * 2;
+/**
+ * Two or more INKED detail bands of the same colour in ONE path (ART_STYLE 0.2 for the line, section 9 for the cost):
+ * ctx.rect adds a subpath without clearing the path, so a single outlinePath + fill inks every band in the group.
+ * One stroke and one fill for the pair instead of two of each — the difference between this walker fitting the
+ * boss cel-shape budget and blowing it. Integer coordinates, no clip, no rounding: these are machine bands.
+ * The two bands are passed as SCALARS, not as an array of arrays: ART_STYLE section 9 forbids allocation inside a
+ * draw, and the array form built three arrays plus an iterator on every one of the four calls per boss frame.
+ */
+function inkBands(ctx, rig, hex, x0, y0, w0, h0, x1, y1, w1, h1) {
+  ctx.beginPath();
+  ctx.rect(R(x0), R(y0), R(w0), R(h0));
+  ctx.rect(R(x1), R(y1), R(w1), R(h1));
+  flat(ctx, rig, hex);
+}
 // Value ladder (ART_STYLE 0.1): light steel piston rods > brass barrel > mid gunmetal cannon > dark iron frame >
 // near-black slate foot plates. Aether cyan is the only glow; red is the tell.
-const BRASSB = '#C9963A', IRON = '#333A48', GUN = '#4A5160', STEEL = '#C6CEDA', SLATE = '#232834', RUST = '#8A5A24';
+// IRON and SLATE hold their hue (264 deg) and very nearly their lightness and move CHROMA only (Oklab C 2.6 -> 7.1 and
+// 2.3 -> 5.0). Two things come out of it at once. (1) THE INK FLOOR: SLATE was Oklab L* 27.7 against this rig's outline
+// #1A1E24 at L* 23.4 - dL 4.3 - so the line under every foot plate was drawn and then swallowed, which is most of what
+// "the models blend together" means. It is now L* 32.5, dL 9.1. (2) RESERVATION: at C 2.6 the iron frame (13.7% of the
+// painted area) sat in the low-chroma core of the colour lattice that every polychrome backdrop also occupies. It now
+// has chroma to be separated BY. Neither is a hue change: this is still dark iron, not a blue uniform, and BRASSB stays
+// the only warm on the machine.
+const BRASSB = '#C9963A', IRON = '#2F4269', GUN = '#44506E', STEEL = '#C2CCEA', SLATE = '#26344E', RUST = '#8A5A24';
 const CYAN = '#4DF0E0', CYAN_HOT = '#EAFFFB', RED = '#FF5C5C', HOT = '#FFD27A', STEAM = '#DDE6EC', GLASS = '#A6DCE6';
-const WELL = '#4E5A6B', DARK = '#101A22', OL = '#1A1E24';
+// GUN, STEEL and WELL hold their Oklab lightness to 0.2 L* and move chroma only (C 2.6 -> 5.2, 1.9 -> 4.3, 3.2 -> 5.2):
+// they stay neutrals well under the 40% ceiling - light steel is still light steel - but they leave the achromatic core
+// of the colour lattice, where a quarter of this machine's painted area was landing in cells the polychrome
+// Heart-Engine backdrop also occupies. Chroma says which faction; lightness says "not the stage".
+const WELL = '#465A76', DARK = '#101A22', OL = '#1A1E24';
 /** Far-side copies of the module constants (ART_STYLE 0.3: far parts never colour from the near palette). */
 const GUN_F = farShade(GUN, 0.62), DARK_F = farShade(DARK, 0.62);
 // Vane: near-black coat over a lighter charcoal sleeve, cream cravat, pale skin, grey queue, mid-grey trousers, dark boots.
-const COAT = '#1B1E2B', SLEEVE = '#2E3446', CREAM = '#F4F1E8', SKIN = '#E8CDB5', QUEUE = '#9AA0AE', HATC = '#14161E',
-  TROUSER = '#5B6274', BOOTC = '#24242E', BLADE = '#D8DCE0', WINE = '#5E2733';
+// Vane's frock coat was the worst ink-floor failure on this rig and it is his LARGEST mass: #1B1E2B is Oklab L* 23.8
+// against his outline #191622 at L* 21.0 - dL 2.8 - so the Chancellor's coat sat at its own line over its whole area and
+// the outline that describes him was invisible. Hue held (229 deg), lifted the minimum that clears dL 9 and paid for in
+// chroma, not value (C 2.5 -> 5.1): #202E48, L* 30.2, dL 9.2. The sleeve steps up with it so the arm still reads off the
+// torso (L* 36.9, a 6.7 L* step; sleeve/primary luminance separation 0.264, over the 0.18 bound), and the hat and boots
+// clear the line too. Everything here is still near-black cloth at arm's length; it is only no longer darker than its
+// own ink.
+const COAT = '#202E48', SLEEVE = '#2A3E68', CREAM = '#F4F1E8', SKIN = '#E8CDB5', QUEUE = '#9AA0AE', HATC = '#282C44',
+  TROUSER = '#5B6274', BOOTC = '#2A2E46', BLADE = '#D8DCE0', WINE = '#5E2733';
 
 /** One soft steam puff: three merged discs, no outline (fillStyle set by the caller). */
 function puff(ctx, x, y, r, a) {
@@ -66,12 +98,13 @@ function engineBarrel(ctx, rig, pose, inf) {
   celRect(ctx, rig, -hw, -H, W, H + 3, 11, pal.primary, 0.3, 0.32);
   if (rig.override) return;
   const t = tones(rig, pal.primary), ti = tones(rig, IRON);
-  for (let i = 0; i < 2; i++) {
-    const y = i ? -5 : -H + 2;
-    ctx.fillStyle = rig.col(IRON); ctx.fillRect(-hw + 1, y, W - 2, 5);
-    ctx.fillStyle = ti.hi; ctx.fillRect(-hw + 2, y, W - 4, 1);
-    ctx.fillStyle = ti.deep; ctx.fillRect(-hw + 2, y + 4, W - 4, 1);
-  }
+  // The two iron ribs are a MATERIAL change on the brass barrel (iron over brass) and each one introduced a new
+  // internal boundary with no line under it - 100+ of this rig's 606 unoutlined rects, on the largest humanoid in the
+  // game. Inked with band(): one stroke, one fill, no clip. Widened 5 -> 7 so 1 px of ink on each long edge still
+  // leaves 4 px of iron (ART_STYLE 0.7), and the old `deep` seam along the bottom goes - the outline is that line now.
+  inkBands(ctx, rig, IRON, -hw + 1, -H + 1, W - 2, 7, -hw + 1, -6, W - 2, 7);
+  ctx.fillStyle = ti.hi;
+  ctx.fillRect(-hw + 3, -H + 2, W - 6, 1); ctx.fillRect(-hw + 3, -5, W - 6, 1);
   const open = Math.max(pose.grip || 0, rig.coreT || 0);
   drawCore(ctx, rig, 0, -R(H * 0.46), R(H * 0.4), open);
   // phase-2 chest slit (Bolt Spray) under the core: dark slot that fills red through the tell
@@ -157,8 +190,8 @@ function engineArmUpper(ctx, rig, pose, inf) {
   const r = inf.r, L = inf.len, pal = inf.pal;
   celRect(ctx, rig, -r, -3, r * 2, L + 6, 3, pal.secondary, 0.38, 0.26);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-r, L - 3, r * 2, 5);
-  ctx.fillStyle = tones(rig, pal.accent).sh; ctx.fillRect(-r, L + 2, r * 2, 1);
+  // brass collar on an iron barrel: a material change, so it takes ink (0.2). 6 px inked leaves 4 px of brass.
+  band(ctx, rig, -r, L - 3, r * 2, 6, pal.accent, 2);
   ctx.fillStyle = tones(rig, pal.secondary).hi; ctx.fillRect(-r + 1, -1, 1, L);
 }
 /** Forearm: near = the saw arm's light-steel ram, far = the steam cannon's gunmetal barrel with brass bands. */
@@ -168,14 +201,16 @@ function engineArmLower(ctx, rig, pose, inf) {
     celCapsule(ctx, rig, 0, 4, 0, L + 2, r * 0.62, pal.metal, 0.3);
     celRect(ctx, rig, -r, -3, r * 2, 9, 3, pal.secondary, 0.4, 0.24);
     if (rig.override) return;
-    ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-r, 4, r * 2, 3);
-    return;
+    return;   // the old 3 px brass wrist collar is gone: under the 0.7 floor, it could not carry a line and did not read
   }
   celRect(ctx, rig, -r - 1, -3, r * 2 + 2, L + 3, 4, pal.metal, 0.38, 0.28);
   if (rig.override) return;
-  const tb = tones(rig, pal.accent), gun = inf.far ? GUN_F : GUN;
-  ctx.fillStyle = rig.col(gun); ctx.fillRect(-r - 1, R(L * 0.3), r * 2 + 2, 5); ctx.fillRect(-r - 1, R(L * 0.68), r * 2 + 2, 5);
-  ctx.fillStyle = tb.base; ctx.fillRect(-r - 1, R(L * 0.3) + 5, r * 2 + 2, 2); ctx.fillRect(-r - 1, R(L * 0.68) + 5, r * 2 + 2, 2);
+  const gun = inf.far ? GUN_F : GUN;
+  // gunmetal bands on the steel barrel, brass-capped: both are material changes and both take ink.
+  inkBands(ctx, rig, gun, -r - 1, R(L * 0.3), r * 2 + 2, 6, -r - 1, R(L * 0.68), r * 2 + 2, 6);
+  // the 2 px cap under each band was brass, i.e. a THIRD material on two pixels: it cannot carry a line at that width
+  // (ART_STYLE 0.7), so it is demoted to a rim band of the gunmetal itself - form inside one material, no ink (0.4/3).
+  ctx.fillStyle = tones(rig, gun).hi; ctx.fillRect(-r - 1, R(L * 0.3) + 6, r * 2 + 2, 2); ctx.fillRect(-r - 1, R(L * 0.68) + 6, r * 2 + 2, 2);
   ctx.fillStyle = tones(rig, pal.metal).hi; ctx.fillRect(-r, 0, 1, R(L * 0.3));
 }
 /** Near hand = the brass hub the gear-saw spins on; far hand = the steam cannon's muzzle bell (hand space, +x forward). */
@@ -188,8 +223,10 @@ function engineHand(ctx, rig, pose, inf) {
     const charge = rig.cannonCharge, blink = (rig.tick & 2) !== 0;
     ctx.fillStyle = rig.col(inf.far ? DARK_F : DARK); ctx.fillRect(12, -8, 7, 16);
     ctx.fillStyle = rig.col(charge ? (blink ? CYAN_HOT : CYAN) : '#1A2430'); ctx.fillRect(13, -7, 6, 14);
-    ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(8, -11, 4, 22); ctx.fillRect(-1, -9, 4, 18);
-    ctx.fillStyle = tones(rig, pal.accent).sh; ctx.fillRect(8, 6, 4, 5); ctx.fillRect(-1, 5, 4, 4);
+    // the two brass reinforcing rings on the steel bell: a material change, so each takes 1 px of ink. Widened
+    // 4 -> 5 first, or the line would leave 2 px of brass (ART_STYLE 0.7); the shade seams inset to match.
+    inkBands(ctx, rig, pal.accent, 8, -11, 5, 22, -1, -9, 5, 18);
+    ctx.fillStyle = tones(rig, pal.accent).sh; ctx.fillRect(9, 6, 3, 5); ctx.fillRect(0, 5, 3, 4);
     if (charge) { ctx.fillStyle = 'rgba(77,240,224,0.28)'; ctx.beginPath(); ctx.arc(17, 0, 11, 0, TAU); ctx.fill(); }
     if (rig.cannonVent) {
       ctx.fillStyle = tones(rig, STEAM).base;
@@ -230,7 +267,7 @@ function engineLegUpper(ctx, rig, pose, inf) {
   celCapsule(ctx, rig, 0, R(L * 0.4), 0, L + 2, r * 0.62, pal.metal, 0.3);
   celRect(ctx, rig, -r, -3, r * 2, R(L * 0.55), 3, pal.secondary, 0.4, 0.25);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-r, L - 2, r * 2, 5);
+  band(ctx, rig, -r, L - 2, r * 2, 6, pal.accent, 2);   // brass knee collar on iron: material change, takes ink
   ctx.fillStyle = tones(rig, pal.secondary).hi; ctx.fillRect(-r + 1, -1, 1, R(L * 0.5));
 }
 /** Shin: a light-steel piston rod sliding out of a short iron sleeve — the walker's "idling piston" read. */
@@ -261,7 +298,7 @@ function engineRearLeg(ctx, rig, pose) {
   const l = broken ? 40 : -(pose.legR.lower + pose.legL.lower) * 0.5;
   ctx.save(); ctx.translate(-7, 1); ctx.rotate(rad(-u));
   celRect(ctx, rig, -p.legR + 1, -3, (p.legR - 1) * 2, p.upperLeg + 6, 3, pal.secondary, 0.4, 0.22);
-  if (!rig.override) { ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-p.legR + 1, p.upperLeg - 2, (p.legR - 1) * 2, 4); }
+  if (!rig.override) band(ctx, rig, -p.legR + 1, p.upperLeg - 2, (p.legR - 1) * 2, 5, pal.accent, 2);
   ctx.translate(0, p.upperLeg); ctx.rotate(rad(-l));
   if (broken) {
     celPoly(ctx, rig, [-4, -2, 4, -2, 3, 8, -2, 11, -5, 6], pal.secondary, 0.4, 0.2);
@@ -284,9 +321,9 @@ function engineBoiler(ctx, rig) {
   celRect(ctx, rig, x0, y0 - 15, 9, 4, 1, RUST, 0.4, 0);
   celRect(ctx, rig, x0, y0, w, h, 6, IRON, 0.36, 0.26);
   if (rig.override) return;
-  const tb = tones(rig, BRASSB);
-  ctx.fillStyle = tb.base; ctx.fillRect(x0, y0 + 5, w, 4); ctx.fillRect(x0, y0 + h - 11, w, 4);
-  ctx.fillStyle = tb.sh; ctx.fillRect(x0, y0 + 9, w, 1); ctx.fillRect(x0, y0 + h - 7, w, 1);
+  // the boiler's two brass hoops: brass on iron, a material change, so each takes ink. 4 + a 1 px shade seam
+  // becomes one inked 6 px hoop - the outline IS the seam now (ART_STYLE 0.2, 0.7).
+  inkBands(ctx, rig, BRASSB, x0, y0 + 4, w, 6, x0, y0 + h - 12, w, 6);
   ctx.fillStyle = rig.col(DARK); ctx.fillRect(x0 + 4, y0 + 16, 7, 6);
   ctx.fillStyle = rig.col('#2A7A78'); ctx.fillRect(x0 + 5, y0 + 17, 5, 4);
   ctx.fillStyle = rig.col(CYAN); ctx.fillRect(x0 + 5, y0 + 18 + ((rig.tick % 20) < 10 ? 0 : 1), 5, 2);

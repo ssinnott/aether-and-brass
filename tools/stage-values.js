@@ -17,9 +17,18 @@
 //   --json                 emit machine-readable JSON instead of the tables
 //   --stage=N              only board N (1-based, repeatable as a comma list)
 //   --section=M            only section M (0-based, comma list)
-//   --faction=brassbound   only these factions (comma list of brassbound,sootborn,stormcrow)
+//   --faction=brassbound   only these factions (comma list of brassbound,sootborn,stormcrow,gleaning,chandler
+//                          plus the two hero parties heroes-bs = brunhild+sael and heroes-rp = rook+pip, which
+//                          run with no enemies at all and isolate the PLAYERS out of the same three renders, and the
+//                          four bosses boss-vane, boss2-kestrel, midboss-grubbik, midboss2-skree, each a squad of one)
 //   --ref=<img>            also measure a reference frame (jpg/png) with the proxy estimator; repeatable
 //   --out=<dir>            write the A/B/C renders as PNGs for eyeballing
+//   --cells                print, per row, the actor colour masses that land on ground the backdrop already claims
+//                          (the actionable half of the `ovlap` number: it names the colour and the mass that moves)
+//   --reflike              also measure our own frame the way a REFERENCE frame has to be measured -- the top 4 %
+//                          most saturated pixels below the HUD, local-median backdrop. `actS` over the full actor
+//                          mask and `actS` over a top-4 %-saturated mask are NOT the same statistic, and the brief's
+//                          reference figures were read off the second one.
 //   --settle=160           frames to run before the squad is spawned (clears the section banner)
 //   --frames=6             frames to run after the squad is spawned, before the capture
 //   --url-spawn            spawn through the `spawn=` URL param at load time instead of after the settle
@@ -61,6 +70,8 @@ const CFG = {
   frames: Number(opt('frames', 6)),
   urlSpawn: flag('url-spawn'),
   seed: Number(opt('seed', 1)),
+  cells: flag('cells'),
+  refLike: flag('reflike'),
 };
 if (CFG.out) fs.mkdirSync(path.resolve(ROOT, CFG.out), { recursive: true });
 
@@ -75,6 +86,27 @@ const SQUADS = {
   stormcrow: ['crimper', 'corsair', 'bosun', 'marine'],
   gleaning: ['chaff', 'winnow', 'thresher', 'harvestman'],
   chandler: ['wickboy', 'tallyman', 'limeburner', 'resurrectionist'],
+};
+/**
+ * The heroes are not a spawnable squad, they are the PLAYERS - and the same three renders already isolate them:
+ * B (enemies deleted) minus C (the player deleted too) is exactly the player pixels, measured against exactly the
+ * backdrop behind them. So a hero row runs with no enemies at all. gameplay.enter() slices `chars` to two players
+ * and engine/input only knows two slots, so the four heroes are measured as two pairs rather than one party.
+ */
+const HERO_PARTIES = { 'heroes-bs': { chars: [0, 1], cast: ['brunhild', 'sael'] }, 'heroes-rp': { chars: [2, 3], cast: ['rook', 'pip'] } };
+/**
+ * A boss is a squad of one: each of the four owns exactly one section, so there is no averaging to hide behind and
+ * this is the only group where a bespoke per-stage answer is cheap. Spawned down the same gameplay.spawnEnemy path
+ * (getEnemyDef routes a boss type to its single def and the screen builds a Boss instead of an Enemy), and the A-B
+ * difference already drops kind 'boss', so the isolation is unchanged. A boss run also turns ON the boss HP bar,
+ * which is in A and not in B, so a boss row crops the mask above it. Phase 1 only: the later phases are separate
+ * palettes on the same rig and are read off the contact sheets.
+ */
+const BOSS_SUBJECTS = {
+  'boss-vane': { type: 'boss', variant: 'vane', slot: { sx: 300, z: 70 } },
+  'boss2-kestrel': { type: 'boss2', variant: 'kestrel', slot: { sx: 320, z: 70 } },
+  'midboss-grubbik': { type: 'midboss', variant: 'grubbik', slot: { sx: 300, z: 70 } },
+  'midboss2-skree': { type: 'midboss2', variant: 'skree', slot: { sx: 320, z: 70 } },
 };
 /** Where the squad stands: internal (640x360) screen x, and the depth z (0 = far, 140 = near). Spread across the frame
  *  and across the floor band so every actor sits over a different passage of backdrop. */
@@ -322,6 +354,7 @@ window.__sv = (function () {
   function reservation(A, back, m, w, h, skip) {
     var LB = 12, AB = 24;                  // lattice: 12 lightness steps, 24 steps per chroma axis
     var CH = 0.30;                          // Oklab a/b half-range the lattice spans
+    var INK = 0.25;                         // Oklab L below which an actor pixel is INK, not colour (see below)
     function cell(o) {
       var li = Math.min(LB - 1, Math.max(0, Math.floor(o.L * LB)));
       var ai = Math.min(AB - 1, Math.max(0, Math.floor((o.a + CH) / (2 * CH) * AB)));
@@ -329,35 +362,61 @@ window.__sv = (function () {
       return (li * AB + ai) * AB + bi;
     }
     var actorH = new Map(), bgH = new Map(), nA = 0, nB = 0;
+    var inkH = new Map(), nC = 0;            // the actor's COLOURED mass only (Oklab L >= INK)
+    var rgbA = new Map();                    // representative colour of each actor cell (running sum), for --cells
     for (var y = 1; y < h - 1; y++) for (var x = 1; x < w - 1; x++) {
       var p = y * w + x; if (!m[p] || (skip && skip[p])) continue;
       var i = p * 4;
       var ka = cell(oklab(A[i], A[i + 1], A[i + 2])), kb = cell(oklab(back[i], back[i + 1], back[i + 2]));
       actorH.set(ka, (actorH.get(ka) || 0) + 1); nA++;
       bgH.set(kb, (bgH.get(kb) || 0) + 1); nB++;
+      var acc = rgbA.get(ka); if (!acc) { acc = [0, 0, 0]; rgbA.set(ka, acc); }
+      acc[0] += A[i]; acc[1] += A[i + 1]; acc[2] += A[i + 2];
+      if (oklab(A[i], A[i + 1], A[i + 2]).L >= INK) { inkH.set(ka, (inkH.get(ka) || 0) + 1); nC++; }
     }
-    if (!nA || !nB) return { overlap: 0, occupancy: 0, actorCells: 0, bgCells: 0 };
+    if (!nA || !nB) return { overlap: 0, occupancy: 0, actorCells: 0, bgCells: 0, cells: [] };
     // a backdrop cell counts as "claimed" only above a floor, so a handful of stray pixels is not a collision
     var FLOOR = Math.max(1, nB * 0.0008);
     var claimed = new Set();
     bgH.forEach(function (v, k) { if (v >= FLOOR) claimed.add(k); });
-    var collide = 0;
+    var collide = 0, collideC = 0;
     actorH.forEach(function (v, k) { if (claimed.has(k)) collide += v; });
+    inkH.forEach(function (v, k) { if (claimed.has(k)) collideC += v; });
+    // Per-cell detail: which of the actor's colour masses actually land on claimed ground, and what colour they are.
+    // This is what makes the overlap number actionable -- it names the hex to move and says how much mass moves with it.
+    var cells = [];
+    actorH.forEach(function (v, k) {
+      var acc = rgbA.get(k);
+      cells.push({ share: 100 * v / nA, claimed: claimed.has(k),
+        rgb: [Math.round(acc[0] / v), Math.round(acc[1] / v), Math.round(acc[2] / v)],
+        L: Math.floor(k / (AB * AB)) });
+    });
+    cells.sort(function (a, b) { return b.share - a.share; });
     return {
       overlap: 100 * collide / nA,
+      // The same question asked of the actor's COLOURED mass only. Every rig's 1 px outline is a mandated near-black
+      // (ART_STYLE 3) and section 0.2 mandates one on every internal boundary too, so ink is a large and DELIBERATE
+      // share of an actor's pixels -- and near-black is the one region of the lattice that every dark stage also
+      // occupies. 'overlap' therefore charges the cast for obeying the outline rule. 'overlapColour' drops actor
+      // pixels below Oklab L 0.25 and reports the collision over the mass a palette edit can actually move.
+      overlapColour: nC ? 100 * collideC / nC : 0,
+      inkShare: 100 * (nA - nC) / nA,
       occupancy: 100 * claimed.size / (LB * AB * AB),
       actorCells: actorH.size, bgCells: claimed.size,
+      cells: cells.slice(0, 24),
     };
   }
 
   function separation(A, back, m, w, h, skip) {
     var dV = [], dS = [], dE = [], edge = [], av = [], as = [], bv = [], bs2 = [], dL = [], dC = [];
     var hA = hueAcc(), hB = hueAcc(), dH = [];
+    var satC = 0, nSatC = 0, lostC = 0;
     for (var y = 1; y < h - 1; y++) for (var x = 1; x < w - 1; x++) {
       var p = y * w + x; if (!m[p] || (skip && skip[p])) continue;
       var i = p * 4;
       var ca = hsv(A[i], A[i + 1], A[i + 2]), cb = hsv(back[i], back[i + 1], back[i + 2]);
       var oa = oklab(A[i], A[i + 1], A[i + 2]), ob = oklab(back[i], back[i + 1], back[i + 2]);
+      if (oa.L >= 0.25) { satC += ca.s; nSatC++; if (e < LOST) lostC++; }   // the COLOURED mass (ink excluded)
       var l = (oa.L - ob.L), aa = (oa.a - ob.a), bb = (oa.b - ob.b);
       var e = Math.sqrt(l * l + aa * aa + bb * bb) * 100;
       av.push(ca.v); as.push(ca.s); bv.push(cb.v); bs2.push(cb.s);
@@ -382,6 +441,14 @@ window.__sv = (function () {
     return {
       pixels: dE.length,
       actorVal: mean(av), actorSat: mean(as), bgVal: mean(bv), bgSat: mean(bs2),
+      // The brief asks for the IDENTITY MASSES at 60-80 % saturation. 'actorSat' averages every actor pixel, so the
+      // mandated near-black ink and the shadow bands under it drag it down by construction; 'actorSatColour' is the
+      // same average over the pixels above Oklab L 0.25, i.e. the mass a palette edit is actually about.
+      actorSatColour: nSatC ? satC / nSatC : 0, colourPct: dE.length ? 100 * nSatC / dE.length : 0,
+      // lost%, restricted the same way. The 1 px near-black outline is a third of a rig's pixels on a dark board and
+      // it is dE 9.2 from the Sootfoot Docks' dark plank row by construction -- lightening bodies cannot move that,
+      // and doing so is the mechanism the brief names as what loses a cast. lostColour is the movable half.
+      lostColourPct: nSatC ? 100 * lostC / nSatC : 0,
       dVal: mean(dV), dSat: mean(dS), absVal: mean(dV.map(Math.abs)), absSat: mean(dS.map(Math.abs)),
       dE: st.mean, dEp10: st.p10, dEp50: st.p50, dEp90: st.p90,
       edgeDE: mean(edge), dL: mean(dL), dC: mean(dC),
@@ -440,27 +507,42 @@ const STAGE_LIST = await page.evaluate(async () => {
   }));
 });
 
-const factions = CFG.factions || Object.keys(SQUADS);
+const factionsAsked = CFG.factions || [...Object.keys(SQUADS), ...Object.keys(HERO_PARTIES), ...Object.keys(BOSS_SUBJECTS)];
+/**
+ * Squad rows run FIRST so the backdrop-band row is always read off a squad's clean plate when one was asked for: a
+ * hero row loads a different `chars=` (different HUD portraits) and a boss row turns the boss HP bar on, and the
+ * bar sits inside the 400-680 floor band. Neither changes the backdrop, but both change the plate the bands are
+ * measured from, so neither may be the source of the band row or of the plate-identity cross-check.
+ */
+const special = (f) => !!(HERO_PARTIES[f] || BOSS_SUBJECTS[f]);
+const factions = [...factionsAsked.filter((f) => !special(f)), ...factionsAsked.filter(special)];
 const results = { bands: [], separation: [], reference: [], meta: { settle: CFG.settle, frames: CFG.frames, seed: CFG.seed, bands: BANDS, slots: SLOTS, squads: SQUADS, urlSpawn: CFG.urlSpawn } };
 
 /** Run one (stage, section, faction) measurement. */
 async function measure(stage, sec, faction) {
-  const squad = SQUADS[faction];
+  const party = HERO_PARTIES[faction] || null;
+  const solo = BOSS_SUBJECTS[faction] || null;
+  const squad = (party || solo) ? [] : SQUADS[faction];
   // dx is relative to P1; at load time P1 sits at internal screen x 100, which is what the `spawn=` URL string assumes.
-  const urlSpawn = squad.map((v, i) => `${faction}:${v}@${SLOTS[i].sx - 100},${SLOTS[i].z - 70}`).join(',');
-  const q = [`autotest=1`, `seed=${CFG.seed}`, `skipTo=gameplay`, `nowaves=1`, `godmode=1`, `chars=0`,
+  const urlSpawn = (party || solo) ? '' : squad.map((v, i) => `${faction}:${v}@${SLOTS[i].sx - 100},${SLOTS[i].z - 70}`).join(',');
+  const q = [`autotest=1`, `seed=${CFG.seed}`, `skipTo=gameplay`, `nowaves=1`, `godmode=1`, `chars=${party ? party.chars.join(',') : 0}`,
     `stage=${stage.number}`, `section=${sec.index}`];
   if (CFG.urlSpawn) q.push(`spawn=${urlSpawn}`);
   await page.goto(`http://localhost:${port}/index.html?${q.join('&')}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 20000 });
 
-  const shot = await page.evaluate(async ([faction, squad, slots, settle, frames, urlSpawn, wantPng]) => {
+  const shot = await page.evaluate(async ([faction, squad, slots, settle, frames, urlSpawn, wantPng, heroMode, solo, wantRefLike]) => {
     const G = window.__game, SV = window.__sv;
     G.step(settle);                                  // clear the section banner and let the backdrop settle
     const world = G.world;
     const cam = world.camera, p1 = world.players[0];
     let placed = [];
-    if (!urlSpawn) {
+    if (solo) {
+      // one boss, at the same fixed screen position a squad's first slot would use
+      const px = p1.x - cam.x;
+      placed = [{ variant: solo.variant, dx: Math.round(solo.slot.sx - px), dz: Math.round(solo.slot.z - p1.z) }];
+      G.spawnEnemy(solo.type, solo.variant, placed[0].dx, placed[0].dz);
+    } else if (!urlSpawn && !heroMode) {
       // Same code path as the `spawn=` URL param (gameplay.spawnEnemy: P1.x + dx, P1.z + dz), but issued after the
       // settle so the squad stands where we put it instead of where 160 frames of AI dragged it.
       const px = p1.x - cam.x;
@@ -468,6 +550,14 @@ async function measure(stage, sec, faction) {
       for (const s of placed) G.spawnEnemy(faction, s.variant, s.dx, s.dz);
     }
     G.step(frames);
+    // A boss spawn shakes the camera, and engine/camera.js decays the shake with Math.random() -- deliberately, it is
+    // "purely visual". It is not purely visual HERE: a 1-4 px whole-frame offset puts every actor pixel over a
+    // different passage of backdrop, and it made boss rows irreproducible run to run (measured spread over 3 runs of
+    // an unchanged tree: boss-vane ovlap 38.4-41.3, midboss-grubbik lost 29.7-31.7, midboss2-skree ovlap 33.4-36.5,
+    // against 0.00 for every non-boss faction). Zero it and re-render before the capture: the three renders A/B/C
+    // then agree with each other AND with the next run.
+    cam.shakeX = 0; cam.shakeY = 0; cam.shakeFrames = 0; cam.shakeIntensity = 0;
+    G.step(0);
     const canvas = document.getElementById('game');
     const A = SV.grab(canvas);
     const pngA = wantPng ? canvas.toDataURL('image/png') : '';
@@ -485,15 +575,28 @@ async function measure(stage, sec, faction) {
 
     const w = A.w, h = A.h;
     const rows = { sky: [90, 270], floor: [300, 640], floorRows: [400, 680] };
-    const mask = SV.maskFromDiff(A.px, B.px, w, h, rows.sky[0], 700);
-    const shadow = SV.classifyShadow(A.px, C.px, mask, w, h);       // the actors' own cast shadows, not their bodies
+    // enemies are A - B; the heroes are B - C (same plate C behind both, so the two rows are directly comparable)
+    // a boss run also turns ON the boss HP bar, which is in A and not in B: crop it out of the mask, or a bar of
+    // flat HUD colour is measured as actor pixels.
+    const mask = SV.maskFromDiff(heroMode ? B.px : A.px, heroMode ? C.px : B.px, w, h, rows.sky[0], solo ? 645 : 700);
+    const src = heroMode ? B.px : A.px;                              // the frame the masked actors are actually in
+    const shadow = SV.classifyShadow(src, C.px, mask, w, h);       // the actors' own cast shadows, not their bodies
     let nMask = 0, nShadow = 0;
     for (let p = 0; p < mask.length; p++) { if (mask[p]) { nMask++; if (shadow[p]) nShadow++; } }
-    const exact = SV.separation(A.px, C.px, mask, w, h, shadow);
-    const shadowOnly = SV.separation(A.px, C.px, shadow, w, h, null);
+    const exact = SV.separation(src, C.px, mask, w, h, shadow);
+    const shadowOnly = SV.separation(src, C.px, shadow, w, h, null);
     // cross-check with the estimator the reference frame has to use (no clean plate available there)
-    const proxyBack = SV.localBackdrop(A.px, mask, w, h, 24);
-    const proxy = SV.separation(A.px, proxyBack, mask, w, h, shadow);
+    const proxyBack = SV.localBackdrop(src, mask, w, h, 24);
+    const proxy = SV.separation(src, proxyBack, mask, w, h, shadow);
+    // Apples-to-apples with a reference screenshot: the same top-4%-saturated proxy mask and local-median backdrop
+    // the `--ref` path is forced to use, run on OUR frame. Our `exact` mask is every actor pixel -- outline, shadow
+    // tone, skin and metal included -- so its mean saturation cannot be compared with a figure read off the most
+    // saturated 4 % of somebody else's screenshot.
+    let refLike = null;
+    if (wantRefLike) {
+      const rm = SV.maskFromSaturation(src, w, h, rows.sky[0], Math.round(h * 0.96), 0.04);
+      refLike = SV.separation(src, SV.localBackdrop(src, rm, w, h, Math.round(h * 0.034)), rm, w, h, null);
+    }
     // fingerprint of the clean plate: proves the stage render is identical across the faction runs
     let fp = 0; for (let i = 0; i < C.px.length; i += 997) fp = (fp * 31 + C.px[i]) >>> 0;
     // optional mask overlay so the isolation can be eyeballed: magenta = actor body, cyan = the actor's cast shadow
@@ -520,11 +623,11 @@ async function measure(stage, sec, faction) {
         floor: SV.band(C.px, w, rows.floor[0], rows.floor[1]),
         floorRows: SV.band(C.px, w, rows.floorRows[0], rows.floorRows[1]),
       },
-      exact, proxy, shadowOnly, shadowPct: nMask ? 100 * nShadow / nMask : 0, placed, enemies, cleanFingerprint: fp, urlSpawnString: null,
+      exact, proxy, refLike, shadowOnly, shadowPct: nMask ? 100 * nShadow / nMask : 0, placed, enemies, cleanFingerprint: fp, urlSpawnString: null,
       png: { A: pngA, B: pngB, C: pngC, M: pngM },
       errors: G.summary().errors.slice(0, 3),
     };
-  }, [faction, squad, SLOTS, CFG.settle, CFG.frames, CFG.urlSpawn, !!CFG.out]);
+  }, [faction, squad, SLOTS, CFG.settle, CFG.frames, CFG.urlSpawn, !!CFG.out, !!party, solo, CFG.refLike]);
 
   shot.urlSpawnString = urlSpawn;
   if (CFG.out) {
@@ -550,12 +653,14 @@ for (const stage of STAGE_LIST) {
         bandsRow = { stage: stage.number, stageName: stage.name, section: sec.index, id: sec.id, name: sec.name,
           backdrop: sec.backdrop, floor: sec.floor, ...r.bands, cleanFingerprint: r.cleanFingerprint };
         results.bands.push(bandsRow);
-      } else if (bandsRow.cleanFingerprint !== r.cleanFingerprint) {
+      } else if (bandsRow.cleanFingerprint !== r.cleanFingerprint && !special(faction)) {
+        // hero rows load with a different `chars=`, so their HUD portraits differ; the backdrop below the HUD does not.
+
         bandsRow.warning = 'clean plate differed between faction runs';
       }
       results.separation.push({ stage: stage.number, section: sec.index, id: sec.id, name: sec.name, faction,
-        squad: SQUADS[faction], spawn: r.urlSpawnString, placed: r.placed, enemies: r.enemies,
-        exact: r.exact, proxy: r.proxy, shadowOnly: r.shadowOnly, shadowPct: r.shadowPct, errors: r.errors });
+        squad: SQUADS[faction] || (HERO_PARTIES[faction] && HERO_PARTIES[faction].cast) || [BOSS_SUBJECTS[faction].variant], spawn: r.urlSpawnString, placed: r.placed, enemies: r.enemies,
+        exact: r.exact, proxy: r.proxy, refLike: r.refLike, shadowOnly: r.shadowOnly, shadowPct: r.shadowPct, errors: r.errors });
       if (!CFG.json) process.stderr.write(`  measured ${stage.number}/${sec.id} ${faction} (${r.exact.pixels} actor px)\n`);
     }
   }
@@ -612,11 +717,29 @@ if (CFG.json) {
   console.log('  actH/bgH = chroma-weighted mean Oklab hue angle of the actors and of the ground behind them | dHue = the gap between them');
   console.log('  ovlap = share of actor colour mass landing in an Oklab cell the backdrop also occupies (0 = the stage reserves that colour space for the cast) | bgOcc = share of the lattice the backdrop claims');
   console.log('');
-  console.log('BOARD SECTION                     FACTION      actV  bgV   dV    actS  bgS   dS      dE   edge   p10  lost%   actH   bgH  dHue  ovlap  bgOcc');
+  console.log('  actS/ovlap are over EVERY actor pixel; actSC/ovlapC are the same two over the COLOURED mass only (Oklab L >= 0.25),');
+  console.log('  i.e. with the mandated near-black outline and its shadow bands taken out. ink% = the share they are.');
+  console.log('');
+  console.log('BOARD SECTION                     FACTION      actV  bgV   dV    actS  bgS   dS      dE   edge   p10  lost%   actH   bgH  dHue  ovlap  bgOcc   actSC ovlapC  ink%  lostC%');
   for (const s of results.separation) {
     const e = s.exact;
-    console.log(`  ${s.stage}   ${(s.section + ' ' + s.name).padEnd(28)} ${s.faction.padEnd(11)} ${pc(e.actorVal)} ${pc(e.bgVal)} ${sgn(e.dVal).padStart(4)}  ${pc(e.actorSat)} ${pc(e.bgSat)} ${sgn(e.dSat).padStart(4)}   ${f1(e.dE)} ${f1(e.edgeDE)} ${f1(e.dEp10)} ${f1(e.lostPct)}  ${deg(e.actorHue && e.actorHue.deg)} ${deg(e.bgHue && e.bgHue.deg)} ${f1(e.hueGap)} ${f1(e.reservation && e.reservation.overlap)} ${f1(e.reservation && e.reservation.occupancy)}`);
+    console.log(`  ${s.stage}   ${(s.section + ' ' + s.name).padEnd(28)} ${s.faction.padEnd(11)} ${pc(e.actorVal)} ${pc(e.bgVal)} ${sgn(e.dVal).padStart(4)}  ${pc(e.actorSat)} ${pc(e.bgSat)} ${sgn(e.dSat).padStart(4)}   ${f1(e.dE)} ${f1(e.edgeDE)} ${f1(e.dEp10)} ${f1(e.lostPct)}  ${deg(e.actorHue && e.actorHue.deg)} ${deg(e.bgHue && e.bgHue.deg)} ${f1(e.hueGap)} ${f1(e.reservation && e.reservation.overlap)} ${f1(e.reservation && e.reservation.occupancy)}   ${pc(e.actorSatColour)} ${f1(e.reservation && e.reservation.overlapColour)} ${f1(e.reservation && e.reservation.inkShare)} ${f1(e.lostColourPct)}`);
   }
+  if (CFG.cells) {
+    console.log('\n=== COLOUR MASSES ON CLAIMED GROUND (why `ovlap` is what it is) =======================================');
+    console.log('  Each row is one Oklab lattice cell of the actor. COLLIDE = the backdrop behind the actors occupies it too.');
+    for (const s of results.separation) {
+      const cs = (s.exact.reservation && s.exact.reservation.cells) || [];
+      const bad = cs.filter((c) => c.claimed && c.share >= 1);
+      if (!bad.length) continue;
+      console.log(`  ${s.stage}/${s.section} ${s.name} -- ${s.faction}  (ovlap ${s.exact.reservation.overlap.toFixed(1)})`);
+      for (const c of bad.slice(0, 8)) {
+        const hex = '#' + c.rgb.map((v) => v.toString(16).padStart(2, '0')).join('');
+        console.log(`      ${c.share.toFixed(1).padStart(5)} %  ${hex}   Lband ${c.L}`);
+      }
+    }
+  }
+
   console.log('\n=== WORST FIRST (least separation) ===================================================================');
   const ranked = results.separation.slice().sort((a, b) => a.exact.dE - b.exact.dE);
   console.log('RANK  BOARD SECTION                     FACTION       dE   edge   p10  lost%   dV     dS   dHue');
@@ -624,6 +747,19 @@ if (CFG.json) {
     const e = s.exact;
     console.log(`  ${String(i + 1).padStart(2)}    ${s.stage}   ${(s.section + ' ' + s.name).padEnd(28)} ${s.faction.padEnd(11)} ${f1(e.dE)} ${f1(e.edgeDE)} ${f1(e.dEp10)} ${f1(e.lostPct)}  ${sgn(e.dVal).padStart(4)}  ${sgn(e.dSat).padStart(4)}  ${f1(e.hueGap)}`);
   });
+  if (CFG.refLike) {
+    console.log('\n=== REFERENCE-COMPARABLE ACTOR SATURATION =============================================================');
+    console.log('  actS(full)  = mean HSV saturation over EVERY actor pixel (outline, shadow tone, skin, metal included)');
+    console.log('  actS(top4%) = the same frame measured the only way a reference screenshot can be: the most saturated');
+    console.log('                4 % of pixels below the HUD. This is the statistic the brief`s 76-88 % reference figures are.');
+    console.log('BOARD SECTION                     FACTION      actS(full)  actS(top4%)  bgS(top4%)  ratio');
+    for (const s of results.separation) {
+      if (!s.refLike) continue;
+      const r = s.refLike;
+      console.log(`  ${s.stage}   ${(s.section + ' ' + s.name).padEnd(28)} ${s.faction.padEnd(11)} ${pc(s.exact.actorSat)}        ${pc(r.actorSat)}       ${pc(r.bgSat)}     ${f1(r.bgSat ? r.actorSat / r.bgSat : 0)}`);
+    }
+  }
+
   for (const r of results.reference) {
     console.log(`\n=== REFERENCE ${path.basename(r.file)} (${r.size[0]}x${r.size[1]}) ==============================`);
     console.log(`  sky   val ${pc(r.bands.sky.valMean)}  sat ${pc(r.bands.sky.satMean)}`);
