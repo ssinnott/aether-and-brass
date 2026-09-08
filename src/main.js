@@ -9,6 +9,7 @@ import { audio } from './engine/audio.js';
 import { particles } from './engine/particles.js';
 import { Game } from './game/game.js';
 import { TitleScreen } from './game/screens/title.js';
+import { BoardSelectScreen } from './game/screens/boardselect.js';
 import { SelectScreen } from './game/screens/select.js';
 import { GalleryScreen } from './game/screens/gallery.js';
 import { GameplayScreen } from './game/screens/gameplay.js';
@@ -16,6 +17,7 @@ import { IntroScreen } from './game/screens/intro.js';
 import { PauseScreen } from './game/screens/pause.js';
 import { GameOverScreen } from './game/screens/gameover.js';
 import { ResultsScreen } from './game/screens/results.js';
+import { progress } from './game/progress.js';
 import { CHARACTERS } from './content/characters/index.js';
 import { ENEMY_LIST, ENEMY_GALLERY } from './content/enemies/index.js';
 
@@ -42,8 +44,11 @@ export function parseOptions(search = window.location.search) {
     godmode: devOnly && flag('godmode'),
     section: devOnly ? (parseInt(q.get('section') || '0', 10) || 0) : 0,
     // which board to play: 1-based stage number (see content/stage/index.js). Honoured outside dev mode too so a
-    // link can point straight at a board.
+    // link can point straight at a board, and it opens that board on BOARD SELECT for this page load (game/progress.js).
     stage: q.has('stage') ? (parseInt(q.get('stage'), 10) || 1) : 1,
+    // open every board on BOARD SELECT for this page load; `resetprogress` wipes the saved unlocks instead.
+    unlockall: flag('unlockall'),
+    resetprogress: flag('resetprogress'),
   };
 }
 
@@ -62,6 +67,10 @@ window.addEventListener('unhandledrejection', (e) => { if (!hooks._record) hooks
 
 function boot() {
   const options = parseOptions();
+  // Unlock state has to settle before the title / board select read it.
+  if (options.resetprogress) progress.reset();
+  if (options.unlockall) progress.unlockAllForSession();
+  if (options.stage > 1) progress.allowSession(options.stage - 1); // a `?stage=N` link is its own key to board N
   audio.testMode = options.autotest;
   rng.seed(options.seed);
   const view = createCanvas(document.getElementById('game') || document.body);
@@ -76,6 +85,7 @@ function boot() {
   game.enemyList = ENEMY_LIST;
   game.galleryRegistry = [...CHARACTERS.map((c) => ({ id: c.id, name: c.name, build: c.build, anims: c.anims })), ...ENEMY_GALLERY];
   game.registerScreen('title', (g) => new TitleScreen(g));
+  game.registerScreen('boardselect', (g) => new BoardSelectScreen(g));
   game.registerScreen('select', (g) => new SelectScreen(g));
   game.registerScreen('intro', (g) => new IntroScreen(g));
   game.registerScreen('gallery', (g) => new GalleryScreen(g));
@@ -128,7 +138,7 @@ function boot() {
   };
   // NOTE: Object.assign would evaluate getters once; live getters are defined separately below.
   Object.assign(hooks, {
-    game, input, rng, audio, particles, loop, options,
+    game, input, rng, audio, particles, loop, options, progress,
     step(n = 1) { loop.step(Math.max(0, n | 0)); },
     screen() { return game.screenId(); },
     summary() {

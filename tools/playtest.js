@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot select combat playthrough playthrough2 coop audio gallery)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat playthrough playthrough2 coop audio gallery)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 import path from 'node:path';
@@ -87,8 +87,105 @@ const scenarios = {
       assert((await g.screen()) === 'title', 'title screen is active after boot');
       await g.shot('01-title');
       await g.press(0, { attack: true }, 2, 30);
-      assert((await g.screen()) === 'select', 'attack on title goes to character select');
-      await g.shot('02-select');
+      assert((await g.screen()) === 'boardselect', 'attack on title goes to board select');
+      await g.shot('02-boardselect');
+      await g.press(0, { attack: true }, 2, 45);
+      assert((await g.screen()) === 'select', 'confirming the open board goes to character select');
+      await g.shot('02b-select');
+    });
+  },
+
+  // 1b. Board select: locked boards refuse to start, clearing a board opens the next one, and that survives a reload.
+  async boards(server) {
+    await withPage(server, 'seed=1', async (g, page) => {
+      await g.step(60);
+      await g.press(0, { attack: true }, 2, 30);              // title -> board select
+      assert((await g.screen()) === 'boardselect', 'START on the title opens BOARD SELECT');
+      let sum = await g.summary();
+      assert(sum.boards.length >= 2, `board select lists every registered board (got ${sum.boards.length})`);
+      assert(sum.boards[0].unlocked, 'board 1 is open on a fresh save');
+      assert(!sum.boards[1].unlocked, 'board 2 is locked on a fresh save');
+      await g.shot('04-boardselect-locked');
+      // moving onto a locked board and confirming must refuse rather than start a run
+      await g.press(0, { right: true }, 2, 10);
+      sum = await g.summary();
+      assert(sum.cursor === 1, 'right moves the cursor onto board 2');
+      await g.press(0, { attack: true }, 2, 20);
+      assert((await g.screen()) === 'boardselect', 'confirming a locked board does not start a run');
+      await g.shot('05-boardselect-denied');
+      // the open board still starts
+      await g.press(0, { left: true }, 2, 10);
+      await g.press(0, { attack: true }, 2, 45);
+      assert((await g.screen()) === 'select', 'confirming an open board goes to character select');
+      // record a clear the way the results screen does, then reload: the unlock has to be on disk, not in memory
+      await page.evaluate(() => window.__game.progress.markCleared('stage1', { score: 12345, rank: 'B' }));
+      await page.reload({ waitUntil: 'load' });
+      await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 15000 });
+      await g.step(60);
+      await g.press(0, { attack: true }, 2, 30);
+      assert((await g.screen()) === 'boardselect', 'the title still opens BOARD SELECT after a reload');
+      sum = await g.summary();
+      assert(sum.boards[0].cleared, 'board 1 reads as cleared after a reload');
+      assert(sum.boards[1].unlocked, 'clearing board 1 opens board 2, and the unlock survives a reload');
+      await g.shot('06-boardselect-unlocked');
+      await g.press(0, { right: true }, 2, 10);
+      await g.press(0, { attack: true }, 2, 45);
+      assert((await g.screen()) === 'select', 'the newly opened board can be started');
+    });
+    // the results screen names the board that was actually played and announces what the clear opened
+    await withPage(server, 'seed=1&skipTo=results', async (g) => {
+      await g.step(240);
+      const sum = await g.summary();
+      assert(sum.screen === 'results', 'results screen reachable for the unlock check');
+      assert(sum.stageId === 'stage1', `results knows which board was played (got ${sum.stageId})`);
+      assert(sum.unlockedStageId === 'stage2', `clearing board 1 reports board 2 as newly opened (got ${sum.unlockedStageId})`);
+      await g.shot('07-results-unlock');
+    });
+    // dismissing a clear that opened a board hands off to BOARD SELECT and plays the reveal on that plaque
+    await withPage(server, 'seed=1&skipTo=results', async (g) => {
+      await g.step(240);                                      // let the rows roll and the rank land
+      await g.press(0, { start: true }, 2, 20);               // dismiss the plaque
+      assert((await g.screen()) === 'boardselect', 'dismissing an unlocking clear goes to BOARD SELECT');
+      let sum = await g.summary();
+      assert(sum.revealing === true, 'the reveal is running on arrival');
+      assert(sum.revealIndex === 1, `the reveal targets the board that just opened (got ${sum.revealIndex})`);
+      await g.step(20); await g.shot('08-reveal-rattle');
+      await g.step(55); await g.shot('09-reveal-doors');
+      await g.step(45); await g.shot('10-reveal-name');
+      await g.step(40); await g.shot('11-reveal-stamp');
+      await g.step(45);
+      sum = await g.summary();
+      assert(sum.revealing === false, 'the reveal finishes and hands back to normal selection');
+      assert((await g.screen()) === 'boardselect', 'the selector stays up once the reveal is done');
+      await g.press(0, { attack: true }, 2, 45);
+      assert((await g.screen()) === 'select', 'the board the reveal just opened starts a run');
+    });
+    // the flourish is skippable
+    await withPage(server, 'seed=1&skipTo=results', async (g) => {
+      await g.step(240);
+      await g.press(0, { start: true }, 2, 20);
+      await g.step(20);
+      await g.press(0, { attack: true }, 2, 6);
+      const sum = await g.summary();
+      assert(sum.revealing === false, 'attack skips the reveal flourish');
+      assert((await g.screen()) === 'boardselect', 'skipping the reveal leaves the selector up');
+    });
+    // ?unlockall=1 opens every board for the page load; ?resetprogress=1 wipes the save again
+    await withPage(server, 'seed=1&unlockall=1', async (g) => {
+      await g.step(60);
+      await g.press(0, { attack: true }, 2, 30);
+      const sum = await g.summary();
+      assert(sum.boards.every((b) => b.unlocked), '?unlockall=1 opens every board');
+    });
+    await withPage(server, 'seed=1', async (g, page) => {
+      await g.step(30);
+      await page.evaluate(() => window.__game.progress.markCleared('stage1', { score: 999, rank: 'C' }));
+      await page.goto(page.url() + '&resetprogress=1', { waitUntil: 'load' });
+      await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 15000 });
+      await g.step(60);
+      await g.press(0, { attack: true }, 2, 30);
+      const sum = await g.summary();
+      assert(!sum.boards[1].unlocked, '?resetprogress=1 clears the saved unlocks');
     });
   },
 
@@ -97,7 +194,8 @@ const scenarios = {
     for (let c = 0; c < CHARACTER_COUNT; c++) {
       await withPage(server, 'seed=1', async (g) => {
         await g.step(60);
-        await g.press(0, { attack: true }, 2, 20);           // title -> select
+        await g.press(0, { attack: true }, 2, 20);           // title -> board select
+        await g.press(0, { attack: true }, 2, 45);           // board select -> character select
         for (let i = 0; i < c; i++) await g.press(0, { right: true }, 2, 10);
         await g.press(0, { attack: true }, 2, 20);           // confirm character
         // ready/confirm again if the select screen requires a second confirmation

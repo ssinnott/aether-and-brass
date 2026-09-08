@@ -90,8 +90,29 @@ free. The Mooring Spine (dawn storm above a cloud sea; no bulwark, so throw them
 grapnel winch at the end of it) → The Cold Sovereign (the flagship's weather deck, gun ports
 and lightning, up to the bridge where the Admiral is waiting).
 
-Pick the board on the title screen with **BOARD < 1 OF 2 >**, or link straight to it with
-`?stage=2`. Full design doc: `docs/STAGE2.md`.
+Board 2 is **locked until you clear board 1**. Full design doc: `docs/STAGE2.md`.
+
+## Board select
+
+START on the title screen opens **BOARD SELECT**: one brass plaque per board with its vignette, name,
+section count and the factions you will be fighting. Left/right chooses, attack or start confirms, dodge
+goes back. A board you have not opened yet shows a padlock plate and the board you have to clear to open
+it; confirming it buzzes instead of starting a run.
+
+Board 1 is always open, and clearing a board opens the next one for good. The results screen announces it
+with a **NEW BOARD OPEN** plate, and dismissing the plaque drops you back onto BOARD SELECT to watch it
+happen: the new board's plaque is still sealed, the padlock rattles itself apart, the hatch splits into two
+retracting doors, the `? ? ? ? ?` resolves letter by letter into the board's name and a **STAGE 2 OPEN**
+stamp lands as the music comes back in. Attack or start skips the flourish. Cleared boards keep your best
+rank and score on their plaque.
+
+Progress is saved in the browser's `localStorage` under `aetherAndBrass.progress.v1`; if storage is
+unavailable (private-mode browsers, `file://` pages) the game still plays, it just starts every session on
+board 1.
+
+`?stage=N` links straight to a board and opens it for that page load, so a shared link works on a fresh
+save. `?unlockall=1` opens every board for one page load without touching the save, and
+`?resetprogress=1` wipes the saved unlocks.
 
 ## Development
 
@@ -107,7 +128,8 @@ every enemy variant, and renders every sound effect and music track offline to c
 are silent.
 
 Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,2`,
-`?skipTo=gallery`, `?bot=1`, `?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=2`.
+`?skipTo=gallery`, `?bot=1`, `?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=2`, `?unlockall=1`,
+`?resetprogress=1`.
 
 ### Deployment
 
@@ -134,7 +156,7 @@ branches**, then start the workflow by hand from the Actions tab with that branc
 ```
 src/engine/    loop, input, camera, canvas scaling, pixel font, particles, WebAudio synth
 src/art/       rig renderer, cel shading, secondary motion, FX, props, parallax backdrops
-src/game/      fighters, players, enemy AI, bosses, combat, world, stage runner, HUD, screens
+src/game/      fighters, players, enemy AI, bosses, combat, world, stage runner, HUD, screens, board unlocks
 src/content/   characters, enemies and stage data (pure data + small draw hooks)
 tools/         dev server, single-file build, playtest harness, contact-sheet generator
 ```

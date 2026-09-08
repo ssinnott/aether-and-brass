@@ -248,10 +248,19 @@ New music tracks (`src/engine/audio/music.js`): the **Calderwick motif D–F–A
 
 # 7. Picking the board
 
-The title screen carries a **BOARD < 1 OF 2 >** row (left/right to cycle, like DIFFICULTY). Whichever board is
-showing is the one the run plays, and its name sits under the logo. `?stage=2` jumps straight to it, and works with
-the usual debug params (`?skipTo=gameplay&stage=2&bot=1&godmode=1`). The stage registry is
-`src/content/stage/index.js`; adding a third board is a stage file, a backdrop module and one line in `STAGES`.
+START on the title screen opens **BOARD SELECT** (`src/game/screens/boardselect.js`), one brass plaque per
+registered board. Stage 2 starts **locked**: its plaque shows a padlock plate, `? ? ? ? ?` and CLEAR STAGE 1 TO
+OPEN, and confirming it buzzes rather than starting a run. Clearing Stage 1 opens it for good — the results screen
+announces it, and dismissing the plaque returns to BOARD SELECT to play the unlock on Stage 2's own plaque (the
+padlock rattles apart, the hatch retracts as two doors, `? ? ? ? ?` resolves into THE STORM ABOVE CALDERWICK and a
+STAGE 2 OPEN stamp lands). The plaque then carries the board's name, its three sections, THE STORMCROWS and your
+best rank. Unlocks persist in `localStorage` via `src/game/progress.js`.
+
+`?stage=2` still jumps straight to the board and opens it for that page load, so a direct link works on a fresh
+save, and it works with the usual debug params (`?skipTo=gameplay&stage=2&bot=1&godmode=1`); `?unlockall=1` opens
+every board for one page load. The stage registry is `src/content/stage/index.js`; adding a third board is a stage
+file (with a `preview` block for its plaque), a backdrop module and one line in `STAGES` — it then appears on BOARD
+SELECT, locked behind Stage 2, with no other changes.
 
 `npm test` runs the Stage 2 bot playthrough as the `playthrough2` scenario, with the same assertions as Stage 1
 (both bosses seen, results screen reached, zero runtime errors) and screenshots under `tools/screens/5x-stage2-*`.

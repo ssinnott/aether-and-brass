@@ -1,7 +1,8 @@
 // Title screen (GDD 9 + RECONCILIATION): navy sky, a brass gear (r 140) rotating behind the tiered-city silhouette,
-// the AETHER & BRASS logo with a bevel, the four heroes idling on the gear, menu START (1P) / START (2P) / BOARD /
+// the AETHER & BRASS logo with a bevel, the four heroes idling on the gear, menu START (1P) / START (2P) /
 // DIFFICULTY / MUTE, blinking PRESS START, a compact controls legend (no controls screen) and P2 drop-in.
-// BOARD picks which stage the run plays (content/stage/index.js); the chosen board's name sits under the logo.
+// START goes to BOARD SELECT (screens/boardselect.js), which is where the run's board is chosen; the plate under
+// the logo just reports how many boards are open so far (game/progress.js).
 import { VIEW_W, VIEW_H, UI } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
@@ -12,9 +13,10 @@ import { drawShadowScreen } from '../../art/fx.js';
 import { AnimPlayer } from '../animation.js';
 import { ENV } from '../../art/palettes.js';
 import { STAGES } from '../../content/stage/index.js';
+import { progress } from '../progress.js';
 
-const MENU = ['START (1P)', 'START (2P)', 'BOARD', 'DIFFICULTY', 'MUTE'];
-const I_BOARD = 2, I_DIFF = 3, I_MUTE = 4;
+const MENU = ['START (1P)', 'START (2P)', 'DIFFICULTY', 'MUTE'];
+const I_DIFF = 2, I_MUTE = 3;
 export const DIFFICULTIES = ['easy', 'normal', 'hard'];
 // tiered city: [x, top, w] terraces, front row darker
 const FAR_TOWERS = [[0, 236, 44], [48, 214, 30], [84, 246, 60], [150, 222, 26], [182, 206, 50], [240, 232, 34], [280, 218, 40], [326, 240, 30], [362, 210, 56], [424, 230, 40], [470, 216, 30], [506, 244, 50], [562, 222, 40], [608, 236, 40]],
@@ -41,8 +43,6 @@ export class TitleScreen extends Screen {
     });
   }
   get difficulty() { return this.game.options.difficulty || 'normal'; }
-  /** Index into STAGES of the board the run will play (options.stage is the 1-based stage number). */
-  get boardIndex() { return Math.min(STAGES.length - 1, Math.max(0, (this.game.options.stage || 1) - 1)); }
   update() {
     super.update();
     const inp = this.game.input, audio = this.game.audio;
@@ -59,17 +59,10 @@ export class TitleScreen extends Screen {
       if (inp.pressed(p, 'up')) { this.cursor = (this.cursor + MENU.length - 1) % MENU.length; audio.play('menu_move'); }
       if (inp.pressed(p, 'down')) { this.cursor = (this.cursor + 1) % MENU.length; audio.play('menu_move'); }
       const dir = (inp.pressed(p, 'right') ? 1 : 0) - (inp.pressed(p, 'left') ? 1 : 0);
-      if (dir && this.cursor === I_BOARD) { this.cycleBoard(dir); continue; }
       if (dir && this.cursor === I_DIFF) { this.cycleDifficulty(dir); continue; }
       if (dir && this.cursor === I_MUTE) { audio.toggleMute(); audio.play('menu_move'); continue; }
       if (inp.pressed(p, 'attack') || inp.pressed(p, 'start') || inp.pressed(p, 'jump')) { this.activate(this.cursor); return; }
     }
-  }
-  /** Left / right on BOARD cycles the stage; the run starts on whichever board is showing. */
-  cycleBoard(dir) {
-    const n = STAGES.length;
-    this.game.options.stage = ((this.boardIndex + dir + n) % n) + 1;
-    this.game.audio.play('menu_move');
   }
   cycleDifficulty(dir) {
     const i = DIFFICULTIES.indexOf(this.difficulty);
@@ -82,9 +75,11 @@ export class TitleScreen extends Screen {
       if (i === 1) this.game.input.setJoined(1, true);
       this.starting = true;
       audio.play('menu_confirm');
-      this.game.fadeTo(() => this.game.replace('select'), 0.08);
-    } else if (i === I_BOARD) this.cycleBoard(1);
-    else if (i === I_DIFF) this.cycleDifficulty(1);
+      // START always goes through BOARD SELECT; if that screen is not registered the run falls back to the
+      // character select on whichever board options.stage already names.
+      const next = this.game.factories.boardselect ? 'boardselect' : 'select';
+      this.game.fadeTo(() => this.game.replace(next), 0.08);
+    } else if (i === I_DIFF) this.cycleDifficulty(1);
     else { audio.toggleMute(); audio.play('menu_confirm'); }
   }
   draw(ctx) {
@@ -144,14 +139,13 @@ export class TitleScreen extends Screen {
     bevelText(ctx, 'BRASS', 320, 100 + bob, 5, UI.brassLight, '#ffffff');
     pathPoly(ctx, [196, 90 + bob, 296, 90 + bob, 296, 93 + bob, 196, 93 + bob]); paint(ctx, UI.brass, null, 0);
     pathPoly(ctx, [344, 90 + bob, 444, 90 + bob, 444, 93 + bob, 344, 93 + bob]); paint(ctx, UI.brass, null, 0);
-    const board = STAGES[this.boardIndex];
-    drawText(ctx, `STAGE ${this.boardIndex + 1}: ${board.name}`, 320, 146, { size: 1, color: '#4DF0E0', align: 'center' });
+    const open = progress.unlockedCount();
+    drawText(ctx, `${open} OF ${STAGES.length} BOARDS OPEN`, 320, 146, { size: 1, color: open < STAGES.length ? '#4DF0E0' : UI.brassLight, align: 'center' });
     // menu on a translucent plate
-    rrect(ctx, 200, 158, 240, 80, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
+    rrect(ctx, 200, 158, 240, 66, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
     for (let i = 0; i < MENU.length; i++) {
       const sel = i === this.cursor, y = 163 + i * 14;
       let label = MENU[i];
-      if (i === I_BOARD) label = `BOARD  < ${this.boardIndex + 1} OF ${STAGES.length} >`;
       if (i === I_DIFF) label = `DIFFICULTY  < ${this.difficulty.toUpperCase()} >`;
       if (i === I_MUTE) label = `MUTE  < ${this.game.audio.muted ? 'ON' : 'OFF'} >`;
       if (sel) { gear(ctx, 320 - drawTextWidth(label) / 2 - 12, y + 4, 5, 6, UI.brass, '#3a2010', 1, f * 0.05, 1.5); }
