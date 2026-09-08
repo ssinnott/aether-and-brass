@@ -13,12 +13,13 @@ export class PauseScreen extends Screen {
   update() {
     super.update();
     const inp = this.game.input, audio = this.game.audio;
+    const online = !!(this.game.net && this.game.net.active);
     if (this.frame < 3) return;
     // P2 drop-in: the join key itself never doubles as a menu press, and the player is added to the gameplay screen
     // beneath (its own drop-in only fires on a join edge, which this overlay has consumed)
     let joinedNow = false;
-    if (!inp.joined(1) && inp.joinPressed(1)) { inp.setJoined(1, true); joinedNow = true; audio.play('join'); this.addP2(); }
-    let resume = inp.globalPressed('pause');
+    if (!online && !inp.joined(1) && inp.joinPressed(1)) { inp.setJoined(1, true); joinedNow = true; audio.play('join'); this.addP2(); }
+    let resume = !online && inp.globalPressed('pause');   // netplay resumes through the `start` bit
     for (let i = 0; i < 2; i++) {
       if (!inp.joined(i) || (i === 1 && joinedNow)) continue;
       if (inp.pressed(i, 'start') || inp.pressed(i, 'jump')) resume = true;

@@ -30,7 +30,8 @@ export class TitleScreen extends Screen {
     super.enter(params);
     this.game.audio.music.play('title');
     particles.clear();
-    this.game.input.setJoined(1, false); // new session: P1 solo aliases (arrows, Z X C V Space B) active until P2 joins
+    // A netplay session owns slot 1 for its lifetime; clearing it here would silently drop the peer.
+    if (!(this.game.net && this.game.net.active)) this.game.input.setJoined(1, false); // new session: P1 solo aliases active until P2 joins
     if (!this.game.options.difficulty) this.game.options.difficulty = 'normal';
     this.cursor = 0; this.p2Flash = 0; this.starting = false;
     this.heroes = (this.game.characters || []).slice(0, 4).map((c, i) => {

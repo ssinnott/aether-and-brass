@@ -68,9 +68,13 @@ export class GameplayScreen extends Screen {
   update() {
     super.update();
     const inp = this.game.input, world = this.world;
+    // Under netplay both slots are established by the lobby and every input arrives through the
+    // lockstep mask. joinPressed() and globalPressed() are local keyboard edges that never reach
+    // the peer, so acting on them here would advance one peer's simulation and not the other's.
+    const online = !!(this.game.net && this.game.net.active);
     // P2 drop-in (any P2-only key); the join key itself never doubles as a pause press
     let joinedNow = false;
-    if (!inp.joined(1) && inp.joinPressed(1) && this.players.length < 2) {
+    if (!online && !inp.joined(1) && inp.joinPressed(1) && this.players.length < 2) {
       inp.setJoined(1, true); joinedNow = true;
       const ci = this.game.options.chars[1] != null ? this.game.options.chars[1] : 1;
       this.addPlayer(ci, 1);
@@ -78,7 +82,8 @@ export class GameplayScreen extends Screen {
       this.hud.showBanner('P2 JOINS!', '', 60);
     }
     // pause: Escape (global) or a joined player's start button
-    let pause = inp.globalPressed('pause');
+    // Escape is folded into the `start` bit by the net session, so pause is a simulated event.
+    let pause = !online && inp.globalPressed('pause');
     for (let i = 0; i < 2 && !pause; i++) if (inp.joined(i) && !(i === 1 && joinedNow) && inp.pressed(i, 'start')) pause = true;
     if (pause && this.game.factories.pause && !this.gameOverShown) { this.game.audio.play('pause'); this.game.push('pause'); return; }
     this.time++;

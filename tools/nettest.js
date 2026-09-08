@@ -109,7 +109,13 @@ const suites = {
     ok(worldChecksum(world({ x: 1.5000001 }), rng) !== base, 'a 1e-7 position difference is caught');
     ok(worldChecksum(world(), { state: 12346 }) !== base, 'an rng stream divergence is caught');
     ok(worldChecksum(world({ hp: 99 }), rng) !== base, 'an hp difference is caught');
-    ok(worldChecksum(world({ state: 3 }), rng) !== base, 'a state difference is caught');
+    ok(worldChecksum(world({ state: 'HURT' }), rng) !== base, 'a STRING state difference is caught (ST.* are strings, not numbers)');
+    ok(worldChecksum(world({ stateTimer: 4 }), rng) !== base, 'a stateTimer difference is caught');
+    ok(worldChecksum(world({ vz: 0.5 }), rng) !== base, 'a vz difference is caught (drives ring-outs)');
+    ok(worldChecksum(world({ hitstop: 3 }), rng) !== base, 'a hitstop difference is caught');
+    ok(worldChecksum(world({ anim: { instance: 1, frameIndex: 0, frameTime: 0 } }), rng)
+       !== worldChecksum(world({ anim: { instance: 2, frameIndex: 0, frameTime: 0 } }), rng), 'an animation cursor difference is caught');
+    ok(worldChecksum(world({ state: 'AB' }), rng) !== worldChecksum(world({ state: 'BA' }), rng), 'string hashing is order sensitive');
     ok(worldChecksum(world({ facing: -1 }), rng) !== base, 'a facing difference is caught');
 
     // False-positive traps. -0 arises from multiplying a velocity by zero; entity ids differ
@@ -119,6 +125,12 @@ const suites = {
     const a = world(), b = world();
     a.entities[0].id = 900; b.entities[0].id = 3;
     ok(worldChecksum(a, rng) === worldChecksum(b, rng), 'differing entity ids do NOT trip the canary');
+
+    // A purely visual entity (SceneLayer is kind 'fx') must never influence the hash.
+    const withFx = world();
+    withFx.entities.push({ kind: 'fx', x: 1, y: 2, z: 3, vx: 0, vy: 0, facing: 1, alive: true, removeMe: false });
+    ok(worldChecksum(withFx, rng) === base, 'visual-only fx entities are excluded');
+    ok(worldChecksum({ ...world(), freeze: 5 }, rng) !== base, 'world.freeze is caught (it early-returns the whole update)');
   },
 
   // ---- net/signal.js: room codes and the copy-paste code format ----
