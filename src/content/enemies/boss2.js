@@ -84,8 +84,13 @@ function admiralCoat(ctx, rig, pose, inf) {
   if (!torn) {
     ctx.strokeStyle = rig.col(SASH); ctx.lineWidth = 7;
     ctx.beginPath(); ctx.moveTo(-hw + 1, -H + 6); ctx.lineTo(hw, R(-H * 0.2)); ctx.stroke();
-    ctx.strokeStyle = rig.col(GOLD_DK); ctx.lineWidth = 2;
+    // the frame is BRIGHT gold with a dark-gold underside, at 3 units so it clears section 0.7 at scale 1.22.
+    // GOLD_DK alone was 9.5% off the sash it framed and 2 units wide, i.e. indistinguishable from tones(SASH).sh:
+    // the one device that says flag rank was reading as the sash's own shading.
+    ctx.strokeStyle = rig.col(GOLD); ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(-hw + 1, -H + 10); ctx.lineTo(hw, R(-H * 0.2) + 4); ctx.stroke();
+    ctx.strokeStyle = rig.col(GOLD_DK); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-hw + 1, -H + 12); ctx.lineTo(hw, R(-H * 0.2) + 6); ctx.stroke();
     celBall(ctx, rig, R(W * 0.3), R(-H * 0.26), 3, GOLD, false);
   }
   if (!torn) for (const sx of [-hw + 1, hw - 6]) { // epaulettes
@@ -190,7 +195,10 @@ const ADM_PAL = { ...CROW_PAL, primary: COAT, sleeve: '#C6BCA0', secondary: '#77
 const BASE_BUILD = {
   scale: 1.22, palette: ADM_PAL, outline: CROW.outline, outlineWidth: 1, proportions: CROW_PROPS,
   parts: { ...CROW_PARTS, torso: admiralCoat, hat: bicorne }, clan: SASH, smearColor: '#E4ECFA',
-  crow: { coat: 'admiral', hair: 'crop', flag: true, cuff: true, lace: true },
+  // NO rank cuff and NO trouser lace on phases 1-2: the flag rank rides the sash, the epaulettes and the frogging.
+  // Red arms and red trouser seams from phase 1 onward spend the terminus early — phase 3 is where the GARMENT
+  // goes red, and it can only land as new if the red has stayed on cloth-of-office until then.
+  crow: { coat: 'admiral', hair: 'crop', flag: true },
   weapon: { attach: 'handR', length: 68, draw: drawLance, headAt: 58 },
 };
 /** Phase 1: bicorne athwart, epaulettes, floor-length cape. The widest silhouette in the game. */
@@ -198,7 +206,7 @@ const ADMIRAL_BUILD = { ...BASE_BUILD, accessories: [{ attach: 'back', draw: adm
 /** Phase 2: hat off, hair up, four vanes standing off the shoulders; the cape is cut away. */
 const WING_BUILD = {
   ...BASE_BUILD, parts: { ...CROW_PARTS, torso: admiralCoat, hat: stormCrown },
-  crow: { coat: 'admiral', hair: 'loose', flag: true, cuff: true, lace: true, tailLen: 18 },
+  crow: { coat: 'admiral', hair: 'loose', flag: true, tailLen: 18 },
   accessories: [{ attach: 'back', draw: stormHarness }, { attach: 'back', draw: crowTails }],
 };
 /**
@@ -211,7 +219,8 @@ const CROW_BUILD = {
   ...BASE_BUILD, scale: 1.14,
   palette: { ...ADM_PAL, primary: '#A8362E', secondary: '#8C99AE' },
   parts: { ...CROW_PARTS, torso: admiralCoat, hat: tornRibbon },
-  crow: { coat: 'admiral', hair: 'crop', flag: true, cuff: true, torn: true, scarf: GOLD_DK, scarfLen: 3 },
+  // the terminus, and the ONLY phase with red on the garment: waistcoat, cuffs and trouser lace all at once
+  crow: { coat: 'admiral', hair: 'crop', flag: true, cuff: true, lace: true, torn: true, scarf: GOLD_DK, scarfLen: 3 },
   accessories: [{ attach: 'torso', draw: crowScarf }],
 };
 

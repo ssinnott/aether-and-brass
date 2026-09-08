@@ -17,8 +17,13 @@
 // rates: 1 carrier on the Crimper (armband) -> 2 on the Corsair (+ hatband) -> 3 on the Bosun (brow band, smock
 // collar, waist sash; nothing on his bare arms) -> 4 on the Galewright (brow band, gorget, armband, trouser lace)
 // -> 6 on the Marine (helm-crest edge, cuirass band, armband, cuff, lace, wing-plate boss).
-// Flag rank (`crow.flag`) is NOT one rung further up the ramp - the two bosses wear the Wing's red with a 2px gold
-// underscore no line trooper ever gets: cloth alone = rated, cloth in a gold frame = flag rank.
+// COUNT AND AREA MUST AGREE. The Bosun is the trap: he is the widest body in the faction at scale 1.15, so a band
+// given the full width of a part outranks the same band on the smaller elite above him. His brow band and the
+// Galewright's are both kept to strap width for exactly that reason - measure the rank-hue pixel census before
+// widening any of these, and Bosun < Galewright < Marine must hold.
+// Flag rank (`crow.flag`) is NOT one rung further up the ramp - the two bosses wear the Wing's red in a gold frame
+// no line trooper ever gets: cloth alone = rated, cloth in a gold frame = flag rank. The frame goes through the
+// same 3px band floor as the band it frames, or it degrades into the red's own shadow and says nothing.
 //
 // SEALED HEADS: `crow.sealed` swaps the bare skull + face for a beaked storm helm (crowHelmShell + crowVisorMask).
 // THE HIGHER THE RATE, THE MORE SEALED THE MASK — bandana, slouch hat and brass loupe keep their faces; the two
@@ -82,7 +87,9 @@ export function rankBand(ctx, rig, x, y, w, h) {
   const c = crowRank(rig);
   ctx.fillStyle = rig.col(c); ctx.fillRect(x, y, w, h);
   ctx.fillStyle = tones(rig, c).sh; ctx.fillRect(x, y + h - 1, w, 1);
-  if (crowFlag(rig)) { ctx.fillStyle = rig.col(CROW.goldDark); ctx.fillRect(x, y + h, w, 2); }
+  // the flag frame goes through the SAME 3px floor as the band it frames - a literal 2 here was 2.4px on the
+  // Admiral and 2.3px on phase 3, i.e. under section 0.7, which is why it read as the sash's own shadow
+  if (crowFlag(rig)) { ctx.fillStyle = rig.col(CROW.goldDark); ctx.fillRect(x, y + h, w, rankH(rig, 2)); }
 }
 /** The sealed-helm kit, or null. The ONE predicate every sealed branch keys off: unsealed rigs never set it. */
 const sealedOf = (rig) => { const k = rig.build.crow; return k && k.sealed ? k : null; };
@@ -150,9 +157,9 @@ export function crowFace(ctx, rig, pose, inf) {
 /**
  * SEALED HELM, shell half (head hook). Everything that must sit BEHIND the mask lives here, because art/rig.js draws
  * head -> hair -> face -> beard -> hat: the crest and the fin would land ON the mask plate if they were hat marks.
- * Value ladder on this head, top to bottom, and it may not be re-spaced: lens / specular > pewter dome > taupe mask
- * plate > gun beak > copper can. The plate is warm and the Marine's nape plate is cool pewterDark - that pair is a
- * hue-family change (ART_STYLE section 0.1), not a value failure; do not "fix" it by darkening the plate.
+ * Value ladder on this head, top to bottom, and it may not be re-spaced: lens / specular > pewter dome > gun beak >
+ * taupe mask plate > copper can. Anything a HAT adds above the hairline has to be entered into that ladder too: a
+ * rank band dropped into a brass fitting made a third mark brighter than the lens and the sealed read collapsed.
  */
 export function crowHelmShell(ctx, rig, r, k) {
   // a. crest / fin FIRST, behind the dome. The body of the fin is dark and the RANK rides its LEADING EDGE - a
@@ -173,7 +180,8 @@ export function crowHelmShell(ctx, rig, r, k) {
   // the strip of warm throat the other three show, and the head draws after the torso so it laps the coat collar.
   celCapsule(ctx, rig, R(-r * 0.5), R(r * 1.0), R(r * 0.35), R(r * 1.0), 3.2, CROW.mask, 0.25);
   if (rig.override) return;
-  rimTop(ctx, rig, R(-r * 0.7), R(-r * 0.95), R(r * 0.4), R(-r * 1.06), CROW.pewter);
+  // NO rim light here: the hat hook owns everything above the hairline, and a shell rim crossing hatHelm's rim
+  // stacked two near-white strokes on one dome (section 0.4 / 3) and out-blazed the sighting lens.
   ctx.fillStyle = tones(rig, CROW.pewter).deep; ctx.fillRect(R(-r * 0.9), R(-r * 0.6), R(r * 1.8), 2);
 }
 /**
@@ -189,15 +197,18 @@ export function crowVisorMask(ctx, rig, r, pose, k) {
   const cx = R(r * 0.45) + 1, cy = R(-r * 0.15);          // drawFace's near-eye row
   const fx = R(-r * 0.12);                                // drawFace's far-eye column
   const coil = rig.coil || 0;
-  // the lens grows with rig.coil: this REPLACES the standing-on-end hair as the read on the Galewright's 36f gale
-  // charge (12 damage + 30 frames stunned), so it may never get quieter than the hair was.
+  // the lens grows and lights with rig.coil; the SILHOUETTE half of the Galewright's 36f gale charge (12 damage +
+  // 30 frames stunned) is hatVisor's storm ridge rearing up, because a lens that gains two rows is not a lane-wide
+  // wind-up. Between them they may never get quieter than A's standing-on-end hair was.
   const lr = Math.max(3, R(r * 0.42 * (k.lens || 1)) + R(coil * 2));
   const jolt = face === FACE.hurt ? 1 : 0;                // the helm knocked askew on its straps
   ctx.save(); ctx.translate(jolt, jolt);
   // a. beak: a long keel on the Galewright, a short grilled muzzle on the Marine - with the inverted lens sizes,
-  // this is what stops two pewter heads reading as the same man.
+  // this is what stops two pewter heads reading as the same man. BOTH are CROW.gun, which is the only value far
+  // enough off the warm mask plate behind them (25.0 vs 11.9) to survive section 0.1: the SHAPE differentiates
+  // them, not the colour - pewterDark on the muzzle was 8.9% off the plate it sits on.
   if (k.beak === 'keel') celPoly(ctx, rig, [r * 0.05, -r * 0.22, r * 2.05, r * 0.06, r * 2.1, r * 0.4, r * 1.3, r * 0.7, r * 0.05, r * 0.84], CROW.gun, 0.34, 0.34);
-  else celPoly(ctx, rig, [r * 0.05, -r * 0.24, r * 1.5, -r * 0.02, r * 1.6, r * 0.72, r * 0.05, r * 0.92], CROW.pewterDark, 0.34, 0.3);
+  else celPoly(ctx, rig, [r * 0.05, -r * 0.24, r * 1.5, -r * 0.02, r * 1.6, r * 0.72, r * 0.05, r * 0.92], CROW.gun, 0.34, 0.3);
   // b. mask plate across the eye row (the value step that keeps pewter off gun)
   celPoly(ctx, rig, [-r * 1.02, -r * 0.66, r * 1.0, -r * 0.74, r * 1.14, -r * 0.04, -r * 1.0, r * 0.06], CROW.mask, 0.4, 0.3);
   // d. socket in BRASS, not pewter: the sealed lens is one of the faction's own goggles bolted shut (crowGoggles' rim)
@@ -228,15 +239,16 @@ export function crowVisorMask(ctx, rig, r, pose, k) {
   // the same 2x2 white pixel crowGoggles puts on every other head in the faction
   if (!down && shut < lr) { ctx.fillStyle = rig.col('#FFFFFF'); ctx.fillRect(cx + dx - R(lr * 0.75), cy - R(lr * 0.8), 2, 2); }
   // f. one detail mark per beak, and one only (section 0.7)
-  if (k.beak === 'iron') { ctx.fillStyle = rig.col(CROW.outline); for (let i = 0; i < 3; i++) ctx.fillRect(R(r * 0.5) + i * 4, R(r * 0.34), 2, 4); }
+  // the grille lives on the BEAK, clear of the brass socket's lower edge (r*0.46 vs the socket bottom at ~0.42r):
+  // punched through the socket it read as black chips bitten out of the head's one focal ring.
+  if (k.beak === 'iron') { ctx.fillStyle = rig.col(CROW.outline); for (let i = 0; i < 3; i++) ctx.fillRect(R(r * 0.8) + i * 3, R(r * 0.46), 2, 3); }
   else { ctx.fillStyle = tones(rig, CROW.gun).deep; ctx.fillRect(R(r * 0.6), R(r * 0.24), R(r * 0.9), 2); }
-  // damage sputter: deliberately the opposite shape from crowTell (small, stuttering, no halo)
+  // damage sputter: deliberately the opposite SHAPE from crowTell, which is 3 arcs radiating off this same centre.
+  // Two radial arcs here differed from a wind-up by one arc and a halo, so a hurt Marine read as one about to
+  // shove; a 1px bar stuttering across the glass is a flicker, not a discharge.
   if (!down && (face === FACE.hurt || face === FACE.dazed)) {
-    ctx.strokeStyle = rig.col(CROW.spark); ctx.lineWidth = 1.5;
-    for (let i = 0; i < 2; i++) {
-      const a = rig.tick * 0.9 + i * 2.4;
-      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * (r * 0.45), cy + Math.sin(a) * (r * 0.45)); ctx.stroke();
-    }
+    ctx.fillStyle = rig.col(CROW.sparkPale);
+    ctx.fillRect(cx + dx - lr + 1, cy + ((rig.tick >> 1) & 1 ? -1 : 1), lr * 2 - 2, 1);
   }
   // h. the shared faction light, on the lens centre - the same call the other three heads make
   crowTell(ctx, rig, r, cx, cy);
