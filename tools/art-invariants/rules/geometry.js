@@ -332,6 +332,8 @@ function scanLimbs(A, rig, pose, J, ops, tf, outline, where) {
     // A CROSSING spans the limb. A mark that does not is a detail — a rivet, a stud, a buckle — and it belongs to
     // geom/detail-floor, not here. Without this test every 1 px rivet on a bracer reads as a material band.
     const limbW = (rg.hook.startsWith('arm') ? rig.p.armR : rig.p.legR) * 2 * rig.scale;
+    const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;   // unit vector along the bone
+    const px = -uy, py = ux;                                // and perpendicular to it
     const crossings = [];
     for (const [key, list] of byKey) {
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -339,10 +341,34 @@ function scanLimbs(A, rig, pose, J, ops, tf, outline, where) {
         x0 = Math.min(x0, m.e.bbox.x0); y0 = Math.min(y0, m.e.bbox.y0);
         x1 = Math.max(x1, m.e.bbox.x1); y1 = Math.max(y1, m.e.bbox.y1);
       }
-      // long enough to span the limb AND thick enough to be a shape rather than a hairline. A hairline that runs
-      // the length of a limb is real, but it is a detail-floor problem (§0.7), not a material crossing.
-      if (Math.max(x1 - x0, y1 - y0) < limbW * 0.6) continue;
-      if (Math.min(x1 - x0, y1 - y0) < 1) continue;
+      if (Math.min(x1 - x0, y1 - y0) < 1) continue;   // a hairline is geom/detail-floor's business, not a crossing
+      // A CROSSING runs ACROSS the bone. Measuring "spans the limb" as `max(width, height) >= 0.6 * limbW` in
+      // screen axes cannot tell a band at the knee from a seam down the outside of the trouser leg — the seam is
+      // long, so it scored as a crossing, then landed "mid-bone" by construction, because the centre of a stripe
+      // spanning a whole bone IS the middle of that bone. No placement could satisfy the rule and only deleting
+      // the seam would clear it, which is the trade ART_STYLE §0.7 explicitly forbids.
+      // So project the mark onto the LIMB's own axes: `across` is its extent perpendicular to the bone, `along`
+      // its extent down it. A band is wide across and short along; a seam is the other way round.
+      let pmin = Infinity, pmax = -Infinity, amin = Infinity, amax = -Infinity;
+      for (const [cx, cy] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) {
+        const dp = cx * px + cy * py, da = cx * ux + cy * uy;
+        if (dp < pmin) pmin = dp; if (dp > pmax) pmax = dp;
+        if (da < amin) amin = da; if (da > amax) amax = da;
+      }
+      // SIZE comes from the device bbox, DIRECTION from the mark's AUTHORED box. Projecting an axis-aligned device
+      // box onto a rotated bone inflates it by up to sqrt(2) — enough to promote a 3.9 px stud past a 4.6 px bound,
+      // and enough to make a seam down a 45-degree thigh measure as wide as it is long. Every limb hook draws in a
+      // space whose +y runs along the bone (rig.js enters at the joint and rotates by -ang), so the authored box
+      // answers "across or along?" exactly, with no trigonometry: taller than wide means it runs WITH the bone.
+      if (Math.max(x1 - x0, y1 - y0) < limbW * 0.6) continue;   // does not reach across the limb
+      let lw = 0, lh = 0;
+      for (const m of list) {
+        if (!m.e.lbox) continue;
+        lw = Math.max(lw, m.e.lbox.w); lh = Math.max(lh, m.e.lbox.h);
+      }
+      const local = lw > 0 || lh > 0;
+      const across = local ? lw : pmax - pmin, along = local ? lh : amax - amin;
+      if (along > across) continue;                             // runs with the bone: a seam, not a band
       crossings.push({ key, x0, y0, x1, y1 });
     }
     if (!crossings.length) continue;

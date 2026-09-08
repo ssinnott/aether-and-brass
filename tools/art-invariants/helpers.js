@@ -352,12 +352,13 @@ export function makeRecorder(opts = {}) {
   const hooks = [];
   let m = mat();
   let path = [];               // device-space points of the current path
+  let lpath = [];              // the SAME points before the transform: a mark's authored size and orientation
   let started = false;
   const style = { fillStyle: '#000000', strokeStyle: '#000000', lineWidth: 1, globalAlpha: 1 };
   const sx = () => Math.hypot(m.a, m.b);
   const sy = () => Math.hypot(m.c, m.d);
   const uniform = () => Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
-  const push = (x, y) => { const p = apply(m, x, y); path.push(p.x, p.y); };
+  const push = (x, y) => { const p = apply(m, x, y); path.push(p.x, p.y); lpath.push(x, y); };
   const bboxOf = (pts) => {
     if (!pts.length) return null;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -409,7 +410,7 @@ export function makeRecorder(opts = {}) {
     setTransform(a, b, c, d, e, f) { m = a && typeof a === 'object' ? { ...a } : { a, b, c, d, e, f }; },
     resetTransform() { m = mat(); },
 
-    beginPath() { path = []; started = true; },
+    beginPath() { path = []; lpath = []; started = true; },
     closePath() { },
     moveTo(x, y) { push(x, y); },
     lineTo(x, y) { push(x, y); },
@@ -420,18 +421,18 @@ export function makeRecorder(opts = {}) {
     // corners of its local box. Pushing two corners made a rotated circle measure as a sliver -- a 8 px joint ring
     // on a running leg recorded as 1.05 x 12.05 -- which every size-based rule then read as a hairline. Rects have
     // the same problem: their hull needs all four corners once the space is rotated.
-    arc(cx, cy, r) { const c = apply(m, cx, cy), R = r * uniform(); path.push(c.x - R, c.y - R, c.x + R, c.y + R); },
-    ellipse(cx, cy, rx, ry) { const c = apply(m, cx, cy), RX = rx * sx(), RY = ry * sy(), R = Math.max(RX, RY); path.push(c.x - R, c.y - R, c.x + R, c.y + R); },
+    arc(cx, cy, r) { const c = apply(m, cx, cy), R = r * uniform(); path.push(c.x - R, c.y - R, c.x + R, c.y + R); lpath.push(cx - r, cy - r, cx + r, cy + r); },
+    ellipse(cx, cy, rx, ry) { const c = apply(m, cx, cy), RX = rx * sx(), RY = ry * sy(), R = Math.max(RX, RY); path.push(c.x - R, c.y - R, c.x + R, c.y + R); lpath.push(cx - rx, cy - ry, cx + rx, cy + ry); },
     rect(x, y, w, h) { push(x, y); push(x + w, y); push(x + w, y + h); push(x, y + h); },
     roundRect(x, y, w, h) { push(x, y); push(x + w, y); push(x + w, y + h); push(x, y + h); },
 
-    fill() { rec('fill', { bbox: bboxOf(path), started }); },
-    stroke() { rec('stroke', { bbox: bboxOf(path), started }); },
+    fill() { rec('fill', { bbox: bboxOf(path), lbox: bboxOf(lpath), started }); },
+    stroke() { rec('stroke', { bbox: bboxOf(path), lbox: bboxOf(lpath), started }); },
     clip() { rec('clip', { bbox: bboxOf(path) }); },
     fillRect(x, y, w, h) {
       const p = [];
       for (const [px, py] of [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]) { const q = apply(m, px, py); p.push(q.x, q.y); }
-      rec('fillRect', { bbox: bboxOf(p), rw: w, rh: h, W: Math.abs(w) * sx(), H: Math.abs(h) * sy() });
+      rec('fillRect', { bbox: bboxOf(p), lbox: { x0: x, y0: y, x1: x + w, y1: y + h, w: Math.abs(w), h: Math.abs(h), half: Math.hypot(w, h) / 2 }, rw: w, rh: h, W: Math.abs(w) * sx(), H: Math.abs(h) * sy() });
     },
     strokeRect(x, y, w, h) { rec('strokeRect', { rw: w, rh: h, W: Math.abs(w) * sx(), H: Math.abs(h) * sy() }); },
     clearRect() { },

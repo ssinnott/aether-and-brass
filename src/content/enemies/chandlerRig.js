@@ -19,8 +19,9 @@
 // the forearm; torso: hip centre, y up negative; head: head centre). Far-side parts colour from `inf.pal`.
 // SFX: this faction ships no new sounds (see the CANONICAL_SFX list) — the shutter is 'gear_slip', the bellows and
 // the slake 'steam' / 'steam_vent', the hand-bell 'chime', the cork 'bomb_bat', the lamp going out 'prop_break'.
-import { celRect, celBall, celPoly, celCapsule, tones, rimTop, band } from '../../art/shading.js';
-import { drawFist, drawBoot, drawSkull, drawFace } from '../../art/rigParts.js';
+import { celRect, celBall, celPoly, celCapsule, celTaper, tones, rimTop, band, wantSh } from '../../art/shading.js';
+import { drawFist, drawBoot, drawSkull, drawFace, limbRadii } from '../../art/rigParts.js';
+import { pathTaperedCapsule } from '../../art/shapes.js';
 import { getChain } from '../../art/secondary.js';
 import { jointScreen } from '../../art/rig.js';
 import { floatText } from '../../art/fx.js';
@@ -221,34 +222,107 @@ export function chHips(ctx, rig, pose, inf) {
   band(ctx, rig, -hw + 1, -5, hip - 2, 4, pal.sleeve, 1);
   ctx.fillStyle = rig.col(pal.metal); ctx.fillRect(0, -5, 4, 5);
 }
-/** Leather bracer with a quicklime sleeve wrap at the elbow (limb space: origin at the elbow, +y along the forearm). */
+/**
+ * A LIMB SEGMENT IS ONE OBJECT (§0.2 / §0.7). The three hooks below used to draw a rounded rect and then ink a band
+ * across it, which cost the faction three separate defects at once:
+ *
+ *  - the rect's top edge is a dome that PEAKS at the joint (pathRR with rr = r puts the arc centre at y = r), while
+ *    the segment above it ends in a round cap CENTRED on the joint. So the bracer's own outline was stroked as a
+ *    dark dome across the inside of the sleeve — the "collar at the elbow" drawLimbSegs exists to stop drawing.
+ *  - `band()` inks its own edges. A sleeve ending below an elbow is not two objects (§0.2: "would a reader call
+ *    these two things separate objects? Sleeve and forearm, no — one arm"), so those two lines were a faked
+ *    boundary that made every limb read as a bicep object stacked on a forearm object.
+ *  - the band sat 5 px down the shin, i.e. mid-bone, and at 4 local px it measured 3.5 device px on the Wickboy
+ *    (scale 0.88) — under the 4 px floor §0.7 sets.
+ *
+ * Now each segment is the SAME tapered capsule the renderer would have drawn (`limbRadii`, so a hooked half and a
+ * generic half meet at the joint with no step), stroked once and filled once; the faction's material is then painted
+ * CLIPPED INSIDE that silhouette as a cuff ON the joint with no line of its own. The clip is not optional and not a
+ * performance mistake — §0.2's material-change exception, and geom/outline-stroke-contract with it, accepts an
+ * unoutlined fill only inside a path that has itself been inked.
+ *
+ * The marks are KEPT, not simplified away: the sleeve wrap and the knee strap are what say "contractor in oilskins",
+ * and each is now ~9 px across and sits exactly ON its joint, which is what §0.7 asks for. What went is the ink
+ * around them and the second copy of the knee strap (see chLegUpper).
+ */
+/**
+ * The cuff region of a segment as ONE path: a disc of radius `r` centred on (dx, dy), plus a band with a FLAT bottom
+ * at y1. Two subpaths wound the same way, so nonzero fill unions them — one fill, one mark. The disc half is what
+ * makes the mark sit on the joint rather than near it; the flat bottom is what keeps it a CUFF and not the ball
+ * joint the Brassbound wear. Every point is on the segment axis or `r` from it, so the path's device bounding box
+ * stays inside the silhouette's under any limb angle — which is what geom/outline-stroke-contract measures when it
+ * asks whether the clip really contains the fill, and what geom/limb-crossings measures the mark's size and its
+ * distance to the joint from.
+ */
+function pathJointCuff(ctx, r, y1, dx = 0, dy = 0) {
+  ctx.beginPath();
+  ctx.moveTo(dx + r, dy); ctx.arc(dx, dy, r, 0, TAU);
+  ctx.moveTo(dx - r, dy); ctx.lineTo(dx + r, dy); ctx.lineTo(dx + r, y1); ctx.lineTo(dx - r, y1); ctx.closePath();
+}
+const CUFF = 4;   // px of cuff BELOW the joint; the cap adds ~4.6 more above it, so the mark is ~9 px on its short side
+/**
+ * Paint the cuff inside a silhouette that has already been stroked and filled, and that is already clipped to.
+ *
+ * The second fill is the cuff's share of the limb's shadow, and it is not decoration: the segment ABOVE a cuffed
+ * one (the generic bicep, the hooked thigh) is wide enough to be shaded — `wantSh` on the ROOT radius rA, which is
+ * the gate drawLimbSegs uses for a whole limb — so a cuff painted at flat BASE tone lands as a bright disc against
+ * the shadowed sleeve it is supposed to continue. That was the one thing the first version of this pass made worse.
+ *
+ * The shadow is the same cuff shape at the shrunken radius `r*k`, pushed away from the light by exactly the offset
+ * celCapsule / celTaper use, so it continues the shadow capsule of the segment above across the joint without a
+ * step. Its BOTTOM is still y = CUFF, not the offset one, so the hem stays exactly where the base fill put it — and
+ * it stays a second fill on the same tight bounding box, which is what keeps the recorded crossing on the joint.
+ */
+function chCuff(ctx, rig, rA, rB, hex) {
+  const t = tones(rig, hex);
+  pathJointCuff(ctx, rB, CUFF);
+  ctx.fillStyle = t.base; ctx.fill();
+  if (!rig.shading || !wantSh(rig, rA)) return;
+  const k = 0.6, o = rB - rB * k;
+  pathJointCuff(ctx, rB * k, CUFF, -rig.light.x * o, -rig.light.y * o);
+  ctx.fillStyle = t.sh; ctx.fill();
+}
+/** Leather bracer under the quicklime sleeve, which ends at the elbow (limb space: origin at the elbow, +y along it). */
 export function chArmLower(ctx, rig, pose, inf) {
-  const r = inf.r, len = inf.len, pal = inf.pal;
-  celRect(ctx, rig, -r, 0, r * 2, len + 1, r, pal.secondary, 0.4, 0.2);
+  const p = rig.p, len = inf.len, pal = inf.pal;
+  // the same profile rig.js hands the GENERIC upper arm one line above this hook, so the two halves share a radius
+  // at the elbow and the forearm's cap arc lands exactly on the bicep's instead of 0.6 px inside it
+  const [rA, rB, rC] = limbRadii(p.armR, p.armR + 0.5, p.bulge);
+  celTaper(ctx, rig, 0, 0, 0, len, rB, rC, pal.secondary, 0);
   if (rig.override) return;
-  // the quicklime sleeve wrap is cloth over leather: inked, not faked. The 1 px tone line that used to sit under it
-  // was doing the line's job badly and is gone (0.2 / 0.7).
-  band(ctx, rig, -r, 0, r * 2, 4, pal.sleeve, 1);
+  ctx.save();
+  pathTaperedCapsule(ctx, 0, 0, 0, len, rB, rC); ctx.clip();
+  chCuff(ctx, rig, rA, rB, pal.sleeve);   // the sleeve simply ends below the elbow: no line (§0.2)
+  ctx.restore();
 }
 /**
- * Limedust canvas trousers with a leather knee strap (limb space: origin at the hip).
+ * Limedust canvas trousers (limb space: origin at the hip).
  * Without this hook rig.js fills the thigh with pal.secondary, which put the belt block, BOTH leg segments and the
  * forearm on one hex — waist to knee was a single unbroken leather field ~12 game px tall (§0.1 / §11).
+ * The thigh carries NO band of its own. Its knee strap used to sit at len-3..len+1 and, now that the shin ends in a
+ * round cap CENTRED on the knee rather than a dome peaking at it, the shin covers the thigh's last ~4.6 px whatever
+ * the pose: the strap was drawn and then painted over. It lives on the shin instead (chLegLower), where one cuff
+ * wraps the joint from both sides — one mark, on the knee, and visible.
  */
 export function chLegUpper(ctx, rig, pose, inf) {
-  const r = inf.r, len = inf.len, pal = inf.pal;
-  celRect(ctx, rig, -r, 0, r * 2, len + 1, r, pal.primary, 0.4, 0.25);
-  if (rig.override) return;
-  band(ctx, rig, -r, len - 3, r * 2, 4, pal.secondary, 1);   // the knee strap: leather on canvas takes the line
+  const p = rig.p, len = inf.len;
+  const [rA, rB] = limbRadii(p.legR, p.legR - 0.5, p.bulge);
+  // start sunk 0.35r into the pelvis, exactly as rig.js does for an unhooked thigh, so the root is under the belt
+  celTaper(ctx, rig, 0, p.legR * 0.35, 0, len, rA, rB, inf.pal.primary);
 }
-/** Quicklime gaiter over the shin with one leather strap (limb space: origin at the knee). */
+/** Quicklime gaiter over the shin under one leather knee strap (limb space: origin at the knee). */
 export function chLegLower(ctx, rig, pose, inf) {
-  const r = inf.r, len = inf.len, pal = inf.pal;
-  celRect(ctx, rig, -r, 0, r * 2, len + 1, r, pal.sleeve, 0.4, 0.25);
+  const p = rig.p, len = inf.len, pal = inf.pal;
+  const [rA, rB, rC] = limbRadii(p.legR, p.legR - 0.5, p.bulge);
+  celTaper(ctx, rig, 0, 0, 0, len, rB, rC, pal.sleeve, 0);
   if (rig.override) return;
-  // 4 px and inked, not 3 px with a tone line under it: a 3 px band that takes an outline on both edges leaves
-  // 1 px of colour and fails 0.7 harder than the missing line did (0.2 / corollary d)
-  band(ctx, rig, -r, len - 7, r * 2, 4, pal.secondary, 1);
+  // THE KNEE STRAP, and the one crossing this leg carries. It goes at the KNEE, not 5 px down the shin: the ankle
+  // end is not available — drawBoot's upper reaches footH (5 px) above the ankle, so the old strap was already half
+  // under the boot — and the knee is where the leg actually changes.
+  ctx.save();
+  pathTaperedCapsule(ctx, 0, 0, 0, len, rB, rC); ctx.clip();
+  chCuff(ctx, rig, rA, rB, pal.secondary);
+  ctx.restore();
 }
 /** Rubber boot with a pewter buckle and a cap of lime dust on the toe (ankle space, toe toward +x). */
 export function chFoot(ctx, rig, pose, inf) {

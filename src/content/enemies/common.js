@@ -545,6 +545,7 @@ export function makeBrassBase(c, o = {}) {
 // shorts on a rope belt, wrapped bare feet, clawed fists (optional wrist chains for the Cinder Hulk). Far-side parts colour from
 // `inf.pal`. Build knobs: build.clan (sash / trims), build.gob = { tunic: 'rags'|'skin'|'waistcoat', shorts, chains, shirt }.
 import { flat as flatFill, rimTop as gobRim, band as gobBand } from '../../art/shading.js';
+import { farShade } from '../../art/palettes.js';
 import { getChain as gobChain } from '../../art/secondary.js';
 import { rad as gobRad } from '../../engine/math.js';
 
@@ -708,8 +709,17 @@ export function gobCuffArm(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, col = inf.pal.skin;
   celRect(ctx, rig, -r, 0, r * 2, len + 1, r, col, 0.4, 0);
   if (rig.override) return;
-  gobBand(ctx, rig, -r, len - 6, r * 2, 4, rig.build.clan || '#9A4A22');
-  ctx.fillStyle = tones(rig, rig.build.clan || '#9A4A22').sh; ctx.fillRect(-r, len - 2, r * 2, 1);
+  // The clan cuff is this arm's ONE material crossing (§0.7), so it has to be worth the line it costs:
+  //  * it lands ON the wrist, not up the forearm;
+  //  * it clears 4 px on the DEVICE grid — 4 local px on a 0.85-scale goblin renders 3.4, under the floor, which
+  //    is how a band ends up as a smudge;
+  //  * the 1 px shadow stripe under it is gone. It was below the detail floor, and being a second tone of a colour
+  //    the palette does not know, it also read as a SECOND material crossing on the same forearm.
+  //  * and it goes through farTone on the far side. Painting build.clan at near brightness on both arms is the
+  //    §0.3 leak that has been sitting in the exemption ledger since 2026-09-07; this clears it for both rigs.
+  const clan = rig.build.clan || '#9A4A22';
+  const h = Math.max(4, Math.ceil(4 / (rig.pxScale || rig.scale || 1)));
+  gobBand(ctx, rig, -r, len - h - 1, r * 2, h, inf.far ? farShade(clan, 0.62, 0.25) : clan);
 }
 /** Complete goblin part table. */
 export const GOB_PARTS = { head: gobHead, face: gobFace, torso: gobTorso, hips: gobHips, foot: gobFoot, hand: gobHand };

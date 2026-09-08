@@ -170,11 +170,22 @@ function drawChainHook(ctx, rig, pose, inf) {
     ctx.translate(0, pitch);
   }
   if (rig.hookOut) { ctx.restore(); return; }
-  // hook head: light-steel shank and a barbed J so it reads against the dark links
-  celRect(ctx, rig, -3, 0, 6, 5, 2, pal.accent, 0.4, 0);
-  ctx.beginPath(); ctx.moveTo(-2, 3); ctx.lineTo(6, 5); ctx.lineTo(9, 12); ctx.lineTo(3, 18); ctx.lineTo(-4, 13); ctx.lineTo(0, 11); ctx.lineTo(3, 13); ctx.lineTo(4, 8); ctx.closePath();
-  if (rig.hookTell && rig.tell && !rig.override) { ctx.fillStyle = 'rgba(255,92,92,0.35)'; ctx.fill(); }
-  celPoly(ctx, rig, [-2, 3, 7, 6, 9, 12, 3, 18, -4, 13, 0, 11, 4, 13, 5, 7], pal.accent, 0.4, 0.28);
+  // Hook head: a brass shank and a barbed J, brass so the hook reads against its own dark steel links. They are ONE
+  // object, so they are ONE path — two subpaths, stroked once and filled once (ART_STYLE 0.2, the brassLimbB
+  // pattern). They used to be a celRect and a celPoly in the same brass, which put an outline straight across the
+  // hook's own neck and lit the two halves off two different centres; the barb now grows out of the shank.
+  pathRR(ctx, -3, 0, 6, 5, 2);
+  ctx.moveTo(-2, 3); ctx.lineTo(7, 6); ctx.lineTo(9, 12); ctx.lineTo(3, 18); ctx.lineTo(-4, 13); ctx.lineTo(0, 11); ctx.lineTo(4, 13); ctx.lineTo(5, 7); ctx.closePath();
+  celPath(ctx, rig, pal.accent, 2.5, 9, 11, 0.4, 0.28);
+  // Hook Yank tell: the hook itself runs red. The same wash was already written here, but as a fill of the barb path
+  // painted UNDER the opaque brass that followed it, so it never reached a pixel on the one frame the player most
+  // needs it. Painted after the brass and CLIPPED to the same inked silhouette (0.2) it is a material change on the
+  // hook, not a second outlined shape on the chain.
+  if (rig.hookTell && rig.tell && !rig.override) {
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = 'rgba(255,92,92,0.45)'; ctx.fillRect(-5, -1, 16, 21);
+    ctx.restore();
+  }
   ctx.restore();
 }
 /** Near forearm: dark iron piston sleeve at the elbow with a light steel ram sliding out to the claw wrist. */
