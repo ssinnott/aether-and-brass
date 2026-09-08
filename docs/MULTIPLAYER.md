@@ -3,8 +3,9 @@
 Status: **exploration only**. Nothing here is implemented. This is a menu of options
 with a recommendation, written against the code as of this branch.
 
-Constraint: **no backend we own or operate.** The game must stay a folder of static
-files (`tools/build.js` output) served from anywhere — itch.io, GitHub Pages, a USB stick.
+Constraint: **no backend we own or operate.** The game must stay a single static file
+(`tools/build.js` output) served from anywhere. The live deployment is GitHub Pages
+(`.github/workflows/pages.yml`) — see §3b for what that specifically implies.
 
 ---
 
@@ -88,7 +89,8 @@ const [sendInput, getInput] = room.makeAction('in');
 ```
 
 - **Ships as:** one bundled dependency, no deployment
-- **UX:** host generates a 6-char room code, shares it over Discord/text; guest types it in
+- **UX:** host generates a 6-char room code, shares it over Discord/text; guest types it
+  in — or better, shares an `?room=` invite link (see §3b)
 - **Cost:** zero
 - **Risk:** depends on third-party public infrastructure staying up and unblocked.
   Mitigate by supporting two strategies with automatic fallback (nostr → mqtt → torrent)
@@ -171,6 +173,58 @@ Options, none perfect:
 
 This is the one place where "no backend" has a genuine, unavoidable cost. Worth deciding
 consciously rather than discovering later.
+
+---
+
+## 3b. Deployment context: GitHub Pages
+
+The game ships as a single self-contained `dist/index.html` (esbuild IIFE, inlined by
+`tools/build.js`) published to `https://ssinnott.github.io/aether-and-brass/` by
+`.github/workflows/pages.yml`. That constrains and helps in specific ways.
+
+### Helps
+
+- **Dependencies are free to add.** Because everything is bundled into one file, adding
+  Trystero (T1) is just `npm i trystero` — esbuild folds it into the IIFE. No CDN, no
+  import maps, no extra requests, no module-loading edge cases. `npm ci` in the workflow
+  already installs runtime dependencies. (It does grow the single-file download; the
+  bundle is currently unminified, so consider `minify: true` if size becomes a concern.)
+- **HTTPS is automatic**, so the secure-context requirement for `RTCPeerConnection` is
+  satisfied with no work. `localhost` via `npm run dev` is also a secure context.
+- **Invite links are nearly free.** `parseOptions()` already parses
+  `window.location.search`, so adding `room: q.get('room') || ''` gives us
+  `?room=K7QF2M` invite URLs — no code-entry screen, no typing a code on a gamepad.
+  This is better UX than the room-code flow sketched in §3 and should be the default.
+
+### Constrains
+
+- **Mixed content: all signalling must be `wss://`.** The page is HTTPS, so plain `ws://`
+  is hard-blocked by the browser. Trystero's nostr relays are already `wss://`; the trap
+  is the T4 MQTT fallback, where the documented endpoint is usually the plain-WS port
+  (use `wss://broker.emqx.io:8084/mqtt`, not `ws://...:8083/mqtt`).
+- **Query or hash params only — never path segments.** Pages has no rewrite rules, so
+  `/room/K7QF2M` 404s. `?room=` is the right shape.
+- **No custom response headers.** No COOP/COEP, therefore no `SharedArrayBuffer` or
+  cross-origin isolation. Irrelevant here (no threads or wasm), but worth knowing.
+  There is currently no CSP meta tag in `index.html`, so nothing blocks outbound WSS.
+- **TURN is still unsolved.** Static hosting cannot relay UDP. The NAT caveat in §3
+  stands unchanged.
+- **Rejected:** using the GitHub API itself (gist or commit-based) as a signalling
+  channel. It would require an API token embedded in a public static bundle.
+
+### Testing trap
+
+Two tabs on `localhost` connect via ICE **host candidates** — `127.0.0.1` is found
+immediately, and STUN and hole punching are never exercised. Local testing therefore
+succeeds every time while proving nothing about real NAT traversal.
+
+Test across two genuinely separate networks early (laptop on wifi + phone on cellular is
+the cheap version; carrier NAT is exactly where symmetric NAT appears).
+
+Note also that `pages.yml` only deploys from `main` — the `github-pages` environment
+rejects other branches. To get a multiplayer branch onto a live URL, either merge, or add
+the branch under Settings -> Environments -> github-pages -> Deployment branches and run
+the workflow via `workflow_dispatch`.
 
 ---
 
