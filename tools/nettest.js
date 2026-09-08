@@ -10,6 +10,8 @@ import { dsin, dcos, dhypot } from '../src/engine/trig.js';
 import { ACTIONS } from '../src/engine/input.js';
 import * as M from '../src/net/mqtt-codec.js';
 import * as P from '../src/net/protocol.js';
+import * as S from '../src/net/signal.js';
+import { worldChecksum } from '../src/net/checksum.js';
 import { createLockstep } from '../src/net/lockstep.js';
 
 let failures = 0;
@@ -96,6 +98,42 @@ const suites = {
     for (const mk of samples) for (let n = 0; n <= mk.length; n++) { try { P.decodeMessage(mk.subarray(0, n)); } catch { threw = true; } }
     ok(!threw, 'every truncation of every packet decodes to null instead of throwing');
     ok(P.decodeMessage(new Uint8Array([99])) === null, 'an unknown message type decodes to null');
+  },
+
+  // ---- net/checksum.js: must catch every divergence and produce ZERO false positives ----
+  checksum() {
+    const world = (over = {}) => ({ frame: 10, entities: [{ kind: 'player', x: 1.5, y: 0, z: 70, vx: 0, vy: 0, facing: 1, alive: true, removeMe: false, hp: 100, state: 2, stateTimer: 3, ...over }] });
+    const rng = { state: 12345 };
+    const base = worldChecksum(world(), rng);
+    ok(worldChecksum(world(), rng) === base, 'identical state hashes identically');
+    ok(worldChecksum(world({ x: 1.5000001 }), rng) !== base, 'a 1e-7 position difference is caught');
+    ok(worldChecksum(world(), { state: 12346 }) !== base, 'an rng stream divergence is caught');
+    ok(worldChecksum(world({ hp: 99 }), rng) !== base, 'an hp difference is caught');
+    ok(worldChecksum(world({ state: 3 }), rng) !== base, 'a state difference is caught');
+    ok(worldChecksum(world({ facing: -1 }), rng) !== base, 'a facing difference is caught');
+
+    // False-positive traps. -0 arises from multiplying a velocity by zero; entity ids differ
+    // between peers because the id counter is never reset between runs.
+    ok(worldChecksum(world({ vx: -0 }), rng) === worldChecksum(world({ vx: 0 }), rng), '-0 and 0 hash identically');
+    ok(worldChecksum(world({ vy: NaN }), rng) === worldChecksum(world({ vy: NaN }), rng), 'NaN hashes stably');
+    const a = world(), b = world();
+    a.entities[0].id = 900; b.entities[0].id = 3;
+    ok(worldChecksum(a, rng) === worldChecksum(b, rng), 'differing entity ids do NOT trip the canary');
+  },
+
+  // ---- net/signal.js: room codes and the copy-paste code format ----
+  signal() {
+    const desc = { type: 'offer', sdp: 'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\na=candidate:1 1 udp 2130706431 10.0.0.1 5000 typ host\r\n' };
+    const code = S.encodeCode(desc);
+    ok(S.decodeCode(code).sdp === desc.sdp, 'an SDP survives the copy-paste code round trip');
+    ok(!/[+/=]/.test(code), 'the code is base64url, so it is safe in a URL and double-clickable');
+    ok(S.decodeCode('not a code') === null && S.decodeCode('') === null, 'malformed codes decode to null instead of throwing');
+    ok(S.decodeCode(S.encodeCode({ type: 'answer', sdp: 'x' })).type === 'answer', 'answer codes round trip');
+
+    const codes = new Set();
+    for (let i = 0; i < 2000; i++) codes.add(S.makeRoomCode());
+    ok(codes.size === 2000, '2000 room codes with no collision');
+    ok([...codes].every((c) => /^[23456789BCDFGHJKMNPQRSTVWXYZ]{6}$/.test(c)), 'room codes avoid vowels and ambiguous glyphs');
   },
 
   // ---- net/lockstep.js: two peers over a lossy, reordering link must never diverge ----

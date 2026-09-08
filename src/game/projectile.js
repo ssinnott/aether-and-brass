@@ -8,6 +8,7 @@ import { particles } from '../engine/particles.js';
 import { circle, rrect, pathPoly, paint, line } from '../art/shapes.js';
 import { jointScreen } from '../art/rig.js';
 import { audio } from '../engine/audio.js';
+import { dsin, dcos, dhypot } from '../engine/trig.js';
 
 const STYLE_R = { bullet: 3, bolt: 3, bomb: 6, cannonball: 8, claw: 8, explosion: 20, shell: 5, hat: 8, crate: 12, net: 10, watch: 6, stone: 4, fire: 22, rubble: 10 };
 const KIND_DEFAULTS = {
@@ -95,7 +96,7 @@ export class Projectile extends Entity {
     if (this.returning) {
       const o = this.owner;
       if (!o || !o.alive) { this.removeMe = true; return; }
-      const dx = o.x - this.x, dy = (o.y + 40) - this.y, dz = o.z - this.z, d = Math.hypot(dx, dy) || 1;
+      const dx = o.x - this.x, dy = (o.y + 40) - this.y, dz = o.z - this.z, d = dhypot(dx, dy) || 1;
       const s = Math.max(4, Math.abs(this.vx) || 5);
       this.x += dx / d * s; this.y += dy / d * s; this.z += dz * 0.2;
       if (d < 12 || this.life < -120) { this.expire(world, false); return; }
@@ -287,7 +288,7 @@ export function projectileOptsFromSpec(spec, owner, o = {}) {
     out.vx = (tx - out.x) / T; out.vz = (tz - out.z) / T; out.vy = (0.5 * g * T * T - out.y) / T; out.gravity = g;
   } else {
     out.x = ox + facing * (spec.offsetX != null ? spec.offsetX : 20); out.y = oy + (spec.offsetY != null ? spec.offsetY : 40); out.z = oz;
-    out.vx = Math.cos(angle) * speed * facing; out.vy = Math.sin(angle) * speed;
+    out.vx = dcos(angle) * speed * facing; out.vy = dsin(angle) * speed;
     out.vz = count > 1 ? (i - (count - 1) / 2) * (spec.spreadZ || 0) : (spec.vz || 0);
   }
   if (o.x != null) out.x = o.x; if (o.y != null) out.y = o.y; if (o.z != null) out.z = o.z;

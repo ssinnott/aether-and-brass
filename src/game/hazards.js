@@ -12,6 +12,7 @@ import { audio } from '../engine/audio.js';
 import { rng } from '../engine/rng.js';
 import { rrect, circle, pathPoly } from '../art/shapes.js';
 import { tones } from '../art/props.js';
+import { dsin } from '../engine/trig.js';
 
 const OL = '#2B2B30';
 const AIR_STATES = new Set([ST.KNOCKDOWN, ST.THROWN, ST.HURT_AIR]);
@@ -48,7 +49,7 @@ export class Hazard extends Entity {
   }
   hurtbox() { return null; }
   /** Screen-relative sweep position for the hook (px from x). */
-  get swingX() { return Math.sin((this.t / this.period) * Math.PI * 2) * (this.info.swing || 0); }
+  get swingX() { return dsin((this.t / this.period) * Math.PI * 2) * (this.info.swing || 0); }
   get tellStart() { return this.period - this.activeFrames - this.tellFrames; }
   get activeStart() { return this.period - this.activeFrames; }
   update(world) {
