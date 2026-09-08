@@ -1,4 +1,6 @@
 > **Binding overrides:** see `docs/RECONCILIATION.md` for the final controls, floor band, rig scale, physics constants and the MUST/SHOULD/CUT scope tiers. Where it conflicts with this document, RECONCILIATION wins.
+>
+> **Scope of this document:** the world, the four heroes, the combat system, the HUD and **stage 1, The Ascent of Calderwick**. The second board — *The Storm Above Calderwick*, its Stormcrow faction and its two bosses — is designed in `docs/STAGE2.md`, which is the authority for that board and inherits every system rule from here unchanged.
 
 # 1. World & Tone
 

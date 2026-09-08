@@ -11,7 +11,7 @@
 // (the far hand draws nothing on the Hoister; on foot it also throws the hat). Rig flags set by hooks.onUpdate:
 // clawOpen, hookOut, hookTell, stalled, lever (Grubbik hauling the crate lever), netSpin / netThrown.
 import { FK, frontBox, GOB, GOB_PAL, GOB_PROPS, GOB_PARTS, gobHead, gobFace, gobCuffArm, makeBrassBase } from './common.js';
-import { celRect, celBall, celPoly, celCapsule, tones, flat, rimTop, pathRR } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celCapsule, celPath, tones, flat, rimTop, pathRR, band } from '../../art/shading.js';
 import { getChain } from '../../art/secondary.js';
 import { jointScreen } from '../../art/rig.js';
 import { rrect, pathPoly, paint } from '../../art/shapes.js';
@@ -21,8 +21,14 @@ import { particles } from '../../engine/particles.js';
 const R = Math.round, TAU = Math.PI * 2;
 // Value ladder (ART_STYLE 0.1): bright hazard orange chassis > light steel booms / piston rods / chain links >
 // dark iron boiler, cage uprights and leg sleeves > near-black slate foot plates and hazard tape. Brass is the only warm metal.
-const HAZ = '#E07A1F', STRIPE = '#241C18', IRON = '#3A4150', STEEL = '#C0C8D4', BRASSY = '#C89B3C';
-const SLATE = '#2E3340', LINK = '#4A5060', FIRE = '#FF7A1F', HOT = '#FFD27A', RED = '#FF5C5C', STEAM = '#DDE6EC';
+// IRON and SLATE hold their hue (265 deg) and their lightness to within 1 L* and move CHROMA only (Oklab C 2.7 -> 7.1
+// and 2.4 -> 5.0) - the same move, and the same two hexes, as the Regent Engine's frame in boss.js, because it is the
+// same material on the same class of machine. IRON's Rec-601 luminance is unchanged to three places (0.2531 -> 0.2540),
+// so the secondary/dark step the boss ladder measures is untouched; SLATE rises from Oklab L* 32.2 to 32.5, which is
+// what puts it 9.1 L* clear of the outline #1A1E24 instead of 8.8. HAZ is the best-placed boss colour in the game and
+// does not move; brass stays the only warm metal.
+const HAZ = '#E07A1F', STRIPE = '#241C18', IRON = '#2F4269', STEEL = '#C0C8D4', BRASSY = '#C89B3C';
+const SLATE = '#26344E', LINK = '#4A5060', FIRE = '#FF7A1F', HOT = '#FFD27A', RED = '#FF5C5C', STEAM = '#DDE6EC';
 const HAT = '#1A1418', BAND = '#7A1E2A', CIGAR = '#C8A070', SHIRT = '#C9BB95', SHORTS = '#3A3040';
 const OL = '#1A1E24';
 const OVER_A = 'rgba(255,74,40,0.20)', OVER_B = 'rgba(255,74,40,0.34)', DARKSLOT = '#241A1C';
@@ -45,8 +51,9 @@ function drawStovepipe(ctx, rig, r, pose) {
   celRect(ctx, rig, -r - 3, -2, r * 2 + 9, 4, 1, HAT, 0.42, 0);
   celRect(ctx, rig, -r + 2, -h - 1, r * 2 - 3, h, 1, HAT, 0.34, 0.3);
   if (!rig.override) {
-    ctx.fillStyle = rig.col(BAND); ctx.fillRect(-r + 2, -7, r * 2 - 3, 4);
-    ctx.fillStyle = tones(rig, BAND).sh; ctx.fillRect(-r + 2, -3, r * 2 - 3, 1);
+    // the clan band is cloth on felt - a material change, so it carries the line (ART_STYLE 0.2). It was a bare
+    // 4 px fillRect plus a 1 px shade seam; inked and widened to 6 it keeps 4 px of wine and drops the seam.
+    band(ctx, rig, -r + 2, -8, r * 2 - 3, 6, BAND, 2);
     rimTop(ctx, rig, -r + 4, -h - 1, R(r * 0.7), -h - 1, '#4A4652');
   }
   ctx.restore();
@@ -141,8 +148,7 @@ function hoistArmUpper(ctx, rig, pose, inf) {
   const r = inf.r, L = inf.len, pal = inf.pal;
   celRect(ctx, rig, -r, -2, r * 2, L + 4, 3, pal.sleeve, 0.36, 0.28);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-r, L - 4, r * 2, 4);
-  ctx.fillStyle = tones(rig, pal.accent).sh; ctx.fillRect(-r, L, r * 2, 1);
+  band(ctx, rig, -r, L - 4, r * 2, 6, pal.accent, 2);   // brass collar on a steel barrel: material change, takes ink
 }
 /**
  * Far arm = the chain hook (GDD: 5 line segments). The links hang straight down from the elbow whatever the boom does
@@ -178,8 +184,7 @@ function hoistArmLower(ctx, rig, pose, inf) {
   celCapsule(ctx, rig, 0, 5, 0, L + 3, r * 0.6, pal.metal, 0.3);
   celRect(ctx, rig, -r - 1, -2, r * 2 + 2, 11, 3, pal.secondary, 0.4, 0.25);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-r - 1, 6, r * 2 + 2, 3);
-}
+}   // the old 3 px brass wrist collar is gone: under the 0.7 floor, it could not carry a line and did not read
 /** Two-prong crane claw on the near hand (hand space, +x along the forearm). Jaws open by rig.clawOpen (0 shut .. 1 wide). */
 function hoistClaw(ctx, rig, pose, inf) {
   if (inf.far) return; // the far arm ends in the chain hook instead
@@ -195,7 +200,7 @@ function hoistLegUpper(ctx, rig, pose, inf) {
   const r = inf.r, L = inf.len, pal = inf.pal;
   celRect(ctx, rig, -r, -2, r * 2, L + 5, 3, pal.secondary, 0.4, 0.25);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-r, L - 2, r * 2, 4);
+  band(ctx, rig, -r, L - 2, r * 2, 6, pal.accent, 2);   // brass knee collar on the iron thigh: material change, takes ink
 }
 /** Shin: a light-steel piston rod sliding out of a short iron sleeve — the "idling piston" read. */
 function hoistLegLower(ctx, rig, pose, inf) {
@@ -244,9 +249,14 @@ function drawBoiler(ctx, rig) {
  */
 function drawCage(ctx, rig, pose) {
   const p = rig.p, hw = R(p.torsoW / 2), H = p.torsoH, top = -H - 27, open = pose.grip || 0;
-  // dark iron uprights either side of the cockpit notch, brass capped: they frame Grubbik, never cross him
-  celRect(ctx, rig, hw - 4, top, 5, -top - H - 6, 1, IRON, 0.4, 0.2);
-  celRect(ctx, rig, -hw - 1, top + 5, 5, -top - H - 11, 1, IRON, 0.4, 0.2);
+  // dark iron uprights either side of the cockpit notch, brass capped: they frame Grubbik, never cross him.
+  // Both posts are ONE cel path (two subpaths, one outline stroke, one clip): they are the same iron at the same
+  // depth lit by the same lamp, so a single shadow half-plane across the pair is the correct read and it pays for
+  // the arm and knee collars now carrying their outlines (ART_STYLE section 9 draw budget).
+  ctx.beginPath();
+  ctx.rect(R(hw - 4), R(top), 5, R(-top - H - 6));
+  ctx.rect(R(-hw - 1), R(top + 5), 5, R(-top - H - 11));
+  celPath(ctx, rig, IRON, 0, R(top + (-H - 6) / 2), Math.hypot(p.torsoW + 6, -top - H - 6) / 2, 0.4, 0.2);
   if (!rig.override) {
     const tb = tones(rig, BRASSY);
     ctx.fillStyle = tb.base; ctx.fillRect(hw - 5, top, 7, 3); ctx.fillRect(-hw - 2, top + 5, 7, 3);
@@ -431,7 +441,10 @@ function drawHookShot(ctx, p, sx, sy) {
 }
 
 // ================================================================ Grubbik on foot (goblin rig, GDD 5.1 phase 2)
-const GRUBBIK_PAL = { ...GOB_PAL, skin: '#7AA848', hair: '#4A6B2E', primary: BAND, sleeve: SHIRT, secondary: '#7AA848', accent: BRASSY, metal: GOB.scrap, dark: SHORTS, glow: GOB.eye };
+// Grubbik's green tracks the Sootborn push (sootborn.js / common.js GOB.skin): hue 97 and Oklab L* held to within
+// 1 L*, chroma only, so the Foreman still reads as the biggest goblin in the room and not as a different species.
+// #7AA848 -> #6BB83A is s57 -> s68; the hair follows it so the head does not separate from its own shadow.
+const GRUBBIK_PAL = { ...GOB_PAL, skin: '#6BB83A', hair: '#3D6B18', primary: BAND, sleeve: SHIRT, secondary: '#6BB83A', accent: BRASSY, metal: GOB.scrap, dark: SHORTS, glow: GOB.eye };
 /** Foreman's whip: brass-ferruled grip; the lash is coiled at rest (it lags on a chain) and snaps straight while pose.grip > 0.5. */
 function drawWhip(ctx, rig, pose) {
   celRect(ctx, rig, -5, -2.5, 14, 5, 1, '#4A3020', 0.4, 0);
@@ -475,7 +488,7 @@ function drawLedger(ctx, rig) {
   if (rig.override) return;
   ctx.fillStyle = rig.col('#D9CDAE'); ctx.fillRect(-hw - 7, -4, 8, 9);
   ctx.fillStyle = tones(rig, '#D9CDAE').sh; ctx.fillRect(-hw - 7, 2, 8, 2);
-  ctx.fillStyle = rig.col(BRASSY); ctx.fillRect(-hw - 9, -1, 11, 2);
+  band(ctx, rig, -hw - 9, -2, 11, 4, BRASSY, 1);   // brass clasp on leather: a material change, widened 2 -> 4 to take ink
 }
 const GRUBBIK_BUILD = {
   scale: 1.0, palette: GRUBBIK_PAL, outline: GOB.outline, outlineWidth: 1, thinR: 4, contactShadow: true, clan: BAND, smearColor: '#E8D8A0',

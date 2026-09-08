@@ -19,7 +19,7 @@
 // shadows under limbs, far-limb darkening, thin-part two-tone shading.
 import { speedFor, hpFor, areaBox, frontBox, P, F, hit } from './common.js';
 import { JUMP_VY, METER } from '../../constants.js';
-import { celRect, celBall, celPoly, celPath, tones, flat } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celPath, tones, flat, band } from '../../art/shading.js';
 import { drawSkull, drawFace, drawBoot, drawFist, drawBelt } from '../../art/rigParts.js';
 import { getChain } from '../../art/secondary.js';
 import { buildRig } from '../../art/rig.js';
@@ -29,11 +29,27 @@ import { rad } from '../../engine/math.js';
 // ---------------------------------------------------------------------------------------------------------------
 // Palette (GDD 2.1 hue families, re-picked for value separation) and rig build
 // ---------------------------------------------------------------------------------------------------------------
-// skin: tan (light warm)  hair/beard: bright rust  primary: dark oxblood apron  sleeve: cream linen shirt
+// skin: tan (light warm)  hair/beard: bright rust  primary: dark oxblood apron  sleeve: brass-cream linen shirt
 // secondary: blue-grey trousers  accent: brass  metal: light steel (hammer head + boot toe)  dark: slate boots  glow: boiler fire
 // dark = boots: SLATE (cool) so they separate from the warm dock planks and the blue-grey trousers by value
-const PAL = { skin: '#ECBA8C', hair: '#D4562A', primary: '#6B2419', sleeve: '#D9CDAE', secondary: '#566070', accent: '#D4A72C', metal: '#9AA0AE', dark: '#454C60', glow: '#E86A1E' };
-const LEATHER = '#4A3020', IRON = '#545A6A', LENS = '#9BC1E8', STEAM = '#E8F0F4', WOOD = '#8C5A2C', HOT = '#FFD27A', BROW = '#7A2E12';
+// Saturation pass, and the one place a proposed target had to be REJECTED on measurement. Her sleeve at 10.1 % of
+// painted area was the biggest colourless mass on the rig (#D9CDAE, s 20), but the brass-cream #D9B65D that would
+// have fixed the mean lands 1 hue degree and 3.9 Oklab L* from the GEAR PAULDRON's own brass #D4A72C, which sits
+// directly on top of it: rendered, the shoulder and the sleeve fused into one gold blob. On that shoulder the
+// separator has always been CHROMA, not value (the old cream read against the brass at 59 saturation points of
+// difference, not 19 % luminance). So the shirt goes to #E4CE9A: s 20 -> 33, hue and lightness held (L* 85.0 ->
+// 85.7), which reads FURTHER from the brass than the cream did (relDiff 0.195 vs 0.188, dSat 47) and further from
+// the skin too, and still leaves the section 0.1 ladder skin > sleeve > beard #D4562A > apron #6B2419 intact.
+// The chroma the sleeve cannot safely carry is spent instead where nothing on this rig competes - the BLUE half of
+// her, which no other Brunhild mass and none of the six warm stages occupy: trousers #566070 -> #4E5E82 (s 23 ->
+// 40, Oklab lightness held at 48.5, C 2.9 -> 6.2, i.e. out of the low-chroma core every polychrome backdrop also
+// claims), boots #454C60 -> #3A4560 (s 28 -> 40, L* 41.8 -> 39.3, so she finally has a dark anchor below L* 40
+// besides the apron) and the boiler IRON #545A6A -> #4C5A78 (s 21 -> 37 at the same lightness). All three stay at
+// or under the 40 % neutral ceiling, so they are still slate and iron and not a blue uniform. Light steel
+// #9AA0AE -> #92A2BA for the same reason and to the same limit (s 12 -> 22, L* 70.5 held): the hammer head is one
+// of the largest single shapes in the cast and at Oklab C 2.2 all of it sat on the neutral axis of the lattice.
+const PAL = { skin: '#ECBA8C', hair: '#D4562A', primary: '#6B2419', sleeve: '#E4CE9A', secondary: '#4E5E82', accent: '#D4A72C', metal: '#92A2BA', dark: '#3A4560', glow: '#E86A1E' };
+const LEATHER = '#4A3020', IRON = '#4C5A78', LENS = '#9BC1E8', STEAM = '#E8F0F4', WOOD = '#8C5A2C', HOT = '#FFD27A', BROW = '#7A2E12';
 const R = Math.round;
 
 /** Two-handed steam hammer (hand space: +x along the handle). Light steel head with dark striking faces, two brass bands, chimney, fire slot. */
@@ -50,7 +66,9 @@ function drawHammer(ctx, rig) {
   const ti = tones(rig, PAL.metal), tb = tones(rig, PAL.accent);
   // dark striking faces (2px), two brass bands (3px), fire slot with a hot core
   ctx.fillStyle = ti.deep; ctx.fillRect(22, -13, 2, 26); ctx.fillRect(36, -13, 2, 26);
-  ctx.fillStyle = tb.base; ctx.fillRect(23, -10, 14, 3); ctx.fillRect(23, 7, 14, 3);
+  // brass on steel is a MATERIAL change, so each band takes its own 1 px of ink (section 0.2); widened 3 -> 4 px so the
+  // inked band still carries 4 px of colour (section 0.7). The 1 px sh line inside it is FORM, and stays a tone seam.
+  band(ctx, rig, 23, -11, 14, 4, tb.base); band(ctx, rig, 23, 7, 14, 4, tb.base);
   ctx.fillStyle = tb.sh; ctx.fillRect(23, -8, 14, 1); ctx.fillRect(23, 9, 14, 1);
   ctx.fillStyle = rig.col('#2a1a18'); ctx.fillRect(27, -4, 6, 8);
   ctx.fillStyle = rig.col(PAL.glow); ctx.fillRect(28, -3, 4, 6);
@@ -142,8 +160,9 @@ function drawBoiler(ctx, rig) {
   celRect(ctx, rig, x0 + 3, y0 - 9, 4, 9, 1, IRON, 0.4, 0);
   if (rig.override) return;
   const tb = tones(rig, PAL.accent);
-  ctx.fillStyle = tb.base; ctx.fillRect(x0 + 1, y0 + 8, w - 2, 3); ctx.fillRect(x0 + 1, y0 + h - 7, w - 2, 3);
-  ctx.fillStyle = tb.sh; ctx.fillRect(x0 + 1, y0 + 10, w - 2, 1); ctx.fillRect(x0 + 1, y0 + h - 5, w - 2, 1);
+  // brass hoops on the iron cylinder: inked, 4 px (section 0.2 / 0.7), with the sh line inside them as the form seam
+  band(ctx, rig, x0 + 1, y0 + 8, w - 2, 4, tb.base); band(ctx, rig, x0 + 1, y0 + h - 8, w - 2, 4, tb.base);
+  ctx.fillStyle = tb.sh; ctx.fillRect(x0 + 1, y0 + 10, w - 2, 1); ctx.fillRect(x0 + 1, y0 + h - 6, w - 2, 1);
   // fire window
   ctx.fillStyle = rig.col('#241a1c'); ctx.fillRect(x0 + 3, y0 + 13, 7, 6);
   ctx.fillStyle = rig.col(PAL.glow); ctx.fillRect(x0 + 4, y0 + 14, 5, 4);

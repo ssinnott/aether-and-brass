@@ -23,7 +23,7 @@
 // so the lowest foot plate sits on the floor (spec.root[1] is an extra sink), so the long piston legs never float.
 import { speedFor, hpFor, areaBox, frontBox, P, F, hit } from './common.js';
 import { JUMP_VY, METER, ST } from '../../constants.js';
-import { celRect, celBall, celPoly, celCapsule, tones, flat } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celCapsule, tones, flat, band } from '../../art/shading.js';
 import { drawSkull, drawFace } from '../../art/rigParts.js';
 import { getChain } from '../../art/secondary.js';
 import { buildRig, computeJoints, jointScreen } from '../../art/rig.js';
@@ -39,9 +39,21 @@ import { rad } from '../../engine/math.js';
 // secondary: mid blue-slate thigh   accent: brass claws + trims   metal: light steel shin rod / ball joints / trims   dark: foot plate
 // iron: recessed panel / knee sleeves / stacks / lantern (the darkest band, always a joint or a recess)   bronze: dark brass (piston sleeves, demoted trims)
 // rod: pale brass forearm piston rod   glow: boiler fire
+// Saturation pass: primary is her single largest mass (18.4 % of painted area - chassis, cage posts, hips, stacks) and
+// at #464F63 it was almost achromatic (Oklab C 3.5), so all of it fell in the low-chroma core of the colour lattice
+// that every polychrome backdrop also occupies. #283A63 holds the hue (265 deg) and moves chroma (C 3.5 -> 7.5,
+// s 29 -> 60) while dropping 7 L* to 35.5, which puts the frame under every stage floor band instead of inside the
+// Foundry's (31), the Mooring's (33) and the Gas-Halls' (31). The frame still reads as a machine and not as a black
+// hole: it clears the INK #1B1820 by 13.9 Oklab L*, and the iron recess panels that sit inside it (#2C3242, L* 31.8)
+// separate from it on their own 1 px outline, which is what section 0.2 says a recess should do.
+// EDIT AT SOURCE: the torso/hips/back hooks read this module constant directly, not info.pal, so a build.palette
+// override would not reach them - the literal here is the only place primary can be changed.
+// secondary (the thighs) #7C8AA4 -> #6E86AC for the same reason at the other end of the ladder: s 24 -> 36 with the
+// lightness held (L* 63.1 -> 61.6), so the second-largest cool mass also leaves the neutral core. Still under the
+// 40 % neutral ceiling, so it is still blue-slate machined metal and not a painted panel.
 const PAL = {
-  skin: '#FBE7CC', hair: '#6E3A1E', primary: '#464F63', sleeve: '#C89A3A', secondary: '#7C8AA4', accent: '#D2A63E',
-  metal: '#C3CCDA', dark: '#333A4A', glow: '#E86A1E', iron: '#2C3242', bronze: '#7A5824', rod: '#E8CE8C',
+  skin: '#FBE7CC', hair: '#6E3A1E', primary: '#283A63', sleeve: '#C89A3A', secondary: '#6E86AC', accent: '#D2A63E',
+  metal: '#B8C6DE', dark: '#333A4A', glow: '#E86A1E', iron: '#2C3242', bronze: '#7A5824', rod: '#E8CE8C',
 };
 const HAT = '#D6483F', JACKET = '#7A3A34', GAUGE = '#59C3A0', STEAM = '#B9C6D0', HOT = '#FFD27A', BROW = '#4A2A16', LAMP = '#E0A038', INK = '#1B1820';
 const R = Math.round, TAU = Math.PI * 2;
@@ -104,7 +116,7 @@ function drawHat(ctx, rig, pose, inf) {
   celPoly(ctx, rig, [R(-r * 1.15), brim + 2, R(-r * 0.9), brim - 3, R(-r * 0.55), -r - 10, R(r * 0.55), brim - 3, R(r * 1.15), brim + 2], HAT, 0.38, 0.28);
   if (rig.override) return;
   const tb = tones(rig, PAL.accent);
-  ctx.fillStyle = tb.base; ctx.fillRect(R(-r * 0.95), brim - 2, R(r * 1.9), 3);
+  band(ctx, rig, R(-r * 0.95), brim - 3, R(r * 1.9), 4, tb.base);   // brass on felt: inked (0.2), widened 3 -> 4 px (0.7)
   ctx.fillStyle = tb.sh; ctx.fillRect(R(-r * 0.95), brim, R(r * 1.9), 1);
 }
 /** Seat plate at the top of the frame (neck space). */
@@ -143,18 +155,20 @@ function drawHips(ctx, rig, pose, inf) {
   celRect(ctx, rig, -hw, -5, inf.w, 8, 2, PAL.primary, 0.4, 0.25);
   ctx.beginPath(); ctx.rect(-5, -6, 10, 9); flat(ctx, rig, PAL.iron);
   if (rig.override) return;
+  // The light-steel pelvis band stays a BARE fill. Inking it (the section 0.2 treatment every other boundary in the
+  // cast got this pass) costs one stroke, and pip's idle #0 is at 52 cel shapes against a bound of 52: geom/draw-budget
+  // goes red at 53. This is the one place where 0.2 and section 9 actually collide, and section 9 wins -- the band is
+  // 3 px of light steel inside a light-steel hip plate, i.e. the cheapest boundary in the cast to leave un-inked.
   ctx.fillStyle = rig.col(PAL.metal); ctx.fillRect(-hw + 2, -3, inf.w - 4, 3);
   ctx.fillStyle = tones(rig, PAL.iron).hi; ctx.fillRect(-4, -5, 8, 1);
 }
 /** Light-steel ball joint — the same machined metal as the shin rods, so the eye reads "this is where a limb starts".
  *  Cool and bright against both the dark frame behind it and the warm brass upper arm in front; small enough to stay a joint. */
 function drawShoulder(ctx, rig, pose, inf) { celBall(ctx, rig, 0, 0, inf.r - 2.5, inf.pal.metal); }
-/** Upper arm: light brass cylinder with a dark bronze band at the elbow end (limb space, +x along the arm). */
+/** Upper arm: one light brass cylinder. The dark bronze at the elbow is the FOREARM's piston sleeve (drawArmLower),
+ *  which butts straight against this one and carries its own outline: section 0.7's one shape per material. */
 function drawArmUpper(ctx, rig, pose, inf) {
-  const r = inf.r, L = inf.len;
-  celRect(ctx, rig, -2, -r, L + 3, r * 2, 3, inf.pal.sleeve, 0.36, 0.28);
-  if (rig.override) return;
-  ctx.fillStyle = rig.col(inf.pal.bronze); ctx.fillRect(L - 5, -r + 1, 4, r * 2 - 2);
+  celRect(ctx, rig, -2, -inf.r, inf.len + 3, inf.r * 2, 3, inf.pal.sleeve, 0.36, 0.28);
 }
 /** Forearm: a short dark bronze piston sleeve at the elbow and a long pale brass rod out to the wrist. The rod is the longer
  *  and lighter of the two on purpose — a piston reads as a limb, two equal blocks read as a scaffold. */
@@ -179,7 +193,8 @@ function drawLegUpper(ctx, rig, pose, inf) {
   const r = inf.r + 1.5, L = inf.len;
   celRect(ctx, rig, -2, -r, L + 3, r * 2, 2, inf.pal.secondary, 0.38, 0.25);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(inf.pal.metal); ctx.fillRect(0, -r + 1, 3, r * 2 - 2);
+  // steel collar on a slate thigh: a material change, so it takes its own ink (0.2) at 4 px rather than 3 (0.7)
+  band(ctx, rig, 0, -r + 1, 4, r * 2 - 2, inf.pal.metal);
 }
 /** Shin: a long light-steel piston rod sliding out of a short near-black knee sleeve. The rod is the brightest thing below
  *  the hip line, so both legs are findable in one glance even with a claw hanging beside them. */

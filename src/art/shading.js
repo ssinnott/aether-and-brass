@@ -30,6 +30,7 @@ export function wantHi(rig, ext) { return rig.tonesN !== 2 && ext >= (rig.hiMin 
 export function wantSh(rig, r) { return r >= (rig.flatR != null ? rig.flatR : FLAT_R); }
 function wantHiR(rig, r) { return rig.tonesN !== 2 && r >= thinR(rig); }
 
+const R = Math.round;
 function c255(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
 /** Shade a colour: shadows go cooler / bluer, highlights warmer (pixel-art hue shift). */
 export function toneOf(hex, f) {
@@ -174,6 +175,19 @@ export function rimTop(ctx, rig, x0, y0, x1, y1, hex) {
 export function flat(ctx, rig, hex, outline = true) {
   if (outline) outlinePath(ctx, rig);
   ctx.fillStyle = rig.col(hex); ctx.fill();
+}
+
+/**
+ * An INKED detail band: a rounded rect at integer coordinates with a 1 px outline stroked under it (ART_STYLE 0.2 -
+ * a fill that introduces a new internal boundary must carry the line; never fake one with a tone seam). This is the
+ * outlined replacement for a bare `ctx.fillRect` on a strap, a rank band, a plate or a stripe: one stroke, one fill,
+ * ZERO clips and ~3 path commands, so it costs far less than routing the same mark through celRect.
+ * Use it for MATERIAL changes only (band 0.4d); form inside one material still takes a tone step and no line, and a
+ * band under 4 px wide is widened or demoted to a tone seam rather than inked down to 1 px of colour (0.7).
+ */
+export function band(ctx, rig, x, y, w, h, hex, rr = 1) {
+  pathRR(ctx, R(x), R(y), R(w), R(h), rr);
+  flat(ctx, rig, hex);
 }
 
 /**

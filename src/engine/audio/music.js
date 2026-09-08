@@ -195,6 +195,23 @@ const TITLE_BOX = `D5:2 F5:2 A5:2 C6:6 A5:2 F5:2 -:16 | D5:2 F5:2 A5:2 D6:6 C6:2
   F5:2 A5:2 C6:2 E6:6 C6:2 A5:2 -:16 | E5:2 G5:2 C6:2 E6:6 D6:2 C6:2 G5:2 -:14`;
 const GO_LEAD = `C5:4 A4:4 F4:4 D4:8 -:12 | Bb4:4 G4:4 D4:4 G4:8 -:12 | D5:4 Bb4:4 F4:4 D4:8 -:12 | C#5:4 A4:4 E4:4 A3:8 -:12`;
 
+// Stage 2 (docs/STAGE2.md section 10): the Calderwick motif D-F-A-C carried up into the sky as a shanty — whistle and
+// brass over a rolling bass, with the storm in the drums.
+const ST1_LEAD = `D5:2 F5:2 A5:2 C6:4 A5:2 F5:2 D5:2 | -:2 A5:2 C6:2 D6:6 C6:2 A5:2 |
+  C5:2 E5:2 G5:2 C6:4 G5:2 E5:2 C5:2 | -:2 G5:2 C6:2 E6:6 -:2 |
+  Bb4:2 D5:2 F5:2 Bb5:4 F5:2 D5:2 Bb4:2 | -:2 F5:2 Bb5:2 D6:6 -:2 |
+  A4:2 C#5:2 E5:2 A5:4 E5:2 C#5:2 A4:2 | A4:2 C#5:2 E5:2 A5:4 C#6:4`;
+const ST2_LEAD = `A4:3 C5:3 E5:6 | C5:3 E5:3 A5:6 | E5:3 G5:3 B5:6 | G5:6 E5:6 |
+  F4:3 A4:3 C5:6 | A4:3 C5:3 F5:6 | G4:3 B4:3 D5:6 | D5:6 G5:6`;
+const ST3_LEAD = `E5:2 G5:2 B5:2 E6:4 B5:2 G5:2 E5:2 | -:2 B5:2 E6:2 G6:6 -:2 |
+  C5:2 E5:2 G5:2 C6:4 G5:2 E5:2 C5:2 | -:2 G5:2 C6:2 E6:6 -:2 |
+  A4:2 C5:2 E5:2 A5:4 E5:2 C5:2 A4:2 | -:2 E5:2 A5:2 C6:6 -:2 |
+  B4:2 D#5:2 F#5:2 B5:4 F#5:2 D#5:2 B4:2 | B4:2 D#5:2 F#5:2 B5:8 -:2`;
+const STB_LEAD = `G5:2 Bb5:2 D6:2 G6:4 D6:2 Bb5:2 | G5:2 Bb5:2 D6:2 F6:4 D6:2 Bb5:2 |
+  Eb5:2 G5:2 Bb5:2 Eb6:4 Bb5:2 G5:2 | Eb5:2 G5:2 Bb5:2 D6:4 Bb5:2 G5:2 |
+  Bb4:2 D5:2 F5:2 Bb5:4 F5:2 D5:2 | Bb4:2 D5:2 F5:2 Ab5:4 F5:2 D5:2 |
+  D5:2 F#5:2 A5:2 D6:4 A5:2 F#5:2 | D5:2 F#5:2 A5:2 C6:4 A5:4`;
+
 const HAT16 = 'HhhhHhhhHhhhHhhh';
 export const TRACKS = {
   title: { name: 'title', bpm: 100, key: 'D', chords: ['Dm', 'Bb', 'F', 'C'], channels: [
@@ -283,6 +300,36 @@ export const TRACKS = {
     { inst: 'drone', oct: 2, vol: 1, pat: 'D2:128' },
     { inst: 'drums', vol: 0.9, pat: 'K.......S.......' },
     { inst: 'drums', vol: 0.5, pat: 'h.h.h.h.h.h.h.h.' },
+  ] },
+  // ---- Stage 2: The Storm Above Calderwick ----
+  storm1: { name: 'storm1', bpm: 136, key: 'D', chords: ['Dm', 'C', 'Bb', 'A'], channels: [
+    { inst: 'bass_square', oct: 2, vol: 1, pat: 'r:1 . r:1 . r+7:1 . r:1 . r:1 . r+12:1 . r+7:1 . r+10:1 .' },
+    { inst: 'lead_saw', oct: 4, vol: 1, pat: ST1_LEAD },
+    { inst: 'whistle', oct: 5, vol: 0.9, combat: true, pat: ST1_LEAD },
+    { inst: 'pad', oct: 3, vol: 0.7, pat: 'chord:32', wide: 12 },
+    { inst: 'drums', vol: 0.9, pat: 'K.hhS.hhK.hhS.hH' },
+  ] },
+  storm2: { name: 'storm2', bpm: 126, beats: 3, key: 'A', chords: ['Am', 'Em', 'F', 'G'], channels: [
+    { inst: 'bass_tri', oct: 2, vol: 1, pat: 'r:3 r+7:3 r:3 r+12:3' },
+    { inst: 'organ', oct: 3, vol: 0.55, pat: 'chord:24' },
+    { inst: 'pluck', oct: 5, vol: 1, pat: ST2_LEAD },
+    { inst: 'lead_pulse', oct: 5, vol: 0.7, combat: true, pat: ST2_LEAD, transpose: 7 },
+    { inst: 'drums', vol: 0.8, pat: 'K..h..S..h..' },
+  ] },
+  storm3: { name: 'storm3', bpm: 144, key: 'E', chords: ['Em', 'C', 'Am', 'B7'], channels: [
+    { inst: 'bass_square', oct: 2, vol: 1, pat: 'r:2 r:1 r+7:1 r+12:2 r+7:1 r:1 r:2 r+10:1 r+7:1 r:2 r:2' },
+    { inst: 'lead_saw', oct: 5, vol: 0.9, pat: ST3_LEAD },
+    { inst: 'brass', oct: 3, vol: 0.8, pat: 'chord:4 . . . chord:4 . . . chord:4 . . . chord:2 . chord:2' },
+    { inst: 'lead_pulse', oct: 5, vol: 0.8, combat: true, pat: ST3_LEAD, transpose: -5 },
+    { inst: 'drums', vol: 1, pat: 'K.h.S.hhK.h.S.hO' },
+  ] },
+  stormboss: { name: 'stormboss', bpm: 158, key: 'G', chords: ['Gm', 'Eb', 'Bb', 'D'], channels: [
+    { inst: 'bass_square', oct: 2, vol: 1.1, pat: 'r:1 . r:1 . r:1 . r:1 . r+7:1 . r+7:1 . r+10:1 . r+12:1 .' },
+    { inst: 'brass', oct: 3, vol: 1, pat: 'chord:2 . chord:2 . chord:2 . chord:2 .' },
+    { inst: 'lead_saw', oct: 5, vol: 1, pat: STB_LEAD },
+    { inst: 'lead_pulse', oct: 5, vol: 0.8, combat: true, pat: STB_LEAD, transpose: 7 },
+    { inst: 'drums', vol: 1, pat: 'K.hhS.hhK.hhS.hC' },
+    { inst: 'drums', vol: 0.5, pat: 'T...t...T...t...' },
   ] },
   results: { name: 'results', bpm: 110, key: 'D', chords: ['D', 'G', 'A', 'D'], channels: [
     { inst: 'brass', oct: 3, vol: 1, pat: 'chord:2 . . chord:2 . . chord:2 . . chord:2 . .' },

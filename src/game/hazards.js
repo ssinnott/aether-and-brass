@@ -22,6 +22,9 @@ export const HAZARD_TYPES = {
   piston: { period: 240, tell: 30, active: 10, r: 30, every: 5, color: '#4a4e58', hit: { damage: 18, type: 'knockdown', kbX: 4, kbY: 5, hitstun: 24 }, tellSfx: 'hydraulic', sfx: 'piston_crush' },
   hook: { period: 120, tell: 0, active: 120, r: 18, every: 4, color: '#9a9aa4', hit: { damage: 12, type: 'knockdown', kbX: 5, kbY: 4, hitstun: 22 }, sfx: null, swing: 70 },
   crossbar: { period: 360, tell: 40, active: 12, r: 340, every: 6, color: '#3A3F4B', hit: { damage: 14, type: 'knockdown', kbX: 3, kbY: 5, hitstun: 22, z: 40 }, tellSfx: 'roar', sfx: 'hammer_slam', lane: 40 },
+  // Stage 2: a lightning conductor. The storm earths itself through the mast, so the deck around it is a bad place to
+  // stand: a violet ring builds for 40f, then the strike knocks down AND leaves you stunned for a moment.
+  lightning: { period: 220, tell: 40, active: 12, r: 34, every: 6, color: '#9B7BFF', hit: { damage: 14, type: 'knockdown', kbX: 3, kbY: 6, hitstun: 24, status: { stunned: { frames: 24 } } }, tellSfx: 'coil_charge', sfx: 'thunder_strike' },
 };
 const PISTON_UP = 130, CROSSBAR_UP = 260;
 
@@ -59,16 +62,19 @@ export class Hazard extends Entity {
     if (this.phase === 'active' && prev !== 'active') {
       if (this.info.sfx) audio.play(this.info.sfx);
       if (this.type === 'piston' || this.type === 'crossbar') { world.camera.shake(this.type === 'piston' ? 4 : 6, 8); world.addFx('dust', this.type === 'piston' ? this.x : world.camera.x + VIEW_W / 2, 0, this.type === 'piston' ? this.z : 20, { count: 8 }); }
+      if (this.type === 'lightning') { world.camera.shake(5, 10); world.addFx('ring', this.x, 4, this.z, { r0: 6, r1: this.info.r * 2, color: this.info.color, flat: true }); }
     }
     if (this.type === 'hook') { this.hitSweep(world); return; }
     if (this.phase === 'tell') {
       if (this.t % 6 === 0 && (this.type === 'steamVent' || this.type === 'aetherVent')) particles.burst('steam', this.x + (this.t % 12 ? 6 : -6), 4, this.z, 1, { speed: 0.4, up: 0.8, color: this.info.color });
       if (this.type === 'piston' && this.t % 8 === 0) particles.burst('dust', this.x + rng.range(-20, 20), 0, this.z + rng.range(-6, 6), 1, { speed: 0.5, up: 0.3 });
+      if (this.type === 'lightning' && this.t % 5 === 0) particles.burst('spark', this.x + rng.range(-14, 14), rng.range(0, 30), this.z + rng.range(-6, 6), 1, { speed: 1.2, up: 1, color: this.info.color });
       return;
     }
     if (this.phase === 'active') {
       if (this.type === 'crossbar') { if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; this.laneHit(world); } return; }
-      if (this.type !== 'piston' && this.t % 3 === 0) particles.burst('steam', this.x, 10, this.z, 2, { speed: 1, up: 3.5, spread: 0.6, color: this.info.color, sizeJitter: 1.5 });
+      if (this.type === 'lightning') { if (this.t % 3 === 0) particles.burst('spark', this.x, 12, this.z, 3, { speed: 2.6, up: 1.6, color: this.info.color }); }
+      else if (this.type !== 'piston' && this.t % 3 === 0) particles.burst('steam', this.x, 10, this.z, 2, { speed: 1, up: 3.5, spread: 0.6, color: this.info.color, sizeJitter: 1.5 });
       if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; world.spawnAreaHit(null, this.x, this.z, this.info.r, this.info.hit); }
     }
   }
@@ -135,6 +141,36 @@ export class Hazard extends Entity {
         ctx.strokeStyle = '#9a9aa4'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(hx, sy - 44, 12, Math.PI * 1.1, Math.PI * 0.3, true); ctx.stroke();
         ctx.strokeStyle = '#c8d0d8'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(hx - 1, sy - 45, 12, Math.PI * 1.15, Math.PI * 0.85, true); ctx.stroke();
         ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(hx, sy, 14, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+        break;
+      }
+      case 'lightning': {
+        // conductor mast: an iron rod with a copper coil head, and the ring on the deck the strike will fill
+        const k = ph === 'tell' ? (this.t - this.tellStart) / this.tellFrames : ph === 'active' ? 1 : 0;
+        if (k > 0) {
+          ctx.globalAlpha = 0.18 + 0.5 * k;
+          ctx.strokeStyle = info.color; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.ellipse(sx, sy, this.info.r * (0.5 + 0.5 * k), this.info.r * 0.38 * (0.5 + 0.5 * k), 0, 0, Math.PI * 2); ctx.stroke();
+          ctx.globalAlpha = 0.1 + 0.25 * k; ctx.fillStyle = info.color;
+          ctx.beginPath(); ctx.ellipse(sx, sy, this.info.r * 0.9, this.info.r * 0.34, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+        const mast = tones('#3A3F4B');
+        rrect(ctx, sx - 4, sy - 96, 8, 96, 2, mast.base, OL, 1);
+        ctx.fillStyle = mast.hi; ctx.fillRect(sx - 3, sy - 94, 2, 92);
+        for (let i = 0; i < 3; i++) circle(ctx, sx, sy - 92 + i * 6, 5, tones('#B87333').base, OL, 1);
+        circle(ctx, sx, sy - 104, 4 + k * 3, ph === 'active' ? '#ffffff' : info.color, OL, 1);
+        if (ph === 'tell' && (f & 2)) { ctx.strokeStyle = info.color; ctx.lineWidth = 1.5; for (let i = 0; i < 3; i++) { const a = f * 0.5 + i * 2.1; ctx.beginPath(); ctx.moveTo(sx, sy - 104); ctx.lineTo(sx + Math.cos(a) * (8 + k * 10), sy - 104 + Math.sin(a) * (8 + k * 10)); ctx.stroke(); } }
+        if (ph === 'active') {
+          // the strike: a forked bolt from off the top of the screen into the coil, redrawn every frame
+          ctx.strokeStyle = 'rgba(230,238,255,0.95)'; ctx.lineWidth = 3;
+          let bx = sx, by = -10;
+          ctx.beginPath(); ctx.moveTo(bx, by);
+          for (let i = 0; i < 8 && by < sy - 104; i++) { bx += ((f * 7 + i * 53) % 21) - 10; by += 26; ctx.lineTo(bx, Math.min(by, sy - 104)); }
+          ctx.lineTo(sx, sy - 104); ctx.stroke();
+          ctx.strokeStyle = 'rgba(155,123,255,0.5)'; ctx.lineWidth = 7; ctx.stroke();
+          ctx.globalAlpha = 0.5; ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.ellipse(sx, sy, this.info.r, this.info.r * 0.4, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+        }
         break;
       }
       case 'crossbar': {

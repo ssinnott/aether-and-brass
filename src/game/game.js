@@ -31,7 +31,7 @@ export class Game {
     this.input = input;
     this.audio = audio;
     this.rng = rng;
-    this.options = { debug: false, autotest: false, seed: 1, godmode: false, bot: false, nowaves: false, chars: [0], spawn: [], skipTo: '', section: 0, ...options };
+    this.options = { debug: false, autotest: false, seed: 1, godmode: false, bot: false, nowaves: false, chars: [0], spawn: [], skipTo: '', section: 0, stage: 1, ...options };
     this.screens = [];
     this.factories = {};
     /** Players (Player instances once the game-core exists). */

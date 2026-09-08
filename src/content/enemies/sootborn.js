@@ -6,7 +6,7 @@
 // hurt / knockdown / lying / getup / dead (flop with X-eyes) and the panic / stagger loops all have their own keys.
 // Type traits: fire x1.5, at most 2 attack at once (tokenGroup), last-enemy flee (ai.fleeLast). Numbers from the GDD 4 table.
 import { P, frontBox, FK, GOB, GOB_PAL, GOB_PROPS, GOB_PARTS, gobCuffArm, gobRimTop, makeEnemyDef } from './common.js';
-import { celRect, celBall, celPoly, tones } from '../../art/shading.js';
+import { celRect, celBall, celPoly, tones, band } from '../../art/shading.js';
 import { getChain } from '../../art/secondary.js';
 import { jointScreen } from '../../art/rig.js';
 import { pathPoly, paint } from '../../art/shapes.js';
@@ -20,7 +20,12 @@ const R = Math.round, TAU = Math.PI * 2;
 const HUNCH = 14;
 const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
 const CLAN = { cutthroat: '#9A4A22', slinger: '#D9A62B', firebrand: '#F08A24', hulk: '#B8692E', wrangler: '#7A1E2A' };
-const LEATHER = '#4A3020', WOOD = '#5A3A22', ANVIL = '#5A5E6A', COPPER = '#8C4A2A', HAT = '#1A1418', NETC = '#C8B070', HOT = '#FFD27A';
+// LEATHER and WOOD are the ONLY warm browns on a green faction, and this pass had desaturated both (Oklab C 4.63 ->
+// 2.87 and 5.84 -> 3.20) at unchanged lightness, which merged their tone ramps into one another and into GOB.ragsDark:
+// it dropped sootborn:slinger's surviving colour count at 0.5x from 81 to 77, under the render tier's floor of 78,
+// and the slinger paints LEATHER on both of its accessories (drawSling, drawSatchel). The chroma is restored --
+// which is the direction the saturation brief wants anyway -- and the lightness was never the problem.
+const LEATHER = '#4A3020', WOOD = '#5A3A22', ANVIL = '#5A5E6A', COPPER = '#8C4A2A', HAT = '#35313A', NETC = '#C8B070', HOT = '#FFD27A';
 const FLAME_COLS = ['#FF5A1F', '#FFB347', '#FFE070'];
 
 // ---------------------------------------------------------------- weapons (hand space: +x along the forearm) and accessories
@@ -112,7 +117,7 @@ function drawTopHat(ctx, rig) {
   celRect(ctx, rig, -r - 4, y - 2, r * 2 + 8, 4, 1, HAT, 0.4, 0);
   celRect(ctx, rig, -r + 1, y - 17, r * 2 - 2, 16, 1, HAT, 0.36, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(rig.build.clan); ctx.fillRect(-r + 1, y - 7, r * 2 - 2, 3);
+  band(ctx, rig, -r + 1, y - 8, r * 2 - 2, 4, rig.build.clan);
   gobRimTop(ctx, rig, -r + 3, y - 17, r - 3, y - 17, '#4A4652');
 }
 /** Brass monocle over the near eye with a short chain (head accessory, after the face). */
@@ -394,7 +399,7 @@ const slingerHooks = {
 };
 const slinger = def({
   variant: 'slinger', name: 'SCRAP SLINGER', role: 'ranged', hp: 35, damage: 1, speed: 1.1, score: 150, drops: 'none',
-  build: { ...BASE.build, clan: CLAN.slinger, palette: { ...GOB_PAL, skin: '#8FA35A', sleeve: '#8FA35A', secondary: '#8FA35A', hair: '#55622E' },
+  build: { ...BASE.build, clan: CLAN.slinger, palette: { ...GOB_PAL, skin: '#86A339', sleeve: '#86A339', secondary: '#8CC23C', hair: '#4E6218' },
     weapon: { attach: 'handR', length: 22, draw: drawSling, headAt: 19 }, accessories: [{ attach: 'head', draw: drawCap }, { attach: 'hip', draw: drawSatchel }] },
   anims: slingerAnims,
   ai: { attackRange: 30, attacks: [{ anim: 'bash', range: 36, weight: 1 }], ranged: { anim: 'sling', minRange: 100, maxRange: 300, cooldown: 150, zAlign: true, keep: 140 },
@@ -459,7 +464,7 @@ function tankBlast(f, w) {
 }
 const firebrand = def({
   variant: 'firebrand', name: 'FIREBRAND', role: 'bruiser', hp: 45, damage: 1, speed: 1.0, score: 200, drops: 'none',
-  build: { ...BASE.build, clan: CLAN.firebrand, palette: { ...GOB_PAL, skin: '#8C3A2E', sleeve: '#8C3A2E', secondary: '#8C3A2E', hair: '#4A1E18', primary: '#7A6650' },
+  build: { ...BASE.build, clan: CLAN.firebrand, palette: { ...GOB_PAL, skin: '#8C3A2E', sleeve: '#8C3A2E', secondary: '#8C3A2E', hair: '#521F18', primary: '#7A6650' },
     parts: { ...GOB_PARTS, armLower: gobCuffArm }, weapon: { attach: 'handR', length: 24, draw: drawNozzle, headAt: 18 },
     accessories: [{ attach: 'back', draw: drawTank }, { attach: 'head', draw: drawGoggles }] },
   anims: firebrandAnims,
@@ -492,7 +497,7 @@ const hulkAnims = Object.assign(gobAnims(HULK_CARRY, { grab: true }), {
 const hulk = def({
   variant: 'hulk', name: 'CINDER HULK', role: 'grabber', hp: 160, damage: 1, speed: 0.6, score: 500, drops: 'food_small', elite: true,
   grabbable: false, grabbableByGrappler: true, lyingFrames: 50, grabOffset: 26,
-  build: { ...BASE.build, scale: 1.36, clan: CLAN.hulk, palette: { ...GOB_PAL, skin: '#4C7A3C', sleeve: '#4C7A3C', secondary: '#4C7A3C', hair: '#2A4A22', primary: '#4C7A3C' },
+  build: { ...BASE.build, scale: 1.36, clan: CLAN.hulk, palette: { ...GOB_PAL, skin: '#3C7A27', sleeve: '#3C7A27', secondary: '#48922F', hair: '#1E4A0F', primary: '#3C7A27' },
     proportions: { ...GOB_PROPS, headR: 11, torsoW: 26, torsoH: 24, hip: 22, armR: 6.5, handR: 6, legR: 7, upperLeg: 10, lowerLeg: 9, footL: 13, footH: 6, bulge: 0.5 },
     gob: { tunic: 'skin', chains: true, shorts: '#3A2E26' }, weapon: { attach: 'handR', length: 56, draw: drawAnvilClub, headAt: 40 },
     accessories: [{ attach: 'torso', draw: drawCollar }] },
@@ -554,7 +559,7 @@ const wranglerHooks = {
 };
 const wrangler = def({
   variant: 'wrangler', name: 'GUTTER WRANGLER', role: 'elite', hp: 60, damage: 1, speed: 1.5, score: 400, drops: 'score',
-  build: { ...BASE.build, scale: 0.77, clan: CLAN.wrangler, palette: { ...GOB_PAL, skin: '#9EC96D', sleeve: '#C9BB95', secondary: '#9EC96D', hair: '#5A7A38', primary: CLAN.wrangler, dark: '#3A3040' },
+  build: { ...BASE.build, scale: 0.77, clan: CLAN.wrangler, palette: { ...GOB_PAL, skin: '#8EC94A', sleeve: '#C9BB95', secondary: '#9FE153', hair: '#4A7A1B', primary: CLAN.wrangler, dark: '#3A3040' },
     gob: { tunic: 'waistcoat', shirt: '#C9BB95', shorts: '#3A3040' }, weapon: { attach: 'handR', length: 56, draw: drawWhip, headAt: 30 },
     accessories: [{ attach: 'head', draw: drawTopHat }, { attach: 'head', draw: drawMonocle }, { attach: 'handL', draw: drawNet }] },
   anims: wranglerAnims,

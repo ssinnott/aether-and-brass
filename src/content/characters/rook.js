@@ -17,7 +17,7 @@
 // guard / dark felt tricorne with a brass band. Ground keys use G(): root.y is solved so the lowest sole sits on the floor.
 import { speedFor, hpFor, areaBox, frontBox, P, F, hit } from './common.js';
 import { JUMP_VY, METER, ST } from '../../constants.js';
-import { celRect, celBall, celPoly, celPath, tones, flat } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celPath, tones, flat, band } from '../../art/shading.js';
 import { drawSkull, drawFace, drawBoot, drawFist, drawBelt } from '../../art/rigParts.js';
 import { getChain } from '../../art/secondary.js';
 import { buildRig, computeJoints } from '../../art/rig.js';
@@ -28,8 +28,31 @@ import { rad } from '../../engine/math.js';
 
 // skin: light warm  hair/beard: dark brown  primary: oxblood coat  sleeve: lighter oxblood  secondary: slate trousers
 // accent: brass  metal: light steel  dark: leather boots  glow: muzzle flash
-const PAL = { skin: '#F0D9B5', hair: '#3A2A1E', primary: '#5A2A2A', sleeve: '#743434', secondary: '#3C4258', accent: '#C9A227', metal: '#D8D8D8', dark: '#6B3E24', glow: '#F2C94C' };
-const CREAM = '#E8DCC0', FELT = '#2A2028', LEATHER = '#3A2418', IRON = '#4A4A58', BROW = '#2A1A12', HOT = '#FFD27A', WHITE = '#FFFFFF';
+// Saturation pass. His defect was never the hue, it was that the coat and the sleeve were the same oxblood five Oklab
+// L* apart, so the whole torso read as one blot. They are split by VALUE, not by a second red: coat #5A2A2A ->
+// #5A1919 (L* 35.0 -> 32.0, s 53 -> 72) and sleeve #743434 -> #8C1F1F (L* 41.1 -> 42.3, s 55 -> 78) - a 10 L* step
+// that keeps palette/sleeve-vs-primary green with room to spare. Trousers #3C4258 -> #283A63 (L* 38.3 -> 35.5,
+// s 32 -> 60): the old slate was almost achromatic and lived in the low-chroma core every polychrome backdrop also
+// occupies. Beard #3A2A1E -> #46301C and tricorne felt #2A2028 -> #382E40 are the INK FLOOR: at Oklab L* 30.0 and
+// 25.9 against the #1E1A22 outline (L* 22.6) both were within 9 L* of their own line, i.e. the outline round the
+// beard and round the hat was drawn and then swallowed. Both now clear the ink by 9+ L* and both are still dark.
+// Blade #D8D8D8 -> #CFD7E2 and revolver IRON #4A4A58 -> #414A62: the blade was a PURE grey (Oklab C 0.0, the exact
+// centre of the colour lattice) on one of his biggest shapes. Both are still light steel and dark iron; they are
+// simply cool now, like every other steel in the cast, instead of sitting on the neutral axis.
+// TROUSERS: #283A63 -> #394C76. The hex itself was the defect -- pip.js painted the SAME #283A63 as her chassis,
+// her single largest mass, and ART_STYLE 4's cast-readability test says no two of the four heroes may share a
+// large-mass colour. The move is 6.5 Oklab L* up at held hue and chroma, which also puts Rook's dark coat on a
+// mid trouser instead of two darks, and takes one more hex off the L* 35 rung the whole cast's shadow layer had
+// converged on. Measured over all seven sections: lost% 31.50 -> 31.72, reservation overlap 31.17 -> 31.12.
+// The COAT is left at #5A1919 deliberately. A review asked for ~4 more Oklab L* of separation from the Sootfoot
+// plank (#443629, L* 34.4) on the grounds that Rook's coat is why heroes-rp loses 48.5 % of its pixels there. It
+// is not: a 12-point sweep of the coat over L* 32-44 and the trousers over L* 35-48, measured on all seven
+// sections, moves that row between 47.5 % and 48.5 % -- one point, at L* 44, where the coat is a mid brick and no
+// longer an oxblood. The docks row is an INK problem: 23.5 % of these two rigs' pixels are the mandated #1E1A22
+// outline, its edge dE against the plank is 7.4, and the coat cannot go below L* 31.6 without that outline dying
+// inside it. Lightening the bodies to move the number is the mechanism the brief itself names as what loses a cast.
+const PAL = { skin: '#F0D9B5', hair: '#46301C', primary: '#5A1919', sleeve: '#8C1F1F', secondary: '#394C76', accent: '#C9A227', metal: '#CFD7E2', dark: '#6B3E24', glow: '#F2C94C' };
+const CREAM = '#E8DCC0', FELT = '#382E40', LEATHER = '#3A2418', IRON = '#414A62', BROW = '#2A1A12', HOT = '#FFD27A', WHITE = '#FFFFFF';
 const KETTLE = '#B86A3A', BALLOON = '#6B4A3A', SAIL = '#D9CDAE';
 const R = Math.round, TAU = Math.PI * 2;
 
@@ -98,7 +121,9 @@ function drawBeard(ctx, rig, pose, inf) {
 function drawTricorne(ctx, rig) {
   celPoly(ctx, rig, [-15, -9, 15, -9, 17, -17, 8, -19, -9, -19, -15, -16], FELT, 0.34, 0.26);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(PAL.accent); ctx.fillRect(-13, -12, 26, 3);
+  // brass band on felt is a MATERIAL change and takes ink (section 0.2), widened 3 -> 4 px so the inked band still
+  // carries its colour (section 0.7); its lower ink row lands on the hat's own bottom outline instead of below it.
+  band(ctx, rig, -13, -13, 26, 4, PAL.accent);
   ctx.fillStyle = tones(rig, PAL.accent).sh; ctx.fillRect(-13, -10, 26, 1);
   ctx.beginPath(); ctx.arc(10, -14, 3, 0, TAU); flat(ctx, rig, PAL.accent);
   ctx.fillStyle = tones(rig, FELT).hi; ctx.fillRect(-7, -18, 12, 1);

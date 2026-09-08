@@ -101,6 +101,20 @@ the joint, shins and forearms narrow — and `neckR` for thick or thin necks.
 * **Outline:** 1 px, colour `build.outline` (heroes `#1E1A22`, Brassbound `#1A1E24`, Sootborn `#1E1A14`). Draw it via the
   helpers (`outlinePath`) — a stroke 2·ow wide *under* the fill so exactly 1 px shows. Internal seams are 1 px of the
   `sh`/`deep` tone, not outline colour.
+* **What the outline costs, and why that is not a bug.** §0.2 puts a 1 px near-black line on every silhouette *and
+  every internal boundary*, so ink and the shadow bands under it are a large, deliberate share of a rig's pixels —
+  measured on the differenced actor masks of `tools/stage-values.js`, **10–27 % of every actor, 17 % across the
+  cast**. Two consequences, both measured, both to be quoted rather than re-litigated:
+  * **Actor saturation.** Near-black is unsaturated, so any mean taken over *every* actor pixel is dragged down by
+    obeying §0.2. `stage-values` reports `actS` over the whole mask and `actSC` over the coloured mass only (Oklab
+    L ≥ 0.25). Reference figures read off somebody else's screenshot are measured on the most saturated 4 % of the
+    frame (`maskFromSaturation`) and are **not** comparable with `actS`; compare them with the `--reflike` column,
+    which runs that same proxy mask on our own frame.
+  * **Colour-space reservation.** Near-black is also the one region of the Oklab lattice that every dark stage
+    occupies, so the ink lands in a claimed cell almost by construction. On the Cold Sovereign the outline alone is
+    6–18 % of a faction's colour mass and the single largest colliding cell for six of eleven groups.
+    `stage-values --cells` names the colliding masses; `ovlapC` is the same number over the mass a palette edit can
+    actually move. **Chase `ovlapC`, report `ovlap`.**
 * **Far limbs:** the rig passes `rig.paletteFar` (`farPalette`: 0.62 × brightness, 25 % desaturated, slightly cool) to far
   parts; do not darken twice. `build.farShade` / `build.farDesat` override; `farTone(hex, f, desat)` for module constants.
 * **Value rule (readability pass):** every pair of *adjacent* parts differs by ≥ 25 % luminance **or** a hue-family
@@ -209,8 +223,13 @@ eyes in `parts.face`), `opts.eyeY`, `opts.pupil`, `opts.brow`, `opts.big`. **Fea
 head out in rows (§0.5) — `drawSkull(..., { noNose: true })` when the default profile nose would land on the eye row;
 keep hats and goggles above the hairline (`cy <= -r`); a beard is ONE polygon (chain-sheared, two segments at most) in a
 colour distinct from the garment beneath it. Every attack hit frame is `shout` or `grit`; hurt/knockdown/lying use
-`hurt` → `dazed`; win/taunt `happy`; dodge `closed`. Brassbound have no face: draw the lens in `parts.face` and colour it
-from the pose (`pose.face === FACE.angry` → red tell). Sootborn eyes track the player: shift the pupil by the sign of
+`hurt` → `dazed`; win/taunt `happy`; dodge `closed`. **A sealed head has no face: draw the lens in `parts.face` and
+colour it from the pose** — Brassbound (`pose.face === FACE.angry` → red tell) and the two sealed Stormcrows, the
+Galewright and the Ironwing Marine (`crowVisorMask` in `stormcrowRig.js`: the lens colour is the mood, a shutter
+plate dropped over its top is the eyelid, and `rig.down` puts it out for good on death). This is the sanctioned
+pattern for any masked rig; it needs no new animation data, because every key already carries `face:`. Keep the
+sealed variant behind ONE kit predicate (`crow.sealed`) so unmasked variants of the same faction are untouched by
+construction, and keep the lens on the same row `drawFace` puts the eyes on, so masked and bare heads match. Sootborn eyes track the player: shift the pupil by the sign of
 the target direction the AI writes into the def (`eyeTrack`) — keep it inside `parts.face`.
 
 ## 7. Secondary motion (beards, hair, scarves, chains, coat-tails)
@@ -306,21 +325,44 @@ is a flail.
 
 ## 11. Self-review checklist
 
+Most of this list is now **machine-checked**: `npm run art-check` (add `--render` for the pixel tier) runs the
+art-invariant suite in `tools/art-invariants/`, calibrated so that the stage-1 reference cast passes every rule.
+See **`docs/ART_INVARIANTS.md`** for the rule inventory, what it deliberately does not check and why, how the
+thresholds were derived, and how to add a rule or record an exemption. Each item below names the rule that covers
+it; *(eye)* means no honest measure was found and a human still has to look.
+
 - [ ] Silhouette test: the rig filled black is still recognisable (weapon, hat/hair, one signature accessory).
+      — `render/silhouette-distinctness` checks that faction siblings are not the same shape; *recognisable* is (eye).
 - [ ] 1 px outline everywhere, including where a limb crosses the torso; no double outlines, no outline-coloured seams.
+      — `palette/outline`, `geom/outline-stroke-contract`, `geom/outline-coloured-seam`.
 - [ ] Two tones on limbs, highlight caps only on torso / head / weapon head, light from the top-left in every pose.
+      — `palette/shading-knobs`, `geom/draw-hygiene` (the light vector is asserted back at `LIGHT_X/Y` after every hook).
 - [ ] §0 value test: every adjacent pair of parts differs in value or hue family (`mode=closeup&zoom=6`); sleeves are not the torso colour; boots separate from trousers and floor; far limbs 38 % darker; nothing under 2 px.
+      — `palette/sleeve-vs-primary`, `palette/value-ladder-adjacent`, `geom/far-palette-leak`, `geom/detail-floor`.
 - [ ] Squint test: the 1x idle / walk / attack-hit frames downscaled 0.5x still show a person with the weapon (head lifted off the floor).
+      — `render/squint-readability` measures surviving colour count only; the judgement itself is (eye).
 - [ ] Rest poses are open: nothing crosses the torso or the face in idle/walk; both hands and both boots visible; hit-frame fists below the chin.
+      — `geom/rest-pose-open` covers weapon clearance and the head in front of the hip; the rest is (eye).
 - [ ] Palette from the GDD; aether cyan only on Concordat machinery; faction read (warm hero / cold Brassbound / soot).
+      — `palette/aether-cyan-concordat`, `palette/faction-signature`, `palette/faction-variant-divergence`.
 - [ ] Face changes across idle → attack → hurt; beard/hair/scarf lags when the head snaps in `hurt`.
+      — `anim/face-expression-set`, `anim/attack-face-aggressive` (which skips rigs whose `pose.face` is provably
+      invisible — the Brassbound lenses and the Stormcrow masks both measure expressionless); the lag is `geom/chain-contract`.
 - [ ] Idle breathes (4 keys); walk 8 keys with a down/up bob; run has airborne keys.
+      — `anim/idle-breathes`, `anim/base-set-shape`, `anim/cycle-durations`, `anim/locomotion-shape`.
 - [ ] Every attack: anticipation → smear hit → hold → follow-through, `ease` on every key, hitbox on the hit key(s) only.
+      — `anim/attack-ease-coverage` (error), `anim/attack-beats` (warn), `anim/hitbox-placement`.
 - [ ] Jump/land/dodge use `squash`/`stretch`; dodge rolls around the body centre, not the feet.
+      — `anim/squash-stretch-beats`; the roll pivot is (eye).
 - [ ] hurt / knockdown / lying / getup / dead read at 1× on the docks backdrop (`mode=cast`, `bg=docks`).
+      — key counts and faces by `anim/base-set-shape` + `anim/face-expression-set`; the read is (eye).
 - [ ] Weapon lies along the floor in lying/dead (not floating above the body); two-handed weapons keep both hands
       on the handle (`grip: 1` **and** the grip point within the far arm's reach on every key — audit, do not eyeball).
+      — `geom/pose-audit` (SNAP / GRIP / FLOOR, promoted from `window.__sheet.audit()`); the lying weapon angle is (eye).
 - [ ] Hammer/blade head lands where the hitbox is: slam keys put the head on the floor line in front (`y ≈ -4`),
-      swipes at chest height inside `frontBox(reach)`, uppercuts through the `high` box.
+      swipes at chest height inside `frontBox(reach)`, uppercuts through the `high` box. — (eye).
 - [ ] Hit flash draws the whole silhouette white (every custom part returns after the flat fill when `rig.override`).
+      — `geom/flash-purity`, over every keyframe of every anim.
 - [ ] No per-frame allocation; bench within budget; `node --check` clean; `tools/playtest.js boot select combat gallery` green.
+      — `geom/draw-budget`, `render/bench-budget`, `render/sheets-and-playtest-green` (`node --check` over every file;
+      the playtest half is opt-in behind `ART_CHECK_PLAYTEST=1` and runs as its own CI job). Allocation is (eye).

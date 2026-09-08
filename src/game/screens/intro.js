@@ -1,5 +1,6 @@
-// Stage intro card (GDD 6 + 9): black card with a brass frame, tiered-city silhouette with rising steam, the GDD text
-// lines fading in one after another, STAGE 1 / stage name, both hero portraits with "P1 / P2 READY". Skippable.
+// Stage intro card (GDD 6 + 9): black card with a brass frame, tiered-city silhouette with rising steam, the stage's
+// text lines fading in one after another, STAGE N / stage name, both hero portraits with "P1 / P2 READY". Skippable.
+// The lines and the number come from the stage data (`introLines`, `number`), so every board gets its own card.
 import { VIEW_W, VIEW_H, UI } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
@@ -7,9 +8,10 @@ import { rrect, rivetLine } from '../../art/shapes.js';
 import { particles } from '../../engine/particles.js';
 import { buildRig } from '../../art/rig.js';
 import { drawHeadPortrait, drawPortraitFrame, idlePoseOf } from '../../art/portraits.js';
-import { stage1 } from '../../content/stage/stage1.js';
+import { getStage, stageIndex } from '../../content/stage/index.js';
 
 const INTRO_FRAMES = 300;
+/** Stage 1's card text (GDD section 6); other boards carry their own `introLines`. */
 const LINES = ['CALDERWICK, CITY OF THE HEART-ENGINE.', 'THE CHANCELLOR HAS SEALED THE SKY.', 'FOUR UNLIKELY DELIVERIES ARE ABOUT TO BE MADE, UPWARD.'];
 const LINE_AT = [12, 48, 84], STAGE_AT = 126, FADE = 24;
 const FAR = [[0, 214, 50], [56, 196, 36], [98, 224, 70], [176, 184, 30], [212, 204, 56], [276, 190, 40], [322, 214, 34], [362, 176, 60], [428, 206, 44], [478, 190, 36], [520, 216, 60], [586, 198, 54]];
@@ -22,8 +24,10 @@ export class IntroScreen extends Screen {
   enter(params) {
     super.enter(params);
     this.chars = params.chars || this.game.options.chars;
-    this.stage = params.stage || stage1;
+    this.stage = params.stage || getStage(this.game.options.stage);
     this.stageName = params.stageName || this.stage.name;
+    this.lines = this.stage.introLines || LINES;
+    this.stageLabel = `STAGE ${this.stage.number || stageIndex(this.stage) + 1}`;
     this.done = false;
     this.portraits = (this.chars || []).slice(0, 2).map((ci) => { const c = this.game.characters[ci]; return c ? { def: c, rig: buildRig(c.build || {}), pose: idlePoseOf(c) } : null; });
     particles.clear();
@@ -62,11 +66,11 @@ export class IntroScreen extends Screen {
     rivetLine(ctx, 32, 44, 32, VIEW_H - 44, 12, 2, UI.brass);
     rivetLine(ctx, VIEW_W - 32, 44, VIEW_W - 32, VIEW_H - 44, 12, 2, UI.brass);
     // text lines fade in one after another (RECONCILIATION: fade-in instead of typewriter)
-    LINES.forEach((t, i) => {
-      const a = Math.min(1, Math.max(0, (f - LINE_AT[i]) / FADE));
+    this.lines.forEach((t, i) => {
+      const a = Math.min(1, Math.max(0, (f - (LINE_AT[i] != null ? LINE_AT[i] : 84 + i * 36)) / FADE));
       if (a <= 0) return;
       ctx.globalAlpha = a;
-      drawText(ctx, t, VIEW_W / 2, 56 + i * 16, { size: 1, color: i === 2 ? UI.brassLight : UI.paper, align: 'center' });
+      drawText(ctx, t, VIEW_W / 2, 56 + i * 16, { size: 1, color: i === this.lines.length - 1 ? UI.brassLight : UI.paper, align: 'center' });
     });
     const sa = Math.min(1, Math.max(0, (f - STAGE_AT) / FADE));
     if (sa > 0) {
@@ -74,7 +78,7 @@ export class IntroScreen extends Screen {
       const rise = Math.round((1 - sa) * 8);
       rrect(ctx, 152, 108 + rise, 336, 48, 4, 'rgba(24,14,10,0.85)', UI.brass, 2);
       rivetLine(ctx, 162, 113 + rise, 478, 113 + rise, 14, 1.5, UI.brass);
-      drawText(ctx, 'STAGE 1', VIEW_W / 2, 118 + rise, { size: 1, color: UI.copper, align: 'center' });
+      drawText(ctx, this.stageLabel, VIEW_W / 2, 118 + rise, { size: 1, color: UI.copper, align: 'center' });
       drawTextOutlined(ctx, this.stageName, VIEW_W / 2, 130 + rise, { size: 2, color: UI.brassLight, outline: '#3a2010', align: 'center' });
     }
     ctx.globalAlpha = 1;

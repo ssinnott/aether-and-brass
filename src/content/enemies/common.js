@@ -278,7 +278,7 @@ export function makeEnemyDef(base, v) {
 // Upgraded cel-shaded automaton parts + the shared base animation set used by content/enemies/brassbound.js. Every hook draws in
 // the local space rig.js sets up (limbs: origin at the joint, +y along the segment; hand/weapon: +x along the forearm; torso:
 // origin at the hip centre, y up negative; head: origin at the head centre). Far-side parts colour from `inf.pal`.
-import { celRect, celBall, celPoly, celPath, celCapsule, tones } from '../../art/shading.js';
+import { celRect, celBall, celPoly, celPath, celCapsule, tones, band } from '../../art/shading.js';
 import { drawFist } from '../../art/rigParts.js';
 import { FACE } from '../../art/poses.js';
 import { pathGear } from '../../art/shapes.js';
@@ -286,8 +286,26 @@ import { pathGear } from '../../art/shapes.js';
 const RB = Math.round, TAU2 = Math.PI * 2;
 /** Brassbound outline (ART_STYLE 3). */
 export const BRASS_OUTLINE = '#1A1E24';
-/** Base Brassbound value ladder: steel plates (light) over a dark-steel skeleton with brass ball joints; mid-steel fists. */
-export const BRASS_PAL = { skin: '#6E7A88', hair: '#4A5563', primary: '#8593A0', sleeve: '#4A5563', secondary: '#4A5563', accent: '#C89B3C', joint: '#C89B3C', metal: '#C8D0D8', dark: '#2E3340', glow: '#4DF0E0' };
+/**
+ * Base Brassbound value ladder: steel plates (light) over a dark-steel skeleton with brass ball joints; mid-steel fists.
+ * ART_STYLE 4 and GDD 96 name this faction's base colours -- #7F8C99 steel, #4A5563 dark steel, #C89B3C brass joints --
+ * and the readability pass had walked all three off that contract (primary #6286A0 s39, skeleton #2F4462 s52, joints
+ * #D89A18 s89). Measured on a differenced squad render that took near-neutral pixels from 39 % to 26 % and pixels at
+ * s >= 80 from 4.5 % to 14.8 %: a blue-and-gold livery, not steel and brass.
+ * What holds now: every steel step is a NEUTRAL under the 40 % ceiling (primary s28, skeleton s38, warden s33) and the
+ * JOINTS are the documented #C89B3C again -- they are ~40 gold discs per rig and they are what tipped the faction into
+ * gold. The value RE-SPACING the pass bought is kept: the plate is a step below the old #8593A0 (Oklab L* 65.6 -> 60.3,
+ * which is the value that sat on the Mooring Spine's and the Cold Sovereign's own #8A93A3) and the skeleton is a step
+ * below the documented dark steel (Oklab L* 44.5 -> 32.9, which also clears this faction's #1A1E24 ink by dE 9.7 --
+ * the documented #4A5563 does not carry its own outline that well). A lightness sweep of both steps over L* 56-68
+ * and 30-48, measured on all seven sections, moves this faction's mean lost% by 1.0 and its mean reservation overlap
+ * by 0.7: the 3.5 points of overlap the s39/s52 blue bought are bought by CHROMA and by nothing else, and chroma is
+ * the one thing section 4 does not let this faction spend. The overlap is reported, not chased.
+ * The chroma this faction needs comes from the REGIMENT STRIPE, painted as a plastron (brassTorsoB / brassHipsB) rather
+ * than a 4 px collar band, and from the per-variant plate (halberdier gold, sapper copper, duelist chrome-white).
+ * `dark` is the cavity/undershadow tone at the cool end of the ramp (nothing wears it; it is not a plate colour).
+ */
+export const BRASS_PAL = { skin: '#6E7A88', hair: '#4A5563', primary: BRASS.steel, sleeve: BRASS.darkSteel, secondary: BRASS.darkSteel, accent: BRASS.brass, joint: BRASS.brass, metal: '#C8D0D8', dark: '#2E3340', glow: BRASS.lens };
 /** GDD rig sizes x1.4: 17px head, 22x26 torso, 8px limbs, 12px plate feet (~74px tall at scale 1). */
 export const BRASS_PROPS = { headR: 8.5, neck: 3, neckR: 3, torsoW: 22, torsoH: 26, hip: 18, upperArm: 13, lowerArm: 12, armR: 4, handR: 4.5, upperLeg: 14, lowerLeg: 13, legR: 4.5, footL: 12, footH: 5, bulge: 0, shoulderX: 3, hipX: 4 };
 /** Keyframe shorthand: FK(dur, poseSpec, extraFrameFields). */
@@ -298,9 +316,10 @@ export function brassHeadB(ctx, rig, pose, inf) {
   const r = inf.r, pal = inf.pal;
   celRect(ctx, rig, -r, -r, r * 2, r * 2, 3, pal.primary, 0.34, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.secondary); ctx.fillRect(-r + 2, -r + 3, r * 2 - 4, 3);
-  ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-RB(r * 0.5), RB(r * 0.5), RB(r * 1.3), 3);
-  ctx.fillStyle = tones(rig, pal.primary).sh; ctx.fillRect(-RB(r * 0.5), RB(r * 0.5) + 3, RB(r * 1.3), 1);
+  // brow band and jaw plate are MATERIAL changes on the part the player reads the tell from, so both take ink (0.2);
+  // widened 3 -> 4 px first, because a 3 px band inked on both edges leaves 1 px of colour and fails 0.7 harder.
+  band(ctx, rig, -r + 2, -r + 3, r * 2 - 4, 4, pal.secondary);
+  band(ctx, rig, -RB(r * 0.5), RB(r * 0.5), RB(r * 1.3), 4, pal.accent);
   celBall(ctx, rig, -r + 3, 0, 2.5, pal.accent, false);
 }
 /**
@@ -324,10 +343,12 @@ export function brassTorsoB(ctx, rig, pose, inf) {
   const W = inf.w, H = inf.h, hw = RB(W / 2), pal = inf.pal;
   celPoly(ctx, rig, [-hw - 1, -H + 3, -hw + 2, -H, hw - 2, -H, hw + 1, -H + 3, hw, 1, -hw, 1], pal.primary, 0.36, 0.28);
   if (rig.override) return;
-  const t = tones(rig, pal.primary), face = pose.face | 0;
-  ctx.fillStyle = rig.col(rig.build.stripe || '#3E5C8A'); ctx.fillRect(-hw + 2, -H + 5, W - 4, 4);
-  ctx.fillStyle = t.deep; ctx.fillRect(-hw + 2, -H + 9, W - 4, 1);
-  ctx.fillStyle = t.sh; ctx.fillRect(-hw + 2, -RB(H * 0.2), W - 4, 1);
+  const face = pose.face | 0, st = rig.build.stripe || '#2A5C8A';
+  // The regiment colour is painted as a PLASTRON, not a collar band: a shoulder yoke and a belly band, both inked (0.2),
+  // meeting the core window's brass bezel edge-on so the aether tell keeps its own frame and never sits on coloured ground.
+  // This is where this faction's saturation comes from -- the steel plate stays a section-4 neutral (see BRASS_PAL).
+  band(ctx, rig, -hw + 1, -H + 4, W - 2, 7, st);
+  band(ctx, rig, -hw + 1, -6, W - 2, 6, st);
   const cy = -RB(H * 0.44);
   const col = face === FACE.dazed ? '#3A3F4B' : rig.tell ? BRASS.lensTell : pal.glow;
   celBall(ctx, rig, 0, cy, 6, pal.accent, false);
@@ -355,8 +376,8 @@ export function brassFootB(ctx, rig, pose, inf) {
   const w = inf.w, h = inf.h, pal = inf.pal, heel = RB(w * 0.4), toe = RB(w * 0.62);
   celPoly(ctx, rig, [-heel, -h, toe - 3, -h, toe, -h + 2, toe, 2, -heel, 2], pal.primary, 0.34, 0.3);
   if (rig.override) return;
-  ctx.fillStyle = tones(rig, pal.primary).deep; ctx.fillRect(-heel, 1, toe + heel, 2);
-  ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(toe - 4, -h + 2, 4, 3);
+  ctx.fillStyle = tones(rig, pal.primary).deep; ctx.fillRect(-heel, 1, toe + heel, 2); // sole: form seam inside one material
+  ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(toe - 4, -h + 2, 4, 3);             // toe cap: rivet-class detail (3), under hiMin
 }
 /** Mitten fist with a brass wrist ball (hand space). */
 export function brassHandB(ctx, rig, pose, inf) {
@@ -368,7 +389,8 @@ export function brassHipsB(ctx, rig, pose, inf) {
   const hw = RB(inf.w / 2), pal = inf.pal;
   celRect(ctx, rig, -hw, -5, inf.w, 10, 2, pal.secondary, 0.4, 0.2);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(-2, -4, 5, 4);
+  band(ctx, rig, -hw + 1, -3, inf.w - 2, 6, rig.build.stripe || '#2A5C8A'); // regiment greave (the plastron's lower half)
+  band(ctx, rig, -2, -3, 5, 5, pal.accent);                                 // brass buckle plate on top of it
 }
 /**
  * Wind-up key on the back (back accessory, torso space): brass shaft + a flat double-loop bow that spins around the shaft
@@ -492,16 +514,30 @@ export function makeBrassBase(c, o = {}) {
 // (grin / gritted teeth / shout / X-eyes + tongue on `dazed`), ragged tunic with a clan sash and the numbered brass badge, rag
 // shorts on a rope belt, wrapped bare feet, clawed fists (optional wrist chains for the Cinder Hulk). Far-side parts colour from
 // `inf.pal`. Build knobs: build.clan (sash / trims), build.gob = { tunic: 'rags'|'skin'|'waistcoat', shorts, chains, shirt }.
-import { flat as flatFill, rimTop as gobRim } from '../../art/shading.js';
+import { flat as flatFill, rimTop as gobRim, band as gobBand } from '../../art/shading.js';
 import { getChain as gobChain } from '../../art/secondary.js';
 import { rad as gobRad } from '../../engine/math.js';
 
 const GR = Math.round;
 /** Sootborn colour constants (GDD 4 hues, values re-spaced for the ART_STYLE value ladder). */
-export const GOB = { skin: '#6BA84F', shade: '#3F6B2E', rags: '#5A4A3A', ragsDark: '#3A2E26', scrap: '#B0B0B0', eye: '#F2C94C', wrap: '#B8A98C', rope: '#B89A6A',
+export const GOB = { skin: '#6BA84F', shade: '#3F6B2E', rags: '#5A4A3A', ragsDark: '#3A2E26', scrap: '#B0B0B0', eye: '#F2C94C', wrap: '#B8A98C', rope: '#B39C76',
   brass: '#C89B3C', tell: '#FFF6D0', warn: '#FF5C5C', tongue: '#D9536B', tooth: '#F8F4EC', iron: '#6A6E78', outline: '#1E1A14' };
-/** Base goblin value ladder: mid green skin (bare arms + legs), dark rag tunic, darker rag shorts, light tan foot wraps, brass badge, light scrap. */
-export const GOB_PAL = { skin: GOB.skin, hair: GOB.shade, primary: GOB.rags, sleeve: GOB.skin, secondary: GOB.skin, accent: GOB.brass, metal: GOB.scrap, dark: GOB.wrap, glow: GOB.eye };
+/**
+ * Base goblin value ladder: mid green skin (bare arms), a DARKER green on the legs, dark rag tunic, darker rag
+ * shorts, light tan foot wraps, brass badge, light scrap.
+ * `secondary` (thighs + shins) is deliberately NOT `skin` any more. A bare-limbed creature legitimately shares one
+ * hue across head, arms and legs, but sharing one HEX made two overlapping Cutthroats a single green pile with no
+ * countable limbs (ART_STYLE 0.1's value ladder, and the readability complaint this whole pass answers). The legs
+ * take the same green scaled 1.20 -- a counter-shading step, not a garment -- which holds the hue and the HSV
+ * saturation exactly (s 53 both) and buys Oklab dE 12.5 between the thigh and the forearm crossing it.
+ * The step goes UP, not down, and that is measured rather than taste: the same split taken DOWNWARDS (x0.68 and
+ * x0.80) walks the legs and their shadow bands toward the dark boards and costs this faction 2.4-3.5 points of
+ * lost% on Sootfoot Docks, where a Cutthroat actually stands. Upwards it costs nothing (39.7 -> 39.6) and improves
+ * every other section. `sleeve` stays `skin`: these are bare arms, and the outline plus the contact shadow are what
+ * separate an arm from the chest it crosses.
+ */
+export const GOB_LIMB = '#81C95F';
+export const GOB_PAL = { skin: GOB.skin, hair: GOB.shade, primary: GOB.rags, sleeve: GOB.skin, secondary: GOB_LIMB, accent: GOB.brass, metal: GOB.scrap, dark: GOB.wrap, glow: GOB.eye };
 /** GDD 40px goblin x1.4: 24px head, 20x20 torso, long 29px arms, short 17px legs (~64px at scale 1, 54px at the 0.85 Sootborn scale). */
 export const GOB_PROPS = { headR: 12, neck: 2, neckR: 3, torsoW: 20, torsoH: 20, hip: 18, upperArm: 15, lowerArm: 14, armR: 4.5, handR: 5, upperLeg: 10, lowerLeg: 9, legR: 5, footL: 11, footH: 5, shoulderX: 3, hipX: 4, bulge: 0.3 };
 
@@ -578,11 +614,11 @@ export function gobTorso(ctx, rig, pose, inf) {
   if (vest) celPoly(ctx, rig, [-hw - 2, -H + 6, -hw + 2, -H + 2, -2, GR(-H * 0.35), hw - 1, -H + 3, hw + 3, -H + 6, hw + 3, 1, -hw - 1, 1], pal.primary, 0.4, 0.2);
   if (rig.override) return;
   const t = tones(rig, skin ? pal.skin : pal.primary);
-  if (skin) { ctx.fillStyle = t.sh; ctx.fillRect(hw - 4, GR(-H * 0.45), 6, 2); ctx.fillStyle = rig.col(GOB.ragsDark); ctx.fillRect(-hw + 2, -H + 2, 4, H); }
+  if (skin) { ctx.fillStyle = t.sh; ctx.fillRect(hw - 4, GR(-H * 0.45), 6, 2); gobBand(ctx, rig, -hw + 2, -H + 2, 4, H, GOB.ragsDark); }
   else if (vest) { ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(GR(hw * 0.2), GR(-H * 0.35), 3, 3); ctx.fillRect(GR(hw * 0.2), GR(-H * 0.1), 3, 3); ctx.fillStyle = tones(rig, pal.primary).sh; ctx.fillRect(-hw, -H + 8, 3, H - 8); }
   else {
     ctx.beginPath(); ctx.moveTo(-hw + 1, -H + 3); ctx.lineTo(-hw + 6, -H + 1); ctx.lineTo(hw + 3, GR(-H * 0.25)); ctx.lineTo(hw + 1, GR(-H * 0.25) + 5); ctx.closePath();
-    ctx.fillStyle = rig.col(clan); ctx.fill();
+    flatFill(ctx, rig, clan);
     ctx.fillStyle = tones(rig, clan).sh; ctx.fillRect(hw - 4, GR(-H * 0.25) + 2, 6, 2);
     ctx.fillStyle = t.deep; ctx.fillRect(-hw + 2, GR(-H * 0.45), 4, 4);
   }
@@ -600,9 +636,9 @@ export function gobHips(ctx, rig, pose, inf) {
   celRect(ctx, rig, -hw, -5, hip, 11, 3, g.shorts || GOB.ragsDark, 0.4, 0.2);
   if (rig.override) return;
   const t = tones(rig, GOB.rope);
-  ctx.fillStyle = t.base; ctx.fillRect(-hw + 1, -5, hip - 2, 3);
-  ctx.fillStyle = t.sh; ctx.fillRect(-hw + 1, -2, hip - 2, 1);
-  ctx.fillStyle = t.base; ctx.fillRect(2, -7, 4, 6); ctx.fillStyle = t.sh; ctx.fillRect(3, -3, 2, 2);
+  gobBand(ctx, rig, -hw + 1, -5, hip - 2, 4, GOB.rope);
+  ctx.fillStyle = t.sh; ctx.fillRect(-hw + 2, -2, hip - 4, 1);
+  gobBand(ctx, rig, 2, -7, 4, 6, GOB.rope); ctx.fillStyle = t.sh; ctx.fillRect(3, -3, 2, 2);
 }
 /** Bare goblin foot with a cloth wrap and a skin toe (ankle space, toe toward +x). */
 export function gobFoot(ctx, rig, pose, inf) {
@@ -612,7 +648,7 @@ export function gobFoot(ctx, rig, pose, inf) {
   const t = tones(rig, inf.pal.dark);
   ctx.fillStyle = t.deep; ctx.fillRect(-heel, sole - 1, toe + heel + 1, 2);
   ctx.fillStyle = t.sh; ctx.fillRect(GR(heel * 0.2), -Hh + 1, 2, Hh - 2);
-  ctx.fillStyle = rig.col(inf.pal.skin); ctx.fillRect(toe - 4, sole - 4, 4, 3);
+  gobBand(ctx, rig, toe - 4, sole - 5, 4, 4, inf.pal.skin);
   ctx.fillStyle = tones(rig, inf.pal.skin).sh; ctx.fillRect(toe - 3, sole - 2, 2, 1);
 }
 /** Clawed mitten fist (hand space); Cinder Hulk builds (gob.chains) hang a 2-link wrist chain that lags with a torso chain. */
@@ -639,7 +675,7 @@ export function gobCuffArm(ctx, rig, pose, inf) {
   const r = inf.r, len = inf.len, col = inf.pal.skin;
   celRect(ctx, rig, -r, 0, r * 2, len + 1, r, col, 0.4, 0);
   if (rig.override) return;
-  ctx.fillStyle = rig.col(rig.build.clan || '#9A4A22'); ctx.fillRect(-r, len - 6, r * 2, 4);
+  gobBand(ctx, rig, -r, len - 6, r * 2, 4, rig.build.clan || '#9A4A22');
   ctx.fillStyle = tones(rig, rig.build.clan || '#9A4A22').sh; ctx.fillRect(-r, len - 2, r * 2, 1);
 }
 /** Complete goblin part table. */
