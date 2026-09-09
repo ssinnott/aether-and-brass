@@ -6,14 +6,14 @@
 // distinct rig with its own animation table. Phases that only re-skin the AI (no build) are not rigs and are skipped.
 import { buildRig } from '../../src/art/rig.js';
 import { CHARACTERS } from '../../src/content/characters/index.js';
-import { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2 } from '../../src/content/enemies/index.js';
+import { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2, midboss3, boss3 } from '../../src/content/enemies/index.js';
 import { classOf } from './helpers.js';
 
 /** Stable subject id for an enemy/boss def: always `${type}:${variant}` (the boss defs' own `id` is the short slug). */
 function subjectId(def) { return `${def.type}:${def.variant}`; }
 
-/** The four boss defs, in stage order. */
-const BOSS_DEFS = [midboss, boss, midboss2, boss2];
+/** Every boss def, in stage order. */
+const BOSS_DEFS = [midboss, boss, midboss2, boss2, midboss3, boss3];
 
 /** Stage-1 reference factions: these DEFINE the invariants and must never report an error. */
 export const REFERENCE_TYPES = Object.freeze(['brassbound', 'sootborn', 'midboss', 'boss']);

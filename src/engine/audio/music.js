@@ -212,6 +212,17 @@ const STB_LEAD = `G5:2 Bb5:2 D6:2 G6:4 D6:2 Bb5:2 | G5:2 Bb5:2 D6:2 F6:4 D6:2 Bb
   Bb4:2 D5:2 F5:2 Bb5:4 F5:2 D5:2 | Bb4:2 D5:2 F5:2 Ab5:4 F5:2 D5:2 |
   D5:2 F#5:2 A5:2 D6:4 A5:2 F#5:2 | D5:2 F#5:2 A5:2 C6:4 A5:4`;
 
+// ---- Stage 3: The Reckoning of Calderwick (docs/STAGE3.md section 6) ----
+// The Calderwick motif D-F-A-C taken down to the ground and played straight: this board is about book-keeping, so
+// its three section tracks are the least ornamented in the game and the boss theme is the motif at full weight.
+const W1_LEAD = `D4:2 F4:2 A4:3 F4:1 D4:2 A3:2 D4:4 | F4:2 A4:2 C5:3 A4:1 F4:2 C5:2 A4:4 |
+  Bb3:2 D4:2 F4:3 D4:1 Bb3:2 F4:2 D4:4 | C4:2 E4:2 G4:3 E4:1 C4:2 G4:2 C5:4`;
+const W2_LEAD = `G4:2 Bb4:2 D5:2 Bb4:2 G4:4 -:4 | Bb4:2 D5:2 F5:2 D5:2 Bb4:4 -:4 |
+  Eb5:2 D5:2 Bb4:2 G4:2 Eb4:4 -:4 | F4:2 A4:2 C5:2 F5:4 C5:2 A4:2 -:2`;
+const W3_LEAD = `C5:2 Eb5:2 G5:2 C6:4 G5:2 Eb5:2 C5:2 | Ab4:2 C5:2 Eb5:2 Ab5:4 Eb5:2 C5:2 Ab4:2 |
+  Eb5:2 G5:2 Bb5:2 Eb6:4 Bb5:2 G5:2 Eb5:2 | G4:2 B4:2 D5:2 G5:4 F5:2 D5:2 B4:2`;
+const LEDGER_LEAD = `D5:2 F5:2 A5:2 D6:4 A5:2 F5:2 D5:2 | Bb4:2 D5:2 F5:2 Bb5:4 F5:2 D5:2 Bb4:2 |
+  G4:2 Bb4:2 D5:2 G5:4 D5:2 Bb4:2 G4:2 | A4:2 C#5:2 E5:2 A5:4 G5:2 E5:2 C#5:2`;
 const HAT16 = 'HhhhHhhhHhhhHhhh';
 export const TRACKS = {
   title: { name: 'title', bpm: 100, key: 'D', chords: ['Dm', 'Bb', 'F', 'C'], channels: [
@@ -328,6 +339,37 @@ export const TRACKS = {
     { inst: 'brass', oct: 3, vol: 1, pat: 'chord:2 . chord:2 . chord:2 . chord:2 .' },
     { inst: 'lead_saw', oct: 5, vol: 1, pat: STB_LEAD },
     { inst: 'lead_pulse', oct: 5, vol: 0.8, combat: true, pat: STB_LEAD, transpose: 7 },
+    { inst: 'drums', vol: 1, pat: 'K.hhS.hhK.hhS.hC' },
+    { inst: 'drums', vol: 0.5, pat: 'T...t...T...t...' },
+  ] },
+  // ---- Stage 3: The Reckoning of Calderwick ----
+  works1: { name: 'works1', bpm: 124, key: 'D', chords: ['Dm', 'F', 'Bb', 'C'], channels: [
+    { inst: 'bass_tri', oct: 2, vol: 1, pat: 'r:2 r:2 r+7:2 r:2 r+12:2 r+7:2 r:4' },
+    { inst: 'pluck', oct: 4, vol: 1, pat: W1_LEAD },
+    { inst: 'lead_pulse', oct: 4, vol: 0.7, combat: true, pat: W1_LEAD, transpose: 7 },
+    { inst: 'pad', oct: 3, vol: 0.5, pat: 'chord:32', wide: 8 },
+    { inst: 'drums', vol: 0.8, pat: 'K..hS..hK..hS.hh' },
+  ] },
+  works2: { name: 'works2', bpm: 132, key: 'G', chords: ['Gm', 'Bb', 'Eb', 'F'], channels: [
+    { inst: 'bass_square', oct: 2, vol: 1, pat: 'r:1 . r:1 . r+7:1 . r:1 . r:1 . r+10:1 . r+7:1 . r:1 .' },
+    { inst: 'lead_saw', oct: 4, vol: 0.9, pat: W2_LEAD },
+    { inst: 'organ', oct: 3, vol: 0.5, pat: '. chord:1 . chord:1 . chord:1 . chord:1 . chord:1 . chord:1 . chord:1 . chord:1' },
+    { inst: 'lead_pulse', oct: 4, vol: 0.7, combat: true, pat: W2_LEAD, transpose: -5 },
+    { inst: 'drums', vol: 0.9, pat: 'K.hhS.h.K.hhS.hO' },
+  ] },
+  works3: { name: 'works3', bpm: 138, key: 'C', chords: ['Cm', 'Ab', 'Eb', 'G'], channels: [
+    { inst: 'bass_square', oct: 2, vol: 1, pat: 'r:2 r:1 r+7:1 r+12:2 r+7:1 r:1 r:2 r+10:1 r+7:1 r:2 r:2' },
+    { inst: 'harpsi', oct: 5, vol: 0.8, pat: 'c0:1 . c1:1 . c2:1 . c1:1 . c0:1 . c1:1 . c2:1 . c1:1 .' },
+    { inst: 'lead_saw', oct: 5, vol: 0.9, pat: W3_LEAD },
+    { inst: 'brass', oct: 3, vol: 0.7, pat: 'chord:3 . chord:3 . chord:3 . chord:3 .' },
+    { inst: 'lead_pulse', oct: 5, vol: 0.7, combat: true, pat: W3_LEAD, transpose: -5 },
+    { inst: 'drums', vol: 1, pat: 'K.h.S.h.K.h.S.hH' },
+  ] },
+  ledgerboss: { name: 'ledgerboss', bpm: 156, key: 'D', chords: ['Dm', 'Bb', 'Gm', 'A'], channels: [
+    { inst: 'bass_dist', oct: 2, vol: 1, pat: 'r r r+12 r r r r+7 r r r r+12 r r r+10 r+7 r' },
+    { inst: 'brass', oct: 3, vol: 1, pat: 'chord:3 . chord:3 . chord:3 . chord:3 .' },
+    { inst: 'lead_saw', oct: 5, vol: 1, pat: LEDGER_LEAD },
+    { inst: 'lead_pulse', oct: 5, vol: 0.8, combat: true, pat: LEDGER_LEAD, transpose: 7 },
     { inst: 'drums', vol: 1, pat: 'K.hhS.hhK.hhS.hC' },
     { inst: 'drums', vol: 0.5, pat: 'T...t...T...t...' },
   ] },

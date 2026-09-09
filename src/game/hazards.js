@@ -218,12 +218,13 @@ const MOLTEN_HIT = { damage: 10, type: 'knockdown', kbX: 0, kbY: 5, hitstun: 20,
  * conveyor (cargo-bay front strip). Drawn behind entities (z = -5).
  */
 export class Zone extends Entity {
-  /** @param {{ type: 'molten'|'rails'|'daisVents'|'conveyor', x0: number, x1: number, z0?: number, active?: boolean }} spec */
+  /** @param {{ type: 'molten'|'rails'|'daisVents'|'conveyor', x0: number, x1: number, z0?: number, active?: boolean, color?: string }} spec */
   constructor(spec) {
     super('fx');
     this.type = spec.type; this.x0 = spec.x0; this.x1 = spec.x1; this.z0 = spec.z0 != null ? spec.z0 : 100;
     this.x = (spec.x0 + spec.x1) / 2; this.z = -5; this.shadowW = 0;
     this.forced = !!spec.active;
+    this.color = spec.color || '';   // daisVents edge glow: the board's own energy colour (see draw())
     this.burns = new Map();        // fighter id -> { f, ticks, t }
     this.wasAir = new Map();       // enemy id -> was airborne last frame (edge shove detection)
     this.t = 0; this.lastCrate = 0;
@@ -333,9 +334,11 @@ export class Zone extends Entity {
       ctx.fillStyle = 'rgba(255,255,255,0.35)'; for (let x = x0 + ((f >> 1) % 40); x < x1; x += 40) ctx.fillRect(x, sy0 + 6 + ((x >> 3) & 6), 6, 1);
       if ((f & 7) === 0) { const ex = this.x0 + ((f * 37) % (this.x1 - this.x0)); if (cam.isVisible(ex, 0)) particles.burst('ember', ex, 4, 10, 1, { speed: 0.8, up: 1.4 }); }
     } else if (this.type === 'daisVents' && this.active) {
-      // cyan glow lines along the closed band edges (the world paints the vent strips themselves)
+      // glow lines along the closed band edges (the world paints the vent strips themselves). The colour is the
+      // BOARD's energy colour, not a constant: aether cyan is Concordat machinery (GDD 1), so a board that has no
+      // Concordat left on it passes its own — `{ type: 'daisVents', color: '#D8FF6E' }` on the Chandlery's floor.
       const band = this.world.floorBand || { z0: 0, z1: Z_MAX };
-      ctx.fillStyle = '#4DF0E0'; ctx.globalAlpha = 0.5 + 0.3 * Math.sin(f * 0.3);
+      ctx.fillStyle = this.color || '#4DF0E0'; ctx.globalAlpha = 0.5 + 0.3 * Math.sin(f * 0.3);
       if (band.z0 > 0) ctx.fillRect(x0, sy0 + band.z0 - 1, x1 - x0, 2);
       if (band.z1 < Z_MAX) ctx.fillRect(x0, sy0 + band.z1 - 1, x1 - x0, 2);
       ctx.globalAlpha = 1;

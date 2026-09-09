@@ -335,6 +335,7 @@ function drawVignette(ctx, x, y, w, h, pv, f) {
   g.addColorStop(0, pv.skyTop); g.addColorStop(1, pv.skyBot);
   ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
   if (pv.motif === 'sky') drawSkyMotif(ctx, x, y, w, h, pv, f);
+  else if (pv.motif === 'works') drawWorksMotif(ctx, x, y, w, h, pv, f);
   else drawCityMotif(ctx, x, y, w, h, pv, f);
   const gh = pv.groundH == null ? 10 : pv.groundH;
   if (gh > 0) {
@@ -400,6 +401,37 @@ function drawSkyMotif(ctx, x, y, w, h, pv, f) {
     line(ctx, lx + 5, y + 16, lx - 2, y + 24, '#e8f0ff', 1.5);
     ctx.globalAlpha = 0.18; ctx.fillStyle = '#e8f0ff'; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1;
   }
+}
+
+/** Board 3: the Chandlery's works under a chalk sky — a long roof, four chimneys smoking, kiln mouths lit lime. */
+function drawWorksMotif(ctx, x, y, w, h, pv, f) {
+  const base = y + h - 12;
+  // the lime haze the works stands in: a bright band across the bottom of the sky
+  ctx.fillStyle = 'rgba(244,240,226,0.5)'; ctx.fillRect(x, base - 22, w, 22);
+  // the works: one long shed with a shallow roof, the widest flat shape on any plaque
+  ctx.fillStyle = '#6E6759'; ctx.fillRect(x + 6, base - 26, w - 12, 26);
+  poly(ctx, [x + 6, base - 26, x + 22, base - 34, x + w - 22, base - 34, x + w - 6, base - 26], '#565046', null, 0);
+  // four draw-kiln chimneys, with smoke standing straight up off them (nothing on this board blows sideways)
+  for (let i = 0; i < 4; i++) {
+    const sx = x + 16 + i * ((w - 32) / 3.4);
+    ctx.fillStyle = '#4A443B'; ctx.fillRect(sx, base - 56, 5, 30);
+    for (let k = 0; k < 3; k++) {
+      const sy = base - 60 - k * 7 - ((f >> 3) % 7);
+      circle(ctx, sx + 2.5, sy, 2 + k, `rgba(238,236,226,${0.3 - k * 0.07})`, null, 0);
+    }
+  }
+  // the kiln mouths along the ground: the board's one saturated colour, and the only light in the picture
+  for (let i = 0; i < 5; i++) {
+    const kx = x + 12 + i * ((w - 24) / 5);
+    ctx.fillStyle = '#2A2620'; ctx.fillRect(kx, base - 12, 12, 12);
+    ctx.fillStyle = pv.accent;
+    if (((i * 5 + (f >> 4)) % 7) !== 0) ctx.fillRect(kx + 2, base - 9, 8, 6);
+  }
+  // a loaded wagon standing on the road in front of it
+  ctx.fillStyle = '#4A3E2E'; ctx.fillRect(x + w * 0.6, base - 16, 30, 10);
+  poly(ctx, [x + w * 0.6 + 2, base - 16, x + w * 0.6 + 8, base - 24, x + w * 0.6 + 24, base - 24, x + w * 0.6 + 28, base - 16], '#B0AE96', null, 0);
+  circle(ctx, x + w * 0.6 + 7, base - 4, 4, '#2E2A24', null, 0);
+  circle(ctx, x + w * 0.6 + 24, base - 4, 4, '#2E2A24', null, 0);
 }
 
 /** The sealed plate behind a locked board: hatched steel with rivets. */

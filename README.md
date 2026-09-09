@@ -1,14 +1,14 @@
 # Aether & Brass
 
 A steampunk high-fantasy side-scrolling beat-em-up in the spirit of *Golden Axe*, the *TMNT*
-arcade games and *TMNT: Shredder's Revenge*. **Two complete boards** end to end, four playable
-heroes, three enemy factions with five variants each, two mid-bosses and two multi-phase final
+arcade games and *TMNT: Shredder's Revenge*. **Three complete boards** end to end, four playable
+heroes, four enemy factions with five variants each, three mid-bosses and three multi-phase final
 bosses. Local two-player co-op on one keyboard or with gamepads.
 
 Everything is drawn and synthesized in code: vanilla JavaScript, HTML5 Canvas 2D and WebAudio.
 No engine, no framework, and not a single image or audio file. Characters are procedural
 paper-doll rigs built from canvas primitives and animated by keyframed joint angles;
-backdrops are pre-rendered parallax layers; all 92 sound effects and 17 music tracks are
+backdrops are pre-rendered parallax layers; all 92 sound effects and 21 music tracks are
 synthesized from oscillators and noise at runtime.
 
 ## Play
@@ -68,9 +68,16 @@ Cinder Hulk, Gutter Wrangler. Fast, fragile, cowardly alone, and they burn easil
 masks with one hot white sighting lens, wing-packs that flare when they move, and a habit of
 hopping backwards out of anything you whiff. Jump attacks hurt them 1.5x.
 
+**The Chandlery of Calderwick** — the chartered supply company that kept both sides in the war
+standing, and the faction of board 3: Wickboy, Tallyman, Limeburner, Purser, Resurrection Man.
+Nothing here kills you; everything here keeps the thing that kills you standing up — they heal it,
+crust it, dose it, mark you for the whole room and tip fresh Brassbound out of a handcart. One touch
+during a rite's wind-up cancels it, and every rite dies with the Chandler holding it.
+
 **Bosses** — Foreman Grubbik & the Hoister and Chancellor Aurelius Vane in the Regent Engine on
 board 1; Quartermaster Skree & the Grapnel Winch and Admiral Odaline Kestrel of the Ninth Wing
-on board 2. Every one of them is stripped down phase by phase until the person inside is exposed.
+on board 2; Yardmaster Marl & the Lime Kiln and Factor Oriel Hasp of the Chandlery on board 3.
+Every one of them is stripped down phase by phase until the person inside is exposed.
 
 ## Board 1: The Ascent of Calderwick
 
@@ -91,6 +98,20 @@ grapnel winch at the end of it) → The Cold Sovereign (the flagship's weather d
 and lightning, up to the bridge where the Admiral is waiting).
 
 Board 2 is **locked until you clear board 1**. Full design doc: `docs/STAGE2.md`.
+
+## Board 3: The Reckoning of Calderwick
+
+Two organisations are beaten and the war is still being invoiced. The Chandlery of Calderwick supplied
+both sides under charter, and with the Chancellor's estate unsettled it is **re-crewing the war** —
+tipping Brassbound back onto their feet out of handcarts and writing every one of them into a ledger.
+The Lime Road (a chalk-white morning, wagon trains, the works' chimneys ahead) → The Tallow Works
+(vats, draw-kilns, cart lanes, and the yardmaster at the kiln head) → The Ledger House (the counting
+floor, where the man who signed for all of it is waiting).
+
+The plainest-looking board in the game and the one about money: no furnace glow and no storm, just
+lime dust and one saturated colour — the lime in the company's own lamps, which always means something
+behind you is being repaired. Board 3 is **locked until you clear board 2**. Full design doc:
+`docs/STAGE3.md`.
 
 ## Board select
 
@@ -123,12 +144,12 @@ node tools/sheet-capture.js out char=brunhild    # character contact sheets
 ```
 
 The suite boots the game, walks the character select, drives every hero's whole moveset,
-runs an autopilot bot through both boards to their results screens, plays co-op, spawns
+runs an autopilot bot through all three boards to their results screens, plays co-op, spawns
 every enemy variant, and renders every sound effect and music track offline to check none
 are silent.
 
 Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,2`,
-`?skipTo=gallery`, `?bot=1`, `?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=2`, `?unlockall=1`,
+`?skipTo=gallery`, `?bot=1`, `?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=3`, `?unlockall=1`,
 `?resetprogress=1`.
 
 ### Deployment
@@ -147,6 +168,7 @@ branches**, then start the workflow by hand from the Actions tab with that branc
 
 - `docs/GDD.md` — the game design document: world, cast, enemies, bosses, board 1, combat rules.
 - `docs/STAGE2.md` — board 2: the Stormcrows, both of its bosses, its sections and its audio.
+- `docs/STAGE3.md` — board 3: the Chandlery, both of its bosses, its sections and its audio.
 - `docs/ARCHITECTURE.md` — the technical contract: coordinate system, rig format, module APIs.
 - `docs/ART_STYLE.md` — binding character art and animation rules, including the readability pass.
 - `docs/RECONCILIATION.md` — where the design and technical docs disagree, this decides.

@@ -755,4 +755,10 @@ const resurrectionist = def({
 
 /** The Chandlery, in wave order: two Wickboys and a Tallyman teach the tell; the rest are what they are for. */
 export const CHANDLERS = [wickboy, tallyman, limeburner, purser, resurrectionist];
-export { P };
+/**
+ * The rites themselves, for the faction's two Stage 3 bosses (./midboss3.js, ./boss3.js). They are exported rather
+ * than re-declared so a boss can never hand out a limecrust that counts its hits differently from the Limeburner's,
+ * or a dram that buffs by a different amount from the Purser's — one definition, five variants and two bosses.
+ * The finders stay private: who a rite lands on is per-fighter behaviour, and a boss picks its own recipients.
+ */
+export { P, crust, dose, TALLIED, MENDED, LIMECRUST, DOSED, drawCane, drawLedger };
