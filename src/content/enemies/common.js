@@ -280,7 +280,7 @@ export function makeEnemyDef(base, v) {
 // origin at the hip centre, y up negative; head: origin at the head centre). Far-side parts colour from `inf.pal`.
 import { celRect, celBall, celPoly, celPath, celCapsule, tones, band, outlinePath } from '../../art/shading.js';
 import { pathTaperedCapsule } from '../../art/shapes.js';
-import { drawFist } from '../../art/rigParts.js';
+import { drawFist, brow } from '../../art/rigParts.js';
 import { FACE } from '../../art/poses.js';
 import { pathGear } from '../../art/shapes.js';
 
@@ -572,6 +572,23 @@ export const GOB_PAL = { skin: GOB.skin, hair: GOB.shade, primary: GOB.rags, sle
 /** GDD 40px goblin x1.4: 24px head, 20x20 torso, long 29px arms, short 17px legs (~64px at scale 1, 54px at the 0.85 Sootborn scale). */
 export const GOB_PROPS = { headR: 12, neck: 2, neckR: 3, torsoW: 20, torsoH: 20, hip: 18, upperArm: 15, lowerArm: 14, armR: 4.5, handR: 5, upperLeg: 10, lowerLeg: 9, legR: 5, footL: 11, footH: 5, shoulderX: 3, hipX: 4, bulge: 0.3 };
 
+/**
+ * The ear blade as a SUBPATH ONLY (head space, rotated by the wiggle chain): appended to whatever path is open, never
+ * filled. WINDING MATTERS — the points run in the opposite order to gobEar's because this subpath is unioned with a
+ * clockwise `arc` under the nonzero rule, and a counter-wound subpath would cut a HOLE where the ear meets the skull
+ * instead of merging into it.
+ */
+function pathGobEar(ctx, x, y, r, ang) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(gobRad(ang));
+  ctx.moveTo(0, -GR(r * 0.3)); ctx.lineTo(-GR(r * 0.2), GR(r * 0.35)); ctx.lineTo(-GR(r * 1.15), -GR(r * 0.7)); ctx.closePath();
+  ctx.restore();
+}
+/** The near ear's inner shadow, painted inside the silhouette the ear is now part of (no ink of its own). */
+function gobEarShade(ctx, rig, x, y, r, ang, col) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(gobRad(ang));
+  ctx.beginPath(); ctx.moveTo(-GR(r * 0.3), -GR(r * 0.2)); ctx.lineTo(-GR(r * 0.9), -GR(r * 0.5)); ctx.lineTo(-GR(r * 0.3), GR(r * 0.1)); ctx.closePath();
+  ctx.fillStyle = tones(rig, col).sh; ctx.fill(); ctx.restore();
+}
 /** One swept-back ear triangle at (x, y) in head space, rotated by `ang` (the wiggle chain). */
 function gobEar(ctx, rig, x, y, r, ang, col) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(gobRad(ang));
@@ -584,15 +601,24 @@ function gobEar(ctx, rig, x, y, r, ang, col) {
 export function gobHead(ctx, rig, pose, inf) {
   const r = inf.r, pal = inf.pal;
   const ch = gobChain(rig, 'ear', 1, { joint: 'head', rest: [-1, 0], stiffness: 0.22, damping: 0.6, gain: 1.6, rotGain: 0.5, maxAng: 24 });
-  // Both ears go UNDER the skull. The near ear used to be painted on top of it, which put a triangle of ink across
-  // the cheek and over the far eye — the ear read as a shape stuck onto the face instead of one growing out from
-  // behind it. Drawn first, the skull covers its base and only the blade of the ear shows, which is an ear.
+  // THE FAR EAR STAYS ITS OWN OBJECT. It is on the far side of the head, painted from the far palette, and the head
+  // is between it and the reader — the same relationship a far arm has, and §0.2's "separate objects?" test says yes.
   gobEar(ctx, rig, GR(-r * 0.55), GR(-r * 0.2), r, ch.ang[0] - 6, rig.paletteFar.skin);
-  gobEar(ctx, rig, GR(-r * 0.4), GR(-r * 0.05), r * 0.95, ch.ang[0] * 0.8, pal.skin);
-  celBall(ctx, rig, 0, 0, r, pal.skin);
-  ctx.beginPath(); ctx.moveTo(GR(r * 0.55), GR(-r * 0.05)); ctx.lineTo(GR(r * 1.55), GR(r * 0.3)); ctx.lineTo(GR(r * 0.6), GR(r * 0.62)); ctx.closePath();
-  celPath(ctx, rig, pal.skin, r * 0.9, r * 0.3, r * 0.5, 0.42, 0);
+  // A HEAD IS ONE SHAPE. ccc343f rewrote drawSkull to path the skull, the ear and the nose into ONE subpath set,
+  // stroke it once and fill it once, because a head drawn as four separately outlined objects reads as a bundle of
+  // shapes rather than a face. It landed in art/rigParts.js and the goblin never got it: GOB_PARTS hooks head and
+  // face (common.js), so this rig — five Sootborn, both Grubbik phases and the Hoister, ten rigs in the shipped
+  // game — kept drawing a ball, a blade and a wedge with an ink line between each. The near ear's own outline ran
+  // across the cheek and the nose's across the muzzle; both are gone now, and the blade and the wedge are what they
+  // always should have been: bumps in the head's contour.
+  const ex = GR(-r * 0.4), ey = GR(-r * 0.05), er = r * 0.95, ea = ch.ang[0] * 0.8;
+  ctx.beginPath();
+  pathGobEar(ctx, ex, ey, er, ea);
+  ctx.moveTo(GR(r), 0); ctx.arc(0, 0, GR(r), 0, Math.PI * 2);
+  ctx.moveTo(GR(r * 0.55), GR(-r * 0.05)); ctx.lineTo(GR(r * 1.55), GR(r * 0.3)); ctx.lineTo(GR(r * 0.6), GR(r * 0.62)); ctx.closePath();
+  celPath(ctx, rig, pal.skin, 0, 0, r, 0.38, 0.28);
   if (rig.override) return;
+  gobEarShade(ctx, rig, ex, ey, er, ea, pal.skin);
   // soot smudge on the crown + chin shadow
   ctx.fillStyle = tones(rig, pal.skin).sh; ctx.fillRect(GR(-r * 0.2), GR(r * 0.8), GR(r * 0.7), 2);
 }
@@ -613,13 +639,20 @@ export function gobFace(ctx, rig, pose, inf) {
     ctx.fillStyle = ink; ctx.fillRect(nx, ey + 1, 5, 2); ctx.fillRect(fx, ey + 1, 4, 2);
     if (face === FACE.happy) { ctx.fillRect(nx - 1, ey + 2, 1, 2); ctx.fillRect(nx + 5, ey + 2, 1, 2); }
   } else {
-    const w = hurt ? 6 : 5, h = hurt ? 5 : 4, top = hurt ? ey - 1 : ey;
+    // The white grows with the pupil. A 3 px pupil in the old 5x4 eye left a 1 px rim of yellow and the goblin's
+    // glow — the one bright mark on a green head, and the thing that says these are not people — read as a black
+    // hole with a smear round it. 6x5 puts the rim back at 2-3 px while the pupil still clears the mark floor.
+    const w = hurt ? 7 : 6, h = hurt ? 6 : 5, top = hurt ? ey - 1 : ey;
     if (tell && !rig.override) { ctx.fillStyle = rig.col(GOB.warn); ctx.fillRect(nx - 2, top - 1, w + 2, h + 2); ctx.fillRect(fx - 2, top - 1, w + 1, h + 2); }
     ctx.fillStyle = rig.col(warn ? GOB.warn : tell ? GOB.tell : rig.palette.glow);
     ctx.fillRect(nx - 1, top, w, h); ctx.fillRect(fx - 1, top, w - 1, h);
     if (!rig.override) {
-      const pw = hurt ? 1 : 2;
-      ctx.fillStyle = ink; ctx.fillRect(nx + 1 + lx, top + 1 + ly, pw, pw); ctx.fillRect(fx + lx, top + 1 + ly, pw, pw);
+      // 3 px FLAT, and never the 1 px the hurt face used to get: ccc343f's rigParts sets the rule these eyes never
+      // saw — a pupil under 3 px does not survive the §0.7 mark floor, and a face whose pupils the floor has eaten
+      // has no eyes at all, which is precisely what a hurt Sootborn had. The far eye is 1 px narrower than the near
+      // one, so its pupil's look-offset is clamped rather than allowed to walk off the white.
+      const pw = 3, flx = Math.max(-1, Math.min(0, lx));
+      ctx.fillStyle = ink; ctx.fillRect(nx + 1 + lx, top + 1 + ly, pw, pw); ctx.fillRect(fx + flx, top + 1 + ly, pw, pw);
       if (angry || tell) { ctx.fillRect(nx - 1, top, w, 1); ctx.fillRect(fx - 1, top, w - 1, 1); }
     }
   }
@@ -627,7 +660,9 @@ export function gobFace(ctx, rig, pose, inf) {
   // brows (2px, shade green): angry = slanted in, hurt = raised, else flat
   ctx.fillStyle = tones(rig, rig.palette.skin).deep;
   const by = ey - 4;
-  if (angry || tell) { ctx.fillRect(nx - 2, by - 1, 2, 2); ctx.fillRect(nx, by, 2, 2); ctx.fillRect(nx + 2, by + 1, 3, 2); ctx.fillRect(fx - 1, by, 2, 2); ctx.fillRect(fx + 1, by + 1, 2, 2); }
+  // ONE slanted bar an eye, not a staircase of five 2x2 rects. The staircase was five separate marks where the cast's
+  // other faces carry one, so it measured as clutter and read at 1x as a row of dots above the eye rather than a brow.
+  if (angry || tell) { brow(ctx, nx - 2, by - 1, nx + 3, by + 2, 2); brow(ctx, fx - 1, by, fx + 3, by + 2, 2); }
   else if (hurt) { ctx.fillRect(nx - 1, by - 2, 5, 2); ctx.fillRect(fx - 1, by - 2, 4, 2); }
   else { ctx.fillRect(nx - 1, by, 5, 2); ctx.fillRect(fx - 1, by, 4, 2); }
   // mouth row under the nose base

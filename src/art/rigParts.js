@@ -187,8 +187,12 @@ export function drawHairCap(ctx, rig, r, hair, style = 'short') {
   celPath(ctx, rig, hair, -r * 0.2, -r * 0.5, r, 0.4, 0.3);
 }
 
-/** One brow as a single slanted bar of thickness `t`: (x0,y0) -> (x1,y1). Inherits the current fillStyle. */
-function brow(ctx, x0, y0, x1, y1, t) {
+/**
+ * One brow as a single slanted bar of thickness `t`: (x0,y0) -> (x1,y1). Inherits the current fillStyle.
+ * Exported because the goblin rig (content/enemies/common.js) hooks its own face and so never got ccc343f's brows;
+ * a second copy of four lines is how two faces in one game drift apart.
+ */
+export function brow(ctx, x0, y0, x1, y1, t) {
   ctx.beginPath();
   ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x1, y1 + t); ctx.lineTo(x0, y0 + t);
   ctx.closePath(); ctx.fill();
