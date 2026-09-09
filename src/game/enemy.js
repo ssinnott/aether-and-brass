@@ -36,6 +36,7 @@ import { clamp, sign } from '../engine/math.js';
 import { drawText } from '../engine/text.js';
 import { floatText } from '../art/fx.js';
 import { Prop } from './items.js';
+import { laneAroundHazards } from './hazards.js';
 
 /** Defaults for `def.ai` (content overrides per type / variant). */
 export const AI_DEFAULTS = Object.freeze({
@@ -267,7 +268,10 @@ export class Enemy extends Fighter {
     }
     const standoff = Math.max(10, ai.attackRange - 8);
     const wantX = t.x - sign(dx || this.facing) * standoff;
-    const laneZ = (ai.flank && adx > 70) ? clamp(t.z + this.flankZ, world.floorBand.z0, world.floorBand.z1) : t.z;
+    const band = world.floorBand;
+    let laneZ = (ai.flank && adx > 70) ? clamp(t.z + this.flankZ, band.z0, band.z1) : t.z;
+    // GDD 6: walk AROUND a hazard the approach would cross (the dock's cargo hook sweeps a 176px arc)
+    laneZ = laneAroundHazards(world, this.x, wantX, laneZ, band.z0, band.z1);
     const mz = laneZ - this.z;
     this.moveToward(wantX - this.x, Math.abs(mz) > 3 ? mz : 0, 1, false, adx > 260);
   }
@@ -279,7 +283,8 @@ export class Enemy extends Fighter {
     if (this.ai.hoverCircle && this.aiTimer % 120 === 0) this.hoverSide = -curSide;
     const wantX = t.x + (this.ai.hoverCircle ? this.hoverSide : curSide) * this.hoverDist;
     if (this.aiTimer % 90 === 45) this.hoverZ = rng.range(-30, 30);
-    const wantZ = clamp(t.z + this.hoverZ, world.floorBand.z0, world.floorBand.z1);
+    const band = world.floorBand;
+    const wantZ = laneAroundHazards(world, this.x, wantX, clamp(t.z + this.hoverZ, band.z0, band.z1), band.z0, band.z1);
     const mx = wantX - this.x, mz = wantZ - this.z;
     if (Math.abs(mx) > 4 || Math.abs(mz) > 4) this.moveToward(mx, mz, 0.7, Math.abs(mx) < 30); else this.stand();
     if (this.aiTimer > HOVER_MAX) this.aiState = 'APPROACH';

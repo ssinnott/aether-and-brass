@@ -2,6 +2,7 @@
 // occasional jump attack / special / super / dodge, forward-throw held enemies, walk (run) right when no enemies remain.
 import { ST, METER } from '../constants.js';
 import { rng } from '../engine/rng.js';
+import { laneAroundHazards } from './hazards.js';
 
 const ATTACK_EVERY = 8, Z_TOL = 14, RUN_DIST = 170, STOP_RUN_DIST = 110;
 
@@ -31,6 +32,11 @@ export function botIntent(p, world) {
   const e = pickTarget(p, world);
   if (!e) {
     it.x = 1;
+    // a human steps round a live hazard; the autopilot has to be told to (walking into the dock's cargo
+    // hook at its own z is a knockdown every pass, which stalls the walk to the next wave)
+    const band = world.floorBand;
+    const lane = laneAroundHazards(world, p.x, p.x + 120, p.z, band.z0, band.z1);
+    if (Math.abs(lane - p.z) > 4) it.y = lane > p.z ? 1 : -1;
     if (!world.camera.locked && f % 90 < 80) it.run = true;
     else if (p.running) it.x = 0;
     return it;

@@ -192,6 +192,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
 - **One hit per body per activation.** After a hazard catches you it cannot touch you again for ~90–120f (its `grace`) — long enough to land, lie, stand up and step clear. An eruption never juggles you for its whole active window.
 - **The knockback throws you clear.** Hazard hits carry `fromX`, so the launch or knockdown pushes you *away* from the vent / piston / hook rather than off your own facing, which used to drop you straight back into it.
 - **Tells are the fair warning**, not the hit count: rattle / shadow / horn / ring, 30f or more.
+- **Mobs path around one that is live.** An enemy approaching a player steers to the edge of a hazard's footprint (the cargo hook's whole 176px arc) while it is telling or firing, so hazard damage on a mob is something the player sets up by knocking them in — a *dormant* vent is still bait to be walked over.
 
 ## Section 1, Sootfoot Docks (x 0–1800; rain, night)
 - **Setting:** airship moorings, chain-lashed gantries, light rain.
