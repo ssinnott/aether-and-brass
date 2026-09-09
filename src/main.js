@@ -48,11 +48,11 @@ export function parseOptions(search = window.location.search) {
     // which board to play: 1-based stage number (see content/stage/index.js). Honoured outside dev mode too so a
     // link can point straight at a board, and it opens that board on BOARD SELECT for this page load (game/progress.js).
     stage: q.has('stage') ? (parseInt(q.get('stage'), 10) || 1) : 1,
-    // Online co-op invite links: ?room=CODE joins that room, ?host=1 hosts it, ?transport= picks
-    // the signalling strategy (mqtt by default; broadcast is same-machine tabs and the e2e test).
+    // Online co-op invite links: ?room=CODE joins that room, ?host=1 hosts it. Room codes over MQTT
+    // are the only connection the UI offers; ?transport=broadcast is the same-machine e2e test hook.
     room: (q.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8),
     host: flag('host'),
-    transport: ['mqtt', 'broadcast', 'manual'].includes(q.get('transport')) ? q.get('transport') : 'mqtt',
+    transport: q.get('transport') === 'broadcast' ? 'broadcast' : 'mqtt',
     // open every board on BOARD SELECT for this page load; `resetprogress` wipes the saved unlocks instead.
     unlockall: flag('unlockall'),
     resetprogress: flag('resetprogress'),

@@ -21,10 +21,11 @@ input masks over a WebRTC data channel, with no server we operate.
 | Frame scheduler | `src/net/lockstep.js` | Delay applied at record time; `resend()` while stalled |
 | Desync canary | `src/net/checksum.js` | FNV-1a over `rng.state` + per-entity sim fields |
 | Peer connection | `src/net/peer.js` | Unreliable, unordered channel; queues early ICE candidates |
-| Signalling | `src/net/signal.js` | MQTT over WSS, BroadcastChannel, copy-paste codes |
+| Signalling | `src/net/signal.js` | Room codes over MQTT/WSS; BroadcastChannel for the e2e test |
 | MQTT subset | `src/net/mqtt-codec.js` | Streaming parser: a WebSocket frame does not align with an MQTT packet |
 | Session | `src/net/session.js` | Signalling → lobby → match, and the per-frame pump |
-| UI | `src/game/screens/lobby.js` | Host/join, hero pick, host's board pick, ready; `?room=CODE` invite links |
+| UI | `src/game/screens/lobby.js` | Host/join by room code, hero pick, host's board pick, ready; `?room=CODE` invite links |
+| Hero cards | `src/game/screens/charcards.js` | The 140x200 cards, shared by the lobby and the local CHOOSE YOUR FIGHTER |
 | Tests | `tools/nettest.js`, `tools/playtest.js` | Pure-Node suites plus a two-page end-to-end match |
 
 ### Shared state: board unlocks are per-group
@@ -53,10 +54,33 @@ a new id and the pairing reads as a new group. Unavoidable without accounts.
 Anything else in `progress` stays local — it is read at screen boundaries, never inside the
 simulation, so it cannot desync a match.
 
+### One connection, one hero each
+
+The lobby offers exactly one way in: a six-character **ROOM CODE**, rendezvoused through a public
+MQTT broker and shareable as a `?room=CODE` invite link. The earlier same-machine and copy-paste
+flavours are gone — three doors onto one feature is three things to explain and three to keep
+working. `?transport=broadcast` still drives BroadcastChannel for `tools/playtest.js`, and is not
+offered in the UI.
+
+Hero picking is the local CHOOSE YOUR FIGHTER screen: the same brass card row, busts, stat pips and
+gear-ring cursors (`src/game/screens/charcards.js`), with **both** cursors on it — P1 white, P2
+cyan, exactly as they read in the match. The peer's cursor is driven by their `LOBBY` packet.
+
+Unlike the couch screen, the two players may **not** share a hero. On a sofa "you're the darker
+one" works; online, two identical fighters with no shared screen to point at do not. So
+`net/session.js` owns the rule: `setChar` refuses the hero the peer is holding, `nextChar` steps the
+cursor over their card (drawn greyed out), and if two picks cross in flight the **guest** yields to
+the next free hero and drops its ready, so the two never chase each other and no match starts on a
+fighter someone did not choose.
+
+While the room code is being typed the lobby reads the keyboard raw and the action bindings are
+ignored: half the code alphabet (B, C, V, X, Z) is also a P1 solo alias, and `C` is dodge, so a code
+with a `C` in it used to back the player out of the screen mid-word.
+
 **Deferred from v1**, deliberately: rollback (M2), state-transfer resync after a desync (a
 desync ends the session and hands P2 to the bot), more than two players, and the MQTT
-transport is untested against a live broker from this environment — BroadcastChannel and the
-copy-paste path are the verified ones.
+transport is untested against a live broker from this environment — BroadcastChannel is the
+verified path.
 
 ### What testing actually proved
 
@@ -179,6 +203,8 @@ gets an answer blob, pastes it back. Connection established.
 - **Ships as:** ~80 lines using raw `RTCPeerConnection`, no dependencies at all
 - **Cost:** zero, and depends on nothing but a public STUN server
 - **UX:** genuinely clunky — two round trips of copy-paste before you play
+- **Not shipped.** Built first as the zero-dependency floor, then removed once room codes worked:
+  see "One connection, one hero each" above.
 - **Worth building anyway** as the "signalling is down / firewalled" fallback. Compress
   the SDP (strip candidates you don't need, deflate + base64) and it's a long-ish code
   rather than a wall of text.
