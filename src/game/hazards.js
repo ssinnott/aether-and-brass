@@ -3,6 +3,9 @@
 // the Foundry Row molten channel (z < 20), the funicular railings (front/back 12px, throw-overs are ring-outs),
 // the boss dais edge vents (shrinking band) and the cargo-bay conveyor strip (drifts everything left, carries crates).
 // Hazards hurt everyone (team NONE area hits); they are `fx` entities (never hit targets) drawn in depth order.
+// Balance rule (GDD 6 "Hazard rules"): a hazard lands ONE hit per body per activation. Whoever it catches is immune to
+// THAT hazard for `grace` frames — an airborne body cannot act, so re-hitting it every `every` frames only juggled it
+// into the juggle cap. `every` is now just how often the active window re-scans for someone who has walked in.
 import { FLOOR_TOP, TEAM, VIEW_W, ST, Z_MAX } from '../constants.js';
 import { Entity } from './entity.js';
 import { Projectile } from './projectile.js';
@@ -21,21 +24,23 @@ const vrng = makeRng(0x4a2d);
 
 const OL = '#2B2B30';
 const AIR_STATES = new Set([ST.KNOCKDOWN, ST.THROWN, ST.HURT_AIR]);
-/** Per-type defaults: period / tell / active frames and the hit applied while active. */
-// `every` is how often a live hazard re-fires its area hit (so it cannot slip past someone walking in late);
-// `rehit` is how long that hit remembers a fighter it already caught. Without the second number a hazard
-// re-hits whatever it just launched, all the way through the fall, and one eruption or one pass of the hook
-// stacks 4-7 hits (each x1.2 for being airborne) - enough to kill a Footman outright. One firing, one hit.
+/**
+ * Frames a body is immune to the hazard that just caught it (per-type `grace` overrides this).
+ * A launch is ~32f of airtime, then 40f lying and a get-up, so ~90f is "one hit, then you are on
+ * your feet with time to step clear". Without it an active window re-hit every `every` frames and
+ * juggled whoever it launched until the juggle cap — a single vent could take half a health bar.
+ */
+const HAZARD_GRACE = 90;
+/** Per-type defaults: period / tell / active frames, the hit applied while active, and the per-body grace after it. */
 export const HAZARD_TYPES = {
-  steamVent: { period: 180, tell: 20, active: 60, r: 26, every: 8, rehit: 60, color: '#e8f0f4', hit: { damage: 8, type: 'launch', kbX: 2, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
-  aetherVent: { period: 120, tell: 30, active: 40, r: 26, every: 8, rehit: 40, color: '#4DF0E0', hit: { damage: 12, type: 'launch', kbX: 2, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
-  piston: { period: 240, tell: 30, active: 10, r: 30, every: 5, rehit: 60, color: '#4a4e58', hit: { damage: 18, type: 'knockdown', kbX: 4, kbY: 5, hitstun: 24 }, tellSfx: 'hydraulic', sfx: 'piston_crush' },
-  // the hook is live all period long, so its `rehit` is per PASS of the arc, not per firing (GDD 6.1: 12, knockdown)
-  hook: { period: 120, tell: 0, active: 120, r: 18, every: 4, rehit: 40, color: '#9a9aa4', hit: { damage: 12, type: 'knockdown', kbX: 5, kbY: 4, hitstun: 22 }, sfx: null, swing: 70 },
-  crossbar: { period: 360, tell: 40, active: 12, r: 340, every: 6, color: '#3A3F4B', hit: { damage: 14, type: 'knockdown', kbX: 3, kbY: 5, hitstun: 22, z: 40 }, tellSfx: 'roar', sfx: 'hammer_slam', lane: 40 },
+  steamVent: { period: 180, tell: 30, active: 45, r: 26, every: 12, grace: 90, color: '#e8f0f4', hit: { damage: 7, type: 'launch', kbX: 6, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
+  aetherVent: { period: 120, tell: 30, active: 40, r: 26, every: 12, grace: 100, color: '#4DF0E0', hit: { damage: 10, type: 'launch', kbX: 6, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
+  piston: { period: 240, tell: 36, active: 10, r: 30, every: 10, grace: 110, color: '#4a4e58', hit: { damage: 16, type: 'knockdown', kbX: 5, kbY: 5, hitstun: 24 }, tellSfx: 'hydraulic', sfx: 'piston_crush' },
+  hook: { period: 120, tell: 0, active: 120, r: 18, every: 10, grace: 100, color: '#9a9aa4', hit: { damage: 10, type: 'knockdown', kbX: 6, kbY: 4, hitstun: 22 }, sfx: null, swing: 70 },
+  crossbar: { period: 360, tell: 40, active: 12, r: 340, every: 12, grace: 120, color: '#3A3F4B', hit: { damage: 12, type: 'knockdown', kbX: 3, kbY: 5, hitstun: 22, z: 40 }, tellSfx: 'roar', sfx: 'hammer_slam', lane: 40 },
   // Stage 2: a lightning conductor. The storm earths itself through the mast, so the deck around it is a bad place to
-  // stand: a violet ring builds for 40f, then the strike knocks down AND leaves you stunned for a moment.
-  lightning: { period: 220, tell: 40, active: 12, r: 34, every: 6, rehit: 60, color: '#9B7BFF', hit: { damage: 14, type: 'knockdown', kbX: 3, kbY: 6, hitstun: 24, status: { stunned: { frames: 24 } } }, tellSfx: 'coil_charge', sfx: 'thunder_strike' },
+  // stand: a violet ring builds for 40f, then the strike knocks down and leaves you seeing stars for a moment.
+  lightning: { period: 220, tell: 40, active: 12, r: 34, every: 12, grace: 120, color: '#9B7BFF', hit: { damage: 12, type: 'knockdown', kbX: 5, kbY: 6, hitstun: 24, status: { stunned: { frames: 10 } } }, tellSfx: 'coil_charge', sfx: 'thunder_strike' },
 };
 const PISTON_UP = 130, CROSSBAR_UP = 260;
 // Hook: pivot-to-eye chain length. Fixed, so the head swings on an arc (and rides up at the ends) instead of
@@ -80,8 +85,8 @@ export class Hazard extends Entity {
     this.offset = spec.offset || 0;
     this.shadowW = 0;
     this.phase = 'idle'; this.t = 0; this.lastHit = -99;
-    this.recent = new Map();   // fighter id -> frame it was last hit, while info.rehit is set
-    this.pending = null;       // the area hit awaiting resolution, read back once combat has run
+    /** fighter id -> world frame this hazard may hit it again (see HAZARD_GRACE). */
+    this.immune = new Map();
     this.zSize = this.info.r;
     this.isHazard = true;      // enemy pathing looks for these in world.entities (laneAroundHazards)
   }
@@ -101,29 +106,8 @@ export class Hazard extends Entity {
   get swingX() { return dsin((this.t / this.period) * Math.PI * 2) * (this.info.swing || 0); }
   get tellStart() { return this.period - this.activeFrames - this.tellFrames; }
   get activeStart() { return this.period - this.activeFrames; }
-  /**
-   * Fire an area hit that skips anyone this hazard hit inside the last `info.rehit` frames. Combat resolves
-   * the hit after every entity has updated, so who it caught is read back on a later frame (`reap`).
-   */
-  areaHitOnce(world, x) {
-    const p = world.spawnAreaHit(null, x, this.z, this.info.r, this.info.hit);
-    const cd = this.info.rehit;
-    if (cd) {
-      for (const [id, f] of this.recent) { if (world.frame - f >= cd) this.recent.delete(id); else p.hitTargets.add(id); }
-      this.pending = p;
-    }
-    return p;
-  }
-  /** Stamp whoever the last area hit actually connected with; ids seeded above keep their original frame. */
-  reap(world) {
-    const p = this.pending;
-    if (!p) return;
-    for (const id of p.hitTargets) if (!this.recent.has(id)) this.recent.set(id, world.frame);
-    if (p.removeMe) this.pending = null;
-  }
   update(world) {
     this.world = world;
-    this.reap(world);
     this.t = (world.frame + this.offset) % this.period;
     const prev = this.phase;
     this.phase = this.t >= this.activeStart ? 'active' : this.t >= this.tellStart ? 'tell' : 'idle';
@@ -146,19 +130,35 @@ export class Hazard extends Entity {
       if (this.type === 'crossbar') { if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; this.laneHit(world); } return; }
       if (this.type === 'lightning') { if (this.t % 3 === 0) particles.burst('spark', this.x, 12, this.z, 3, { speed: 2.6, up: 1.6, color: this.info.color }); }
       else if (this.type !== 'piston' && this.t % 3 === 0) particles.burst('steam', this.x, 10, this.z, 2, { speed: 1, up: 3.5, spread: 0.6, color: this.info.color, sizeJitter: 1.5 });
-      if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; this.areaHitOnce(world, this.x); }
+      if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; this.arm(world, world.spawnAreaHit(null, this.x, this.z, this.info.r, this.hitFrom(this.x))); }
     }
   }
-  /** Swinging hook: a moving area hit along its arc, once per pass per fighter (info.rehit). */
+  /** The hit this hazard deals, tagged with where it came from so the knockback throws the body clear (fighter.takeHit). */
+  hitFrom(x) { return { ...this.info.hit, fromX: x }; }
+  /**
+   * Gate one of this hazard's area hits by the per-body grace window: anyone it caught recently is skipped, and
+   * whoever it catches now is off-limits for `grace` frames. An active window therefore lands ONE hit per body
+   * instead of re-hitting every `every` frames while the victim is still airborne and cannot act.
+   */
+  arm(world, p) {
+    const grace = this.info.grace || HAZARD_GRACE;
+    for (const [id, until] of this.immune) { if (world.frame >= until) this.immune.delete(id); else p.hitTargets.add(id); }
+    p.onHit = (t) => { if (t.kind !== 'prop') this.immune.set(t.id, world.frame + grace); };
+    return p;
+  }
+  /** Swinging hook: a moving area hit along its arc. */
   hitSweep(world) {
     if (world.frame - this.lastHit < this.info.every) return;
     this.lastHit = world.frame;
-    this.areaHitOnce(world, this.x + this.swingX).y = 30;
+    const hx = this.x + this.swingX;
+    const p = this.arm(world, world.spawnAreaHit(null, hx, this.z, this.info.r, this.hitFrom(hx)));
+    p.y = 30;
   }
   /** Pylon crossbar: sweeps the back lane (z < lane) across the whole screen. */
   laneHit(world) {
     const cam = world.camera;
-    world.add(new Projectile({ owner: null, team: TEAM.NONE, x: cam.x + VIEW_W / 2, y: 30, z: 0, r: this.info.r, life: 2, style: 'explosion', hit: this.info.hit, pierce: 99 }));
+    // no `fromX`: the bar spans the screen, so there is no side to be thrown clear of — you step forward in z instead
+    this.arm(world, world.add(new Projectile({ owner: null, team: TEAM.NONE, x: cam.x + VIEW_W / 2, y: 30, z: 0, r: this.info.r, life: 2, style: 'explosion', hit: this.info.hit, pierce: 99 })));
   }
   draw(ctx, cam) {
     const st = this.world && this.world.stage;
@@ -283,7 +283,9 @@ export class Hazard extends Entity {
 export function createHazards(list = []) { return list.map((h) => new Hazard(h)); }
 
 // ---------------------------------------------------------------- environment zones
-const MOLTEN_Z = 20, RAIL = 12, DAIS_EVERY = 20, DAIS_DMG = 5, CONVEYOR_EVERY = 240;
+const MOLTEN_Z = 20, RAIL = 12, DAIS_EVERY = 30, DAIS_DMG = 4, CONVEYOR_EVERY = 240;
+/** How far past the lip a scalded player is thrown, and the forward drift that carries them there. */
+const MOLTEN_EJECT = 12, MOLTEN_EJECT_VZ = 4;
 /** Edge shove: a body knocked down / thrown within EDGE_LANE px of a lethal edge by an attacker standing deeper in the lane drifts
  *  toward that edge at EDGE_VZ px/f while airborne (hits carry no z knockback, so this is what makes "knock them in" reachable). */
 const EDGE_LANE = 30, EDGE_VZ = 2.4;
@@ -340,8 +342,9 @@ export class Zone extends Entity {
     for (const f of world.fighters) {
       if (!this.inX(f) || f.z >= MOLTEN_Z || f.grabbedBy) continue;
       if (f.kind === 'player') {
-        if (!f.dead) { f.takeHit(MOLTEN_HIT, null); this.burns.set(f.id, { f, ticks: 3, t: 0 }); }
-        f.z = MOLTEN_Z + 2; f.vz = 3;
+        // the burn rides on the scald landing: a player still invulnerable (get-up i-frames) is only shoved clear
+        if (!f.dead && f.takeHit(MOLTEN_HIT, null)) this.burns.set(f.id, { f, ticks: 2, t: 0 });
+        f.z = MOLTEN_Z + MOLTEN_EJECT; f.vz = MOLTEN_EJECT_VZ;
         particles.burst('ember', f.x, 6, f.z, 8, { speed: 3, up: 3, color: '#FFB347' });
       } else if (f.kind === 'boss') { f.z = MOLTEN_Z + 1; }
       else if (AIR_STATES.has(f.state) || f.airborne || f.state === ST.LYING) ringOut(world, f, 'molten');
@@ -366,7 +369,8 @@ export class Zone extends Entity {
     }
   }
   /** Boss dais (GDD 5.2): the world's floor band shrinks 20px per phase (stage.js calls shrinkBand); the closed strips are steam
-   *  vents: 5 dmg every 20f to anyone inside, jets along both edges. */
+   *  vents: 4 dmg every 30f to anyone inside, jets along both edges. It is a "get back on the dais" nudge, not a kill zone —
+   *  the band can close faster than a knocked-down player can stand up. */
   updateDais(world) {
     if (!this.active) return;
     const band = world.floorBand || { z0: 0, z1: Z_MAX };

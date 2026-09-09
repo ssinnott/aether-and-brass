@@ -10,18 +10,19 @@
 //         unrecoverable if lost: a dropped START leaves the guest in the lobby forever while the
 //         host plays a match alone, with no timeout and nothing to resend it.
 //
-// Signalling is pluggable (net/signal-*.js). A signal channel is { send(obj), onMessage(fn), close() }
-// and only needs to carry a handful of small JSON objects before the peers talk directly.
+// Signalling is pluggable (net/signal.js). A signal channel is a live rendezvous -
+// { send(obj), onMessage(fn), close() } - and only needs to carry a handful of small JSON objects
+// before the peers talk directly.
 
 /** Public STUN only. A TURN relay would be a server we operate, which the no-backend rule forbids. */
 export const DEFAULT_ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
 
 /**
- * @param {{ isHost: boolean, signal: object, iceServers?: object[], trickle?: boolean,
+ * @param {{ isHost: boolean, signal: object, iceServers?: object[],
  *           onOpen?: () => void, onMessage?: (bytes: Uint8Array) => void,
  *           onClose?: (reason: string) => void, onState?: (state: string) => void }} o
  */
-export function createPeer({ isHost, signal, iceServers = DEFAULT_ICE, trickle = true, onOpen, onMessage, onClose, onState }) {
+export function createPeer({ isHost, signal, iceServers = DEFAULT_ICE, onOpen, onMessage, onClose, onState }) {
   const pc = new RTCPeerConnection({ iceServers });
   const chans = { in: null, ctl: null };
   let opened = false;
@@ -56,20 +57,9 @@ export function createPeer({ isHost, signal, iceServers = DEFAULT_ICE, trickle =
     pc.ondatachannel = (e) => wire(e.channel);   // keyed by label, so the second does not clobber the first
   }
 
-  // Trickle sends each candidate as it is found. Copy-paste signalling cannot do that (it would be
-  // one code per candidate), so it waits for gathering to finish and ships one description instead.
-  pc.onicecandidate = (e) => { if (trickle && e.candidate) signal.send({ cand: e.candidate.toJSON() }); };
-
-  /** Resolve once ICE gathering has finished, so localDescription carries every candidate. */
-  function gathered() {
-    if (pc.iceGatheringState === 'complete') return Promise.resolve();
-    return new Promise((resolve) => {
-      const check = () => { if (pc.iceGatheringState === 'complete') { pc.removeEventListener('icegatheringstatechange', check); resolve(); } };
-      pc.addEventListener('icegatheringstatechange', check);
-      setTimeout(() => { pc.removeEventListener('icegatheringstatechange', check); resolve(); }, 4000); // ship what we have
-    });
-  }
-  const publish = async (desc) => { if (!trickle) await gathered(); signal.send({ sdp: trickle ? desc : pc.localDescription }); };
+  // Trickle: every candidate goes over the rendezvous as it is found, so the connection forms
+  // without waiting for gathering to finish.
+  pc.onicecandidate = (e) => { if (e.candidate) signal.send({ cand: e.candidate.toJSON() }); };
   pc.onconnectionstatechange = () => {
     state(pc.connectionState);
     if (pc.connectionState === 'failed') close('connection failed');
@@ -82,7 +72,7 @@ export function createPeer({ isHost, signal, iceServers = DEFAULT_ICE, trickle =
     offered = true;
     const o = await pc.createOffer();
     await pc.setLocalDescription(o);
-    await publish(o);
+    signal.send({ sdp: o });
   }
 
   signal.onMessage(async (m) => {
@@ -98,7 +88,7 @@ export function createPeer({ isHost, signal, iceServers = DEFAULT_ICE, trickle =
         if (m.sdp.type === 'offer') {
           const a = await pc.createAnswer();
           await pc.setLocalDescription(a);
-          await publish(a);
+          signal.send({ sdp: a });
         }
       } else if (m.cand) {
         if (pc.remoteDescription) await pc.addIceCandidate(m.cand).catch(() => {});
@@ -109,13 +99,12 @@ export function createPeer({ isHost, signal, iceServers = DEFAULT_ICE, trickle =
 
   // Announce presence until the SDP exchange completes. Without this the peer that arrives second
   // never learns the first one is there, and the connection silently never forms.
-  const beat = signal.rendezvous === false ? 0 : setInterval(() => {
+  const beat = setInterval(() => {
     if (closed) return;
     if (pc.remoteDescription) { clearInterval(beat); return; }
     signal.send({ hello: true });
   }, 400);
-  if (signal.rendezvous === false) makeOffer();   // copy-paste: produce the offer code immediately
-  else signal.send({ hello: true });
+  signal.send({ hello: true });
 
   function close(reason = 'closed') {
     if (closed) return;

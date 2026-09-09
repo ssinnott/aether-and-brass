@@ -1,7 +1,7 @@
 // Pure-Node tests for the online co-op layer (docs/MULTIPLAYER.md). No browser, no network.
 //
 //   node tools/nettest.js              run every suite
-//   node tools/nettest.js trig proto   run selected suites (trig mqtt proto lockstep checksum signal progress)
+//   node tools/nettest.js trig proto   run selected suites (trig mqtt proto lockstep checksum signal picks progress)
 //
 // These cover the parts that must be provably correct before anything is on the wire: deterministic
 // trig, the MQTT signalling codec, the input/message wire format, and the lockstep frame scheduler
@@ -13,6 +13,7 @@ import * as P from '../src/net/protocol.js';
 import * as S from '../src/net/signal.js';
 import { worldChecksum } from '../src/net/checksum.js';
 import { createLockstep } from '../src/net/lockstep.js';
+import { createNetSession } from '../src/net/session.js';
 
 let failures = 0;
 const ok = (cond, msg) => { console.log((cond ? '  ok:   ' : '  FAIL: ') + msg); if (!cond) failures++; };
@@ -150,19 +151,39 @@ const suites = {
     ok(worldChecksum({ ...world(), freeze: 5 }, rng) !== base, 'world.freeze is caught (it early-returns the whole update)');
   },
 
-  // ---- net/signal.js: room codes and the copy-paste code format ----
+  // ---- net/signal.js: the room codes the whole lobby is built on ----
   signal() {
-    const desc = { type: 'offer', sdp: 'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\na=candidate:1 1 udp 2130706431 10.0.0.1 5000 typ host\r\n' };
-    const code = S.encodeCode(desc);
-    ok(S.decodeCode(code).sdp === desc.sdp, 'an SDP survives the copy-paste code round trip');
-    ok(!/[+/=]/.test(code), 'the code is base64url, so it is safe in a URL and double-clickable');
-    ok(S.decodeCode('not a code') === null && S.decodeCode('') === null, 'malformed codes decode to null instead of throwing');
-    ok(S.decodeCode(S.encodeCode({ type: 'answer', sdp: 'x' })).type === 'answer', 'answer codes round trip');
-
     const codes = new Set();
     for (let i = 0; i < 2000; i++) codes.add(S.makeRoomCode());
     ok(codes.size === 2000, '2000 room codes with no collision');
     ok([...codes].every((c) => /^[23456789BCDFGHJKMNPQRSTVWXYZ]{6}$/.test(c)), 'room codes avoid vowels and ambiguous glyphs');
+    ok(typeof S.mqttSignal === 'function' && typeof S.broadcastSignal === 'function', 'the two signalling strategies are the room-code rendezvous and the test channel');
+  },
+
+  // ---- net/session.js: one hero each. Online there is no "I'm the darker one", so the lobby
+  // refuses a pick the peer is holding and the guest yields when two picks cross in flight. ----
+  picks() {
+    const game = { characters: [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }], options: {} };
+    const stubInput = { setJoined() {}, setVirtual() {}, clearVirtual() {}, pollRaw: () => ({}) };
+    const make = (isHost) => createNetSession({ game, input: stubInput, isHost, room: 'TESTRM' });
+
+    const host = make(true), guest = make(false);
+    ok(host.lobby.myChar === 0 && guest.lobby.myChar === 1, 'the two peers open on different heroes');
+
+    host.lobby.theirChar = 2;
+    ok(host.charTaken(2) && !host.charTaken(1), "the peer's hero is the only one marked taken");
+    ok(host.setChar(3) && host.lobby.myChar === 3, 'a free hero can be chosen');
+    ok(host.setChar(2) === false && host.lobby.myChar === 3, "the peer's hero is refused, and the pick does not move");
+    host.lobby.myChar = 1;
+    ok(host.nextChar(1) === 3, 'moving right skips over the card the peer is holding');
+    ok(host.nextChar(-1) === 0, 'and moving left skips it too');
+    host.lobby.myChar = 3;
+    ok(host.nextChar(1) === 0, 'the row wraps');
+
+    // One character registered: the rule cannot be honoured, and must not deadlock the lobby.
+    const solo = createNetSession({ game: { characters: [{ id: 'a' }], options: {} }, input: stubInput, isHost: true });
+    solo.lobby.theirChar = 0;
+    ok(!solo.charTaken(0) && solo.setChar(0), 'with a single hero registered both players may share it');
   },
 
   // ---- game/progress.js: co-op progress belongs to the pairing, not to either player's solo save ----
