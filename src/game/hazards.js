@@ -33,6 +33,9 @@ export const HAZARD_TYPES = {
   lightning: { period: 220, tell: 40, active: 12, r: 34, every: 6, color: '#9B7BFF', hit: { damage: 14, type: 'knockdown', kbX: 3, kbY: 6, hitstun: 24, status: { stunned: { frames: 24 } } }, tellSfx: 'coil_charge', sfx: 'thunder_strike' },
 };
 const PISTON_UP = 130, CROSSBAR_UP = 260;
+// Hook: pivot-to-eye chain length. Fixed, so the head swings on an arc (and rides up at the ends) instead of
+// sliding sideways on a chain that stretches.
+const HOOK_CHAIN = 172;
 
 /** A cyclic stage hazard placed at world (x, z). */
 export class Hazard extends Entity {
@@ -137,15 +140,27 @@ export class Hazard extends Entity {
         break;
       }
       case 'hook': {
-        const hx = Math.round(sx + this.swingX), top = sy - 230;
-        // gantry beam + the chain to the swinging hook
+        // A pendulum, not a slider: the eye stays HOOK_CHAIN from the pivot, so the head rides up at the ends of
+        // the sweep, and the whole head (eye, shank, barb) is drawn in the chain's frame so it hangs off the chain
+        // instead of standing bolt upright beside it.
+        const top = sy - 230, dx = this.swingX;
+        const a = Math.asin(Math.max(-1, Math.min(1, dx / HOOK_CHAIN)));
+        const hx = Math.round(sx + dx), hy = Math.round(top + Math.sqrt(HOOK_CHAIN * HOOK_CHAIN - dx * dx));
+        // gantry beam the chain runs from
         rrect(ctx, sx - 60, top - 8, 120, 10, 2, tones('#3A3F4B').base, OL, 1); ctx.fillStyle = tones('#C9963A').hi; for (let i = 0; i < 6; i++) ctx.fillRect(sx - 54 + i * 20, top - 4, 2, 2);
-        ctx.strokeStyle = '#5a5a62'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx, top); ctx.lineTo(hx, sy - 62); ctx.stroke();
-        ctx.fillStyle = '#9a9aa4'; for (let i = 1; i < 10; i++) ctx.fillRect(Math.round(sx + (hx - sx) * i / 10) - 1, Math.round(top + (sy - 62 - top) * i / 10), 2, 4);
-        circle(ctx, hx, sy - 58, 6, tones('#C9963A').base, OL, 1);
-        ctx.strokeStyle = OL; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(hx, sy - 44, 12, Math.PI * 1.1, Math.PI * 0.3, true); ctx.stroke();
-        ctx.strokeStyle = '#9a9aa4'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(hx, sy - 44, 12, Math.PI * 1.1, Math.PI * 0.3, true); ctx.stroke();
-        ctx.strokeStyle = '#c8d0d8'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(hx - 1, sy - 45, 12, Math.PI * 1.15, Math.PI * 0.85, true); ctx.stroke();
+        ctx.strokeStyle = '#5a5a62'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx, top); ctx.lineTo(hx, hy); ctx.stroke();
+        ctx.fillStyle = '#9a9aa4'; for (let i = 1; i < 10; i++) ctx.fillRect(Math.round(sx + (hx - sx) * i / 10) - 1, Math.round(top + (hy - top) * i / 10) - 2, 2, 4);
+        // head, in the chain's frame: shank and barb are ONE path (ART_STYLE 0.7) running out of the eye at the
+        // origin, so the steel is continuous from the chain to the point instead of a ring beside a loose curve
+        ctx.save(); ctx.translate(hx, hy); ctx.rotate(-a);
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        const hookPath = () => { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 5); ctx.arc(0, 17, 12, Math.PI * 1.5, Math.PI * 0.3, true); ctx.stroke(); };
+        ctx.strokeStyle = OL; ctx.lineWidth = 8; hookPath();
+        ctx.strokeStyle = '#9a9aa4'; ctx.lineWidth = 5; hookPath();
+        ctx.strokeStyle = '#c8d0d8'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(-1, 16, 12, Math.PI * 1.42, Math.PI * 0.9, true); ctx.stroke();
+        circle(ctx, 0, 0, 6, tones('#C9963A').base, OL, 1);
+        ctx.fillStyle = tones('#C9963A').hi; ctx.fillRect(-3, -4, 2, 3);
+        ctx.restore();
         ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(hx, sy, 14, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
         break;
       }
