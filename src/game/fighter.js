@@ -40,6 +40,7 @@
 //  hitbox { x, y, w, h, z, type: light|medium|heavy|launch|knockdown|grab|throw, damage, kbX, kbY, hitstun, once, rehit, multiHit: N,
 //           friendly, hitsBehind (mirrored copy), maxTargets, pierceDamage (damage for the 2nd+ target), reaction: flinch|stagger|launch|knockdown,
 //           stagger, status: { burn: {...} }, element: 'fire', groundedOnly, otg, unblockable, breaksArmor, onHit: 'rebound'|name, sfx,
+//           fromX (world x the hit came from: knockback pushes away from it instead of off the victim's facing — stage hazards),
 //           groundBounce: true|vy (an airborne / knocked-down target bounces off the floor once more: Brunhild slam, Rook hip toss),
 //           extinguish: true (removes fire puddles the box touches: Pip's Steam Vent) }
 //  hitboxes [..] | move { x, z, y|vy } | armor: true|N | invuln: true | fx [{ kind, x, y, ... }] | sfx | cancel | event | tell: true
@@ -418,7 +419,11 @@ export class Fighter extends Entity {
     if (hr && typeof hr === 'object') hit = hr;
     const tr = this.traits, air = this.airborne, part = this.hitPart; this.hitPart = null;
     let type = hit.type || 'light';
-    const face = attacker ? (sign(this.x - attacker.x) || attacker.facing) : -this.facing;
+    // `hit.fromX` names the world x a hit came from. Ownerless stage hazards set it so their knockback throws the body
+    // AWAY from the vent / piston / hook; without it an unowned hit fired off the victim's own facing, which routinely
+    // launched them straight back down into the thing that just hit them.
+    const face = hit.fromX != null ? (sign(this.x - hit.fromX) || -this.facing)
+      : attacker ? (sign(this.x - attacker.x) || attacker.facing) : -this.facing;
     if ((type === 'knockdown' || type === 'launch') && tr.ignoreKnockdownBelow && (hit.damage || 0) < tr.ignoreKnockdownBelow && !air) type = 'heavy';
     // armor: super armor / frame armor (front-only variants), flinchEvery, launch / knockdown pass unless noLaunch
     // armor is evaluated fresh here (not this.armor from the last update): hits landing during hit-stop must still spend frame armor
