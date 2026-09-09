@@ -53,7 +53,23 @@ const HIP_ACC = { attach: 'hip', draw: drawHipGear };
 
 // ---------------------------------------------------------------- C1 CHAFF: the bounce. Low pokes whiff under it; it always lands inside its own punish window.
 const CHAFF_CARRY = { armR: [16, 16], armL: [-19, 18] };
-const chaffAnims = Object.assign(makeGleanBase(CHAFF_CARRY), {
+/**
+ * PER-VARIANT STANCE AND GAIT (gleaningRig.makeGleanBase `o`). Five jobs, five ways of standing: the head pass gave
+ * the guild five hoods, but five hoods on one pose still measured as one silhouette (worst pairwise IoU 0.720 against
+ * a 0.79 bound — the hood is a small share of a shape whose biggest mass is a gasbag). The stance is where the rest
+ * of the difference lives, and it costs no gameplay field: `stance` is the neutral pose every base animation inherits,
+ * `stride` scales the leg swing and `bob` the weight drop, both applied to BOTH mirror halves so the walk cycle's
+ * mirror contract stays exact.
+ */
+const CHAFF_STANCE = { stance: { torso: -1, head: 8, legR: [18, 4], legL: [-20, 6], footR: -20, footL: -17 }, stride: 1.15, bob: 1.2 };
+// the winch hand works BENT OVER her drop with her feet together on a perch: a tall narrow column, knees close.
+const WIN_STANCE = { stance: { torso: 14, head: -6, legR: [6, 14], legL: [-7, 16], footR: -10, footL: -8 }, stride: 0.8, bob: 0.75 };
+// the bruiser is SQUAT and rooted, leaning back under two over-pressured bags: knees bent, feet planted, no reach.
+const THR_STANCE = { stance: { torso: -12, head: 2, legR: [13, 16], legL: [-15, 18], footR: -8, footL: -6 }, stride: 0.75, bob: 1.3 };
+// the thief PROWLS: a deep wide crouch, weight back over the trailing foot, ready to be somewhere else.
+const SIC_STANCE = { stance: { torso: 1, head: 5, legR: [30, -2], legL: [-21, 16], footR: -26, footL: -14 }, stride: 1.2, bob: 0.9 };
+const HAR_STANCE = { stance: { torso: -8, head: 10, legR: [11, 5], legL: [-13, 7], footR: -16, footL: -14 }, stride: 0.9, bob: 0.75 };
+const chaffAnims = Object.assign(makeGleanBase(CHAFF_CARRY, CHAFF_STANCE), {
   // hop: 14f fold-and-swell tell -> the leap (8f active at y 20-40, move x 6 / vy 6) -> hold -> 22f recovery, split so the
   // absorb happens WHERE THE FEET ARE: ~24f of airtime from the active key means touchdown lands ~14f into the recovery,
   // so the first 12f trail the legs in the air and the last 10f are the landing squash. No smear: the flying kick has
@@ -101,7 +117,7 @@ const chaffHooks = {
 };
 const chaff = def({
   variant: 'chaff', name: 'CHAFF', role: 'rusher', hp: 40, damage: 1, speed: 1.25, score: 150, drops: 'none',
-  build: { ...BASE.build, scale: 0.9, bagShape: 'slack', chalk: CHALK.chaff, tool: 'gaff', accessories: [BAG_ACC, WRIST_ACC] },
+  build: { ...BASE.build, scale: 0.9, bagShape: 'slack', hood: 'rag', chalk: CHALK.chaff, tool: 'gaff', accessories: [BAG_ACC, WRIST_ACC] },
   anims: chaffAnims,
   traits: { weight: 0.8 },
   hurtParts: [{ name: 'body', y: [0, 38] }, { name: 'bag', y: [38, 66], damageMult: 1.6 }],
@@ -121,7 +137,7 @@ const BALLAST = { style: 'bomb', kind: 'lob', aimAt: true, flight: 26, gravity: 
   r: 6, muzzle: false, color: GLEAN.sack, damage: 9, type: 'knockdown', kbX: 2, kbY: 4, hitstun: 20, friendly: true, hitSfx: 'land_heavy', draw: drawBallast };
 const WIN_CARRY = { armR: [10, 22], armL: [-14, 24] };
 const WIN_HANG = { armR: [-30, 40], armL: [-40, 42], torso: -6, head: 12, legR: [16, -40], legL: [-12, -34], footR: -30, footL: -28, face: 'angry' };
-const winnowAnims = Object.assign(makeGleanBase(WIN_CARRY), {
+const winnowAnims = Object.assign(makeGleanBase(WIN_CARRY, WIN_STANCE), {
   // ballast: 20f crank tell -> 16f rise to the hang line -> 34f hang at y 64 -> sink -> 26f punish.
   // The hang is THREE micro-beats of aim(5-6f, `aim` re-aims live) -> reach(3f, arm back to the bandolier, torso up,
   // ease in) -> release(3f, both arms driven forward-down, torso over, overshoot + smear, `spawn`), and the three aim
@@ -194,7 +210,7 @@ const winnowHooks = {
 };
 const winnow = def({
   variant: 'winnow', name: 'WINNOW', role: 'ranged', hp: 42, damage: 1, speed: 1, score: 250, drops: 'none',
-  build: { ...BASE.build, scale: 1, bagShape: 'tall', chalk: CHALK.winnow, hipGear: 'drum', bags: 6, accessories: [BAG_ACC, HIP_ACC] },
+  build: { ...BASE.build, scale: 1, bagShape: 'tall', hood: 'peak', chalk: CHALK.winnow, hipGear: 'drum', bags: 6, accessories: [BAG_ACC, HIP_ACC] },
   anims: winnowAnims,
   traits: { weight: 0.9 },
   hurtParts: [{ name: 'body', y: [0, 40] }, { name: 'bag', y: [40, 74], damageMult: 1.6 }],
@@ -209,7 +225,7 @@ const winnow = def({
 // ---------------------------------------------------------------- C3 THRESHER: the shadow. No hitbox in the air; only the landing hurts.
 const THR_CARRY = { armR: [20, 26], armL: [-24, 28] };
 const THR_AIR = { armR: [-54, 30], armL: [-64, 32], torso: -10, head: 8, legR: [30, -50], legL: [-16, -44], footR: -34, footL: -32, face: 'shout' };
-const thresherAnims = Object.assign(makeGleanBase(THR_CARRY), {
+const thresherAnims = Object.assign(makeGleanBase(THR_CARRY, THR_STANCE), {
   // dive: 34f of both bags swelling -> up to y 100 -> 72px of travel with NO hitbox -> pull-down -> the landing shockwave (onLanded) -> 40f punish
   dive: { loop: false, frames: [
     FK(20, { ...THR_CARRY, armR: [34, 44], armL: [-34, 44], torso: 14, head: 12, root: [-2, 2], legR: [18, 16], legL: [-20, 18], face: 'angry', squash: 1.06, stretch: 0.95 },
@@ -269,7 +285,7 @@ const thresherHooks = {
 };
 const thresher = def({
   variant: 'thresher', name: 'THRESHER', role: 'bruiser', hp: 85, damage: 1, speed: 0.85, score: 400, drops: 'none', lyingFrames: 48,
-  build: { ...BASE.build, scale: 1.12, bagShape: 'twin', chalk: CHALK.thresher, hipGear: 'apron', accessories: [BAG_ACC, HIP_ACC] },
+  build: { ...BASE.build, scale: 1.12, bagShape: 'twin', hood: 'cowl', chalk: CHALK.thresher, hipGear: 'apron', accessories: [BAG_ACC, HIP_ACC] },
   anims: thresherAnims,
   traits: { flinchEvery: 2, weight: 1.5 },
   hurtParts: [{ name: 'body', y: [0, 48] }, { name: 'bags', y: [48, 88], damageMult: 1.6 }],
@@ -318,7 +334,10 @@ const HOOKLINE = { style: 'bolt', chained: true, speed: 7, damage: 8, type: 'med
   } };
 /**
  * Slate tally-board on the chest: one fresh chalk stroke every time it robs somebody (torso accessory).
- * Chalk on SLATE is light (L* 84 on 18); CHALK.sickle is the mark on the pale silk and is deliberately dark there.
+ * Chalk on SLATE is light (L* 87 on 30); CHALK.sickle is the mark on the pale silk and is deliberately dark there.
+ * The slate itself is UNCHANGED by the readability pass and was measured before it was left alone: at Oklab L* 29.6
+ * it clears the outline by 16 and now sits 14 under the lifted coat it hangs on, up from 9 — the palette move did
+ * this panel's job for it, so the panel does not move.
  */
 const TALLY_CHALK = '#CFD6E2';
 function drawTallyBoard(ctx, rig) {
@@ -329,7 +348,7 @@ function drawTallyBoard(ctx, rig) {
   for (let i = 0; i < 2 + (rig.tally || 0); i++) ctx.fillRect(x - 3 + (i % 3) * 3, -R(p.torsoH * 0.62) + 3 + ((i / 3) | 0) * 5, 2, 4);
 }
 const SIC_CARRY = { armR: [14, 20], armL: [-18, 22] };
-const sickleAnims = Object.assign(makeGleanBase(SIC_CARRY), {
+const sickleAnims = Object.assign(makeGleanBase(SIC_CARRY, SIC_STANCE), {
   // snatch: 26f coil-lift tell (the bag lights) -> the line goes out flat down the lane -> 28f recovery
   snatch: { loop: false, frames: [
     FK(16, { ...SIC_CARRY, armR: [-70, -20], armL: [26, 24], torso: -6, head: 2, root: [-3, 0], legR: [12, 8], legL: [-16, 12], face: 'angry' },
@@ -377,7 +396,7 @@ const sickleHooks = {
 };
 const sickle = def({
   variant: 'sickle', name: 'SICKLE', role: 'ranged', hp: 60, damage: 1, speed: 1.35, score: 500, drops: 'meter',
-  build: { ...BASE.build, scale: 1, bagShape: 'taut', chalk: CHALK.sickle, tool: 'hook',
+  build: { ...BASE.build, scale: 1, bagShape: 'taut', hood: 'brim', chalk: CHALK.sickle, tool: 'hook',
     proportions: { ...GLEAN_PROPS, upperArm: 17, lowerArm: 17, armR: 3.5 },
     accessories: [BAG_ACC, WRIST_ACC, { attach: 'torso', draw: drawTallyBoard }] },
   anims: sickleAnims,
@@ -393,7 +412,7 @@ const sickle = def({
 // ---------------------------------------------------------------- C5 HARVESTMAN: the caller. Takes the floor away at the exact moment it doubles the crowd.
 const HAR_CARRY = { armR: [18, 24], armL: [-22, 26] };
 const HAR_HANG = { armR: [-150, -20], armL: [-40, 40], torso: -6, head: 10, legR: [18, -44], legL: [-14, -38], footR: -32, footL: -30, face: 'shout' };
-const harvestmanAnims = Object.assign(makeGleanBase(HAR_CARRY), {
+const harvestmanAnims = Object.assign(makeGleanBase(HAR_CARRY, HAR_STANCE), {
   // haul: 40f of horn and blazing bag -> the winch to the hang line -> 40f hanging while two Chaff fall in -> 34f grabbable
   // landing. The four hang keys are a BREATHING LOOP (root y 0/-2/0/-1, torso -6/-10/-4/-8, head +10/+14/+8/+12, legs
   // swinging 8-12 deg out of phase), not one held pose: this is 40 frames of screen time at the moment the player has to
@@ -461,7 +480,7 @@ const harvestmanHooks = {
 const harvestman = def({
   variant: 'harvestman', name: 'HARVESTMAN', role: 'elite', hp: 150, damage: 1, speed: 0.9, score: 1000, drops: 'food_small',
   elite: true, grabbable: false, grabbableByGrappler: true, lyingFrames: 55,
-  build: { ...BASE.build, scale: 1.3, bagShape: 'canopy', chalk: CHALK.harvestman, tool: 'horn', hipGear: 'tags', jawFace: true,
+  build: { ...BASE.build, scale: 1.3, bagShape: 'canopy', hood: 'tall', chalk: CHALK.harvestman, tool: 'horn', hipGear: 'tags', jawFace: true,
     accessories: [BAG_ACC, WRIST_ACC, HIP_ACC] },
   anims: harvestmanAnims,
   traits: { flinchEvery: 2, weight: 1.6 },

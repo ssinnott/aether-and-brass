@@ -6,7 +6,10 @@
 <style>
   html, body { margin: 0; background: #1c1822; color: #eee; font: 12px monospace; }
   canvas { display: block; image-rendering: pixelated; }
-  #help { position: fixed; right: 8px; top: 8px; color: #9a8f7a; white-space: pre; pointer-events: none; }
+  /* In normal flow BELOW the canvas, never over it: sheet-capture.js screenshots the #sheet element itself,
+     and a fixed-position overlay lands inside that screenshot — every captured sheet used to carry this text
+     burned into its top-right corner. The sheet is the evidence; nothing may paint on top of it. */
+  #help { padding: 8px; color: #9a8f7a; white-space: pre; pointer-events: none; }
 </style>
 </head>
 <body>
