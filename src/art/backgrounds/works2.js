@@ -25,7 +25,9 @@ const SKY_TOP = '#B3B8AE', SKY_MID = '#CFCDBF', SKY_LOW = '#E4DECC';
 const ROOF = '#6E6759', ROOF_D = '#565046', BRICK = '#7A6A56', BRICK_D = '#5E5344', STACK = '#635D52';
 const VAT = '#8A8172', VAT_D = '#6B6357', IRON = '#4A4E56', WOOD = '#6A5334', TARP = '#B0AE96';
 const CHALK = '#DAD5C0', LIME = '#CFC9B2', LAMP = '#D8FF6E', SEAL = '#8E2F38';
-const YARD = '#6B6A5F', YARD_D = '#585749', SET = '#7A7869';
+// same cool-ground rule as the lime road (see works1.js): the setts are a green-grey, not a warm one, so the pale
+// warm faction fighting on them keeps its hue gap
+const YARD = '#626B60', YARD_D = '#4E5A4E', SET = '#717A6D';
 
 function paintFar(g, w, h, rnd) {
   g.translate(0, BLEED);

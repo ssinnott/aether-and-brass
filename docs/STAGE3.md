@@ -26,8 +26,13 @@ bone-white sky, long low shadows and kiln smoke standing straight up. It is the 
 and it is the one about money.
 
 **Visual language deltas from the GDD:**
-- Palette: lime road `#CFC6AE`, chalk sky `#DCD8CC`, tallow gold `#C29B4A`, quicklime `#E6ECDC`, harness leather
+- Palette: chalk sky `#DCD8CC`, lime spoil `#CFC6AE`, tallow gold `#C29B4A`, quicklime `#E6ECDC`, harness leather
   `#7A561E`, kiln iron `#394249`, greened pewter `#5E8072`.
+- **The ground is COOL and the faction is warm**, everywhere on the board: the road `#616A5E`, the yard setts
+  `#626B60`, the counting-house boards `#5A6151`. This is measured, not decorative — `tools/stage-values.js` put the
+  Chandlery's hue within 6 degrees of a warm grey road (39% of its colour mass landing on ground the backdrop
+  already claims); walking the three grounds to a lime-grey takes that gap to 25-37 degrees and drops the Ledger
+  House's overlap from 46% to 34%. Wet lime on stone is a green-grey anyway.
 - **The board's energy colour is rite lime `#D8FF6E`** — lamps, floor cones, the tether from a Chandler to whoever
   is about to get back up. On this board a lime light on the ground always means *something behind you is being
   repaired*, and it is always the thing to hit.
@@ -171,7 +176,9 @@ arrow work exactly as in Stages 1 and 2.
 
 ## Section 3, The Ledger House (x 3600–5300; interior)
 - **Setting:** the company's counting floor — brass ledger cages, a wall of pigeon-holes, the wax press, tally boards
-  floor to ceiling, and one enormous kiln behind the desk that has never once gone out.
+  floor to ceiling, and one enormous kiln behind the desk that has never once gone out. **A cold room**: the walls,
+  the desks and the boards are all green-grey, and the only two warm things in it are the lamps and the kiln, so a
+  tallow-coated company standing in its own hall is the warmest thing on screen.
 - **Parallax:** *Far* (0.2x): the pigeon-hole wall and the ledger cages, lamplit, with the kiln's lime glow at the
   end of the room. *Mid* (0.5x): counting desks, chained ledgers, the wax press, cart lanes running into the hall.
   *Near* (1.2x): pillars passing in front of the fight; paper dust turning in the lamp light.

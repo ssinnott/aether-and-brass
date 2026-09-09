@@ -6,9 +6,9 @@
 // Floor: waxed board with brass inlay lines and lime tracked in on every boot from the yard.
 // Near (1.2, drawFront): the hall's pillars passing in front of the fight; paper dust turning in the lamp light.
 //
-// The two outdoor sections put a pale faction on a mid-dark ground under a bone sky; this one inverts it — a warm
-// dark room where the quicklime aprons and tallow coats are the LIGHTEST things on screen, so the last third of the
-// board reads as the inside of the thing the first two thirds were walking toward.
+// The two outdoor sections put a pale faction on a mid-dark ground under a bone sky; this one inverts it — a cold
+// dark room where the quicklime aprons and tallow coats are the LIGHTEST and the only warm things on screen, so the
+// last third of the board reads as the inside of the thing the first two thirds were walking toward.
 import {
   VIEW_W, FLOOR_TOP, Z_MAX, PARALLAX, BLEED, SKY_H, FLOOR_H, INK,
   makeLayer, blitTiled, blitAt, layerSpace, drawDarkBand, vGradient, radialGlow, makeGlowSprite,
@@ -23,15 +23,24 @@ const NEAR_Y = 0;
 /** Far-layer x of the hanging lamps (their glow is drawn per frame). */
 const LAMPS = [120, 360, 600, 840];
 
-const WALL = '#3A3226', WALL_D = '#2A241B', HOLE = '#1C1812', SHELF = '#5A4C36', BRASS = '#B08A3E';
+// THE COUNTING FLOOR IS A COLD ROOM. It was a warm brown one, and the measurement said so: bg hue 76 against a
+// Chandlery mean of 86, 35.8% of the faction's pixels LOST and 46% colour overlap — the worst row on the board,
+// because a tallow-and-quicklime faction was standing in a tallow-coloured room. The room is now a green-grey,
+// and the only warm things left in it are the two that should be: the lamps and the kiln.
+const WALL = '#31382F', WALL_D = '#242B24', HOLE = '#181C17', SHELF = '#4E5546', BRASS = '#B08A3E';
 const CAGE = '#8A7440', DESK = '#4E4030', DESK_D = '#3A2F23', PAPER = '#D9D2B8', LEDGER = '#7A2B32';
 const IRON = '#4A4E56', LIME = '#D8FF6E', KILN = '#394249';
-const BOARD = '#6E5E44', BOARD_D = '#5A4B36', WAX = '#8E2F38';
+// The floor is held at v38, and it was MEASURED against the alternative rather than guessed. Taking the boards down
+// to v29 for a bigger value gap makes the row worse, not better (lost% 37.6 -> 38.9, dHue 25.5 -> 14.2): the pixels
+// this faction loses to a dark ground are its own near-black ink, boots and gauntlets, which no floor value saves,
+// while a darker floor greys out the hue separation the cool pass just bought. The trade taken here is the one the
+// faction's own colour pass took: 1.8 points of lost% for 12 points of colour overlap (46.0 -> 34.2).
+const BOARD = '#5A6151', BOARD_D = '#4A5143', WAX = '#8E2F38';
 
 function paintFar(g, w, h, rnd) {
   g.translate(0, BLEED);
   // the room's own darkness: warm at the bottom where the lamps hang, near-black up in the roof
-  vGradient(g, 0, -BLEED, w, FLOOR_TOP + BLEED, [[0, '#221C15'], [0.4, WALL_D], [1, WALL]]);
+  vGradient(g, 0, -BLEED, w, FLOOR_TOP + BLEED, [[0, '#1C211B'], [0.4, WALL_D], [1, WALL]]);
   // the pigeon-hole wall: the company's memory, floor to ceiling, and every hole has a roll in it
   for (let y = 40; y < 168; y += 22) {
     for (let x = 8; x < w; x += 26) {
@@ -44,7 +53,7 @@ function paintFar(g, w, h, rnd) {
   }
   // the ledger cages: brass grilles over the alcoves between the racks, with a clerk's hatch in each
   for (let x = 60; x < w; x += 240) {
-    boxOutlined(g, x, 96, 88, 106, '#241E16', INK, 2);
+    boxOutlined(g, x, 96, 88, 106, '#1F251E', INK, 2);
     g.strokeStyle = CAGE; g.lineWidth = 2;
     for (let k = 0; k <= 5; k++) { g.beginPath(); g.moveTo(x + 6 + k * 15, 100); g.lineTo(x + 6 + k * 15, 198); g.stroke(); }
     for (const y of [120, 160]) { g.beginPath(); g.moveTo(x + 4, y); g.lineTo(x + 84, y); g.stroke(); }
@@ -83,7 +92,7 @@ function paintMid(g, w, h, rnd) {
     g.beginPath(); g.moveTo(dx + 24, 148); g.quadraticCurveTo(dx + 14, 160, dx + 8, 158); g.stroke();
     g.fillStyle = BRASS; g.fillRect(dx + 4, 156, 6, 5);
     // a clerk's stool, tipped in under the desk
-    g.fillStyle = '#4A3E2E'; g.fillRect(dx + 60, 186, 16, 4); g.fillRect(dx + 62, 190, 4, 12); g.fillRect(dx + 72, 190, 4, 12);
+    g.fillStyle = '#414A3B'; g.fillRect(dx + 60, 186, 16, 4); g.fillRect(dx + 62, 190, 4, 12); g.fillRect(dx + 72, 190, 4, 12);
   }
   // the wax press: the machine that turns a decision into a document, every 220px between the desks
   for (let x = 130; x < w; x += 220) {
@@ -136,11 +145,11 @@ function paintFloor(g, w, h, rnd) {
 function paintNear(g, w, h, rnd) {
   // the hall's pillars: heavy square posts with a brass collar, passing in front of the fight
   for (let x = 0; x < w; x += 330) {
-    boxOutlined(g, x, 0, 22, 214, '#2E2519', INK, 2);
-    g.fillStyle = '#3E3423'; g.fillRect(x + 4, 0, 7, 214);
+    boxOutlined(g, x, 0, 22, 214, '#272E26', INK, 2);
+    g.fillStyle = '#374033'; g.fillRect(x + 4, 0, 7, 214);
     g.fillStyle = BRASS; g.fillRect(x - 2, 150, 26, 5);
     g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(x - 2, 155, 26, 2);
-    boxOutlined(g, x - 8, 200, 38, 16, '#2E2519', INK, 2);
+    boxOutlined(g, x - 8, 200, 38, 16, '#272E26', INK, 2);
     // a bundle of dockets nailed to the post at head height
     g.fillStyle = PAPER; g.fillRect(x + 24, 96, 12, 16);
     g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(x + 24, 108, 12, 4);

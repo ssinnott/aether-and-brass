@@ -26,7 +26,11 @@ const STACKS = [880, 946, 1012, 1078];
 const SKY_TOP = '#B7BCB2', SKY_MID = '#D3D1C3', SKY_LOW = '#E9E3D1', HAZE = '#EFEADA';
 const CITY = '#9B978A', CITY_D = '#847F72', ROOF = '#7C7466', ROOF_D = '#655F53', STACK = '#6B6459';
 const SPOIL = '#CFC6AE', SPOIL_D = '#A79E88', TARP = '#B0AE96', WOOD = '#6A5334', IRON = '#4A4E56';
-const ROAD = '#6A675C', ROAD_D = '#57544B', RUT = '#494740', LIME = '#CFC9B2', LIME_HI = '#E4DFC9';
+// The road is COOL and the faction is warm, on purpose. Measured with tools/stage-values.js: at #6A675C the ground
+// sat at hue 79 against a Chandlery mean of 85 — six degrees, which is no separation at all, and 31.6% of the
+// faction's pixels measured LOST against it. Wet lime on stone is legitimately a green-grey, and walking the ground
+// to hue ~120 buys the hue gap without touching the value ladder the section is built on (sky v79, floor v42).
+const ROAD = '#616A5E', ROAD_D = '#4F564C', RUT = '#414741', LIME = '#CFC9B2', LIME_HI = '#E4DFC9';
 const LAMP = '#D8FF6E';
 
 function paintFar(g, w, h, rnd) {
