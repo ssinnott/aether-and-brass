@@ -17,7 +17,7 @@ import { progress } from '../game/progress.js';
 import { createPeer } from './peer.js';
 import { createLockstep } from './lockstep.js';
 import { worldChecksum } from './checksum.js';
-import { broadcastSignal, mqttSignal, manualSignal, makeRoomCode } from './signal.js';
+import { broadcastSignal, mqttSignal, makeRoomCode } from './signal.js';
 import { MSG, PROTOCOL_VERSION, packActions, unpackActions, encodeInput, encodeChecksum, encodeStart, encodeJson, encodePing, decodeMessage } from './protocol.js';
 
 /**
@@ -39,10 +39,10 @@ export function delayForRtt(rttMs) {
 }
 
 /**
- * @param {{ game: object, input: object, isHost: boolean, room?: string, transport?: 'mqtt'|'broadcast'|'manual',
- *           onState?: (s: string) => void, onLocalCode?: (code: string) => void }} o
+ * @param {{ game: object, input: object, isHost: boolean, room?: string, transport?: 'mqtt'|'broadcast',
+ *           onState?: (s: string) => void }} o
  */
-export function createNetSession({ game, input, isHost, room = '', transport = 'mqtt', onState, onLocalCode }) {
+export function createNetSession({ game, input, isHost, room = '', transport = 'mqtt', onState }) {
   const net = {
     isHost,
     room: room || (isHost ? makeRoomCode() : ''),
@@ -66,7 +66,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
      * peers do not agree on what is playable. The host's game is the one being played, so the host
      * chooses from their own unlocked boards and the guest is given a session-only key to it.
      */
-    lobby: { myChar: 0, theirChar: 1, myReady: false, theirReady: false, peerHere: false, stage: 1 },
+    lobby: { myChar: isHost ? 0 : 1, theirChar: isHost ? 1 : 0, myReady: false, theirReady: false, peerHere: false, stage: 1 },
     ls: null,
     peer: null,
     signal: null,
@@ -87,8 +87,9 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
   // ---- transport -------------------------------------------------------------------------------
 
   async function makeSignal() {
+    // Room codes are the only way in from the UI. BroadcastChannel reaches two tabs of one origin
+    // and nothing else, so it stays as `?transport=broadcast` for the end-to-end test to drive.
     if (transport === 'broadcast') return broadcastSignal(net.room, isHost ? 'host' : 'guest');
-    if (transport === 'manual') return manualSignal({ onLocal: (code) => { if (onLocalCode) onLocalCode(code); } });
     return mqttSignal(net.room, isHost ? 'host' : 'guest');
   }
 
@@ -106,7 +107,6 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     net.peer = createPeer({
       isHost,
       signal: net.signal,
-      trickle: transport !== 'manual',
       onOpen: () => {
         // Version first: a peer on a cached older bundle must be told, not silently desynced.
         // The player id names the co-op progress scope (game/progress.js) and goes nowhere else.
@@ -122,9 +122,6 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     return true;
   };
 
-  /** Copy-paste transport only: feed in the code the other player sent. */
-  net.acceptCode = (code) => (net.signal && net.signal.accept ? net.signal.accept(code) : false);
-
   /** INPUT/CHECKSUM go unreliable (redundancy covers loss); control messages must not be lost. */
   const send = (bytes) => { if (net.peer) net.peer.send(bytes, false); };
   const sendCtl = (bytes) => { if (net.peer) net.peer.send(bytes, true); };
@@ -135,7 +132,28 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     // Only the host's stage is meaningful; the guest echoes it back harmlessly.
     sendCtl(encodeJson(MSG.LOBBY, { char: net.lobby.myChar, ready: net.lobby.myReady, stage: net.lobby.stage }));
   }
-  net.setChar = (i) => { net.lobby.myChar = i | 0; sendLobby(); };
+  /** How many heroes are on offer. Below two, the no-duplicates rule cannot be honoured at all. */
+  const charCount = () => Math.max(1, (game.characters || []).length | 0);
+  /** True when the peer is holding hero `i`, so this player may not take it. */
+  net.charTaken = (i) => charCount() > 1 && (i | 0) === net.lobby.theirChar;
+  /** The first hero at or after `i`, walking in `dir`, that the peer is not holding. */
+  const freeCharFrom = (i, dir) => {
+    const n = charCount();
+    let c = (((i | 0) % n) + n) % n;
+    for (let k = 0; k < n; k++) { if (!net.charTaken(c)) return c; c = (c + dir + n) % n; }
+    return c;
+  };
+  /** The hero `dir` steps away that is actually available: the lobby cursor skips the peer's card. */
+  net.nextChar = (dir = 1) => freeCharFrom(net.lobby.myChar + dir, dir);
+  /**
+   * Pick a hero. Two players on the same fighter are told apart by nothing but a tint, which is
+   * fine sharing a couch and confusing online, so a pick that collides with the peer's is refused.
+   */
+  net.setChar = (i) => {
+    const c = i | 0;
+    if (net.charTaken(c)) return false;
+    net.lobby.myChar = c; sendLobby(); return true;
+  };
   /** Host only: choose the board this session plays, from the boards the HOST has unlocked. */
   net.setStage = (n) => { if (isHost) { net.lobby.stage = Math.max(1, n | 0); sendLobby(); } };
   net.setReady = (v) => { net.lobby.myReady = !!v; sendLobby(); maybeStart(); };
@@ -158,6 +176,8 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
   function maybeStart() {
     if (!isHost || net.state !== 'lobby') return;
     if (!net.lobby.myReady || !net.lobby.theirReady) return;
+    // The guest yields on a collision, so this only holds the start for the frames that takes.
+    if (charCount() > 1 && net.lobby.myChar === net.lobby.theirChar) return;
     // The delay must exceed the one-way latency (tools/nettest.js), so never start on the default
     // guess: measureRtt takes ~800ms and two players in a voice call can ready up faster than that.
     if (!net.rttReady) return;
@@ -223,6 +243,12 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
         net.lobby.theirChar = m.char | 0;
         net.lobby.theirReady = !!m.ready;
         if (!isHost && m.stage) net.lobby.stage = m.stage | 0;   // the guest follows the host's board
+        // Two picks can cross in flight and land on the same hero. The GUEST always yields, so the
+        // two never chase each other around the row, and the yield drops its ready as well: nobody
+        // starts a match on a fighter they did not choose.
+        if (net.charTaken(net.lobby.myChar)) {
+          if (!isHost) { net.lobby.myChar = freeCharFrom(net.lobby.myChar + 1, 1); net.lobby.myReady = false; sendLobby(); }
+        }
         maybeStart();
         break;
       case MSG.START:
