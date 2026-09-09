@@ -227,27 +227,37 @@ function bagChain(rig) {
   return getChain(rig, 'bag', 2, { joint: 'torso', rest: [0, -1], stiffness: 0.1, damping: 0.74, gain: 1.5, rotGain: 0.7, maxAng: 22 });
 }
 /**
- * The gas bladder (back accessory): the faction's whole read. Reads rig.swell (tell inflation), rig.gas (0..1),
- * rig.strobe (last tell frames), rig.bags (Winnow's remaining ballast) and build.bagShape / build.chalk.
+ * The gas level exactly as the bladder reads it: `rig.gas` with the 12-draw death ramp applied, plus the `dead` flag
+ * the bag shrinks on. Hoisted out of drawBladder because it has TWO readers now — the bag, and the regulator's pilot
+ * lamp down on the chest (gleanCoat). The lamp used to read `rig.gas` raw, so a Gleaner killed on the deck went out
+ * above the head and kept burning rose below it, which is the one thing the faction's death rule says cannot happen.
+ * PURE READ, and it has to stay one: the stamp lives in BASE_HOOKS (onDeath writes it, onUpdate clears it), never here.
  */
-export function drawBladder(ctx, rig, pose) {
-  const p = rig.p, b = rig.build, s = BAG[b.bagShape] || BAG.taut;
+function gasState(rig, pose) {
   // Death, NOT the pose face: `stagger` also poses `dazed`, and the old face test latched the fade on the first stagger
   // and never reset it, so a staggered Gleaner lost the colour half of its tell for the rest of the fight. The flag comes
   // from BASE_HOOKS (onDeath sets it, onUpdate clears it); fighter.js skips onUpdate once dead, so the RAMP has to live
   // here — but it now resets whenever the rig is not dying. `gasDead == null` = no fighter driving it (sheets, menus):
   // fall back to the face so the contact sheet's `dead` row still goes out.
   const dead = rig.gasDead != null ? !!rig.gasDead : (pose.face | 0) === FACE.dazed;
-  // PURE READ, and it has to stay one. The fade used to advance a `rig.gasOut` counter from inside this draw, so two
-  // draws of the same (pose, tick) produced different command streams and every variant's `stagger` and `dead` keys
-  // measured non-deterministic. The stamp is written where it belongs, in BASE_HOOKS (onDeath sets rig.gasDeadAt,
-  // onUpdate clears it); `rig.tick` counts draws (rig.js), so this is the same 12-draw ramp, read instead of written.
   // No fighter driving the rig (sheets, menus, the invariant suite) = no stamp: a dead pose draws the gas fully out
   // with no ramp, which keeps the contact sheet's `dead` row honest and is deterministic by construction.
   const since = rig.gasDeadAt != null ? Math.max(0, (rig.tick | 0) - rig.gasDeadAt) : 12;
   const out = dead ? 1 - Math.min(12, since) / 12 : 1;
+  return { dead, gas: (rig.gas != null ? rig.gas : 0.25) * out };
+}
+/**
+ * The gas bladder (back accessory): the faction's whole read. Reads rig.swell (tell inflation), rig.gas (0..1),
+ * rig.strobe (last tell frames), rig.bags (Winnow's remaining ballast) and build.bagShape / build.chalk.
+ */
+export function drawBladder(ctx, rig, pose) {
+  const p = rig.p, b = rig.build, s = BAG[b.bagShape] || BAG.taut;
+  // The fade used to advance a `rig.gasOut` counter from inside this draw, so two draws of the same (pose, tick)
+  // produced different command streams and every variant's `stagger` and `dead` keys measured non-deterministic.
+  // `rig.tick` counts draws (rig.js), so gasState is the same 12-draw ramp, read instead of written.
+  const g = gasState(rig, pose), dead = g.dead;
   const k = (rig.swell || 1) * (dead ? 0.66 : 1);
-  let gas = (rig.gas != null ? rig.gas : 0.25) * out;
+  let gas = g.gas;
   if (rig.strobe && (rig.tick & 2)) gas = Math.min(1, gas + 0.6);
   // +23, not +21: two pixels of daylight between the bag's underside and the crown of the hood. The bag still
   // OVERLAPS the head in the coloured render (it is behind it, and the faction's silhouette law wants the hood
@@ -447,7 +457,8 @@ export function gleanCoat(ctx, rig, pose, inf) {
   // THE REGULATOR, lashed to the yoke where the bladder's feed enters it. Two jobs: it is the only place on the BODY
   // where the faction's own gas colour appears (every other gram of rose is above the head, which is why the bag read
   // as a balloon parked over a stranger), and its pilot lamp is a third, chest-height channel of the two-channel tell
-  // — it reads `rig.gas` exactly as drawBladder does, so it lights on the same frames and never on any other.
+  // — it reads the gas through gasState exactly as drawBladder does, so it lights on the same frames, never on
+  // any other, and dies on the same ramp.
   // It rides the BACK half of the chest, where the yoke strap ends and the bag's feed actually comes down, because
   // that is the one part of this torso the carry arm never crosses: at the front it was under a bicep in every idle
   // and walk key, which is a mark the player cannot see.
@@ -458,7 +469,11 @@ export function gleanCoat(ctx, rig, pose, inf) {
   // in tones(rose).sh fired the rule 67-95 times a variant, correctly: a cel band on a glow stops it reading as light).
   // The lamp is therefore always burning and the TELL is the step up to the hot core, which is the same grammar the
   // bladder uses two feet above it.
-  ctx.fillStyle = rig.col((rig.gas != null ? rig.gas : 0.25) > 0.6 ? GLEAN.hot : GLEAN.rose);
+  // ...and it goes out WITH the bag: gasState, not raw rig.gas, so the 12-draw death ramp reaches the chest too. Once
+  // the ramp has run out the pip is dead glass in the regulator's own metal, which is what the header's death rule
+  // ("the gas goes out of the colour over 12 draws") has always said and what this lamp alone used to ignore.
+  const lamp = gasState(rig, pose).gas;
+  ctx.fillStyle = lamp <= 0 ? tones(rig, pal.metal).deep : rig.col(lamp > 0.6 ? GLEAN.hot : GLEAN.rose);
   ctx.fillRect(gx + 2, gy + 1, 3, 3);
   ctx.fillStyle = rig.col(rig.build.chalk || CHALK.chaff);
   ctx.fillRect(R(hw * 0.1), -H + 2, 2, 4); ctx.fillRect(R(hw * 0.1) - 3, -H + 3, 2, 2);                // chalk tick on the yoke
