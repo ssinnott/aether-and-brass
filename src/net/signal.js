@@ -1,10 +1,11 @@
 // Signalling strategies: the small out-of-band channel two browsers use to exchange WebRTC
 // descriptions before they can talk directly (docs/MULTIPLAYER.md section 3).
 //
-// A strategy is { send(obj), onMessage(fn), close(), rendezvous? }. `rendezvous: false` marks a
-// channel with no live peer (copy-paste), which peer.js treats differently.
+// A strategy is { send(obj), onMessage(fn), close() }: a live rendezvous both peers can publish to
+// before they talk directly. Room codes over MQTT are the one the game offers; BroadcastChannel
+// reaches two tabs of a single origin and exists for the end-to-end test.
 //
-// All three avoid a server we operate. Note the page is served over HTTPS, so every socket here
+// Both avoid a server we operate. Note the page is served over HTTPS, so every socket here
 // MUST be wss:// - a ws:// URL is blocked as mixed content with no visible error.
 
 import { createParser, encodeConnect, encodeSubscribe, encodePublish, encodePingReq, PKT } from './mqtt-codec.js';
@@ -23,8 +24,8 @@ export function makeRoomCode(len = 6) {
 }
 
 /**
- * Two tabs of the same origin. Zero infrastructure and always available, so it is both the
- * "play on this machine" option and the transport the end-to-end playtest uses.
+ * Two tabs of the same origin. Zero infrastructure and always available, so it is the transport
+ * the end-to-end playtest uses (`?transport=broadcast`); the game's UI only offers room codes.
  */
 export function broadcastSignal(room, role) {
   const bc = new BroadcastChannel('aether-brass-net:' + room);
@@ -101,48 +102,4 @@ export function mqttSignal(room, role, brokers = MQTT_BROKERS) {
     };
     tryNext();
   });
-}
-
-/**
- * Copy-paste signalling: no infrastructure at all, works wherever WebRTC does. Non-trickle, so each
- * side produces exactly one code. `onLocal` fires with the code to show the user; feed the code
- * they paste back in through accept().
- */
-export function manualSignal({ onLocal }) {
-  let handler = null;
-  return {
-    rendezvous: false,
-    send(obj) { if (obj && obj.sdp && onLocal) onLocal(encodeCode(obj.sdp)); },
-    onMessage(fn) { handler = fn; },
-    /** Feed in a code pasted by the user. Returns false when it is not a valid code. */
-    accept(code) {
-      const sdp = decodeCode(code);
-      if (!sdp || !handler) return false;
-      handler({ sdp });
-      return true;
-    },
-    close() { handler = null; },
-  };
-}
-
-/** SDP -> a compact base64url code. The type is one character; the rest is the description. */
-export function encodeCode(desc) {
-  const body = JSON.stringify({ t: desc.type === 'offer' ? 'o' : 'a', s: desc.sdp });
-  const bytes = new TextEncoder().encode(body);
-  let bin = '';
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-/** Inverse of encodeCode. Returns null on anything malformed rather than throwing. */
-export function decodeCode(code) {
-  try {
-    const b64 = String(code).trim().replace(/-/g, '+').replace(/_/g, '/');
-    const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const o = JSON.parse(new TextDecoder().decode(bytes));
-    if (!o || !o.s || (o.t !== 'o' && o.t !== 'a')) return null;
-    return { type: o.t === 'o' ? 'offer' : 'answer', sdp: o.s };
-  } catch { return null; }
 }

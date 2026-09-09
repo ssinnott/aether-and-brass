@@ -175,7 +175,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
   2. *Clockwork Fist:* arm ratchets 360° 30f, pistons out 100px (18). Punish: arm stays extended 40f (counts as body).
   3. *Pocket-Watch Bomb:* ticking circle, flashes faster, explodes r 40 after 90f (16).
   4. *Aether Step:* vanishes in a cyan puff, reappears behind the nearest player after 20f, always followed by Cane Flurry; dodge on reappear. Teleports away after taking 60 dmg in one combo.
-- **Arena gimmick:** the dais, 400px wide. The band shrinks 20px per phase as steam vents open along its edges (5 dmg every 20f inside). Two breakable **pressure valves** on the walls: hitting one in Phase 1 or 2 stuns the Regent Engine 60f (once each).
+- **Arena gimmick:** the dais, 400px wide. The band shrinks 20px per phase as steam vents open along its edges (4 dmg every 30f inside). Two breakable **pressure valves** on the walls: hitting one in Phase 1 or 2 stuns the Regent Engine 60f (once each).
 - **Defeat spectacle:** Vane drops cane and hat; the welded safety valves blow open one by one (6 white steam jets with bass thumps); the sky lightens to dawn cream over 120f, city lights return terrace by terrace, heroes pose, "STAGE CLEAR".
 
 # 6. The Stage (end to end)
@@ -188,12 +188,17 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
 
 **Global rules:** world x runs 0–6000px. The camera tracks the **midpoint** of living players (clamped so nobody leaves the screen), right only. Wave triggers lock the camera on a 640px arena until clear, then a blinking "GO →" arrow.
 
+**Hazard rules (all sections, both boards).** A hazard is a positional mistake, not a damage race:
+- **One hit per body per activation.** After a hazard catches you it cannot touch you again for ~90–120f (its `grace`) — long enough to land, lie, stand up and step clear. An eruption never juggles you for its whole active window.
+- **The knockback throws you clear.** Hazard hits carry `fromX`, so the launch or knockdown pushes you *away* from the vent / piston / hook rather than off your own facing, which used to drop you straight back into it.
+- **Tells are the fair warning**, not the hit count: rattle / shadow / horn / ring, 30f or more.
+
 ## Section 1, Sootfoot Docks (x 0–1800; rain, night)
 - **Setting:** airship moorings, chain-lashed gantries, light rain.
 - **Parallax:** *Far* (0.2×): night gradient `#0E1424 → #1F2A44`, stepped terrace silhouettes `#141A2C` with window dots, a cyan summit glow, two airship silhouettes (ellipse + gondola rect). *Mid* (0.5×): dock cranes (rects + braces), gaslamps every 180px (post + halo); rain as 60 1×8px lines alpha 0.3 falling 6px/f. *Near* (1.2×): bollards, rope coils.
 - **Floor:** wet planks `#3A2E24` / `#443629`, 12px rows; puddle ellipses alpha 0.15.
 - **Props & breakables:** crates (**Brass Cog** ×2; 1 in 4 a **Meat Pie**), barrels (roll 40px, 10 dmg to enemies; **Coal Scrip**), mooring winch (**Aether Vial**).
-- **Hazards:** steam vents at x 600 and 1250 (rattle 20f, erupt 60f every 180f: 8 + launch, hits enemies). Swinging cargo hook at x 1500 (period 2s; 12, knockdown).
+- **Hazards:** steam vents at x 600 and 1250 (rattle 30f, erupt 45f every 180f: 7 + launch, hits enemies). Swinging cargo hook at x 1500 (period 2s; 10, knockdown).
 - **Waves:**
   - Wave 1 (x 400): 3× Soot Cutthroat.
   - Wave 2 (x 900): 4× Soot Cutthroat + 2× Scrap Slinger.
@@ -206,7 +211,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
 - **Parallax:** *Far* (0.2×): cavern wall `#2A1C16`, huge gears (r 60–100px, 0.3°/f) rimmed `#FF7A1F`. *Mid* (0.5×): brick arches `#5A3A2E`, a molten channel behind a low wall (`#FFB347 → #FF5A1F` band with drifting blobs). *Near* (1.2×): pipe bundles, heat shimmer (2px sinusoidal x-offset), sparks.
 - **Floor:** iron grate plates `#2E2A28` with rivet rows at 48px seams. The back 20px (z < 20) is the **molten channel**: 10 + burn and a bounce back; enemies knocked in die.
 - **Props & breakables:** ingot molds (**Brass Cog**), coal carts (roll, 15 to enemies; **Meat Pie**), oil drums (explode 30f after breaking, 20 dmg r 40; **Aether Vial**), display case (**Golden Sprocket**), hanging bucket (**Roast Bird**).
-- **Hazards:** steam vents at x 2500 and 2800 (cyan tell 30f, jet 40f: 8 + launch). Crushing pistons at x 3000 and 3300 every 240f (shadow tell 30f; 18 + knockdown, hits enemies).
+- **Hazards:** steam vents at x 2500 and 2800 (cyan tell 30f, jet 40f: 7 + launch). Crushing pistons at x 3000 and 3300 every 240f (shadow tell 36f; 16 + knockdown, hits enemies).
 - **Waves:**
   - Wave 1 (x 2100): 2× Firebrand + 3× Soot Cutthroat.
   - Wave 2 (x 2500, vents active): 2× Brass Halberdier + 2× Copper Sapper.
@@ -220,7 +225,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
 - **Parallax:** *Far* (auto-scroll down 0.3px/f): dusk gradient `#3A2450 → #E8743B` lerping to night `#0F1A2E`; the lower city as stepped silhouettes. *Mid* (auto 1.5px/f): cliff polygon, cable and pylons (thick rects every 240px). *Near* (auto 3px/f): rail struts, wind streaks.
 - **Floor:** riveted brass roof `#A67C2E` / `#8C6825`; couplings drawn as darker gaps (cosmetic; floor is continuous). **Front and back 12px of the band are railings**: enemies thrown over them are instant KOs (+200).
 - **Props & breakables:** luggage trunks (**Meat Pie**, **Brass Cog**), mailbag cart (**Golden Sprocket**), lantern posts (**Coal Scrip**).
-- **Hazards:** **pylon crossbars** every 360f sweep the back lane (z < 40) (tell: horn + shadow 40f): 14 + knockdown; step forward in z.
+- **Hazards:** **pylon crossbars** every 360f sweep the back lane (z < 40) (tell: horn + shadow 40f): 12 + knockdown; step forward in z.
 - **Waves (timer-triggered, or on clear):**
   - Wave 1 (t = 0s): 3× Copper Sapper + 2× Tin Footman.
   - Wave 2 (t = 25s): 2× Chrome Duelist + 2× Brass Halberdier.
@@ -233,7 +238,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
 - **Parallax:** *Far* (0.2×): the Engine wall, cylinders `#8C6825` with gauge needles, a 120px cyan core pulsing on the downbeat. *Mid* (0.5×): gothic arches `#3B3A46` with stained-glass triangle mosaics; purple `#5B2A86` gear banners. *Near* (1.2×): brass pillars, cyan motes.
 - **Floor:** marble diamonds `#D9D3C7` / `#B9B2A5` with actor reflections at alpha 0.12.
 - **Props & breakables:** urns (**Meat Pie**; the third hides a **Brass Heart** 1-UP), a **chandelier** that falls when hit by a jump attack (30 to enemies within 90px, once), a cabinet (**Golden Sprocket**), the boss-arena **pressure valves**.
-- **Hazards:** aether floor vents (cyan tell 30f, 40f jet: 12 + launch) firing on the music's downbeat.
+- **Hazards:** aether floor vents (cyan tell 30f, 30f jet: 10 + launch) firing on the music's downbeat.
 - **Waves:**
   - Wave 1 (x 4800): 2× Tin Footman + 2× Brass Halberdier.
   - Wave 2 (x 5150): 1× Iron Warden + 2× Copper Sapper + 1× Chrome Duelist.

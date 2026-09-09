@@ -187,7 +187,7 @@ work exactly as in Stage 1.
 - **Floor:** wet iron grating under raised walkway plates, hazard chevrons along the back edge, standing water.
 - **Props:** crates, **powder kegs** (they go off 30f after they break: 20, r 40 — bat one into a boarding party),
   **ballast bags** (Meat Pie), a **signal locker** (Golden Sprocket).
-- **Hazards:** **lightning conductors** at x 700 and 1620 (40f violet ring tell, then 14 + knockdown + 24f stunned);
+- **Hazards:** **lightning conductors** at x 700 and 1620 (40f violet ring tell, then 12 + knockdown + 10f stunned);
   the loading hook still swinging at x 1180.
 - **Zone:** `rails` over the whole section. There is no bulwark up here — **anything thrown over the edge is gone**
   (+200), which is the cheapest damage on the board and by far the most satisfying.

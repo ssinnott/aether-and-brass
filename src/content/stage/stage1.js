@@ -32,8 +32,8 @@ export const stage1 = {
         { type: 'crate', x: 1720, z: 40, drops: COGS },
       ],
       hazards: [
-        { type: 'steamVent', x: 600, z: 100, period: 180, active: 60, tell: 20 },
-        { type: 'steamVent', x: 1250, z: 40, period: 180, active: 60, tell: 20, offset: 90 },
+        { type: 'steamVent', x: 600, z: 100, period: 180, active: 45, tell: 30 },
+        { type: 'steamVent', x: 1250, z: 40, period: 180, active: 45, tell: 30, offset: 90 },
         { type: 'hook', x: 1500, z: 70, period: 120 },
       ],
       waves: [
@@ -63,8 +63,8 @@ export const stage1 = {
       hazards: [
         { type: 'steamVent', x: 2500, z: 110, period: 180, active: 40, tell: 30 },
         { type: 'steamVent', x: 2800, z: 30, period: 180, active: 40, tell: 30, offset: 90 },
-        { type: 'piston', x: 3000, z: 60, period: 240, active: 10, tell: 30 },
-        { type: 'piston', x: 3300, z: 90, period: 240, active: 10, tell: 30, offset: 120 },
+        { type: 'piston', x: 3000, z: 60, period: 240, active: 10, tell: 36 },
+        { type: 'piston', x: 3300, z: 90, period: 240, active: 10, tell: 36, offset: 120 },
       ],
       // the back 20px is the molten channel (10 + burn and a bounce; enemies knocked in die, +200); the cargo bay's front
       // 40px is a conveyor that drifts everything left at 1px/f and carries a crate every 4s while the Hoister is up
@@ -128,11 +128,11 @@ export const stage1 = {
       ],
       // aether floor vents fire together on the music's downbeat (2s bars at 120 BPM)
       hazards: [
-        { type: 'aetherVent', x: 4900, z: 110, period: 120, active: 40, tell: 30, offset: 80 },
-        { type: 'aetherVent', x: 5260, z: 40, period: 120, active: 40, tell: 30, offset: 80 },
-        { type: 'aetherVent', x: 5480, z: 100, period: 120, active: 40, tell: 30, offset: 80 },
+        { type: 'aetherVent', x: 4900, z: 110, period: 120, active: 30, tell: 30, offset: 80 },
+        { type: 'aetherVent', x: 5260, z: 40, period: 120, active: 30, tell: 30, offset: 80 },
+        { type: 'aetherVent', x: 5480, z: 100, period: 120, active: 30, tell: 30, offset: 80 },
       ],
-      /** the dais: the band shrinks 20px per boss phase as steam vents open along its edges (5 dmg every 20f inside) */
+      /** the dais: the band shrinks 20px per boss phase as steam vents open along its edges (4 dmg every 30f inside) */
       zones: [{ type: 'daisVents', x0: 5560, x1: 6000 }],
       waves: [
         { triggerX: 4800, lock: true, spawns: [{ type: B, variant: 'footman', side: 'right', z: 40, delay: 0 }, { type: B, variant: 'footman', side: 'left', z: 100, delay: 30 },
