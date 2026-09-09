@@ -24,7 +24,9 @@ export const stage3 = {
   id: 'stage3', number: 3, name: 'THE RECKONING OF CALDERWICK',
   subtitle: 'THE WAR IS OVER. THE COMPANY IS STILL BILLING FOR IT.',
   // BOARD SELECT vignette (game/screens/boardselect.js): sky ramp, ground band, accent light, motif to draw.
-  preview: { skyTop: '#C8C4B4', skyBot: '#EAE4D2', ground: '#B9AF95', groundH: 12, accent: '#D8FF6E', motif: 'works', blurb: 'THE CHANDLERY' },
+  // groundH 0: the `works` motif paints its own road band, so the handcart can stand IN the road rather than on
+  // top of a band drawn over it (game/screens/boardselect.js drawWorksMotif).
+  preview: { skyTop: '#C8C4B4', skyBot: '#EAE4D2', ground: '#B9AF95', groundH: 0, accent: '#D8FF6E', motif: 'works', blurb: 'THE CHANDLERY' },
   introLines: [
     'THE CHANCELLOR IS DOWN. THE ADMIRAL IS DOWN.',
     'SOMEBODY SUPPLIED THEM BOTH, AND IS ALREADY QUOTING FOR THE NEXT ONE.',

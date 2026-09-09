@@ -431,18 +431,27 @@ function drawWorksMotif(ctx, x, y, w, h, pv, f) {
     ctx.fillStyle = pv.accent;
     if (((i * 5 + (f >> 4)) % 7) !== 0) ctx.fillRect(kx + 2, base - 9, 8, 6);
   }
-  // A LOADED HANDCART, STANDING ON THE ROAD. Both halves of that are load-bearing: its wheels rest ON the ground
-  // band (bottom edge exactly at `base`, which the band is then painted up to) rather than hanging above it, and the
-  // load is a flat lump with a shaft sticking up out of it — a rounded tarp over a body between two wheels drew a
-  // car, floating, in the middle of a Victorian lime works.
-  const cx = Math.round(x + 12 + 3 * slot), top = base - 13;
+  // THE ROAD IS PAINTED HERE, not by drawVignette (stage3's preview sets `groundH: 0` for exactly this reason), so
+  // that the cart can be drawn ON TOP of it. Everything else on this plaque stops at the road line; the cart has to
+  // cross it, because a wheel whose bottom edge is exactly on the line still reads as hovering — a wheel sits IN the
+  // road it is standing on, with its bottom couple of pixels swallowed by the surface.
+  const road = pv.ground || '#B9AF95';
+  ctx.fillStyle = road; ctx.fillRect(x, base, w, y + h - base);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x, base, w, 2);
+  // A LOADED HANDCART, STANDING IN THE ROAD: a flat load under a tarpaulin with the shaft standing up out of it,
+  // and both wheels sunk 3px past the road line. A rounded tarp over a body between two wheels, floating above the
+  // line, drew a car in the middle of a Victorian lime works.
+  const cx = Math.round(x + 12 + 3 * slot), top = base - 11;
   line(ctx, cx + 1, top + 1, cx - 9, top - 6, '#4A3E2E', 2);          // the shaft, up and out to the left
   ctx.fillStyle = '#4A3E2E'; ctx.fillRect(cx, top, 22, 7);            // the body
   ctx.fillStyle = '#2E2A24'; ctx.fillRect(cx, top + 5, 22, 2);
   ctx.fillStyle = '#B0AE96'; ctx.fillRect(cx + 3, top - 4, 16, 4);    // the load under its tarpaulin
   ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(cx + 3, top - 2, 16, 2);
-  circle(ctx, cx + 5, base - 3, 3, '#2E2A24', null, 0);               // wheels: bottom edge exactly on the band
-  circle(ctx, cx + 17, base - 3, 3, '#2E2A24', null, 0);
+  // the wheels, crossing the road line, with the cart's shadow pooled under the axle
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(cx + 2, base + 1, 19, 2);
+  circle(ctx, cx + 5, base + 1, 4, '#2E2A24', null, 0);
+  circle(ctx, cx + 17, base + 1, 4, '#2E2A24', null, 0);
+  ctx.fillStyle = road; ctx.fillRect(x, base + 5, w, y + h - base - 5);   // the road surface closes over the tyres
 }
 
 /** The sealed plate behind a locked board: hatched steel with rivets. */
