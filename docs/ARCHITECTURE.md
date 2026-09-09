@@ -84,7 +84,7 @@ src/
     screens/
       title.js, boardselect.js, select.js, intro.js, gameplay.js, pause.js, gameover.js, results.js
       gallery.js, lobby.js       # rig gallery; online co-op lobby (net/)
-      charcards.js               # the hero cards, shared by select.js and lobby.js
+      charcards.js, boardcards.js  # hero cards / board plaques, shared by select+lobby and boardselect+lobby
   content/
     characters/            # one file per playable character (rig build, palette, anims, moves)
       index.js, brass.js, ... (names from GDD)
@@ -425,8 +425,9 @@ to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
 `update()`, `draw(ctx)`. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`.
 Title: animated backdrop, logo, "PRESS ATTACK", blinking. Select: 4 portraits, both
 players can join (P2 presses start), stats bars, confirm/back. The online co-op lobby
-(`lobby.js`) picks heroes on the same cards (`charcards.js`), with the peer driving the P2
-cursor and no two players allowed on one hero (docs/MULTIPLAYER.md). Intro: stage card 2.5s
+(`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
+(`boardcards.js`, compact) on one screen, with the peer driving the P2 cursor and no two
+players allowed on one hero (docs/MULTIPLAYER.md). Intro: stage card 2.5s
 (skip on attack). Results: score, max combo, grade, time, "PRESS START".
 
 ## 10. HUD (`game/hud.js`)

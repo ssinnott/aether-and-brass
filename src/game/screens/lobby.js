@@ -9,6 +9,11 @@
 // exactly as on the couch. Unlike the couch, the two may NOT land on the same hero — online there
 // is no "that one's me, the darker one" to fall back on, so the peer's card is greyed out and the
 // cursor steps over it (net/session.js owns the rule).
+//
+// The group's boards run underneath on the same screen: the BOARD SELECT plaques at lobby size
+// (screens/boardcards.js), vignette and all, with the ones this pairing has not opened yet still
+// wearing their padlock. The host's cursor picks - the session runs on their unlocks - and the
+// guest watches it move.
 import { VIEW_W, VIEW_H, UI } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined, measureText } from '../../engine/text.js';
@@ -16,10 +21,17 @@ import { rrect, rivetLine, gear } from '../../art/shapes.js';
 import { makeRoomCode } from '../../net/signal.js';
 import { progress } from '../progress.js';
 import { STAGES } from '../../content/stage/index.js';
-import { buildCharSlots, tickCharSlots, drawCharCard, cardX, charStrap, CARD_Y, P1_CURSOR, P2_CURSOR } from './charcards.js';
+import { buildCharSlots, tickCharSlots, drawCharCard, cardX, P1_CURSOR, P2_CURSOR } from './charcards.js';
+import { drawBoardPlaque, rowMetrics, PLAQUE_H } from './boardcards.js';
 
 const ROLES = [['HOST A GAME', 'YOU ARE PLAYER 1'], ['JOIN A GAME', 'YOU ARE PLAYER 2']];
 const CODE_CHARS = /^[A-Z0-9]$/;
+// Both rows share one screen, so the hero cards sit higher than on the couch screen and the boards
+// are the BOARD SELECT plaques at lobby size underneath them.
+const HERO_Y = 22, STATUS_Y = 226, BOARD_Y = 236;
+const BOARD_ROW = { maxW: 150, gap: 20, pad: 200, minW: 90 };
+/** Where each player's line sits: under their own cursor, clear of the board counter in the middle. */
+const STATUS_X = [140, 500];
 
 /** Netplay lobby. Phases: role -> code -> connecting -> lobby -> (handed to the match). */
 export class LobbyScreen extends Screen {
@@ -36,6 +48,7 @@ export class LobbyScreen extends Screen {
     this.net = null;
     this.inviteUrl = '';
     this.slots = buildCharSlots(this.game.characters || []);
+    this.boards = []; this.boardsKey = '';
     this.shownChars = [-1, -1];       // last drawn [mine, theirs], so a change can play a taunt
     this.game.audio.music.play('title');
     // A ?room= invite link drops the guest straight into connecting.
@@ -99,8 +112,24 @@ export class LobbyScreen extends Screen {
     else this.status = this.isHost ? 'WAITING FOR PLAYER 2' : 'CONNECTING';
   }
 
+  /**
+   * The group's boards, in BOARD SELECT's shape. Rebuilt when the pairing's unlocks change: the
+   * scope only switches once the peer's HELLO has landed, a frame or two after this screen opens.
+   */
+  syncBoards() {
+    const key = `${progress.scope}:${progress.unlockedCount()}`;
+    if (this.boardsKey === key) return;
+    this.boardsKey = key;
+    this.boards = STAGES.map((stage, i) => ({
+      stage, index: i,
+      unlocked: progress.isUnlocked(i),
+      record: progress.record(stage.id),
+      prev: STAGES[i - 1] || null,      // the board that has to be cleared to open this one
+    }));
+  }
+
   /** Board indices this GROUP has unlocked. The host picks; the guest follows. */
-  boardOptions() { return STAGES.map((_, i) => i).filter((i) => progress.isUnlocked(i)); }
+  boardOptions() { this.syncBoards(); return this.boards.filter((b) => b.unlocked).map((b) => b.index); }
 
   cycleBoard(dir) {
     const opts = this.boardOptions();
@@ -159,6 +188,7 @@ export class LobbyScreen extends Screen {
     }
     if (this.phase === 'lobby') {
       this.syncCardAnims();
+      this.syncBoards();
       if (!this.net.lobby.myReady) {
         if (inp.pressed(0, 'left')) this.moveChar(-1);
         if (inp.pressed(0, 'right')) this.moveChar(1);
@@ -260,12 +290,16 @@ export class LobbyScreen extends Screen {
     drawText(ctx, 'ATTACK: BACK TO TITLE', 320, 172, { size: 1, color: UI.brassDark, align: 'center' });
   }
 
-  /** The hero row: the same cards as the couch screen, with the peer driving the second cursor. */
+  /**
+   * The pick screen: the hero cards on top - the same cards as the couch screen, with the peer
+   * driving the second cursor - and the group's boards underneath as BOARD SELECT plaques.
+   */
   drawLobby(ctx, f) {
     const chars = this.game.characters || [], n = this.slots.length;
     const lobby = this.net.lobby, mySlot = this.net.localSlot;
     const mine = lobby.myChar, theirs = lobby.theirChar;
-    drawTextOutlined(ctx, 'CHOOSE YOUR FIGHTER', 320, 8, { size: 2, color: UI.brass, outline: '#3a2010', align: 'center' });
+
+    drawTextOutlined(ctx, 'CHOOSE YOUR FIGHTER', 320, 6, { size: 2, color: UI.brass, outline: '#3a2010', align: 'center' });
     if (!n) { drawText(ctx, 'NO CHARACTERS REGISTERED', 320, 170, { size: 1, color: UI.red, align: 'center' }); return; }
     // Slot 0 is always the white "1" cursor and slot 1 the cyan "2", whichever of them is local:
     // the ring colours have to mean the same thing here as they do in the match.
@@ -273,7 +307,7 @@ export class LobbyScreen extends Screen {
     cur[mySlot] = { confirmed: lobby.myReady, label: `P${mySlot + 1}`, char: mine };
     cur[this.net.remoteSlot] = { confirmed: lobby.theirReady, label: `P${this.net.remoteSlot + 1}`, char: theirs };
     for (let i = 0; i < n; i++) {
-      drawCharCard(ctx, this.slots[i], cardX(i, n), CARD_Y, f, {
+      drawCharCard(ctx, this.slots[i], cardX(i, n), HERO_Y, f, {
         index: i,
         p1: cur[0].char === i ? cur[0] : null,
         p2: cur[1].char === i ? cur[1] : null,
@@ -282,37 +316,40 @@ export class LobbyScreen extends Screen {
     }
 
     // Who is who, on the same side as their cursor: player 1 left, player 2 right.
-    const nameOf = (i) => { const d = chars[i]; return (d && (d.name || d.id)) || '?'; };
     for (let s = 0; s < 2; s++) {
-      const c = cur[s], you = s === mySlot;
-      const col = s === 0 ? P1_CURSOR : P2_CURSOR;
-      drawText(ctx, `P${s + 1}${you ? ' (YOU)' : ''}`, 160 + s * 320, 240, { size: 1, color: col, align: 'center' });
-      drawText(ctx, nameOf(c.char), 160 + s * 320, 252, { size: 2, color: UI.paper, align: 'center' });
-      drawText(ctx, c.confirmed ? 'READY' : 'CHOOSING', 160 + s * 320, 270, { size: 1, color: c.confirmed ? '#7ef07e' : UI.brassDark, align: 'center' });
+      const c = cur[s], d = chars[c.char];
+      const head = `P${s + 1}${s === mySlot ? ' (YOU)' : ''}  ${(d && (d.name || d.id)) || '?'}  `;
+      const state = c.confirmed ? 'READY' : 'CHOOSING';
+      const wh = measureText(head, 1), x0 = STATUS_X[s] - (wh + measureText(state, 1)) / 2;
+      drawText(ctx, head, x0, STATUS_Y, { size: 1, color: s === 0 ? P1_CURSOR : P2_CURSOR });
+      drawText(ctx, state, x0 + wh, STATUS_Y, { size: 1, color: c.confirmed ? '#7ef07e' : UI.brassDark });
     }
-    const strap = charStrap(chars[mine]);
-    if (strap) drawText(ctx, strap, 320, 284, { size: 1, color: UI.paper, align: 'center' });
 
-    // The board is the host's: unlocks are per-player, so the guest plays the host's game and is
-    // given a key to that board for this session only.
-    const bi = Math.max(0, (lobby.stage || 1) - 1), board = STAGES[bi], opts = this.boardOptions().length;
-    // Arrows only when there is somewhere to go: a group with one board open cannot cycle.
-    const boardLabel = !this.isHost ? "HOST'S BOARD:" : opts > 1 ? `BOARD  < ${bi + 1} OF ${opts} >` : `BOARD ${bi + 1} OF ${opts}`;
-    drawText(ctx, `${boardLabel}  ${board ? board.name : '?'}`, 320, 298, { size: 1, color: UI.brass, align: 'center' });
-    // Co-op progress belongs to the pairing, not to either player's solo save.
-    drawText(ctx, opts > 1 ? `YOUR GROUP HAS OPENED ${opts} BOARDS TOGETHER` : 'A NEW GROUP STARTS ON BOARD 1 - CLEAR IT TOGETHER TO OPEN THE NEXT',
-      320, 310, { size: 1, color: opts > 1 ? '#7ef07e' : UI.steel, align: 'center' });
+    // The boards are the GROUP's: co-op progress belongs to the pairing, so a new group sees board 1
+    // open and the rest still sealed however far either player has got alone. The host's cursor picks
+    // (they own the session's unlocks); the guest watches it move.
+    const open = this.boardOptions().length, total = this.boards.length;
+    drawText(ctx, `BOARDS OPEN TOGETHER  ${open} / ${total}`, 320, STATUS_Y, { size: 1, color: open < total ? UI.steel : UI.teal, align: 'center' });
+    const bi = Math.max(0, (lobby.stage || 1) - 1);
+    const m = rowMetrics(total, BOARD_ROW);
+    for (let i = 0; i < total; i++) {
+      // The cursor is P1's white: the host is always player 1, so it reads as "their pick" on both screens.
+      drawBoardPlaque(ctx, this.boards[i], m.x0 + i * (m.w + m.gap), BOARD_Y, m.w, PLAQUE_H, f,
+        { sel: i === bi, cursor: i === bi ? P1_CURSOR : null });
+    }
+
     const hint = lobby.myReady ? 'JUMP: CHANGE YOUR MIND'
-      : this.isHost && opts > 1 ? 'LEFT/RIGHT: HERO    UP/DOWN: BOARD    ATTACK: READY'
-        : 'LEFT/RIGHT: HERO    ATTACK: READY';
-    drawText(ctx, hint, 320, 324, { size: 1, color: UI.brass, align: 'center' });
-    drawText(ctx, `ROOM ${this.net.room}    PING ${Math.round(this.net.rtt || 0)}MS    DELAY ${this.net.delay}F    ONE HERO EACH - THE GREYED CARD IS THEIRS`,
-      320, 338, { size: 1, color: UI.brassDark, align: 'center' });
+      : this.isHost && open > 1 ? 'LEFT/RIGHT: HERO    UP/DOWN: BOARD    ATTACK: READY'
+        : this.isHost ? 'LEFT/RIGHT: HERO    ATTACK: READY'
+          : 'LEFT/RIGHT: HERO    ATTACK: READY    THE HOST PICKS THE BOARD';
+    drawText(ctx, hint, 320, BOARD_Y + PLAQUE_H + 4, { size: 1, color: UI.brass, align: 'center' });
+    drawText(ctx, `ROOM ${this.net.room}    PING ${Math.round(this.net.rtt || 0)}MS    DELAY ${this.net.delay}F    ONE HERO EACH`,
+      320, BOARD_Y + PLAQUE_H + 14, { size: 1, color: UI.brassDark, align: 'center' });
 
     if (lobby.myReady && lobby.theirReady) {
       const pw = measureText('STARTING!', 3) + 48;
-      rrect(ctx, 320 - pw / 2, 140, pw, 41, 6, 'rgba(10,6,14,0.9)', UI.brass, 2);
-      drawTextOutlined(ctx, 'STARTING!', 320, 152, { size: 3, color: UI.brassLight, outline: '#3a2010', thickness: 2, align: 'center' });
+      rrect(ctx, 320 - pw / 2, 126, pw, 41, 6, 'rgba(10,6,14,0.9)', UI.brass, 2);
+      drawTextOutlined(ctx, 'STARTING!', 320, 138, { size: 3, color: UI.brassLight, outline: '#3a2010', thickness: 2, align: 'center' });
     }
   }
 }

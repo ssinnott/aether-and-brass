@@ -26,6 +26,7 @@ input masks over a WebRTC data channel, with no server we operate.
 | Session | `src/net/session.js` | Signalling → lobby → match, and the per-frame pump |
 | UI | `src/game/screens/lobby.js` | Host/join by room code, hero pick, host's board pick, ready; `?room=CODE` invite links |
 | Hero cards | `src/game/screens/charcards.js` | The 140x200 cards, shared by the lobby and the local CHOOSE YOUR FIGHTER |
+| Board plaques | `src/game/screens/boardcards.js` | The plaque art and vignettes, shared by BOARD SELECT and the lobby's compact row |
 | Tests | `tools/nettest.js`, `tools/playtest.js` | Pure-Node suites plus a two-page end-to-end match |
 
 ### Shared state: board unlocks are per-group
@@ -65,6 +66,12 @@ offered in the UI.
 Hero picking is the local CHOOSE YOUR FIGHTER screen: the same brass card row, busts, stat pips and
 gear-ring cursors (`src/game/screens/charcards.js`), with **both** cursors on it — P1 white, P2
 cyan, exactly as they read in the match. The peer's cursor is driven by their `LOBBY` packet.
+
+Board picking is BOARD SELECT, on the same screen underneath: the same plaques, vignettes, padlocks
+and gear cursor (`src/game/screens/boardcards.js`), drawn compact so both rows fit. They show **the
+group's** unlocks, so a new pairing sees board 1 open and the rest sealed behind their padlocks
+however far either player has got alone. The host's cursor picks and the guest watches it move —
+the session runs on the host's unlocks, and the guest gets a key to that board for the session.
 
 Unlike the couch screen, the two players may **not** share a hero. On a sofa "you're the darker
 one" works; online, two identical fighters with no shared screen to point at do not. So
