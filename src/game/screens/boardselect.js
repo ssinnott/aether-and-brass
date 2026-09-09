@@ -420,18 +420,29 @@ function drawWorksMotif(ctx, x, y, w, h, pv, f) {
       circle(ctx, sx + 2.5, sy, 2 + k, `rgba(238,236,226,${0.3 - k * 0.07})`, null, 0);
     }
   }
-  // the kiln mouths along the ground: the board's one saturated colour, and the only light in the picture
+  // the kiln mouths along the ground: the board's one saturated colour, and the only light in the picture. The
+  // fourth slot is left out on purpose — that is where the handcart stands, and a cart drawn ON a lit kiln mouth
+  // reads as a vehicle with headlights.
+  const slot = (w - 24) / 5;
   for (let i = 0; i < 5; i++) {
-    const kx = x + 12 + i * ((w - 24) / 5);
+    if (i === 3) continue;
+    const kx = x + 12 + i * slot;
     ctx.fillStyle = '#2A2620'; ctx.fillRect(kx, base - 12, 12, 12);
     ctx.fillStyle = pv.accent;
     if (((i * 5 + (f >> 4)) % 7) !== 0) ctx.fillRect(kx + 2, base - 9, 8, 6);
   }
-  // a loaded wagon standing on the road in front of it
-  ctx.fillStyle = '#4A3E2E'; ctx.fillRect(x + w * 0.6, base - 16, 30, 10);
-  poly(ctx, [x + w * 0.6 + 2, base - 16, x + w * 0.6 + 8, base - 24, x + w * 0.6 + 24, base - 24, x + w * 0.6 + 28, base - 16], '#B0AE96', null, 0);
-  circle(ctx, x + w * 0.6 + 7, base - 4, 4, '#2E2A24', null, 0);
-  circle(ctx, x + w * 0.6 + 24, base - 4, 4, '#2E2A24', null, 0);
+  // A LOADED HANDCART, STANDING ON THE ROAD. Both halves of that are load-bearing: its wheels rest ON the ground
+  // band (bottom edge exactly at `base`, which the band is then painted up to) rather than hanging above it, and the
+  // load is a flat lump with a shaft sticking up out of it — a rounded tarp over a body between two wheels drew a
+  // car, floating, in the middle of a Victorian lime works.
+  const cx = Math.round(x + 12 + 3 * slot), top = base - 13;
+  line(ctx, cx + 1, top + 1, cx - 9, top - 6, '#4A3E2E', 2);          // the shaft, up and out to the left
+  ctx.fillStyle = '#4A3E2E'; ctx.fillRect(cx, top, 22, 7);            // the body
+  ctx.fillStyle = '#2E2A24'; ctx.fillRect(cx, top + 5, 22, 2);
+  ctx.fillStyle = '#B0AE96'; ctx.fillRect(cx + 3, top - 4, 16, 4);    // the load under its tarpaulin
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(cx + 3, top - 2, 16, 2);
+  circle(ctx, cx + 5, base - 3, 3, '#2E2A24', null, 0);               // wheels: bottom edge exactly on the band
+  circle(ctx, cx + 17, base - 3, 3, '#2E2A24', null, 0);
 }
 
 /** The sealed plate behind a locked board: hatched steel with rivets. */
