@@ -311,12 +311,12 @@ export class StageRunner {
       this.world.camera.unlock(); this.world.arenaBounds = null;
       this.goTimer = GO_FRAMES; audio.play('go_arrow');
       this.playMusic((this.stage.music && this.stage.music[this.section.backdrop]) || this.section.backdrop);
-      this.hud.showBanner('FOREMAN DEFEATED', 'GO', 120);
+      this.hud.showBanner(((this.stage.banners || {}).midbossDown) || 'FOREMAN DEFEATED', 'GO', 120);
     } else if (this.bossState === 'active') {
       this.bossState = 'done';
       this.victoryTimer = 0;
       audio.play('stage_clear');
-      this.hud.showBanner('STAGE CLEAR', 'THE SKY OPENS', VICTORY_FRAMES);
+      this.hud.showBanner('STAGE CLEAR', ((this.stage.banners || {}).clear) || 'THE SKY OPENS', VICTORY_FRAMES);
       for (const p of this.world.players) if (p && !p.out) p.victory = true;
       this.world.arenaBounds = null;
       if (this.world.resetBand) this.world.resetBand();

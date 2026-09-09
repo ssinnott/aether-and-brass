@@ -171,7 +171,9 @@ export function isHero(subject) { return subject.kind === 'character'; }
 
 /** True for a boss or boss-phase subject. */
 export function isBoss(subject) {
-  return subject.kind === 'boss-phase' || ['midboss', 'boss', 'midboss2', 'boss2'].includes(subject.def && subject.def.type);
+  // `def.boss` is the flag every boss definition sets (content/enemies/{mid,}boss*.js); keying off it rather than a
+  // hard-coded type list means a new board's bosses are held to the boss baselines the day they are written.
+  return subject.kind === 'boss-phase' || !!(subject.def && subject.def.boss);
 }
 
 const FACE_PROFILE = new WeakMap();

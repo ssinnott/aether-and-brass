@@ -1,8 +1,9 @@
 // Enemy registry (ARCHITECTURE.md section 8 / 15): getEnemyDef(type, variant), ENEMY_LIST (every variant + the bosses).
 // Stage 1 (docs/GDD.md): Brassbound + Sootborn, the Hoister and the Regent Engine.
 // Stage 2 (docs/STAGE2.md): Stormcrows, the Grapnel Winch and the Ninth Wing.
-// Unaffiliated rosters, built to mix and match across future boards: the Gleaning (salvage guild, fights from the air)
-// and the Chandlery of Calderwick (a chartered supply company that does not insure its own).
+// Stage 3 (docs/STAGE3.md): the Chandlery of Calderwick, the Lime Kiln and the Factor — working on the Brassbound and
+// Sootborn they have put back on their feet, so the board is three factions at once.
+// Unaffiliated roster, built to mix and match across future boards: the Gleaning (salvage guild, fights from the air).
 // Type slugs come from the design-doc faction names; the ARCHITECTURE aliases typeA/typeB are accepted too.
 import { BRASSBOUND } from './brassbound.js';
 import { SOOTBORN } from './sootborn.js';
@@ -13,6 +14,8 @@ import { midboss } from './midboss.js';
 import { boss } from './boss.js';
 import { midboss2 } from './midboss2.js';
 import { boss2 } from './boss2.js';
+import { midboss3 } from './midboss3.js';
+import { boss3 } from './boss3.js';
 
 // keys are lower-case: resolveType() lower-cases the slug before the lookup
 const TYPE_ALIASES = {
@@ -20,6 +23,7 @@ const TYPE_ALIASES = {
   brass: 'brassbound', soot: 'sootborn', crow: 'stormcrow', ninth: 'stormcrow',
   gleaner: 'gleaning', tide: 'gleaning', typee: 'chandler', chandlery: 'chandler', company: 'chandler',
   grubbik: 'midboss', hoister: 'midboss', vane: 'boss', skree: 'midboss2', winch: 'midboss2', kestrel: 'boss2', admiral: 'boss2',
+  marl: 'midboss3', yardmaster: 'midboss3', kiln: 'midboss3', hasp: 'boss3', factor: 'boss3', ledger: 'boss3',
 };
 /** GDD display-name words -> variant slugs (so 'Tin Footman' / 'footman' / 'tin' all resolve). */
 const VARIANT_ALIASES = {
@@ -37,6 +41,8 @@ DEFS.set('midboss:grubbik', midboss);
 DEFS.set('boss:vane', boss);
 DEFS.set('midboss2:skree', midboss2);
 DEFS.set('boss2:kestrel', boss2);
+DEFS.set('midboss3:marl', midboss3);
+DEFS.set('boss3:hasp', boss3);
 
 /** Resolve a type slug (accepting aliases). */
 export function resolveType(type) {
@@ -45,12 +51,13 @@ export function resolveType(type) {
 }
 
 /** Boss types resolve to their single def whatever variant is asked for. */
-const BOSSES = { midboss, boss, midboss2, boss2 };
+const BOSSES = { midboss, boss, midboss2, boss2, midboss3, boss3 };
 
 /**
  * Look up an enemy definition. Unknown variants fall back to the type's first variant; unknown types to the Tin Footman.
- * @param {string} type 'brassbound' | 'sootborn' | 'stormcrow' | 'gleaning' | 'chandler' | 'midboss' | 'boss' | 'midboss2' | 'boss2'
- *   (aliases: typeA, typeB, typeC, typeD, typeE, grubbik, vane, skree, kestrel)
+ * @param {string} type 'brassbound' | 'sootborn' | 'stormcrow' | 'gleaning' | 'chandler' | 'midboss' | 'boss' |
+ *   'midboss2' | 'boss2' | 'midboss3' | 'boss3'
+ *   (aliases: typeA, typeB, typeC, typeD, typeE, grubbik, vane, skree, kestrel, marl, hasp)
  * @param {string} [variant]
  */
 export function getEnemyDef(type, variant) {
@@ -66,7 +73,7 @@ export function getEnemyDef(type, variant) {
   return first || BRASSBOUND[0];
 }
 
-/** Registry list for window.__game.enemyList(): every variant + both stages' mid-bosses and bosses. */
+/** Registry list for window.__game.enemyList(): every variant + every board's mid-boss and boss. */
 const listEntry = (d) => ({ type: d.type, variant: d.variant, name: d.name, role: d.role });
 export const ENEMY_LIST = [
   ...BRASSBOUND.map(listEntry), ...SOOTBORN.map(listEntry), ...STORMCROWS.map(listEntry), ...GLEANINGS.map(listEntry), ...CHANDLERS.map(listEntry),
@@ -74,6 +81,8 @@ export const ENEMY_LIST = [
   { type: 'boss', variant: 'vane', name: boss.name, role: 'boss' },
   { type: 'midboss2', variant: 'skree', name: midboss2.name, role: 'boss' },
   { type: 'boss2', variant: 'kestrel', name: boss2.name, role: 'boss' },
+  { type: 'midboss3', variant: 'marl', name: midboss3.name, role: 'boss' },
+  { type: 'boss3', variant: 'hasp', name: boss3.name, role: 'boss' },
 ];
 
 /** Gallery entries: every variant plus each boss phase rig. */
@@ -88,6 +97,11 @@ export const ENEMY_GALLERY = [
   { id: 'midboss2B', name: 'SKREE', build: midboss2.phases[1].build, anims: midboss2.phases[1].anims },
   { id: 'boss2', name: 'ADMIRAL KESTREL', build: boss2.build, anims: boss2.anims },
   { id: 'boss2B', name: 'STORM-WING', build: boss2.phases[1].build, anims: boss2.phases[1].anims },
+  { id: 'midboss3', name: 'THE LIME KILN', build: midboss3.build, anims: midboss3.anims },
+  { id: 'midboss3B', name: 'YARDMASTER MARL', build: midboss3.phases[1].build, anims: midboss3.phases[1].anims },
+  { id: 'boss3', name: 'FACTOR HASP', build: boss3.build, anims: boss3.anims },
+  { id: 'boss3B', name: 'THE COMPANY MAN', build: boss3.phases[1].build, anims: boss3.phases[1].anims },
+  { id: 'boss3C', name: 'THE LEDGER', build: boss3.phases[2].build, anims: boss3.phases[2].anims },
 ];
 
-export { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2 };
+export { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2, midboss3, boss3 };

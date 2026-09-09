@@ -60,6 +60,32 @@ export const EXEMPTIONS = [
   // the guard clears most keyframes and misses the ones where the hanging chain happens to project onto the phantom
   // elbowF->handF segment. One entry, one rig, one rule.
   { rule: 'geom/limb-crossings', subject: 'midboss:grubbik', reason: 'the Hoister has no far forearm: midboss.js:158-180 drawChainHook replaces it with the 5-link hoist CHAIN, which hangs straight down from the elbow whatever the boom does (the forearm rotation is undone), lags on a secondary-motion chain and ends in the barbed hook that Hook Yank fires. geom/limb-crossings groups marks by MATERIAL, so the five steel links merge into one bbox and are scored as a single band laid across a bone the art never draws; the 18.8 px is the distance from the elbow to the middle of a hanging chain, not a misplaced cuff. No placement can satisfy the joint test - the chain hangs from the elbow by physics and its centre is half a chain-length below any joint by construction - and the only ways to clear the count are deleting the chain or painting the brass hook head steel so the prop reads as one material, which deletes the Hook Yank tell. The prop was FIXED rather than merely exempted in the same pass (2026-09-08): the hook head was a celRect shank plus a celPoly barb in the same brass, two separately outlined shapes lit off two centres with an outline across the hook\'s own neck, and is now ONE path stroked and filled once; the tell wash was a 0.35 fill painted UNDER the opaque brass that followed it, so it never reached a pixel, and now runs red clipped inside that inked silhouette. The two segments this rig really does draw as bones, armUpper and legUpper, each carry exactly one 6 px band, on the elbow and on the knee' },
+  // --- palette/value-ladder-adjacent on the four Stage 3 boss rigs that wear the Chandlery's own cloths. Two pairs
+  // fire, and they are the SAME two pairs on all four subjects because all four use CH_PAL unchanged
+  // (src/content/enemies/chandlerRig.js). Both are measured, both are argued here, and neither is a rig defect:
+  //
+  //   armLower/armUpper (skin/sleeve, d 0.128 against a boss baseline of 0.213) - THE ADJACENCY DOES NOT EXIST ON
+  //   THIS RIG. chArmLower (chandlerRig.js) paints the forearm in pal.SECONDARY, a harness-leather bracer, with a
+  //   pal.sleeve cuff clipped inside it, and chHand paints the fist in pal.dark / pal.secondary: no Chandler paints
+  //   pal.skin anywhere below the jaw. palette.skin is the FACE colour on this faction, and the one place it does
+  //   touch cloth - neck/torso, skin against the coat collar - measures 0.201 and passes. Same case as the Powder
+  //   Bosun's arm and the Gleaning hoods above: a palette key compared against a part it is never drawn next to.
+  //
+  //   torso/hips (primary/secondary, d 0.426 against 0.525) - the coat against the apron panel and belt block, and
+  //   this is the FACTION's ladder, not a boss re-space: tallow #C29B4A (Oklab L* 70.9) over harness leather
+  //   #7A561E (L* 48.1) is dE 22.8, more than twice the project's own LOST threshold of 10, and the boundary
+  //   carries real ink on both parts plus the quicklime apron hem (chTorso) and the quicklime belt seam (chHips).
+  //   The rec-601 relDiff baseline it misses was set by the two stage-1 bosses - a furnace-red machine and a
+  //   near-black Chancellor's coat - and the only ways to reach 0.525 are lifting the coat to ~L* 85 (which walks
+  //   the biggest mass on the rig into this board's own chalk-white sky and lime road) or dropping the apron to
+  //   ~L* 32 (which puts it within 10 L* of the #20180F outline and swallows the line, the exact defect the
+  //   faction's own leather pass fixed). The five line variants carry the identical pair and pass only because
+  //   organic-mook's baseline for it is 0; holding the same two cloths to a different number because a boss is
+  //   wearing them would be a rule artefact, not a readability finding.
+  { rule: 'palette/value-ladder-adjacent', subject: 'midboss3:marl', reason: '2026-09-08: the Chandlery ladder on a boss rig - skin/sleeve is not an adjacency this faction draws (chArmLower paints the forearm in pal.secondary, pal.skin is the face only), and primary/secondary is the faction\'s own coat-over-apron step at Oklab dE 22.8 with ink and two quicklime seams on the boundary. See the block comment above for the measurements' },
+  { rule: 'palette/value-ladder-adjacent', subject: 'midboss3:marl#1', reason: '2026-09-08: same two pairs as midboss3:marl - the phase 2 rig uses CH_PAL unchanged, so the measurements and the argument are identical' },
+  { rule: 'palette/value-ladder-adjacent', subject: 'boss3:hasp', reason: '2026-09-08: same two pairs as midboss3:marl - the Factor wears the company coat over the company apron, and no Chandler paints pal.skin below the jaw' },
+  { rule: 'palette/value-ladder-adjacent', subject: 'boss3:hasp#1', reason: '2026-09-08: same two pairs as midboss3:marl. Phase 3 (boss3:hasp#2) clears both without an exemption: the coat comes off and primary becomes the quicklime shirt, which is the phase change doing the work' },
 ];
 
 /**

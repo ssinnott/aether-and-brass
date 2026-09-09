@@ -65,6 +65,7 @@ src/
       index.js               # registry: createBackdrop(section, stage) by `section.backdrop` id
       section1.js ... section4.js    # stage 1
       storm1.js ... storm3.js        # stage 2
+      works1.js ... works3.js        # stage 3
     props.js               # breakable/static prop renderers (crates, barrels, lamps, pipes, gears...)
     portraits.js           # character-select portraits & HUD icons drawn from rigs
   game/
@@ -95,12 +96,17 @@ src/
       sootborn.js          # stage 1 type B
       stormcrowRig.js      # stage 2 faction rig (parts, palette, base animation set)
       stormcrow.js         # stage 2 type C: 5 variant overrides
+      gleaningRig.js, gleaning.js  # unaffiliated roster: the Gleaning (no board of its own yet)
+      chandlerRig.js       # stage 3 faction rig (parts, palette, lamp/rite plumbing, chandStrike)
+      chandler.js          # stage 3 type E: 5 variant overrides + the four rites
       midboss.js, boss.js          # stage 1 bosses
       midboss2.js, boss2.js        # stage 2 bosses (reuse the Stormcrow rig)
+      midboss3.js, boss3.js        # stage 3 bosses (reuse the Chandlery rig and its rites)
     stage/
       index.js             # STAGES registry + getStage(n): the boards BOARD SELECT offers
       stage1.js            # stage data (sections, waves, props, hazards) per section 7 format
       stage2.js
+      stage3.js
 ```
 
 ## 2. Coordinate system (semi-isometric beat-em-up plane)
@@ -367,6 +373,7 @@ export const stage1 = {
   ],
   midboss: { atX: ..., def: 'midboss' },
   boss:    { atX: ..., def: 'boss', arena: { x0, x1 } },
+  banners: { midbossDown: 'FOREMAN DEFEATED', clear: 'THE SKY OPENS' },   // optional per-board banner wording
 }
 ```
 Stages are registered in `content/stage/index.js` (`STAGES`, `getStage(n)`); `game.options.stage` is the
@@ -377,7 +384,11 @@ their ids added to `art/backgrounds/index.js`), a `preview` block for its select
 `STAGES.length`, so nothing else needs touching.
 
 `preview` is the BOARD SELECT vignette (`game/screens/boardselect.js`), not gameplay art:
-`{ skyTop, skyBot, ground, groundH?, accent, motif: 'city'|'sky', blurb? }`.
+`{ skyTop, skyBot, ground, groundH?, accent, motif: 'city'|'sky'|'works', blurb? }`.
+
+`banners` is optional: a board that does not supply it keeps stage 1's wording ("FOREMAN DEFEATED" on the mid-boss,
+"THE SKY OPENS" under STAGE CLEAR). A `zones` entry may also carry `color` — the `daisVents` edge glow defaults to
+aether cyan, which is Concordat machinery, so a board with no Concordat on it passes its own energy colour instead.
 
 ### Board unlocks (`game/progress.js`)
 Board 1 is always selectable; board N opens once board N-1 has been cleared. `ResultsScreen` calls

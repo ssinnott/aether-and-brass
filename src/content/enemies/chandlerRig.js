@@ -713,4 +713,31 @@ export function makeChandlerBase(c, o = {}) {
   return anims;
 }
 
+/**
+ * Six-key strike skeleton for the faction's two BOSSES (ART_STYLE 8): anticipation -> load -> hit (smear + fx) ->
+ * hold -> punishable recovery -> return to carry. The five line variants stay hand-keyed frame by frame; a boss runs
+ * three phases of four attacks each and would otherwise be 400 lines of the same timing written out longhand.
+ * Every pose is still authored per attack — only the timing skeleton and the frame flags are shared, exactly as
+ * stormcrowRig's crowStrike does for the Stage 2 bosses.
+ * @param {object} o { tell, active, recovery, holdDur, carry, stoop, tellSfx, sfx, hitbox|hitboxes, fx, move, smear,
+ *   armor, invuln, event, aimEvent, projectile, summon, recoverFx, w1, w2, h, hold, r } — poses are pose specs.
+ */
+const STANCE = Object.freeze({ legR: [8, 4], legL: [-8, 6] });
+export function chandStrike(o) {
+  const tell = o.tell || 20, t0 = Math.max(1, Math.round(tell * 0.6));
+  const hit = { sfx: o.sfx, fx: o.fx, move: o.move, smear: o.smear, ease: 'overshoot',
+    armor: o.armor || undefined, invuln: o.invuln || undefined, event: o.event, projectile: o.projectile, summon: o.summon };
+  if (o.hitboxes) hit.hitboxes = o.hitboxes; else if (o.hitbox) hit.hitbox = o.hitbox;
+  return { loop: false, frames: [
+    FK(t0, o.w1, { tell: true, sfx: o.tellSfx, armor: o.armor || undefined, event: o.aimEvent, ease: 'in' }),
+    FK(Math.max(1, tell - t0), o.w2, { tell: true, armor: o.armor || undefined, ease: 'out' }),
+    FK(o.active || 8, o.h, hit),
+    FK(o.holdDur || 3, o.hold || o.h, { ease: 'out' }),
+    FK(o.recovery || 24, o.r, { punish: true, ease: 'inout', fx: o.recoverFx }),
+    // the return key sets its own legs: an inherited leg pose leaves a foot floating on the last frame of every
+    // attack (anim/legs-explicit), which is the one thing the stage-2 bosses' strike helper does not do
+    FK(6, { ...o.carry, ...(o.stance || STANCE), torso: (o.stoop || 0) + 2 }, { ease: 'out' }),
+  ] };
+}
+
 export { FK, getChain, celRect, celBall, celPoly, celCapsule, tones, rimTop, rad, TAU };

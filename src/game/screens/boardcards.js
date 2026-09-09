@@ -101,6 +101,7 @@ export function drawVignette(ctx, x, y, w, h, pv, f) {
   g.addColorStop(0, pv.skyTop); g.addColorStop(1, pv.skyBot);
   ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
   if (pv.motif === 'sky') drawSkyMotif(ctx, x, y, w, h, pv, f);
+  else if (pv.motif === 'works') drawWorksMotif(ctx, x, y, w, h, pv, f);
   else drawCityMotif(ctx, x, y, w, h, pv, f);
   const gh = pv.groundH == null ? 10 : pv.groundH;
   if (gh > 0) {
@@ -166,6 +167,57 @@ function drawSkyMotif(ctx, x, y, w, h, pv, f) {
     line(ctx, lx + 5, y + 16, lx - 2, y + 24, '#e8f0ff', 1.5);
     ctx.globalAlpha = 0.18; ctx.fillStyle = '#e8f0ff'; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1;
   }
+}
+
+/** Board 3: the Chandlery's works under a chalk sky — a long roof, four chimneys smoking, kiln mouths lit lime. */
+function drawWorksMotif(ctx, x, y, w, h, pv, f) {
+  const base = y + h - 12;
+  // the lime haze the works stands in: a bright band across the bottom of the sky
+  ctx.fillStyle = 'rgba(244,240,226,0.5)'; ctx.fillRect(x, base - 22, w, 22);
+  // the works: one long shed with a shallow roof, the widest flat shape on any plaque
+  ctx.fillStyle = '#6E6759'; ctx.fillRect(x + 6, base - 26, w - 12, 26);
+  poly(ctx, [x + 6, base - 26, x + 22, base - 34, x + w - 22, base - 34, x + w - 6, base - 26], '#565046', null, 0);
+  // four draw-kiln chimneys, with smoke standing straight up off them (nothing on this board blows sideways)
+  for (let i = 0; i < 4; i++) {
+    const sx = x + 16 + i * ((w - 32) / 3.4);
+    ctx.fillStyle = '#4A443B'; ctx.fillRect(sx, base - 56, 5, 30);
+    for (let k = 0; k < 3; k++) {
+      const sy = base - 60 - k * 7 - ((f >> 3) % 7);
+      circle(ctx, sx + 2.5, sy, 2 + k, `rgba(238,236,226,${0.3 - k * 0.07})`, null, 0);
+    }
+  }
+  // the kiln mouths along the ground: the board's one saturated colour, and the only light in the picture. The
+  // fourth slot is left out on purpose — that is where the handcart stands, and a cart drawn ON a lit kiln mouth
+  // reads as a vehicle with headlights.
+  const slot = (w - 24) / 5;
+  for (let i = 0; i < 5; i++) {
+    if (i === 3) continue;
+    const kx = x + 12 + i * slot;
+    ctx.fillStyle = '#2A2620'; ctx.fillRect(kx, base - 12, 12, 12);
+    ctx.fillStyle = pv.accent;
+    if (((i * 5 + (f >> 4)) % 7) !== 0) ctx.fillRect(kx + 2, base - 9, 8, 6);
+  }
+  // THE ROAD IS PAINTED HERE, not by drawVignette (stage3's preview sets `groundH: 0` for exactly this reason), so
+  // that the cart can be drawn ON TOP of it. Everything else on this plaque stops at the road line; the cart has to
+  // cross it, because a wheel whose bottom edge is exactly on the line still reads as hovering — a wheel sits IN the
+  // road it is standing on, with its bottom couple of pixels swallowed by the surface.
+  const road = pv.ground || '#B9AF95';
+  ctx.fillStyle = road; ctx.fillRect(x, base, w, y + h - base);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x, base, w, 2);
+  // A LOADED HANDCART, STANDING IN THE ROAD: a flat load under a tarpaulin with the shaft standing up out of it,
+  // and both wheels sunk 3px past the road line. A rounded tarp over a body between two wheels, floating above the
+  // line, drew a car in the middle of a Victorian lime works.
+  const cx = Math.round(x + 12 + 3 * slot), top = base - 11;
+  line(ctx, cx + 1, top + 1, cx - 9, top - 6, '#4A3E2E', 2);          // the shaft, up and out to the left
+  ctx.fillStyle = '#4A3E2E'; ctx.fillRect(cx, top, 22, 7);            // the body
+  ctx.fillStyle = '#2E2A24'; ctx.fillRect(cx, top + 5, 22, 2);
+  ctx.fillStyle = '#B0AE96'; ctx.fillRect(cx + 3, top - 4, 16, 4);    // the load under its tarpaulin
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(cx + 3, top - 2, 16, 2);
+  // the wheels, crossing the road line, with the cart's shadow pooled under the axle
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(cx + 2, base + 1, 19, 2);
+  circle(ctx, cx + 5, base + 1, 4, '#2E2A24', null, 0);
+  circle(ctx, cx + 17, base + 1, 4, '#2E2A24', null, 0);
+  ctx.fillStyle = road; ctx.fillRect(x, base + 5, w, y + h - base - 5);   // the road surface closes over the tyres
 }
 
 /** The sealed plate behind a locked board: hatched steel with rivets. */
