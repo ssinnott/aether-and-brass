@@ -186,7 +186,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
 > Four unlikely deliveries are about to be made, upward.
 > **STAGE 1: THE ASCENT OF CALDERWICK**
 
-**Global rules:** world x runs 0–6000px. The camera tracks the **midpoint** of living players (clamped so nobody leaves the screen), right only. Wave triggers lock the camera on a 640px arena until clear, then a blinking "GO →" arrow.
+**Global rules:** world x runs 0–6000px. The camera tracks the **midpoint** of living players (clamped so nobody leaves the screen), right only. Wave triggers lock the camera on a 640px arena until clear, then a blinking "GO →" arrow. **Hazards** hurt everyone, but each fighter takes **one hit per firing** — one eruption of a vent, one slam of a piston, one pass of the cargo hook — never a chain of them while the first knockdown is still in the air; and mobs walk **around** a hazard that is live (tell or active), so damaging them with one means knocking them into it.
 
 ## Section 1, Sootfoot Docks (x 0–1800; rain, night)
 - **Setting:** airship moorings, chain-lashed gantries, light rain.

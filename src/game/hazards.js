@@ -22,20 +22,47 @@ const vrng = makeRng(0x4a2d);
 const OL = '#2B2B30';
 const AIR_STATES = new Set([ST.KNOCKDOWN, ST.THROWN, ST.HURT_AIR]);
 /** Per-type defaults: period / tell / active frames and the hit applied while active. */
+// `every` is how often a live hazard re-fires its area hit (so it cannot slip past someone walking in late);
+// `rehit` is how long that hit remembers a fighter it already caught. Without the second number a hazard
+// re-hits whatever it just launched, all the way through the fall, and one eruption or one pass of the hook
+// stacks 4-7 hits (each x1.2 for being airborne) - enough to kill a Footman outright. One firing, one hit.
 export const HAZARD_TYPES = {
-  steamVent: { period: 180, tell: 20, active: 60, r: 26, every: 8, color: '#e8f0f4', hit: { damage: 8, type: 'launch', kbX: 2, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
-  aetherVent: { period: 120, tell: 30, active: 40, r: 26, every: 8, color: '#4DF0E0', hit: { damage: 12, type: 'launch', kbX: 2, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
-  piston: { period: 240, tell: 30, active: 10, r: 30, every: 5, color: '#4a4e58', hit: { damage: 18, type: 'knockdown', kbX: 4, kbY: 5, hitstun: 24 }, tellSfx: 'hydraulic', sfx: 'piston_crush' },
-  hook: { period: 120, tell: 0, active: 120, r: 18, every: 4, color: '#9a9aa4', hit: { damage: 12, type: 'knockdown', kbX: 5, kbY: 4, hitstun: 22 }, sfx: null, swing: 70 },
+  steamVent: { period: 180, tell: 20, active: 60, r: 26, every: 8, rehit: 60, color: '#e8f0f4', hit: { damage: 8, type: 'launch', kbX: 2, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
+  aetherVent: { period: 120, tell: 30, active: 40, r: 26, every: 8, rehit: 40, color: '#4DF0E0', hit: { damage: 12, type: 'launch', kbX: 2, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
+  piston: { period: 240, tell: 30, active: 10, r: 30, every: 5, rehit: 60, color: '#4a4e58', hit: { damage: 18, type: 'knockdown', kbX: 4, kbY: 5, hitstun: 24 }, tellSfx: 'hydraulic', sfx: 'piston_crush' },
+  // the hook is live all period long, so its `rehit` is per PASS of the arc, not per firing (GDD 6.1: 12, knockdown)
+  hook: { period: 120, tell: 0, active: 120, r: 18, every: 4, rehit: 40, color: '#9a9aa4', hit: { damage: 12, type: 'knockdown', kbX: 5, kbY: 4, hitstun: 22 }, sfx: null, swing: 70 },
   crossbar: { period: 360, tell: 40, active: 12, r: 340, every: 6, color: '#3A3F4B', hit: { damage: 14, type: 'knockdown', kbX: 3, kbY: 5, hitstun: 22, z: 40 }, tellSfx: 'roar', sfx: 'hammer_slam', lane: 40 },
   // Stage 2: a lightning conductor. The storm earths itself through the mast, so the deck around it is a bad place to
   // stand: a violet ring builds for 40f, then the strike knocks down AND leaves you stunned for a moment.
-  lightning: { period: 220, tell: 40, active: 12, r: 34, every: 6, color: '#9B7BFF', hit: { damage: 14, type: 'knockdown', kbX: 3, kbY: 6, hitstun: 24, status: { stunned: { frames: 24 } } }, tellSfx: 'coil_charge', sfx: 'thunder_strike' },
+  lightning: { period: 220, tell: 40, active: 12, r: 34, every: 6, rehit: 60, color: '#9B7BFF', hit: { damage: 14, type: 'knockdown', kbX: 3, kbY: 6, hitstun: 24, status: { stunned: { frames: 24 } } }, tellSfx: 'coil_charge', sfx: 'thunder_strike' },
 };
 const PISTON_UP = 130, CROSSBAR_UP = 260;
 // Hook: pivot-to-eye chain length. Fixed, so the head swings on an arc (and rides up at the ends) instead of
 // sliding sideways on a chain that stretches.
 const HOOK_CHAIN = 172;
+
+const HAZARD_CLEARANCE = 10;   // z margin an enemy leaves around a hazard footprint
+
+/**
+ * Steer a lane clear of any hazard footprint a walk from `fromX` to `toX` would cross (game/enemy.js).
+ * Mobs used to march straight through the cargo hook's arc on their way to the player and grind themselves
+ * down on it; they now aim for the nearer edge of the footprint, clamped to the floor band [zLo, zHi].
+ * Returns `z` unchanged when the lane is clear.
+ */
+export function laneAroundHazards(world, fromX, toX, z, zLo, zHi) {
+  const x0 = Math.min(fromX, toX), x1 = Math.max(fromX, toX);
+  let out = z;
+  for (const e of world.entities) {
+    if (!e.isHazard || e.removeMe) continue;
+    const b = e.dangerBox();
+    if (!b || x1 < b.x0 || x0 > b.x1 || out < b.z0 || out > b.z1) continue;
+    const up = b.z0 - HAZARD_CLEARANCE, down = b.z1 + HAZARD_CLEARANCE;
+    const upOk = up >= zLo, downOk = down <= zHi;
+    out = !upOk && !downOk ? out : !upOk ? down : !downOk ? up : Math.abs(up - out) <= Math.abs(down - out) ? up : down;
+  }
+  return out;
+}
 
 /** A cyclic stage hazard placed at world (x, z). */
 export class Hazard extends Entity {
@@ -53,15 +80,50 @@ export class Hazard extends Entity {
     this.offset = spec.offset || 0;
     this.shadowW = 0;
     this.phase = 'idle'; this.t = 0; this.lastHit = -99;
+    this.recent = new Map();   // fighter id -> frame it was last hit, while info.rehit is set
+    this.pending = null;       // the area hit awaiting resolution, read back once combat has run
     this.zSize = this.info.r;
+    this.isHazard = true;      // enemy pathing looks for these in world.entities (laneAroundHazards)
   }
   hurtbox() { return null; }
+  /**
+   * The floor patch this hazard threatens, for enemy pathing. The hook reports its WHOLE sweep rather than
+   * where the head is this frame: walking into the far end of the arc is still walking into the hook.
+   * null when there is nothing to walk around - the crossbar takes the entire back lane at once.
+   */
+  dangerBox() {
+    // Only what is live now: a dormant vent is still bait (GDD 6 "hits enemies"), it is the tell that clears the lane.
+    if (this.type === 'crossbar' || this.phase === 'idle') return null;
+    const r = this.info.r, sw = this.info.swing || 0;
+    return { x0: this.x - sw - r, x1: this.x + sw + r, z0: this.z - r, z1: this.z + r };
+  }
   /** Screen-relative sweep position for the hook (px from x). */
   get swingX() { return dsin((this.t / this.period) * Math.PI * 2) * (this.info.swing || 0); }
   get tellStart() { return this.period - this.activeFrames - this.tellFrames; }
   get activeStart() { return this.period - this.activeFrames; }
+  /**
+   * Fire an area hit that skips anyone this hazard hit inside the last `info.rehit` frames. Combat resolves
+   * the hit after every entity has updated, so who it caught is read back on a later frame (`reap`).
+   */
+  areaHitOnce(world, x) {
+    const p = world.spawnAreaHit(null, x, this.z, this.info.r, this.info.hit);
+    const cd = this.info.rehit;
+    if (cd) {
+      for (const [id, f] of this.recent) { if (world.frame - f >= cd) this.recent.delete(id); else p.hitTargets.add(id); }
+      this.pending = p;
+    }
+    return p;
+  }
+  /** Stamp whoever the last area hit actually connected with; ids seeded above keep their original frame. */
+  reap(world) {
+    const p = this.pending;
+    if (!p) return;
+    for (const id of p.hitTargets) if (!this.recent.has(id)) this.recent.set(id, world.frame);
+    if (p.removeMe) this.pending = null;
+  }
   update(world) {
     this.world = world;
+    this.reap(world);
     this.t = (world.frame + this.offset) % this.period;
     const prev = this.phase;
     this.phase = this.t >= this.activeStart ? 'active' : this.t >= this.tellStart ? 'tell' : 'idle';
@@ -84,15 +146,14 @@ export class Hazard extends Entity {
       if (this.type === 'crossbar') { if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; this.laneHit(world); } return; }
       if (this.type === 'lightning') { if (this.t % 3 === 0) particles.burst('spark', this.x, 12, this.z, 3, { speed: 2.6, up: 1.6, color: this.info.color }); }
       else if (this.type !== 'piston' && this.t % 3 === 0) particles.burst('steam', this.x, 10, this.z, 2, { speed: 1, up: 3.5, spread: 0.6, color: this.info.color, sizeJitter: 1.5 });
-      if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; world.spawnAreaHit(null, this.x, this.z, this.info.r, this.info.hit); }
+      if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; this.areaHitOnce(world, this.x); }
     }
   }
-  /** Swinging hook: a moving area hit along its arc. */
+  /** Swinging hook: a moving area hit along its arc, once per pass per fighter (info.rehit). */
   hitSweep(world) {
     if (world.frame - this.lastHit < this.info.every) return;
     this.lastHit = world.frame;
-    const p = world.spawnAreaHit(null, this.x + this.swingX, this.z, this.info.r, this.info.hit);
-    p.y = 30;
+    this.areaHitOnce(world, this.x + this.swingX).y = 30;
   }
   /** Pylon crossbar: sweeps the back lane (z < lane) across the whole screen. */
   laneHit(world) {
