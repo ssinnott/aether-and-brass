@@ -140,9 +140,19 @@ export const GLEAN_PAL = {
   accent: GLEAN.sack, metal: GLEAN.zinc, dark: GLEAN.night, glow: GLEAN.rose,
 };
 /** ~72px at scale 1: 16px head, 20x24 torso, long thin dangling legs, small pointed feet. */
+/**
+ * LIMB RADII SIT OVER shading.FLAT_R (5), and that is the whole reason these five numbers moved.
+ * At legR 4 / bulge 0.25 `limbRadii` gives a widest node of 4.16, under the 5 px floor below which `wantSh` returns
+ * false and a part is painted ONE flat tone — so every Gleaning limb was an unshaded tube and the faction had the
+ * least-modelled limbs in the game while every other faction's caught the light. legR 5 / bulge 0.4 gives 5.32 and
+ * the two-tone band comes back, with armR/handR/footL carried up to match so the arm does not read thinner than
+ * the leg it hangs beside.
+ * NONE OF THESE IS HEIGHT-BEARING: rig.height reads upperLeg, lowerLeg, footH, torsoH, neck and headR only
+ * (src/art/rig.js buildRig), so the frozen hurtParts y-bands in gleaning.js still tile the same rig.
+ */
 export const GLEAN_PROPS = {
-  headR: 8, neck: 3, neckR: 3, torsoW: 20, torsoH: 24, hip: 17, upperArm: 14, lowerArm: 14, armR: 4, handR: 4.5,
-  upperLeg: 15, lowerLeg: 14, legR: 4, footL: 10, footH: 4, bulge: 0.25, shoulderX: 3, hipX: 4,
+  headR: 8, neck: 3, neckR: 3, torsoW: 20, torsoH: 24, hip: 17, upperArm: 14, lowerArm: 14, armR: 4.5, handR: 5,
+  upperLeg: 15, lowerLeg: 14, legR: 5, footL: 11, footH: 4, bulge: 0.4, shoulderX: 3, hipX: 4,
 };
 
 // ---------------------------------------------------------------- the bladder (back accessory, torso space)
@@ -346,23 +356,47 @@ function lensColour(rig, face) {
  * Three things fix it and all three are here or in gleanSlot: its own value (`cowl`, 13 L* over the wraps and a hue
  * family off the throat), a real BRIM that points where the rig faces, and an inked opening with a lens in it.
  */
+/**
+ * HOOD PROFILES (head space, fractions of headR, +x forward), one closed contour a variant.
+ *
+ * The pass that put a face in this hood left all five variants wearing the SAME polygon, so the guild measured
+ * identical at head level — worst pairwise silhouette IoU 0.728, exactly where it started. Rank, weight and job now
+ * live in the cut of the cloth: a low torn sack, a peak tipped back off the crown, a heavy wide cowl, a long forward
+ * brim, a tall officer's crown.
+ *
+ * THE FIRST FOUR POINTS ARE SHARED AND MUST STAY SHARED. gleanSlot cuts the goggle opening as a rect spanning
+ * x -0.56r..1.16r and y -0.62r..0.94r; those four points are the front and jaw of the hood, and they are what
+ * CONTAINS that opening. Vary them and the hole stops being a hole cut in cloth and starts being a notch bitten out
+ * of the silhouette — which is the one failure mode the runner-up's own five profiles had when ported straight over.
+ * Everything from the fifth point on is the back, the crown and the drape, and that is where a variant is free.
+ */
+const HOOD_FRONT = [1.26, -0.30, 1.20, 0.34, 1.02, 0.86, 0.40, 1.16];
+const HOOD = {
+  // CHAFF — a short torn sack, low crown, the ripped back edge barely past the ear. The cheapest kit in the guild.
+  rag: [...HOOD_FRONT, -0.78, 1.02, -1.16, 0.30, -1.06, -0.40, -0.58, -0.90, 0.12, -1.08, 0.86, -0.88],
+  // WINNOW — a long hood tipped BACK off the crown, the point trailing behind her while she stoops over the drop
+  peak: [...HOOD_FRONT, -0.86, 1.06, -1.50, 0.46, -2.06, -0.08, -1.30, -0.58, -0.28, -1.22, 0.88, -1.02],
+  // THRESHER — a heavy wide cowl pulled low and roped at the throat, draping onto both shoulders. Widest head, widest body.
+  cowl: [...HOOD_FRONT, -1.00, 1.18, -1.66, 0.62, -1.62, -0.30, -0.92, -1.00, 0.10, -1.28, 0.96, -1.00],
+  // SICKLE — a tight crown under the longest brim in the faction: the deepest shadow and the sharpest point.
+  // Its brim tip overrides the shared one (the only variant that may), and the two points after it hold the opening.
+  brim: [1.62, -0.34, 1.24, 0.32, 1.02, 0.86, 0.40, 1.16, -0.80, 1.00, -1.20, 0.28, -1.08, -0.46, -0.56, -0.94, 0.20, -1.12, 0.94, -0.92],
+  // HARVESTMAN — the officer's tall crown, worn up over a bare face. Rank is height (§0.5) and he is the only one with it.
+  tall: [...HOOD_FRONT, -0.90, 1.10, -1.44, 0.40, -1.34, -0.52, -0.66, -1.18, 0.20, -1.50, 0.96, -1.06],
+};
+/** Shared scratch point list: celPoly reads pts.length, so scaled() sets the length and refills in place (§9, no per-frame allocation). */
+const HPT = [];
+function scaledHood(frac, r) {
+  HPT.length = frac.length;
+  for (let i = 0; i < frac.length; i++) HPT[i] = R(frac[i] * r);
+  return HPT;
+}
 export function gleanHood(ctx, rig, pose, inf) {
   // pal.hair, not a module constant: `hair` is the hood's palette key on this faction (GLEAN_PAL), which is what
   // lets palette/value-ladder-adjacent see the hood/throat boundary that is actually on screen.
   // (drawHead always passes the NEAR palette — a head is never a far part.)
   const r = inf.r, hood = inf.pal.hair;
-  celPoly(ctx, rig, [
-    R(r * 1.26), R(-r * 0.30),   // brim tip: the facing cue, and the only point forward of the face
-    R(r * 1.20), R(r * 0.34),
-    R(r * 1.02), R(r * 0.86),
-    R(r * 0.40), R(r * 1.16),    // jaw / cape front
-    R(-r * 0.86), R(r * 1.06),
-    R(-r * 1.40), R(r * 0.34),   // the sack's back droop
-    R(-r * 1.28), R(-r * 0.48),
-    R(-r * 0.70), R(-r * 1.08),
-    R(r * 0.14), R(-r * 1.32),   // crown peak
-    R(r * 0.92), R(-r * 1.00),
-  ], hood, 0.34, 0.28);
+  celPoly(ctx, rig, scaledHood(HOOD[rig.build.hood] || HOOD.rag, r), hood, 0.34, 0.28);
   if (rig.override) return;
   const t = tones(rig, hood);
   ctx.fillStyle = t.deep; ctx.fillRect(R(-r * 0.1), R(-r * 0.78), R(r * 1.2), 2);   // brim shadow, above the opening
@@ -506,7 +540,11 @@ export function gleanFoot(ctx, rig, pose, inf) {
   // both are MATERIAL changes on the boot (zinc on rag, sackcloth on rag) so both take ink, and the 3 px ankle wrap
   // widens to 4 first rather than being inked down to a single pixel of colour (§0.7).
   band(ctx, rig, toe - 5, -1, 5, 4, inf.pal.metal);                                    // 5px cap: what separates a boot from the deck
-  band(ctx, rig, R(-inf.w * 0.4), R(-inf.h) - 4, R(inf.w * 0.8), 4, inf.pal.sleeve);   // sack ankle wrap: the boot/shin edge
+  // 4 LOCAL px is not 4 device px: on the Chaff (scale 0.9) this band rendered 3.6 and sat under the §0.7 mark floor,
+  // the one crossing on the whole leg doing so. Ceil it to the grid the rule measures on, growing UPWARD so the
+  // wrap's bottom stays welded to the boot line. (Same fix, same shape, as the Sootborn clan cuff in common.js:721.)
+  const aw = Math.max(4, Math.ceil(4 / (rig.pxScale || rig.scale || 1)));
+  band(ctx, rig, R(-inf.w * 0.4), R(-inf.h) - aw, R(inf.w * 0.8), aw, inf.pal.sleeve);   // sack ankle wrap: the boot/shin edge
 }
 /**
  * Complete Gleaning part table. Arms and legs are deliberately UNHOOKED: rig.js's drawLimbSegs draws each limb as one
@@ -597,15 +635,32 @@ export function makeGleanBase(c, o = {}) {
   // variant (idle, every walk key, every attack hold). The hanging read is carried by footR/footL (toe down, heel off),
   // which costs nothing in the audit, and by the stance: legR/legL are splayed enough that the far leg clears the near
   // one instead of stacking into a single column.
-  const K = (s) => ({ torso: -3, head: 6, legR: [14, 6], legL: [-16, 8], footR: -18, footL: -15, root: [0, 0], ...c, ...s });
-  const aR = c.armR, aL = c.armL;
+  //
+  // THE STANCE IS PER VARIANT (`o.stance`), and it is the other half of the head fix. Five hoods on five bodies
+  // standing in ONE pose still measured as one silhouette at five sizes: torso -3, head 6, legs 14/-16 for a bouncing
+  // rusher, a stooped winch hand, a planted bruiser, a prowling thief and an officer at attention alike. Every base
+  // animation inherits the stance because K() is where the base set takes its defaults, and the walk and run below
+  // are authored as OFFSETS from it (T0/H0) so a variant's lean carries through the cycle instead of snapping back.
+  const st = { torso: -3, head: 6, legR: [14, 6], legL: [-16, 8], footR: -18, footL: -15, root: [0, 0], ...(o.stance || {}) };
+  const K = (s) => ({ ...st, ...c, ...s });
+  const aR = c.armR, aL = c.armL, T0 = st.torso, H0 = st.head;
+  // per-variant gait: `stride` scales the leg and arm swing, `bob` the weight drop. A heavy bruiser and a light rusher
+  // do not walk at the same amplitude. Both mirror halves take the same scalar, so §8's walk mirror contract is exact.
+  const S = o.stride || 1, B = o.bob || 1;
+  const sw = (v) => R(v * S), bb = (v) => R(v * B);
   // `tw` is the torso ROCK, and it is not decoration: a body hanging off a gasbag pendulums, and with the torso pinned
   // at -3 for all eight keys the walk read as a pair of legs under a statue. It also drives the 'bag' chain, which
   // lags the bladder off the torso's own rotation — so one number buys the swing at both ends of the rig.
-  const walk = (lr, ll, ar, al, ty, sq, tw, hd) => K({ legR: lr, legL: ll, armR: ar, armL: al, torso: tw, head: hd, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
+  // fr / fl are the FOOT ROLL, and a walk needs it: without them both boots point the same way for all eight keys and
+  // the legs scissor under a pair of feet that never touch the deck. Heel strike ~-4 on contact, through hanging at
+  // the pass, to toe-off ~-30 behind (ART_STYLE 8: the contact is where a walk is read).
+  const walk = (lr, ll, ar, al, ty, sq, tw, hd, fr = -14, fl = -14) =>
+    K({ legR: [sw(lr[0]), sw(lr[1])], legL: [sw(ll[0]), sw(ll[1])], armR: ar, armL: al,
+      torso: T0 + tw + 3, head: H0 + hd - 6, root: [0, bb(ty)], squash: sq || 1, stretch: sq ? 2 - sq : 1, footR: fr, footL: fl });
   // lean 18, not 10: ART_STYLE 8 asks a run for a real lean and anim/locomotion-shape measures the cast at 20-33.
   // A Gleaner runs by pulling its own bag along, so the lean is what the arms are doing anyway.
-  const run = (lr, ll, ar, al, ty, sq) => K({ legR: lr, legL: ll, armR: ar, armL: al, torso: 18, head: -6, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'angry' });
+  const run = (lr, ll, ar, al, ty, sq) => K({ legR: [sw(lr[0]), sw(lr[1])], legL: [sw(ll[0]), sw(ll[1])], armR: ar, armL: al,
+    torso: 18, head: -6, root: [0, bb(ty)], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'angry' });
   const flee = (lr, ll, i, ty) => K({ legR: lr, legL: ll, armR: [-150 + i * 12, -24], armL: [-168 - i * 8, -20], torso: 4, head: -8 + i * 4, root: [0, ty], face: 'hurt' });
   const anims = {
     // idle: the whole body swings under the bag instead of breathing from the chest. The torso range is widened
@@ -620,14 +675,14 @@ export function makeGleanBase(c, o = {}) {
     // walk: a light, toe-first drift — contact / down / pass / up x2. The free arm swings ~38 deg biased BACK (the old
     // +-9 read as locked arms over a striding pair of legs) and the tool on the 'line' chain swings with it.
     walk: { loop: true, frames: [
-      FK(4, walk([30, 4], [-24, 18], AD(aR, -20, 2), AD(aL, 18, 2), 1, 1, 0, 4), { ease: 'out' }),
-      FK(4, walk([22, 14], [-14, 30], AD(aR, -10, 0), AD(aL, 6, 0), 2, 1.03, -6, 9), { ease: 'out' }),
-      FK(4, walk([6, 26], [2, 14], AD(aR, 6, -2), AD(aL, -10, -2), 0, 1, -2, 6), { ease: 'inout' }),
-      FK(4, walk([-10, 18], [20, 2], AD(aR, 18, -2), AD(aL, -20, -2), -1, 1, -8, 10), { ease: 'in' }),
-      FK(4, walk([-24, 18], [30, 4], AD(aR, 18, 2), AD(aL, -20, 2), 1, 1, 0, 4), { ease: 'out' }),
-      FK(4, walk([-14, 30], [22, 14], AD(aR, 6, 0), AD(aL, -10, 0), 2, 1.03, -6, 9), { ease: 'out' }),
-      FK(4, walk([2, 14], [6, 26], AD(aR, -10, -2), AD(aL, 6, -2), 0, 1, -2, 6), { ease: 'inout' }),
-      FK(4, walk([20, 2], [-10, 18], AD(aR, -20, -2), AD(aL, 18, -2), -1, 1, -8, 10), { ease: 'in' }),
+      FK(4, walk([30, 4], [-24, 18], AD(aR, -20, 2), AD(aL, 18, 2), 1, 1, 0, 4, -4, -30), { ease: 'out' }),
+      FK(4, walk([22, 14], [-14, 30], AD(aR, -10, 0), AD(aL, 6, 0), 2, 1.03, -6, 9, -10, -22), { ease: 'out' }),
+      FK(4, walk([6, 26], [2, 14], AD(aR, 6, -2), AD(aL, -10, -2), 0, 1, -2, 6, -18, -12), { ease: 'inout' }),
+      FK(4, walk([-10, 18], [20, 2], AD(aR, 18, -2), AD(aL, -20, -2), -1, 1, -8, 10, -28, -6), { ease: 'in' }),
+      FK(4, walk([-24, 18], [30, 4], AD(aR, 18, 2), AD(aL, -20, 2), 1, 1, 0, 4, -30, -4), { ease: 'out' }),
+      FK(4, walk([-14, 30], [22, 14], AD(aR, 6, 0), AD(aL, -10, 0), 2, 1.03, -6, 9, -22, -10), { ease: 'out' }),
+      FK(4, walk([2, 14], [6, 26], AD(aR, -10, -2), AD(aL, 6, -2), 0, 1, -2, 6, -12, -18), { ease: 'inout' }),
+      FK(4, walk([20, 2], [-10, 18], AD(aR, -20, -2), AD(aL, 18, -2), -1, 1, -8, 10, -6, -28), { ease: 'in' }),
     ] },
     run: { loop: true, frames: [
       FK(3, run([48, 12], [-38, 52], [40, -30], [-56, -20], -2), { ease: 'out' }),
