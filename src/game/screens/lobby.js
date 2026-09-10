@@ -73,7 +73,7 @@ export class LobbyScreen extends Screen {
    * Raw key capture for the room code; the game bindings cannot type letters.
    *
    * While this is up it is the ONLY thing reading the keyboard (see update()). Half the room-code
-   * alphabet is also a game key - B, C, V, X, Z are P1's solo aliases and C is dodge - so a code
+   * alphabet is also a game key - B, C, N, V, X, Z are P1's arcade keys and C is dodge - so a code
    * with a C in it used to bounce the player straight back out of the screen mid-typing.
    */
   handleKey(e) {

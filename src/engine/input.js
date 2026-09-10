@@ -8,15 +8,21 @@ export const ACTIONS = ['left', 'right', 'up', 'down', 'attack', 'jump', 'specia
 /** Default bindings. Keyboard entries are KeyboardEvent.code values; gamepad entries are standard-mapping button indices. */
 export const bindings = {
   keyboard: [
-    { left: ['KeyA'], right: ['KeyD'], up: ['KeyW'], down: ['KeyS'], attack: ['KeyF'], jump: ['KeyG'], dodge: ['KeyR'],
-      special: ['KeyH'], super: ['Space'], taunt: ['KeyT'], start: ['Enter', 'NumpadEnter'] },
+    // Buttons form an R T Y / F G H block: one shifted-left right hand rests on it while the left hand holds WASD.
+    // This mirrors P2's U I O / J K L block finger for finger (index attack, middle jump, ring special).
+    { left: ['KeyA'], right: ['KeyD'], up: ['KeyW'], down: ['KeyS'], attack: ['KeyF'], jump: ['KeyG', 'Space'], dodge: ['KeyR'],
+      special: ['KeyH'], super: ['KeyY'], taunt: ['KeyT'], start: ['Enter', 'NumpadEnter'] },
     { left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'], attack: ['KeyJ', 'Numpad1'],
       jump: ['KeyK', 'Numpad2'], dodge: ['KeyU', 'Numpad4'], special: ['KeyL', 'Numpad3'], super: ['KeyO', 'Numpad6'],
       taunt: ['KeyI', 'Numpad5'], start: ['Backspace', 'Numpad0'] },
   ],
-  /** Extra P1 keys, active only until P2 joins (`input.setJoined(1, true)`). Arrows are shared with P2, so they never count as a P2 join key. */
-  soloAliases: { left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'], attack: ['KeyZ'], jump: ['KeyX'],
-    dodge: ['KeyC'], special: ['KeyV'], super: ['Space'], taunt: ['KeyB'], start: ['Enter', 'NumpadEnter'] },
+  /**
+   * Extra P1 keys, active only until P2 joins (`input.setJoined(1, true)`). This is the arcade layout the title
+   * screen leads with for one player: arrows under the right hand, one contiguous Z X C V B N row under the left.
+   * Arrows are shared with P2, so they never count as a P2 join key.
+   */
+  soloAliases: { left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'], attack: ['KeyZ'], jump: ['KeyX', 'Space'],
+    dodge: ['KeyC'], special: ['KeyV'], super: ['KeyN'], taunt: ['KeyB'], start: ['Enter', 'NumpadEnter'] },
   gamepad: { attack: [0], jump: [1], dodge: [2], special: [3], taunt: [4], super: [5], start: [9], up: [12], down: [13], left: [14], right: [15] },
   /** Held gamepad buttons that mean "run" (RT). Exposed as `input.runHeld(player)`. */
   gamepadRun: [7],
@@ -210,7 +216,7 @@ export const input = {
    * the peer's delayed input into the same slot through setVirtual(). update() cannot do both, so
    * this reads devices and update() then computes edges from the injected virtuals.
    *
-   * `solo` controls the P1 alias keys (arrows, Z X C V B, Space). They are normally live only until
+   * `solo` controls the P1 alias keys (arrows, Z X C V B N, Space). They are normally live only until
    * P2 joins, but netplay must call setJoined(1, true) for the remote slot — which would silently
    * kill half of the local player's keyboard. Netplay passes solo:true to keep them.
    *

@@ -537,5 +537,5 @@ P1 toward and steps toward the nearest enemy — used by the enemy test), `summa
 `summary().sectionIndex` = index of the section containing the camera center.
 
 ## 16. Input bindings
-The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Space T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V Space B until P2 joins; gamepads 0/1 → P1/P2). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
+The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Y T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V N B until P2 joins; Space jumps on both P1 sets; gamepads 0/1 → P1/P2). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
 `engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.soloAliases`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). P2 drop-in: poll `input.joinPressed(1)` and call `input.setJoined(1, true)`; the title screen resets it.
