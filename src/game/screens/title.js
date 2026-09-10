@@ -17,6 +17,10 @@ import { progress } from '../progress.js';
 
 const MENU = ['START (1P)', 'START (2P)', 'ONLINE CO-OP', 'DIFFICULTY', 'MUTE'];
 const I_ONLINE = 2, I_DIFF = 3, I_MUTE = 4;
+// Controls legend (RECONCILIATION "Final controls"). Keep in step with engine/input.js bindings.
+const LEGEND_1P = '1P  ARROWS MOVE  Z ATTACK  X JUMP  C DODGE  V SPECIAL  N SUPER  B TAUNT  ENTER START';
+const LEGEND_P1 = 'P1  WASD MOVE  F ATTACK  G JUMP  R DODGE  H SPECIAL  Y SUPER  T TAUNT  ENTER START';
+const LEGEND_P2 = 'P2  ARROWS MOVE  J ATTACK  K JUMP  U DODGE  L SPECIAL  O SUPER  I TAUNT  BACKSPACE START';
 export const DIFFICULTIES = ['easy', 'normal', 'hard'];
 // tiered city: [x, top, w] terraces, front row darker
 const FAR_TOWERS = [[0, 236, 44], [48, 214, 30], [84, 246, 60], [150, 222, 26], [182, 206, 50], [240, 232, 34], [280, 218, 40], [326, 240, 30], [362, 210, 56], [424, 230, 40], [470, 216, 30], [506, 244, 50], [562, 222, 40], [608, 236, 40]],
@@ -161,9 +165,13 @@ export class TitleScreen extends Screen {
     const p2 = this.game.input.joined(1);
     if (p2 && this.p2Flash > 0 && (f % 10) < 6) drawText(ctx, 'P2 JOINED!', 320, 266, { size: 1, color: UI.p2, align: 'center' });
     else if (!p2 && (f % 90) < 60) drawText(ctx, 'P2: PRESS J TO JOIN', 320, 266, { size: 1, color: UI.p2, align: 'center' });
-    drawText(ctx, 'P1  WASD MOVE   F ATTACK  G JUMP  R DODGE  H SPECIAL  SPACE SUPER  T TAUNT  ENTER START', 320, 318, { size: 1, color: UI.paper, align: 'center', shadow: false });
-    drawText(ctx, 'P2  ARROWS MOVE  J ATTACK  K JUMP  U DODGE  L SPECIAL  O SUPER  I TAUNT  BACKSPACE START', 320, 330, { size: 1, color: UI.paper, align: 'center', shadow: false });
-    drawText(ctx, 'RUN: DOUBLE-TAP   ESC PAUSE   M MUTE   GAMEPADS SUPPORTED', 320, 342, { size: 1, color: UI.brass, align: 'center', shadow: false });
+    // Alone, the arcade row leads and the split-keyboard half is only a dimmed footnote; once P2 is in, the
+    // two halves are what matter, so they swap places. Matches input.js soloAliases, which are live iff !p2.
+    const lead = p2 ? LEGEND_P1 : LEGEND_1P;
+    const second = p2 ? LEGEND_P2 : `CO-OP ${LEGEND_P1}`;
+    drawText(ctx, lead, 320, 318, { size: 1, color: UI.paper, align: 'center', shadow: false });
+    drawText(ctx, second, 320, 330, { size: 1, color: p2 ? UI.paper : UI.brassDark, align: 'center', shadow: false });
+    drawText(ctx, 'SPACE JUMPS   RUN: DOUBLE-TAP   ESC PAUSE   M MUTE   GAMEPADS SUPPORTED', 320, 342, { size: 1, color: UI.brass, align: 'center', shadow: false });
     drawText(ctx, '2026 AETHER WORKS', 320, 352, { size: 1, color: UI.brassDark, align: 'center', shadow: false });
   }
 }

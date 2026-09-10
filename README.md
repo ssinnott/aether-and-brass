@@ -27,23 +27,31 @@ directly from disk or hand to someone as one file.
 
 ## Controls
 
-| Action  | Player 1 (left half) | Player 2 (right half) | P1 solo aliases | Gamepad |
-|---------|----------------------|-----------------------|-----------------|---------|
-| Move    | W A S D              | Arrow keys            | Arrow keys      | D-pad / left stick |
-| Attack  | F                    | J                     | Z               | A / Cross |
-| Jump    | G                    | K                     | X               | B / Circle |
-| Dodge   | R                    | U                     | C               | X / Square |
-| Special | H                    | L                     | V               | Y / Triangle |
-| Super   | Space                | O                     | Space           | RB / R1 |
-| Taunt   | T                    | I                     | B               | LB / L1 |
-| Start   | Enter                | Backspace             | Enter           | Start |
+**Playing alone?** Use the arcade layout: **arrows** to move with your right hand, **Z X C V B N** under
+your left. That's the whole scheme — one contiguous row, nothing to reach for.
+
+| Action  | One player (arcade) | Co-op P1 (left half) | Co-op P2 (right half) | Gamepad |
+|---------|---------------------|----------------------|-----------------------|---------|
+| Move    | Arrow keys          | W A S D              | Arrow keys            | D-pad / left stick |
+| Attack  | Z                   | F                    | J                     | A / Cross |
+| Jump    | X (or Space)        | G (or Space)         | K                     | B / Circle |
+| Dodge   | C                   | R                    | U                     | X / Square |
+| Special | V                   | H                    | L                     | Y / Triangle |
+| Super   | N                   | Y                    | O                     | RB / R1 |
+| Taunt   | B                   | T                    | I                     | LB / L1 |
+| Start   | Enter               | Enter                | Backspace             | Start |
+
+The arcade keys are live until a second player joins, at which point P1 moves to the left half of the
+keyboard so both players fit. Each half puts its six buttons in one 2×3 block under a single hand —
+P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
 
 - **Run**: double-tap left or right (or hold RT). **Dash attack**: attack while running.
 - **Grab**: attack next to an enemy that isn't reeling. **Throw**: direction + attack while holding.
   Thrown bodies are weapons: they hurt whatever they land on.
 - **Special** costs one meter bar, or a slice of health when the meter is empty. **Super** needs all three bars.
 - **Dodge** rolls with invulnerability frames and cancels attack recovery.
-- Player 2 joins at any time by pressing any of their keys. Escape pauses, M mutes, F1 shows the debug overlay.
+- Player 2 joins at any time by pressing any of their own keys (J K U L O I or Backspace — the arrows are
+  shared, so they don't count). Escape pauses, M mutes, F1 shows the debug overlay.
 
 ## The heroes
 

@@ -81,7 +81,7 @@ the next free hero and drops its ready, so the two never chase each other and no
 fighter someone did not choose.
 
 While the room code is being typed the lobby reads the keyboard raw and the action bindings are
-ignored: half the code alphabet (B, C, V, X, Z) is also a P1 solo alias, and `C` is dodge, so a code
+ignored: half the code alphabet (B, C, N, V, X, Z) is also a P1 arcade key, and `C` is dodge, so a code
 with a `C` in it used to back the player out of the screen mid-word.
 
 **Deferred from v1**, deliberately: rollback (M2), state-transfer resync after a desync (a

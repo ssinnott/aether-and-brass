@@ -274,16 +274,16 @@ Verbs: Move (8-way; Up/Down = z), Attack, Jump, Dodge, Special, Super, Taunt, Pa
 
 Final bindings (authoritative table in `docs/RECONCILIATION.md`):
 
-| Action  | P1 (left half) | P2 (right half) | P1 solo aliases (until P2 joins) | Gamepad |
-|---------|----------------|-----------------|----------------------------------|---------|
-| move    | W A S D        | Arrows          | Arrows                           | D-pad / stick |
-| attack  | F              | J               | Z                                | 0 (A) |
-| jump    | G              | K               | X                                | 1 (B) |
-| dodge   | R              | U               | C                                | 2 (X) |
-| special | H              | L               | V                                | 3 (Y) |
-| super   | Space          | O               | Space                            | 5 (RB) |
-| taunt   | T              | I               | B                                | 4 (LB) |
-| start   | Enter          | Backspace       | Enter                            | 9 (Start) |
+| Action  | 1P arcade (until P2 joins) | P1 (left half) | P2 (right half) | Gamepad |
+|---------|----------------------------|----------------|-----------------|---------|
+| move    | Arrows                     | W A S D        | Arrows          | D-pad / stick |
+| attack  | Z                          | F              | J               | 0 (A) |
+| jump    | X (or Space)               | G (or Space)   | K               | 1 (B) |
+| dodge   | C                          | R              | U               | 2 (X) |
+| special | V                          | H              | L               | 3 (Y) |
+| super   | N                          | Y              | O               | 5 (RB) |
+| taunt   | B                          | T              | I               | 4 (LB) |
+| start   | Enter                      | Enter          | Backspace       | 9 (Start) |
 
 Global: Escape pauses/unpauses, M mutes, F1 debug overlay. P2 joins by pressing any P2-only key at any time (drop-in). Gamepad 0 → P1, gamepad 1 → P2.
 **Menu navigation:** Up/Down (or Left/Right on the select screen) moves; Attack / Enter confirms; Jump / Escape backs out. Character select: Left/Right cycles portraits, Attack locks, Jump unlocks; both players may pick the same hero (second copy gets a darker tint).
