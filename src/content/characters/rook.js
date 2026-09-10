@@ -505,7 +505,10 @@ export const rook = {
   freeChain: true,
   // Parry (GDD 2.3): an enemy melee attack that would connect during frames 1-6 of the roll is parried instead (enemy stunned 40f,
   // +15 meter, 8f hit-stop); a mistimed press is still a full roll
-  traits: { parry: { frames: 6, stun: 40, meter: 15, hitstop: 8 }, grabReach: 20 },
+  // Bulwark (GDD 2.3 / 7 shields): the middle of the cast in every number — 22 points, 18/s after 1.7 s — the
+  // baseline the other three are read against, and one more thing a well-timed parry keeps intact.
+  traits: { parry: { frames: 6, stun: 40, meter: 15, hitstop: 8 }, grabReach: 20,
+    shield: { name: 'BULWARK', max: 22, regen: 0.3, delay: 100, breakDelay: 200 } },
   build,
   anims,
   hooks,

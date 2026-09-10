@@ -107,7 +107,7 @@ hazards and pickups are game entities, NOT backdrop.
 ## Canonical audio names (game code calls these; engine/audio.js implements them)
 Unknown names must silently no-op (console.warn once when `?debug=1`).
 - UI: `menu_move menu_confirm menu_back pause unpause join continue_tick rank_stamp go_arrow stage_clear game_over`
-- Generic combat: `hit_light hit_medium hit_heavy hit_launch hit_knockdown hit_grab throw whiff parry armor dodge jump land land_heavy getup stagger gear_slip meter_full`
+- Generic combat: `hit_light hit_medium hit_heavy hit_launch hit_knockdown hit_grab throw whiff parry armor dodge jump land land_heavy getup stagger gear_slip meter_full shield_break shield_up`
 - Factions: `brass_hit brass_tell brass_death soot_hurt soot_death soot_flee`
 - Hero weapons: `hammer_swing hammer_slam rapier rapier_arc revolver revolver_fan piston grapple claw steam_vent`
 - Specials/supers: `special_brunhild special_sael special_rook special_pip super_charge super_brunhild super_sael super_rook super_pip`

@@ -7,6 +7,7 @@ import { Screen } from '../game.js';
 import { drawText, drawTextOutlined, measureText } from '../../engine/text.js';
 import { rrect, gear } from '../../art/shapes.js';
 import { buildCharSlots, tickCharSlots, drawCharCard, cardX, charStrap, CARD_Y, P2_CURSOR } from './charcards.js';
+import { shieldLabel } from '../shield.js';
 
 const READY_FRAMES = 24;
 
@@ -84,6 +85,9 @@ export class SelectScreen extends Screen {
         p2: p2.joined && p2.cursor === i ? { confirmed: p2.confirmed } : null,
       });
     }
+    // the shield line sits between the cards and the strapline: it is the one hero stat the five pips do not show
+    const sh = shieldLabel(this.chars[p1.cursor]);
+    if (sh) drawText(ctx, sh, 320, 238, { size: 1, color: UI.brass, align: 'center' });
     const strap = charStrap(this.chars[p1.cursor]);
     if (strap) drawText(ctx, strap, 320, 248, { size: 1, color: UI.paper, align: 'center' });
     if (p2.joined) { const s2 = charStrap(this.chars[p2.cursor]); if (s2) drawText(ctx, `P2: ${s2}`, 320, 262, { size: 1, color: P2_CURSOR, align: 'center' }); }
