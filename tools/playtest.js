@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat playthrough playthrough2 playthrough3 playthrough4 coop audio gallery botstyles)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields playthrough playthrough2 playthrough3 playthrough4 coop audio gallery botstyles)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 import path from 'node:path';
@@ -412,6 +412,49 @@ const scenarios = {
           assert(after < before, `character ${c} move '${mv.name}' damages enemies (${before} -> ${after})`);
           if (c === 0 && mv.name === 'combo') await g.shot('04-combat');
         }
+      });
+    }
+  },
+
+  // 3b. Shields (game/shield.js): every hero carries one, it is spent before hp, it refills after the
+  // wait and only what overflows a broken shield reaches the health bar.
+  async shields(server) {
+    for (let c = 0; c < CHARACTER_COUNT; c++) {
+      await withPage(server, `seed=1&skipTo=gameplay&chars=${c}&nowaves=1`, async (g) => {
+        await g.step(10);
+        const cfg = await g.eval(() => { const p = window.__game.world.players[0]; return p.traits.shield ? { ...p.traits.shield } : null; });
+        assert(!!cfg && cfg.max > 0, `character ${c} has a shield (${cfg ? cfg.max : 'none'})`);
+        if (!cfg) return;
+        const hurt = (dmg, type) => g.eval((d) => { window.__game.world.players[0].takeHit({ damage: d.dmg, type: d.type }, null); }, { dmg, type });
+        const p0 = (await g.summary()).players[0];
+        assert(p0.shield === p0.shieldMax, `character ${c} spawns with a full shield (${p0.shield}/${p0.shieldMax})`);
+
+        // a hit smaller than the pool never reaches hp
+        await hurt(Math.max(1, Math.floor(cfg.max / 2)), 'light');
+        await g.step(4);
+        const p1 = (await g.summary()).players[0];
+        assert(p1.hp === p0.hp, `character ${c} takes no hp damage while the shield holds (${p0.hp} -> ${p1.hp})`);
+        assert(p1.shield < p0.shield, `character ${c} spends shield instead (${p0.shield} -> ${p1.shield})`);
+        if (c === 0) await g.shot('04b-shields');   // the HUD strip, half spent
+
+        // the refill waits `delay` frames, then comes back
+        await g.step(Math.max(1, cfg.delay - 20));
+        const p2 = (await g.summary()).players[0];
+        assert(p2.shield === p1.shield, `character ${c} does not refill during the wait (${p2.shield})`);
+        await g.step(30 + Math.ceil(cfg.max / cfg.regen));
+        const p3 = (await g.summary()).players[0];
+        assert(p3.shield === p3.shieldMax, `character ${c} refills to full when left alone (${p3.shield}/${p3.shieldMax})`);
+
+        // more than the pool: the shield breaks and the rest lands on hp
+        await hurt(cfg.max + 20, 'heavy');
+        await g.step(4);
+        const p4 = (await g.summary()).players[0];
+        assert(p4.shield === 0, `character ${c} shield breaks under a bigger hit (${p4.shield})`);
+        assert(p4.hp < p3.hp, `character ${c} overflow reaches hp (${p3.hp} -> ${p4.hp})`);
+        // and a broken shield stays down for the longer wait
+        await g.step(cfg.delay);
+        const p5 = (await g.summary()).players[0];
+        assert(p5.shield === 0, `character ${c} broken shield waits out breakDelay (${p5.shield} after ${cfg.delay}f)`);
       });
     }
   },

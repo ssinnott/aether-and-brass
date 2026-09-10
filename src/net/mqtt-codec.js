@@ -60,7 +60,8 @@ export function encodeDisconnect() { return packet(PKT.DISCONNECT, 0, []); }
 
 /**
  * Streaming packet parser. Feed it every WebSocket frame; it emits whole packets only.
- * @returns {{ push(bytes: Uint8Array): Array<{type: number, flags: number, topic?: string, payload?: string}> }}
+ * @returns {{ push(bytes: Uint8Array): Array<{type: number, flags: number, body: Uint8Array,
+ *   topic?: string, payload?: string}> }}
  */
 export function createParser() {
   let buf = new Uint8Array(0);

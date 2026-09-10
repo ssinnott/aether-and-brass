@@ -10,11 +10,13 @@
     "test": "node tools/playtest.js",
     "winrate": "node tools/winrate.js",
     "art-check": "node tools/art-check.js",
-    "lint": "node --check src/main.js",
+    "lint": "node --check src/main.js && npm run typecheck",
+    "typecheck": "tsc -p tsconfig.json",
     "nettest": "node tools/nettest.js"
   },
   "license": "MIT",
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
   }
 }

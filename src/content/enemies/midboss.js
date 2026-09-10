@@ -327,6 +327,7 @@ const POUND_HIT = { damage: 18, type: 'knockdown', kbX: 5, kbY: 5, hitstun: 16, 
 const CRATE_SPEC = { fromSky: true, aimAt: true, style: 'crate', height: 230, gravity: 0.55, life: 200, damage: 24, type: 'knockdown', kbX: 4, kbY: 5, radius: 60, color: '#9a7040', r: 12, muzzle: false, draw: drawCrate };
 const HOOK_SPEC = { style: 'claw', chained: true, speed: 6, maxDist: 320, damage: 30, type: 'knockdown', kbX: -4, kbY: 4, hitstun: 24, offsetX: 40, offsetY: 50, color: STEEL, r: 9, life: 70, muzzle: false, draw: drawHookShot };
 
+/** @type {AnimSet} */
 const hoisterAnims = {
   ...HBASE,
   // idle: the pistons breathe, the chassis rocks 3 deg and the boiler chuffs (drawBoiler / rig.tick)

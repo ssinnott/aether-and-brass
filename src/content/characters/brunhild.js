@@ -478,7 +478,10 @@ export const brunhild = {
   freeChain: true,
   // Heavy Frame (GDD 2.1): 15 % less damage taken; knockdown / launch hits under 10 dmg (Sootborn lights) become heavy flinches
   // instead of knocking her down; `armor: 1` on combo hits 3-4 absorbs one hit each (armorHits is the default for `armor: true`)
-  traits: { damageTakenMult: 0.85, ignoreKnockdownBelow: 10, armorHits: 1, grabReach: 20 },
+  // Boiler Plate (GDD 2.1 / 7 shields): the biggest pool in the cast and the slowest to come back — 34 points,
+  // 9/s once she has been left alone for 2.5 s (5 s if it was broken). She soaks a wave; she cannot trade forever.
+  traits: { damageTakenMult: 0.85, ignoreKnockdownBelow: 10, armorHits: 1, grabReach: 20,
+    shield: { name: 'BOILER PLATE', max: 34, regen: 0.15, delay: 150, breakDelay: 300 } },
   build,
   anims,
   moves: {

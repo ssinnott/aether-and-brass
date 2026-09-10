@@ -1,5 +1,5 @@
 // In-game HUD (GDD 9, ARCHITECTURE 10). Top 40px strip at alpha 0.5: per-player 24x24 rig portrait, name, 120x8 health
-// bar (green/yellow/red thresholds, 4f white flash, delayed second bar), 120x5 meter in three segments (full = pulsing
+// bar (green/yellow/red thresholds, 4f white flash, delayed second bar) under a 120x2 brass shield strip, 120x5 meter in three segments (full = pulsing
 // white rim, red tint when a special would cost HP), lives icons, 7-digit score. Centre: stage timer, GO arrow, targeted
 // enemy. Combo counter with grade word / colour climb / scale pop on each side. Elite armor icons, 400x10 boss bar with
 // name plate + phase segments, banners / boss name plates, the super cut-in (portrait slam + name banner during the
@@ -11,6 +11,7 @@ import { rrect, gear, rivetLine, pathPoly, paint } from '../art/shapes.js';
 import { drawHeadPortrait, drawLifeIcon, drawArmorIcon, idlePoseOf } from '../art/portraits.js';
 import { ease } from '../art/poses.js';
 import { clamp } from '../engine/math.js';
+import { drawShieldBar } from './shield.js';
 
 const STRIP_H = 40, BAR_W = 120, BAR_H = 8, METER_H = 5, PORTRAIT = 24;
 const GHOST_DELAY = 20, GHOST_SPEED = 0.8;
@@ -132,6 +133,8 @@ export class Hud {
     if (p.out) drawText(ctx, 'OUT', x0 + PORTRAIT / 2, 14, { size: 1, color: UI.red, align: 'center' });
     // name
     drawText(ctx, p.def.name || p.name, right ? bx + BAR_W : bx, 3, { size: 1, color: col, align: right ? 'right' : 'left' });
+    // shield strip: 2px of brass above the health bar, filled from this player's own side (game/shield.js)
+    drawShieldBar(ctx, p, bx, 10, BAR_W, right, this.frame);
     // health bar: dark trough, delayed second bar, current fill with colour thresholds + white damage flash
     const g = this.ghost[i], frac = clamp(p.hp / p.maxHp, 0, 1), ghostFrac = g ? clamp(Math.max(frac, g.hp / p.maxHp), 0, 1) : frac;
     const fillX = (wd) => (right ? bx + BAR_W - wd : bx);

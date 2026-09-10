@@ -3,6 +3,7 @@
 // def.hooks (onAttackPressed / onJumpPressed / onDodgePressed / onSpecial / onSuper / onHitDealt ...) — see the tables in fighter.js.
 import { ST, TEAM, METER, FIGHTER_DEFAULTS, VIEW_W, Z_SPEED_FACTOR, KNOCKDOWN_POP_VY, UI } from '../constants.js';
 import { Fighter, AIR_FALL_STATES } from './fighter.js';
+import { initShield } from './shield.js';
 import { mashNet } from './status.js';
 import { botIntent } from './bot.js';
 import { audio } from '../engine/audio.js';
@@ -406,6 +407,7 @@ export class Player extends Fighter {
   respawn(world) {
     this.lives--;
     this.hp = this.maxHp; this.meter = 0; this.dead = false; this.deathHooked = false; this.alive = true; this.removeMe = false;
+    initShield(this); // a new life drops in with a full shield
     this.combo = 0; this.comboTimer = 0; this.juggleCount = 0; this.juggleGravity = 0; this.juggleImmune = false; this.chainHits = 0;
     this.grabTarget = null; this.grabbedBy = null; this.heldBody = null; this.hitstop = 0; this.flashTimer = 0; this.status = {};
     const cam = world.camera;

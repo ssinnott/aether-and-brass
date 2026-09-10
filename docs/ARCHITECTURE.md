@@ -9,9 +9,26 @@ for stage 2 (its faction, bosses, sections and audio).
 ## 0. Stack & non-negotiables
 
 - **Runtime:** browser, HTML5 Canvas 2D, vanilla JavaScript **ES modules**. No
-  framework, no TypeScript, no bundler required to *play* (open `index.html` via any
+  framework, no TypeScript *sources*, no bundler required to *play* (open `index.html` via any
   static server). `npm run build` produces a single-file `dist/index.html` (esbuild) for
   sharing, but `src/` must always run un-bundled.
+- **Types are checked, never compiled.** `npm run typecheck` runs `tsc --noEmit` over the
+  JSDoc already in the source (`tsconfig.json`). It emits nothing: no transpile step stands
+  between editing a file and reloading the page, and `src/` stays the plain ES modules above.
+  The only `.ts` in the repo is the `types/` directory — `globals.d.ts` (`window.__game`, Safari's
+  prefixed audio constructors) and `content.d.ts` (`Frame`, `Hit`, `Hitbox`, `Anim`, `AnimSet`,
+  `Hooks`). Both are declaration-only: never imported, never shipped, and global, so JSDoc in
+  `src/**.js` names them directly (`/** @type {Frame[]} */`). `include` covers `engine/`, `net/`
+  and `content/`, and widens one directory at a time — each joins only once it is clean.
+  `strict` is off by design: this is untyped JS with sparse JSDoc, and the noise would bury the
+  findings. `Frame` deliberately has **no index signature**, so a misspelled frame key is an
+  error rather than a field that silently does nothing — which is the failure mode `content/` has.
+- **`game/fighter.js` is the authority on what content may contain.** Its two reference blocks —
+  CONTENT HOOK REFERENCE and FRAME FIELDS honoured by the core — are what actually call into
+  `content/`, and `types/content.d.ts` is derived from them. Section 4 below covers the same
+  ground more briefly and its lists are a subset (it omits the `medium` and `throw` hit types and
+  most hitbox fields); where the two disagree, the core wins. Add a field to the core, then to
+  `types/content.d.ts`, then use it.
 - **Zero binary assets.** All art is drawn with canvas primitives; all audio is
   synthesized with WebAudio. Nothing is fetched at runtime except our own modules.
 - **Internal resolution:** `640 x 360` (constants `VIEW_W`, `VIEW_H`). The internal
@@ -35,7 +52,10 @@ for stage 2 (its faction, bosses, sections and audio).
 
 ```
 index.html                 # loads src/main.js as a module; contains only the canvas + minimal CSS
-package.json               # scripts: dev, build, test (see section 13)
+package.json               # scripts: dev, build, test, typecheck (see section 13)
+tsconfig.json              # type-check config (noEmit; nothing is compiled)
+types/globals.d.ts         # ambient declarations for window.__game and prefixed WebAudio
+types/content.d.ts         # Frame / Hit / Hitbox / Anim / AnimSet / Hooks — the content contracts
 tools/server.js            # zero-dependency static server (node), used by dev + tests
 tools/playtest.js          # Playwright headless playthrough harness (see section 13)
 tools/build.js             # esbuild single-file bundle -> dist/index.html
@@ -78,6 +98,7 @@ src/
     enemy.js               # Enemy extends Fighter: AI controller framework (section 8)
     boss.js                # Boss extends Enemy: phase machine, HP bar, intro
     combat.js              # hitbox/hurtbox resolution, damage application, hitstop, knockback rules
+    shield.js              # regenerating shields: traits.shield normalisation, absorb/refill, HUD strip + in-world ripple
     animation.js           # animation player utilities: play(name), tick(), current frame/pose, events
     items.js               # pickups (food/health, score, meter) and breakable props
     hazards.js             # stage hazards (steam vents, pistons, conveyor floors, pits if any)
@@ -318,11 +339,18 @@ export class Entity {
 ### `game/fighter.js` — shared state machine
 States (string constants in `constants.js` `ST`): `IDLE, WALK, RUN, JUMP, ATTACK, JUMP_ATTACK, DASH_ATTACK, SPECIAL, SUPER, DODGE, TAUNT, HURT, HURT_AIR, KNOCKDOWN (airborne, being launched/flying), LYING, GETUP, GRAB (holding), GRABBED, THROWN, DEAD`.
 
-Required fields: `hp, maxHp, team (TEAM.PLAYER|TEAM.ENEMY), def (content definition), rig, anim (AnimPlayer), state, stateTimer, invuln (frames), hitstop (frames), armor (bool, elites ignore hitstun), juggleCount, lastHitBy, grabTarget/grabbedBy, flashTimer, dead`.
+Required fields: `hp, maxHp, team (TEAM.PLAYER|TEAM.ENEMY), def (content definition), rig, anim (AnimPlayer), state, stateTimer, invuln (frames), hitstop (frames), armor (bool, elites ignore hitstun), juggleCount, lastHitBy, grabTarget/grabbedBy, flashTimer, dead, shield/shieldMax/shieldTimer (game/shield.js)`.
 
 Rules implemented ONCE in `Fighter` (players and enemies both inherit):
 - `takeHit(hit, attacker)` applies damage, hitstop to both (`HITSTOP` in constants.js: `light:3, medium:5, heavy:8, launch:8, knockdown:8, grab:6, throw:6, superFinisher:14`, per RECONCILIATION), flash, knockback (`vx = kbX * attacker.facing`, `vy = kbY`), state → `HURT` (ground, `hitstun` frames), `HURT_AIR` if airborne, `KNOCKDOWN` if `type` is `launch`/`knockdown` or if `juggleCount >= 3` or if hp <= 0. Spawns hit spark + damage text. Returns false if invulnerable / already dead / friendly (no friendly fire between players; enemies never hurt enemies unless `hit.friendly`).
 - `KNOCKDOWN` flight: gravity applies; on landing → `LYING` for `def.lyingFrames` (default 40; dead → stay & fade out), then `GETUP` (invuln 20 frames), then `IDLE`. Juggle: a `KNOCKDOWN` fighter still in the air with `y > 0` can be hit again (juggle), which resets `vy` to `hit.kbY * 0.8`; `juggleCount++`; after 4 juggles the target becomes hit-immune until it lands (anti-infinite).
+- **Shields** (`game/shield.js`, GDD 7): a fighter with `traits.shield` carries `shield` HP in front of `hp`. Every
+  damage path — `takeHit` and `takeHitRaw` — spends the shield first and applies only the overflow to `hp`; the
+  reaction (hitstun, knockback, launch, armor, death) is computed from the hit exactly as before, so absorbing
+  changes damage and nothing else. `tickShield` refills `regen` per frame once `delay` frames have passed with no
+  damage (`breakDelay` after the pool empties), and never while dead, frozen or in hit-stop (the update returns
+  first). `initShield` on spawn and respawn, `syncShield` after a def swap (boss phases). Absorbed damage is not
+  counted in the results screen's Damage Taken, which stays HP lost.
 - `hitstop`: while `> 0` the fighter's own update is frozen (anim and physics) but it still draws; camera shake on heavy hits.
 - Wall/edge bounce: when a knocked-down fighter hits the camera lock edge with `|vx| > 4`, it bounces back (`vx *= -0.5`) — feels great, cheap.
 - Grabs: `grab` hitbox type → if target is grabbable (`def.grabbable !== false`, not a boss unless allowed) attacker → `GRAB`, target → `GRABBED` (positioned in front of attacker each frame). From `GRAB`: attack = grab hit (up to 3, then auto-throw), direction + attack = throw in that direction (`THROWN` = knockdown with strong velocity; thrown bodies hit other enemies for damage `hit.friendly = true`). Grab breaks after `def.grabHoldFrames` (90).
@@ -446,7 +474,8 @@ players allowed on one hero (docs/MULTIPLAYER.md). Intro: stage card 2.5s
 (skip on attack). Results: score, max combo, grade, time, "PRESS START".
 
 ## 10. HUD (`game/hud.js`)
-Per player (P1 left, P2 right): portrait icon, name, health bar (segmented, colors shift
+Per player (P1 left, P2 right): portrait icon, name, shield strip (120x2, drawn by
+`game/shield.js`), health bar (segmented, colors shift
 at < 30%), special meter bar, lives count, score. Center-top: current enemy targeted
 health bar (name + bar, last hit enemy, 2s), boss bar at bottom when a boss is active.
 Combo counter: near the player, big number + "HITS" + grade text when dropped.
@@ -484,6 +513,9 @@ debug mode) — tests fail on any error.
 ## 13. Tooling & tests
 - `npm run dev` → `node tools/server.js` (serves repo root on http://localhost:8080 with correct
   `Content-Type` for `.js` = `text/javascript`, no caching).
+- `npm run typecheck` → `tsc -p tsconfig.json`: checks `engine/`, `net/` and `content/` against their JSDoc
+  and emits nothing. Runs in CI before the build. `npm run lint` is `node --check src/main.js`
+  followed by this.
 - `npm run build` → `node tools/build.js` → esbuild bundles `src/main.js` (IIFE, minified
   off) and inlines it + CSS into `dist/index.html` (single file, no external refs).
 - `npm test` → `node tools/playtest.js`: starts the server, launches headless Chromium
@@ -497,6 +529,9 @@ debug mode) — tests fail on any error.
   2. `select`: navigate select, pick every character (4 runs), start gameplay, zero errors.
   3. `combat`: for each character, spawn near enemies, script attacks (combo, jump attack,
      dash attack, special, super, grab/throw), assert enemy hp decreases, assert hits land.
+  3b. `shields`: for every hero, the shield starts full, absorbs a hit smaller than the pool with no HP
+     loss, holds through its `delay`, refills to full when left alone, breaks under a bigger hit with only
+     the overflow reaching HP, and stays down for the longer `breakDelay`.
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.
@@ -550,5 +585,5 @@ P1 toward and steps toward the nearest enemy — used by the enemy test), `summa
 `summary().sectionIndex` = index of the section containing the camera center.
 
 ## 16. Input bindings
-The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Space T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V Space B until P2 joins; gamepads 0/1 → P1/P2). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
+The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Y T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V N B until P2 joins; Space jumps on both P1 sets; gamepads 0/1 → P1/P2). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
 `engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.soloAliases`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). P2 drop-in: poll `input.joinPressed(1)` and call `input.setJoined(1, true)`; the title screen resets it.

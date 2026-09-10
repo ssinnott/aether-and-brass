@@ -36,6 +36,7 @@
 //  fleeHpFrac 0 / fleeChance 0  (enemies: see enemy.js ai.fleeLast) | weight 1 (knockback divisor)
 //  extraJumps 0 | airDashes 0 | dodgeRecovery 8 | dodgeIFrames [2, 12] | parry { frames: 6, stun: 40, meter: 15, hitstop: 8 }
 //  tauntMeter 25 (gained over the taunt animation)
+//  shield { max, regen, delay, breakDelay, name }  regenerating buffer spent before hp (game/shield.js); absent = no shield
 // ================================ FRAME FIELDS honoured by the core ==================================================
 //  hitbox { x, y, w, h, z, type: light|medium|heavy|launch|knockdown|grab|throw, damage, kbX, kbY, hitstun, once, rehit, multiHit: N,
 //           friendly, hitsBehind (mirrored copy), maxTargets, pierceDamage (damage for the 2nd+ target), reaction: flinch|stagger|launch|knockdown,
@@ -65,6 +66,7 @@ import { clamp, sign } from '../engine/math.js';
 import { drawText, measureText } from '../engine/text.js';
 import { applyStatus, clearStatus, tickStatuses, tickFrozen, drawStatuses, statusTint } from './status.js';
 import { normalizeTraits } from './traits.js';
+import { initShield, syncShield, tickShield, absorbShield, drawShieldFx } from './shield.js';
 import { grabMethods, BOUNCE_VY } from './grabs.js';
 
 export { normalizeTraits };
@@ -105,6 +107,7 @@ export class Fighter extends Entity {
     this.shadowW = Math.round(34 * sc);
     this.applyDef(def);
     this.hp = this.maxHp;
+    initShield(this);
     this.state = ST.IDLE; this.stateTimer = 0;
     this.invuln = 0; this.hitstop = 0; this.flashTimer = 0; this.busy = 0;
     /** Last attack instance dodged through, PER attacker (see takeHit): one scalar cannot track two players at once. */
@@ -142,6 +145,7 @@ export class Fighter extends Entity {
     this.damageMult = def.damageMult || 1;
     this.damageTaken = this.traits.damageTakenMult;
     this.unlaunchable = this.traits.noLaunch;
+    if (this.shield !== undefined) syncShield(this); // a phase change may raise, lower or remove the shield
   }
 
   // ---------- helpers ----------
@@ -175,6 +179,7 @@ export class Fighter extends Entity {
     if (this.flashTimer > 0) this.flashTimer--;
     if (this.invuln > 0) this.invuln--;
     if (this.hpBarTimer > 0) this.hpBarTimer--;
+    tickShield(this);
     if (this.chainTimer > 0 && --this.chainTimer === 0) this.chainHits = 0;
     this.stateTimer++;
     const f = this.anim.frame;
@@ -447,6 +452,10 @@ export class Fighter extends Entity {
     if (air) dmg *= 1.2;
     dmg = Math.max(0, Math.round(dmg));
     if (this.godmode) dmg = 0;
+    // the shield (traits.shield) is spent first and changes nothing else about the hit: the reactions
+    // below still read off `type`, so an absorbed launcher still launches (game/shield.js)
+    const eaten = absorbShield(this, dmg, attacker);
+    if (eaten > 0) dmg = Math.max(0, Math.round(dmg - eaten));
     const hpBefore = this.hp;
     this.hp = Math.max(0, this.hp - dmg);
     this.lastDamage = hpBefore - this.hp; // HP actually lost (no overkill in the results tally)
@@ -551,6 +560,8 @@ export class Fighter extends Entity {
     if (!this.alive || this.dead) return;
     let dmg = Math.round(damage * this.damageTaken * (attacker && attacker.damageMult || 1));
     if (this.godmode) dmg = 0;
+    const eaten = absorbShield(this, dmg, attacker);
+    if (eaten > 0) dmg = Math.max(0, Math.round(dmg - eaten));
     const hpBefore = this.hp;
     this.hp = Math.max(0, this.hp - dmg);
     this.hpBarTimer = HP_BAR_FRAMES; this.flashTimer = 4; this.lastHitBy = attacker || this.lastHitBy;
@@ -611,6 +622,7 @@ export class Fighter extends Entity {
     const st = statusTint(this);
     drawRig(ctx, this.rig, this.anim.pose, { x: sx, y: sy, facing: this.facing, flash: this.flashTimer > 0, alpha, tint: st ? st.tint : (this.tint || null), tintAlpha: st ? st.tintAlpha : this.tintAlpha });
     drawStatuses(ctx, this, sx, sy);
+    drawShieldFx(ctx, this, sx, sy);
     if (hooks && hooks.drawAfter) hooks.drawAfter(ctx, this, sx, sy, cam);
     if (this.team === TEAM.ENEMY && this.hpBarTimer > 0 && !this.dead && this.kind !== 'boss') {
       const w = this.def.elite ? 60 : 40, hh = this.def.elite ? 4 : 3, top = Math.round(sy - this.h - 10);

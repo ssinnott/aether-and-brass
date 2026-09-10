@@ -18,23 +18,30 @@ rules from ARCHITECTURE.
 | Section 4 boss | Boss trigger at x 5900, arena x 5560..6000 (400px band as GDD, clamp to stage end). |
 
 ## Final controls (replaces GDD §8 and ARCHITECTURE §16 tables)
-Each player owns one half of the keyboard so two people can share it.
+Two people share one keyboard, so each player owns one half of it — but **one player alone uses the arcade
+layout** (arrows under the right hand, one contiguous `Z X C V B N` row under the left), which is what the
+title screen leads with. The split-keyboard P1 half is the co-op layout, and it stays reachable at all times.
 
-| Action  | P1 (left half) | P2 (right half) | P1 solo aliases (active only until P2 joins) | Gamepad (standard map) |
-|---------|----------------|-----------------|---------------------------------------------|------------------------|
-| move    | W A S D        | Arrow keys      | Arrow keys                                  | D-pad / left stick (deadzone 0.25) |
-| attack  | F              | J (Numpad1)     | Z                                           | 0 (A / Cross) |
-| jump    | G              | K (Numpad2)     | X                                           | 1 (B / Circle) |
-| dodge   | R              | U (Numpad4)     | C                                           | 2 (X / Square) |
-| special | H              | L (Numpad3)     | V                                           | 3 (Y / Triangle) |
-| super   | Space          | O (Numpad6)     | Space                                       | 5 (RB / R1) |
-| taunt   | T              | I (Numpad5)     | B                                           | 4 (LB / L1) |
-| start   | Enter          | Backspace (Numpad0) | Enter                                   | 9 (Start) |
+| Action  | 1P arcade (active only until P2 joins) | P1 (left half) | P2 (right half) | Gamepad (standard map) |
+|---------|----------------------------------------|----------------|-----------------|------------------------|
+| move    | Arrow keys                             | W A S D        | Arrow keys      | D-pad / left stick (deadzone 0.25) |
+| attack  | Z                                      | F              | J (Numpad1)     | 0 (A / Cross) |
+| jump    | X (or Space)                           | G (or Space)   | K (Numpad2)     | 1 (B / Circle) |
+| dodge   | C                                      | R              | U (Numpad4)     | 2 (X / Square) |
+| special | V                                      | H              | L (Numpad3)     | 3 (Y / Triangle) |
+| super   | N                                      | Y              | O (Numpad6)     | 5 (RB / R1) |
+| taunt   | B                                      | T              | I (Numpad5)     | 4 (LB / L1) |
+| start   | Enter                                  | Enter          | Backspace (Numpad0) | 9 (Start) |
+
+Both keyboard button clusters are the same contiguous 2×3 block under one hand, finger for finger — P1's
+`R T Y` over `F G H` mirrors P2's `U I O` over `J K L` (index attack, middle jump, ring special on the home
+row; index dodge, middle taunt, ring super above). Nothing requires a finger to cross the keyboard's centre.
+`Space` jumps on both P1 layouts, per genre convention; it is not a P2 key.
 
 - Run = double-tap left/right (12f window) or hold RT (gamepad 7). Dash attack = attack while running.
 - Grab = attack within grab reach of an enemy that is NOT in hitstun and not armored (never interrupts a combo). Throw = direction + attack while holding; attack = hold hit.
 - Global: `Escape` pauses/unpauses for everyone, `M` mutes, `F1` toggles the debug overlay. `preventDefault()` on all bound keys.
-- P2 joins (title, select, pause, or in-game) by pressing any P2-only key (J K U L O I Backspace or Numpad). When P2 joins, P1's solo aliases switch off. Gamepad 0 → P1, gamepad 1 → P2, OR-merged with their keyboard keys.
+- P2 joins (title, select, pause, or in-game) by pressing any P2-only key (J K U L O I Backspace or Numpad). When P2 joins, the 1P arcade keys switch off and P1 moves to the left half; the title legend swaps to match. Gamepad 0 → P1, gamepad 1 → P2, OR-merged with their keyboard keys.
 - Super = separate button (no attack+jump chord).
 
 ## Scope tiers — final ship status (verified 2026-09-07 against the tree)
@@ -100,7 +107,7 @@ hazards and pickups are game entities, NOT backdrop.
 ## Canonical audio names (game code calls these; engine/audio.js implements them)
 Unknown names must silently no-op (console.warn once when `?debug=1`).
 - UI: `menu_move menu_confirm menu_back pause unpause join continue_tick rank_stamp go_arrow stage_clear game_over`
-- Generic combat: `hit_light hit_medium hit_heavy hit_launch hit_knockdown hit_grab throw whiff parry armor dodge jump land land_heavy getup stagger gear_slip meter_full`
+- Generic combat: `hit_light hit_medium hit_heavy hit_launch hit_knockdown hit_grab throw whiff parry armor dodge jump land land_heavy getup stagger gear_slip meter_full shield_break shield_up`
 - Factions: `brass_hit brass_tell brass_death soot_hurt soot_death soot_flee`
 - Hero weapons: `hammer_swing hammer_slam rapier rapier_arc revolver revolver_fan piston grapple claw steam_vent`
 - Specials/supers: `special_brunhild special_sael special_rook special_pip super_charge super_brunhild super_sael super_rook super_pip`

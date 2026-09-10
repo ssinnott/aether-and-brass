@@ -12,6 +12,7 @@ export class Entity {
   constructor(kind = 'fx') {
     this.id = nextId++;
     this.kind = kind;
+    /** @type {typeof TEAM[keyof typeof TEAM]} One of the TEAM values; subclasses reassign it. */
     this.team = TEAM.NONE;
     this.x = 0; this.y = 0; this.z = 0;
     this.vx = 0; this.vy = 0; this.vz = 0;

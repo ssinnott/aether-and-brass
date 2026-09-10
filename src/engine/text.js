@@ -124,8 +124,13 @@ export function drawText(ctx, text, x, y, opts = {}) {
 
 /**
  * Chunky outlined title text: outline in 8 directions, optional drop shadow, then fill.
- * @param {{ size?: number, color?: string, outline?: string, thickness?: number, align?: string, shadow?: boolean,
- *   shadowColor?: string, shadowOffset?: number, spacing?: number }} [opts]
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {string|number} text
+ * @param {number} x
+ * @param {number} y
+ * @param {{ size?: number, color?: string, outline?: string, thickness?: number,
+ *   align?: 'left'|'center'|'right', shadow?: boolean, shadowColor?: string, shadowOffset?: number,
+ *   spacing?: number, alpha?: number, font?: string, baseline?: 'top'|'middle' }} [opts]
  */
 export function drawTextOutlined(ctx, text, x, y, opts = {}) {
   const size = Math.max(1, Math.round(opts.size || 2));

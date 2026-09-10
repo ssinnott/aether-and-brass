@@ -720,7 +720,10 @@ export const pip = {
   maxHp: hpFor(4), walkSpeed: speedFor(2), runSpeed: speedFor(2) * 1.7, jumpVy: JUMP_VY, reach: 40, grabReach: 30, grabOffset: 30, grabLift: 8, grabHoldFrames: 60,
   freeChain: true,
   // Grab Armor (GDD 2.4): reach 30 (standard 20), grabs Wardens / Hulks (grabAll), grab damage +25 %; the grab startup keys carry armor
-  traits: { grabReach: 30, grabAll: true, grabDamageMult: 1.25 },
+  // Pressure Hull (GDD 2.4 / 7 shields): a grappler's walk-in budget — 28 points, 12/s after 2.2 s, so the rig
+  // eats the hit that would otherwise interrupt the approach, then wants a breather before the next grab.
+  traits: { grabReach: 30, grabAll: true, grabDamageMult: 1.25,
+    shield: { name: 'PRESSURE HULL', max: 28, regen: 0.2, delay: 130, breakDelay: 260 } },
   build,
   anims,
   hooks,
