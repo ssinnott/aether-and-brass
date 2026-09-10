@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat playthrough playthrough2 playthrough3 coop audio gallery)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat playthrough playthrough2 playthrough3 playthrough4 coop audio gallery)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 import path from 'node:path';
@@ -493,6 +493,30 @@ const scenarios = {
       assert(sawBoss, 'stage 3 final boss appeared during playthrough');
       assert(s.screen === 'results', `stage 3 results reached within ${MAX} frames (got ${s.screen}, frames=${frames}, x=${Math.round(s.cameraX)}, section=${s.sectionIndex})`);
       console.log(`   stage 3 playthrough finished in ${frames} frames, wavesCleared=${s.wavesCleared}`);
+    });
+  },
+
+  async playthrough4(server) {
+    await withPage(server, 'seed=13&skipTo=gameplay&stage=4&chars=0&bot=1&godmode=1', async (g) => {
+      const MAX = 40000, CHUNK = 600;
+      let frames = 0, lastSection = -1, sawMidboss = false, sawBoss = false, lastX = -1, stuckSince = 0;
+      while (frames < MAX) {
+        await g.step(CHUNK); frames += CHUNK;
+        const s = await g.summary();
+        if (s.sectionIndex !== lastSection) { lastSection = s.sectionIndex; await g.shot(`70-stage4-section-${s.sectionIndex}`); console.log(`   section ${s.sectionIndex} at frame ${frames} (x=${Math.round(s.cameraX)})`); }
+        if (s.boss && s.boss.kind === 'midboss' && !sawMidboss) { sawMidboss = true; await g.shot('71-stage4-midboss'); }
+        if (s.boss && s.boss.kind === 'boss' && !sawBoss) { sawBoss = true; await g.shot('72-stage4-boss'); }
+        if (Math.abs(s.cameraX - lastX) < 1 && !s.boss && !s.locked) stuckSince += CHUNK; else stuckSince = 0;
+        lastX = s.cameraX;
+        if (s.screen === 'results') { await g.shot('73-stage4-results'); break; }
+        if (s.screen === 'gameover') { assert(false, 'bot should not reach game over in godmode'); break; }
+        if (stuckSince > 6000) { await g.shot('crash-stuck-stage4'); assert(false, `bot stuck at x=${Math.round(s.cameraX)} for 6000 frames (screen=${s.screen}, enemies=${s.enemies.length})`); break; }
+      }
+      const s = await g.summary();
+      assert(sawMidboss, 'stage 4 mid-boss appeared during playthrough');
+      assert(sawBoss, 'stage 4 final boss appeared during playthrough');
+      assert(s.screen === 'results', `stage 4 results reached within ${MAX} frames (got ${s.screen}, frames=${frames}, x=${Math.round(s.cameraX)}, section=${s.sectionIndex})`);
+      console.log(`   stage 4 playthrough finished in ${frames} frames, wavesCleared=${s.wavesCleared}`);
     });
   },
 

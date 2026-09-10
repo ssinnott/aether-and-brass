@@ -5,7 +5,7 @@
 // - drawFront paints near-parallax overlays and weather (rain, heat shimmer, motes) on top of entities.
 // - update advances animated elements (gears, airships, drifting lava, auto-scroll for section 3).
 // Section modules (section1.js .. section4.js for Stage 1, storm1.js .. storm3.js for Stage 2, works1.js .. works3.js
-// for Stage 3) export
+// for Stage 3, glean1.js .. glean3.js for Stage 4) export
 // `create(section, stage)` with the same shape.
 // This file currently provides a PLACEHOLDER for unknown ids; the backdrop artist replaces the internals
 // of the per-section modules without changing this API.
@@ -22,6 +22,9 @@ const PLACEHOLDER_PALETTES = {
   works1: { skyTop: '#C8C4B4', skyBot: '#EAE4D2', floorA: '#B9AF95', floorB: '#A2977C' },
   works2: { skyTop: '#BEBBAC', skyBot: '#DCD6C4', floorA: '#8E8878', floorB: '#7A7566' },
   works3: { skyTop: '#3A3226', skyBot: '#5A4C36', floorA: '#8A7A5C', floorB: '#6E6046' },
+  glean1: { skyTop: '#241A34', skyBot: '#E8956A', floorA: '#4E5A55', floorB: '#3C4642' },
+  glean2: { skyTop: '#221830', skyBot: '#EFA077', floorA: '#586257', floorB: '#454E45' },
+  glean3: { skyTop: '#33455A', skyBot: '#8A5A78', floorA: '#4C5450', floorB: '#3B423E' },
 };
 
 let sectionModules = null;
@@ -29,7 +32,7 @@ let sectionModules = null;
 async function loadSectionModules() {
   if (sectionModules) return sectionModules;
   sectionModules = {};
-  const ids = ['section1', 'section2', 'section3', 'section4', 'storm1', 'storm2', 'storm3', 'works1', 'works2', 'works3'];
+  const ids = ['section1', 'section2', 'section3', 'section4', 'storm1', 'storm2', 'storm3', 'works1', 'works2', 'works3', 'glean1', 'glean2', 'glean3'];
   await Promise.all(ids.map(async (id) => {
     try { sectionModules[id] = await import(`./${id}.js`); } catch (e) { sectionModules[id] = null; }
   }));

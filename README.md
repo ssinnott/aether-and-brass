@@ -1,14 +1,14 @@
 # Aether & Brass
 
 A steampunk high-fantasy side-scrolling beat-em-up in the spirit of *Golden Axe*, the *TMNT*
-arcade games and *TMNT: Shredder's Revenge*. **Three complete boards** end to end, four playable
-heroes, four enemy factions with five variants each, three mid-bosses and three multi-phase final
+arcade games and *TMNT: Shredder's Revenge*. **Four complete boards** end to end, four playable
+heroes, five enemy factions with five variants each, four mid-bosses and four multi-phase final
 bosses. Local two-player co-op on one keyboard or with gamepads.
 
 Everything is drawn and synthesized in code: vanilla JavaScript, HTML5 Canvas 2D and WebAudio.
 No engine, no framework, and not a single image or audio file. Characters are procedural
 paper-doll rigs built from canvas primitives and animated by keyframed joint angles;
-backdrops are pre-rendered parallax layers; all 92 sound effects and 21 music tracks are
+backdrops are pre-rendered parallax layers; all 92 sound effects and 25 music tracks are
 synthesized from oscillators and noise at runtime.
 
 ## Play
@@ -68,6 +68,12 @@ Cinder Hulk, Gutter Wrangler. Fast, fragile, cowardly alone, and they burn easil
 masks with one hot white sighting lens, wing-packs that flare when they move, and a habit of
 hopping backwards out of anything you whiff. Jump attacks hurt them 1.5x.
 
+**The Gleaning** — the salvage guild that follows the fighting on tailings-gas bladders and strips
+whatever falls out of it, and the faction of board 4: Chaff, Winnow, Thresher, Sickle, Harvestman.
+Everything here fights from the air and everything here has to land: a Gleaner hit while airborne takes
+1.5x and juggles, the bladder over its head is a 1.6x weak point, and every hover ends in a long
+punishable recovery on the deck — which is the only place you can grab one.
+
 **The Chandlery of Calderwick** — the chartered supply company that kept both sides in the war
 standing, and the faction of board 3: Wickboy, Tallyman, Limeburner, Purser, Resurrection Man.
 Nothing here kills you; everything here keeps the thing that kills you standing up — they heal it,
@@ -76,7 +82,8 @@ during a rite's wind-up cancels it, and every rite dies with the Chandler holdin
 
 **Bosses** — Foreman Grubbik & the Hoister and Chancellor Aurelius Vane in the Regent Engine on
 board 1; Quartermaster Skree & the Grapnel Winch and Admiral Odaline Kestrel of the Ninth Wing
-on board 2; Yardmaster Marl & the Lime Kiln and Factor Oriel Hasp of the Chandlery on board 3.
+on board 2; Yardmaster Marl & the Lime Kiln and Factor Oriel Hasp of the Chandlery on board 3;
+Reeve Tansy Culm & the Baler and Harvestlord Briar Oke of the Gleaning on board 4.
 Every one of them is stripped down phase by phase until the person inside is exposed.
 
 ## Board 1: The Ascent of Calderwick
@@ -113,6 +120,20 @@ lime dust and one saturated colour — the lime in the company's own lamps, whic
 behind you is being repaired. Board 3 is **locked until you clear board 2**. Full design doc:
 `docs/STAGE3.md`.
 
+## Board 4: The Gleaning of Calderwick
+
+Three organisations are down and the field west of the city is full of them. The Gleaning have worked
+the tailings since before the guild had a name, and they have been out under every fight you have had,
+taking the pieces up as they fell. The Tailings (a rose dusk over the spoil heaps, gas seeping out of
+them, salvage lines going up into a sky full of bladders) → The Lash-Up (the guild's float, a raft of
+other people's wrecks hung over the field on forty bladders, with no bulwark anywhere) → The Crop Loft
+(inside the biggest bag they own, net decking over a drop, four boards' worth of stripped war hanging
+overhead in cargo nets).
+
+The board where the fight is mostly above you: anti-air is not a tactic here, it is the tactic, and every
+landing is the opening. Board 4 is **locked until you clear board 3**, and it is the last one. Full design
+doc: `docs/STAGE4.md`.
+
 ## Board select
 
 START on the title screen opens **BOARD SELECT**: one brass plaque per board with its vignette, name,
@@ -144,12 +165,12 @@ node tools/sheet-capture.js out char=brunhild    # character contact sheets
 ```
 
 The suite boots the game, walks the character select, drives every hero's whole moveset,
-runs an autopilot bot through all three boards to their results screens, plays co-op, spawns
+runs an autopilot bot through all four boards to their results screens, plays co-op, spawns
 every enemy variant, and renders every sound effect and music track offline to check none
 are silent.
 
 Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,2`,
-`?skipTo=gallery`, `?bot=1`, `?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=3`, `?unlockall=1`,
+`?skipTo=gallery`, `?bot=1`, `?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=4`, `?unlockall=1`,
 `?resetprogress=1`.
 
 ### Deployment
@@ -169,6 +190,7 @@ branches**, then start the workflow by hand from the Actions tab with that branc
 - `docs/GDD.md` — the game design document: world, cast, enemies, bosses, board 1, combat rules.
 - `docs/STAGE2.md` — board 2: the Stormcrows, both of its bosses, its sections and its audio.
 - `docs/STAGE3.md` — board 3: the Chandlery, both of its bosses, its sections and its audio.
+- `docs/STAGE4.md` — board 4: the Gleaning, both of its bosses, its sections and its audio.
 - `docs/ARCHITECTURE.md` — the technical contract: coordinate system, rig format, module APIs.
 - `docs/ART_STYLE.md` — binding character art and animation rules, including the readability pass.
 - `docs/RECONCILIATION.md` — where the design and technical docs disagree, this decides.

@@ -383,6 +383,13 @@ const HOOD = {
   brim: [1.62, -0.34, 1.24, 0.32, 1.02, 0.86, 0.40, 1.16, -0.80, 1.00, -1.20, 0.28, -1.08, -0.46, -0.56, -0.94, 0.20, -1.12, 0.94, -0.92],
   // HARVESTMAN — the officer's tall crown, worn up over a bare face. Rank is height (§0.5) and he is the only one with it.
   tall: [...HOOD_FRONT, -0.90, 1.10, -1.44, 0.40, -1.34, -0.52, -0.66, -1.18, 0.20, -1.50, 0.96, -1.06],
+  // REEVE (midboss4) — the guild officer's WIDE cowl: the crown of the Thresher's with a squared-off back that
+  // carries the yoke of a machine on it. Wider than any line variant's and no taller, because the height on this
+  // board belongs to the Harvestlord.
+  reeve: [...HOOD_FRONT, -1.06, 1.22, -1.86, 0.66, -1.84, -0.34, -1.10, -1.02, 0.06, -1.26, 0.98, -0.98],
+  // HARVESTLORD (boss4) — the tallest crown in the game, folded forward at the peak. It is the only head that has
+  // to read against the guild's own canopy, so its profile is the one that leaves the silk on both sides of it.
+  lord: [...HOOD_FRONT, -0.84, 1.06, -1.38, 0.44, -1.44, -0.64, -1.02, -1.42, -0.30, -1.86, 0.52, -1.50, 0.98, -0.94],
 };
 /** Shared scratch point list: celPoly reads pts.length, so scaled() sets the length and refills in place (§9, no per-frame allocation). */
 const HPT = [];
@@ -784,6 +791,40 @@ export const BASE_HOOKS = {
     world.addFx('dust', f.x, 0, f.z, { count: 4 });
   },
 };
+
+/**
+ * Six-key strike skeleton for the faction's two BOSSES (ART_STYLE 8): anticipation -> load -> hit (smear + fx) ->
+ * hold -> punishable recovery -> return to carry. The five line variants stay hand-keyed frame by frame; a boss runs
+ * two or three phases of three or four attacks each and would otherwise be 400 lines of the same timing written out
+ * longhand. Every pose is still authored per attack — only the timing skeleton and the frame flags are shared,
+ * exactly as stormcrowRig's crowStrike and chandlerRig's chandStrike do for the Stage 2 and Stage 3 bosses.
+ *
+ * TWO THINGS ARE THE GLEANING'S OWN. `gas` holds the bladder's two tell channels (rig.gas / rig.swell) across keys
+ * that enemy.js has already cleared rig.tell on, which is the whole reason every airborne variant in gleaning.js
+ * carries a hook: a Gleaner's dangerous window does not end when its wind-up does, it ends when it lands. And the
+ * recovery key is `punish: true` with ai.punishGrabbable behind it, because on this faction the landing IS the
+ * opening — grabs.js refuses an airborne target, so you collect a Gleaner on the deck or not at all.
+ * @param {object} o { tell, active, recovery, holdDur, carry, stance, tellSfx, sfx, hitbox|hitboxes, fx, move,
+ *   smear, armor, invuln, event, aimEvent, projectile, summon, recoverFx, gas, w1, w2, h, hold, r } — poses are
+ *   pose specs; `gas` is the swell factor held over the hit and hold keys (1.12 by default when asked for).
+ */
+const STANCE = Object.freeze({ legR: [14, 6], legL: [-16, 8], footR: -18, footL: -15 });
+export function gleanStrike(o) {
+  const tell = o.tell || 20, t0 = Math.max(1, Math.round(tell * 0.6));
+  const hit = { sfx: o.sfx, fx: o.fx, move: o.move, smear: o.smear, ease: 'overshoot',
+    armor: o.armor || undefined, invuln: o.invuln || undefined, event: o.event, projectile: o.projectile, summon: o.summon };
+  if (o.hitboxes) hit.hitboxes = o.hitboxes; else if (o.hitbox) hit.hitbox = o.hitbox;
+  return { loop: false, frames: [
+    FK(t0, o.w1, { tell: true, sfx: o.tellSfx, armor: o.armor || undefined, event: o.aimEvent, ease: 'in' }),
+    FK(Math.max(1, tell - t0), o.w2, { tell: true, armor: o.armor || undefined, ease: 'out' }),
+    FK(o.active || 8, o.h, hit),
+    FK(o.holdDur || 3, o.hold || o.h, { ease: 'out' }),
+    FK(o.recovery || 24, o.r, { punish: true, ease: 'inout', fx: o.recoverFx }),
+    // the return key sets its own legs: an inherited leg pose leaves a foot floating on the last frame of every
+    // attack (anim/legs-explicit), and this faction's feet hang by default
+    FK(6, { ...o.carry, ...(o.stance || STANCE), torso: -3, head: 6, root: [0, 0] }, { ease: 'out' }),
+  ] };
+}
 
 /** Rose vapour vented out of the bag (release, landings, the airborne trail). */
 export function ventPuff(f, count = 5, up = 1.2) {
