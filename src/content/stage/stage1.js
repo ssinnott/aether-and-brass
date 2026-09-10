@@ -38,14 +38,14 @@ export const stage1 = {
       ],
       waves: [
         { triggerX: 400, lock: true, spawns: cut(3, { z0: 40 }) },
-        { triggerX: 900, lock: true, spawns: [...cut(3, { z0: 30 }), { type: S, variant: 'slinger', side: 'right', z: 20, delay: 40 }, { type: S, variant: 'slinger', side: 'left', z: 120, delay: 70 }] },
+        { triggerX: 900, lock: true, spawns: [...cut(4, { z0: 30 }), { type: S, variant: 'slinger', side: 'right', z: 20, delay: 40 }, { type: S, variant: 'slinger', side: 'left', z: 120, delay: 70 }] },
         // "meet the machine": the Footman comes alone; the Cutthroats only join once it is down
         { triggerX: 1300, lock: true, spawns: [{ type: B, variant: 'footman', side: 'right', z: 70, delay: 0 }],
           reinforcements: [{ whenRemaining: 0, spawns: cut(2, { z0: 40, dz: 60, delay0: 20 }) }] },
         { triggerX: 1650, lock: true, spawns: [
           { type: B, variant: 'footman', side: 'right', z: 60, delay: 0 }, { type: B, variant: 'footman', side: 'left', z: 90, delay: 30 },
-          ...cut(2, { z0: 20, delay0: 40 }),
-          { type: S, variant: 'slinger', side: 'right', z: 120, delay: 90 },
+          ...cut(3, { z0: 20, delay0: 40 }),
+          { type: S, variant: 'slinger', side: 'right', z: 120, delay: 90 }, { type: S, variant: 'slinger', side: 'left', z: 20, delay: 120 },
         ] },
       ],
       events: [],
@@ -73,19 +73,18 @@ export const stage1 = {
         { type: 'conveyor', x0: 3280, x1: 3920, z0: 100 },
       ],
       waves: [
-        { triggerX: 2100, lock: true, spawns: [{ type: S, variant: 'firebrand', side: 'right', z: 40, delay: 0 }, { type: S, variant: 'firebrand', side: 'left', z: 100, delay: 30 }, ...cut(2, { z0: 60, delay0: 20 })] },
+        { triggerX: 2100, lock: true, spawns: [{ type: S, variant: 'firebrand', side: 'right', z: 40, delay: 0 }, { type: S, variant: 'firebrand', side: 'left', z: 100, delay: 30 }, ...cut(3, { z0: 60, delay0: 20 })] },
         { triggerX: 2500, lock: true, spawns: [
           { type: B, variant: 'halberdier', side: 'right', z: 50, delay: 0 }, { type: B, variant: 'halberdier', side: 'left', z: 100, delay: 40 },
           { type: B, variant: 'sapper', side: 'right', z: 120, delay: 60 }, { type: B, variant: 'sapper', side: 'left', z: 20, delay: 90 },
         ] },
         { triggerX: 2900, lock: true, spawns: [
-          { type: S, variant: 'hulk', side: 'right', z: 70, delay: 0 }, { type: S, variant: 'wrangler', side: 'left', z: 110, delay: 30 }, ...cut(2, { z0: 30, delay0: 40 }),
+          { type: S, variant: 'hulk', side: 'right', z: 70, delay: 0 }, { type: S, variant: 'wrangler', side: 'left', z: 110, delay: 30 }, ...cut(3, { z0: 30, delay0: 40 }),
         ] },
-        // the run-up to Grubbik: no Warden here. The cargo bay itself (conveyor + molten back edge) is the
-        // pressure, so this wave stays light enough to reach the mid-boss with health in hand.
         { triggerX: 3250, lock: true, spawns: [
-          { type: B, variant: 'halberdier', side: 'left', z: 40, delay: 0 }, { type: B, variant: 'halberdier', side: 'right', z: 110, delay: 40 },
-          { type: S, variant: 'slinger', side: 'left', z: 120, delay: 70 },
+          { type: B, variant: 'warden', side: 'right', z: 70, delay: 0 },
+          { type: B, variant: 'halberdier', side: 'left', z: 40, delay: 40 }, { type: B, variant: 'halberdier', side: 'right', z: 110, delay: 80 },
+          { type: S, variant: 'slinger', side: 'left', z: 120, delay: 100 }, { type: S, variant: 'slinger', side: 'right', z: 20, delay: 130 },
         ] },
       ],
       events: [],
@@ -102,21 +101,17 @@ export const stage1 = {
       /** front / back 12px are railings: enemies thrown over them are instant KOs (+200) */
       zones: [{ type: 'rails', x0: 3800, x1: 4440 }],
       waves: [],
-      // The `at` gaps are wide on purpose: a wave whose timer comes up while the last one is still alive is
-      // queued ON TOP of it (game/stage.js), so a slow fight used to compound into an unwinnable pile-up.
-      // Clearing early still pulls the next wave in immediately, so this costs a quick player nothing.
       timedWaves: [
-        { at: 0, spawns: [{ type: B, variant: 'sapper', side: 'right', z: 30, delay: 0 }, { type: B, variant: 'sapper', side: 'left', z: 110, delay: 30 },
+        { at: 0, spawns: [{ type: B, variant: 'sapper', side: 'right', z: 30, delay: 0 }, { type: B, variant: 'sapper', side: 'left', z: 110, delay: 30 }, { type: B, variant: 'sapper', side: 'right', z: 120, delay: 60 },
           { type: B, variant: 'footman', side: 'left', z: 60, delay: 20 }, { type: B, variant: 'footman', side: 'right', z: 80, delay: 50 }] },
-        { at: 40, spawns: [{ type: B, variant: 'duelist', side: 'right', z: 50, delay: 0 }, { type: B, variant: 'footman', side: 'left', z: 100, delay: 30 },
-          { type: B, variant: 'halberdier', side: 'left', z: 40, delay: 60 }] },
-        { at: 85, banner: 'THE LAST GOBLINS', spawns: [{ type: S, variant: 'wrangler', side: 'right', z: 30, delay: 0 }, { type: S, variant: 'cutthroat', side: 'left', z: 120, delay: 20 },
-          { type: S, variant: 'hulk', side: 'right', z: 70, delay: 40 }, { type: S, variant: 'slinger', side: 'left', z: 20, delay: 70 }] },
-        // the Warden crashes through the roof with a 10px shake — it is the set piece, so it fights with
-        // fodder at its back rather than a pair of Duelists (a locked car with three elites in it was a wall)
-        { at: 130, spawns: [{ type: B, variant: 'warden', side: 'sky', z: 70, delay: 0, shake: 10 },
-          { type: B, variant: 'halberdier', side: 'right', z: 40, delay: 40 }, { type: B, variant: 'footman', side: 'left', z: 110, delay: 70 },
-          { type: B, variant: 'footman', side: 'left', z: 60, delay: 100 }] },
+        { at: 25, spawns: [{ type: B, variant: 'duelist', side: 'right', z: 50, delay: 0 }, { type: B, variant: 'duelist', side: 'left', z: 100, delay: 30 },
+          { type: B, variant: 'halberdier', side: 'left', z: 40, delay: 60 }, { type: B, variant: 'halberdier', side: 'right', z: 110, delay: 90 }] },
+        { at: 55, banner: 'THE LAST GOBLINS', spawns: [{ type: S, variant: 'wrangler', side: 'right', z: 30, delay: 0 }, { type: S, variant: 'wrangler', side: 'left', z: 120, delay: 20 },
+          { type: S, variant: 'hulk', side: 'right', z: 70, delay: 40 }, { type: S, variant: 'slinger', side: 'left', z: 20, delay: 70 }, { type: S, variant: 'slinger', side: 'right', z: 120, delay: 100 }] },
+        // the Warden crashes through the roof with a 10px shake
+        { at: 90, spawns: [{ type: B, variant: 'warden', side: 'sky', z: 70, delay: 0, shake: 10 },
+          { type: B, variant: 'duelist', side: 'right', z: 40, delay: 40 }, { type: B, variant: 'duelist', side: 'left', z: 110, delay: 70 },
+          { type: B, variant: 'footman', side: 'left', z: 60, delay: 100 }, { type: B, variant: 'footman', side: 'right', z: 90, delay: 130 }] },
       ],
       events: [],
       /** The funicular docks; a short stair with no enemies and 2 Meat Pies (spawned by the transition). */
@@ -143,12 +138,10 @@ export const stage1 = {
         { triggerX: 4800, lock: true, spawns: [{ type: B, variant: 'footman', side: 'right', z: 40, delay: 0 }, { type: B, variant: 'footman', side: 'left', z: 100, delay: 30 },
           { type: B, variant: 'halberdier', side: 'right', z: 110, delay: 60 }, { type: B, variant: 'halberdier', side: 'left', z: 30, delay: 90 }] },
         { triggerX: 5150, lock: true, spawns: [{ type: B, variant: 'warden', side: 'right', z: 70, delay: 0 },
-          { type: B, variant: 'sapper', side: 'left', z: 30, delay: 30 }, { type: B, variant: 'sapper', side: 'left', z: 120, delay: 60 }, { type: B, variant: 'footman', side: 'right', z: 40, delay: 90 }] },
-        // the last wave before Vane: one Warden, not two, and no Cutthroat tail — the dais fight is the climax,
-        // and arriving at it on fumes was board 1's single worst spike.
-        { triggerX: 5500, lock: true, spawns: [{ type: B, variant: 'warden', side: 'right', z: 50, delay: 0 },
-          { type: B, variant: 'halberdier', side: 'right', z: 110, delay: 60 }, { type: B, variant: 'footman', side: 'left', z: 30, delay: 90 },
-          ...cut(2, { z0: 20, delay0: 120 })] },
+          { type: B, variant: 'sapper', side: 'left', z: 30, delay: 30 }, { type: B, variant: 'sapper', side: 'left', z: 120, delay: 60 }, { type: B, variant: 'duelist', side: 'right', z: 40, delay: 90 }] },
+        { triggerX: 5500, lock: true, spawns: [{ type: B, variant: 'warden', side: 'right', z: 50, delay: 0 }, { type: B, variant: 'warden', side: 'left', z: 100, delay: 40 },
+          { type: B, variant: 'duelist', side: 'right', z: 110, delay: 80 }, { type: B, variant: 'duelist', side: 'left', z: 30, delay: 110 },
+          { type: S, variant: 'wrangler', side: 'left', z: 120, delay: 140 }, ...cut(3, { z0: 20, delay0: 160 })] },
       ],
       events: [],
     },
