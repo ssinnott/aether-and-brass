@@ -770,7 +770,9 @@ export function makeGleanBase(c, o = {}) {
  * and the engine's juggle branch has already turned it into a juggle before the hook returns. Air time is the liability.
  */
 export const BASE_HOOKS = {
-  onUpdate(f) {
+  // `world` is unused here, but the hook contract is onUpdate(f, world) (fighter.js) and every
+  // faction variant forwards both — declare it so the signature matches what it is called with.
+  onUpdate(f, world) {
     const r = f.rig;
     r.swell = r.tell ? (r.tellWarn ? 1.18 : 1.12) : 1;
     r.gas = r.tell ? 1 : 0.25;

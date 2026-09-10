@@ -5,16 +5,21 @@ import { VIEW_W, VIEW_H } from '../constants.js';
  * Create the internal render canvas and hook the display canvas up to the window.
  * @param {HTMLCanvasElement|HTMLElement|string} mount a canvas element (used as display), a container, or an element id
  * @returns {{ ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, displayCanvas: HTMLCanvasElement,
- *   present(): void, resize(): void, scale: number (integer, in device px), dpr: number, offsetX: number, offsetY: number,
- *   toInternal(clientX:number, clientY:number): {x:number, y:number} }}
+ *   present(): void, resize(): void, dpr: number, offsetX: number, offsetY: number,
+ *   scale: number, cssScale: number,
+ *   toInternal(clientX: number, clientY: number): {x: number, y: number} }}
+ *   `scale` is whole device pixels per game pixel; `cssScale` is CSS pixels per game pixel.
  */
 export function createCanvas(mount) {
-  let display = typeof mount === 'string' ? document.getElementById(mount) : mount;
-  if (!display || display.tagName !== 'CANVAS') {
-    const parent = display || document.body;
+  const found = typeof mount === 'string' ? document.getElementById(mount) : mount;
+  /** @type {HTMLCanvasElement} */
+  let display;
+  if (found instanceof HTMLCanvasElement) {
+    display = found;
+  } else {
     display = document.createElement('canvas');
     display.id = 'game';
-    parent.appendChild(display);
+    (found || document.body).appendChild(display);
   }
   const canvas = document.createElement('canvas');
   canvas.width = VIEW_W;
@@ -24,7 +29,7 @@ export function createCanvas(mount) {
   const dctx = display.getContext('2d', { alpha: false });
 
   const api = {
-    ctx, canvas, displayCanvas: display, scale: 1, dpr: 1, offsetX: 0, offsetY: 0,
+    ctx, canvas, displayCanvas: display, scale: 1, cssScale: 1, dpr: 1, offsetX: 0, offsetY: 0,
     /** Size the display canvas to the window, keeping the 16:9 game rect and crisp pixels. */
     resize() {
       const dpr = Math.max(1, Math.min(4, window.devicePixelRatio || 1));

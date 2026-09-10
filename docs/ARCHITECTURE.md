@@ -9,9 +9,17 @@ for stage 2 (its faction, bosses, sections and audio).
 ## 0. Stack & non-negotiables
 
 - **Runtime:** browser, HTML5 Canvas 2D, vanilla JavaScript **ES modules**. No
-  framework, no TypeScript, no bundler required to *play* (open `index.html` via any
+  framework, no TypeScript *sources*, no bundler required to *play* (open `index.html` via any
   static server). `npm run build` produces a single-file `dist/index.html` (esbuild) for
   sharing, but `src/` must always run un-bundled.
+- **Types are checked, never compiled.** `npm run typecheck` runs `tsc --noEmit` over the
+  JSDoc already in the source (`tsconfig.json`). It emits nothing: no transpile step stands
+  between editing a file and reloading the page, and `src/` stays the plain ES modules above.
+  The only `.ts` in the repo is `types/globals.d.ts`, which declares `window.__game` and
+  Safari's prefixed audio constructors; it is never imported or shipped. `include` covers
+  `engine/` and `net/` — where a wrong contract desyncs a lockstep match rather than throwing —
+  and widens one directory at a time, each joining only once it is clean. `strict` is off by
+  design: this is untyped JS with sparse JSDoc, and the noise would bury the findings.
 - **Zero binary assets.** All art is drawn with canvas primitives; all audio is
   synthesized with WebAudio. Nothing is fetched at runtime except our own modules.
 - **Internal resolution:** `640 x 360` (constants `VIEW_W`, `VIEW_H`). The internal
@@ -35,7 +43,9 @@ for stage 2 (its faction, bosses, sections and audio).
 
 ```
 index.html                 # loads src/main.js as a module; contains only the canvas + minimal CSS
-package.json               # scripts: dev, build, test (see section 13)
+package.json               # scripts: dev, build, test, typecheck (see section 13)
+tsconfig.json              # type-check config (noEmit; nothing is compiled)
+types/globals.d.ts         # ambient declarations for window.__game and prefixed WebAudio
 tools/server.js            # zero-dependency static server (node), used by dev + tests
 tools/playtest.js          # Playwright headless playthrough harness (see section 13)
 tools/build.js             # esbuild single-file bundle -> dist/index.html
@@ -484,6 +494,9 @@ debug mode) — tests fail on any error.
 ## 13. Tooling & tests
 - `npm run dev` → `node tools/server.js` (serves repo root on http://localhost:8080 with correct
   `Content-Type` for `.js` = `text/javascript`, no caching).
+- `npm run typecheck` → `tsc -p tsconfig.json`: checks `engine/` and `net/` against their JSDoc
+  and emits nothing. Runs in CI before the build. `npm run lint` is `node --check src/main.js`
+  followed by this.
 - `npm run build` → `node tools/build.js` → esbuild bundles `src/main.js` (IIFE, minified
   off) and inlines it + CSS into `dist/index.html` (single file, no external refs).
 - `npm test` → `node tools/playtest.js`: starts the server, launches headless Chromium
