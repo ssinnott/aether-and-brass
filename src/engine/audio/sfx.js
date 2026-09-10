@@ -150,6 +150,9 @@ export const SFX_DEFS = {
     [900, 780, 680, 590, 520].forEach((f, i) => osc(c, d, t + i * 0.03, { type: 'square', f0: f * o.p, dur: 0.018, vol: 0.14 * o.v, attack: 0.001 }));
     return noise(c, d, t, { dur: 0.16, vol: 0.14 * o.v, type: 'bandpass', f0: 2500 * o.p, f1: 900 * o.p, q: 2, attack: 0.005 });
   },
+  // Shields (game/shield.js): brass plate. Absorbing reuses `armor`; these two are the break and the refill.
+  shield_break: (c, d, t, o) => { noise(c, d, t, { dur: 0.05, vol: 0.4 * o.v, type: 'bandpass', f0: 2200 * o.p, q: 1.2, attack: 0.001 }); clank(c, d, t, { v: o.v, p: o.p, f: 260, mod: 1500, dur: 0.12, vol: 0.26, tick: 0 }); [0, 0.06, 0.12].forEach((dt, i) => osc(c, d, t + dt, { type: 'square', f0: (760 - i * 190) * o.p, dur: 0.05, vol: 0.11 * o.v, attack: 0.001, lp: 2400 })); return t + 0.22; },
+  shield_up: (c, d, t, o) => { osc(c, d, t, { type: 'sine', f0: 520 * o.p, f1: 780 * o.p, dur: 0.16, vol: 0.09 * o.v, attack: 0.01 }); return glass(c, d, t + 0.05, { freqs: [1560 * o.p], dur: 0.3, vol: 0.05 * o.v, trem: 5 }); },
   meter_full: (c, d, t, o) => { osc(c, d, t, { type: 'sine', f0: C6 * o.p, f1: E6 * o.p, dur: 0.15, vol: 0.14 * o.v, attack: 0.005 }); return glass(c, d, t + 0.05, { freqs: [1320 * o.p, 1980 * o.p], dur: 0.45, vol: 0.09 * o.v, trem: 6 }); },
 
   // Factions
@@ -256,7 +259,7 @@ SFX_DEFS.victory = SFX_DEFS.stage_clear;
 /** Canonical names (RECONCILIATION.md), in that order; used by the self-test. */
 export const CANONICAL_SFX = [
   'menu_move', 'menu_confirm', 'menu_back', 'pause', 'unpause', 'join', 'continue_tick', 'rank_stamp', 'go_arrow', 'stage_clear', 'game_over',
-  'hit_light', 'hit_medium', 'hit_heavy', 'hit_launch', 'hit_knockdown', 'hit_grab', 'throw', 'whiff', 'parry', 'armor', 'dodge', 'jump', 'land', 'land_heavy', 'getup', 'stagger', 'gear_slip', 'meter_full',
+  'hit_light', 'hit_medium', 'hit_heavy', 'hit_launch', 'hit_knockdown', 'hit_grab', 'throw', 'whiff', 'parry', 'armor', 'dodge', 'jump', 'land', 'land_heavy', 'getup', 'stagger', 'gear_slip', 'meter_full', 'shield_break', 'shield_up',
   'brass_hit', 'brass_tell', 'brass_death', 'soot_hurt', 'soot_death', 'soot_flee',
   'hammer_swing', 'hammer_slam', 'rapier', 'rapier_arc', 'revolver', 'revolver_fan', 'piston', 'grapple', 'claw', 'steam_vent',
   'special_brunhild', 'special_sael', 'special_rook', 'special_pip', 'super_charge', 'super_brunhild', 'super_sael', 'super_rook', 'super_pip',

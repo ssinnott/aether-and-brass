@@ -86,6 +86,7 @@ export function worldChecksum(world, rng) {
     // These diverge one to several frames before x/y/z do, so they catch a desync earlier.
     h = mixAny(h, e.hp); h = mixAny(h, e.state); h = mixAny(h, e.stateTimer);
     h = mixAny(h, e.hitstop); h = mixAny(h, e.invuln); h = mixAny(h, e.life); h = mixAny(h, e.meter);
+    h = mixAny(h, e.shield); h = mixAny(h, e.shieldTimer);   // the shield (game/shield.js) drains and refills a hit before hp does
     if (e.anim) { h = mix(h, e.anim.instance | 0); h = mix(h, e.anim.frameIndex | 0); h = mixNum(h, e.anim.frameTime); }
   }
   h = mix(h, n);                             // count of hashed entities, not entities.length

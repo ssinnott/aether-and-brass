@@ -492,7 +492,10 @@ export const sael = {
   maxHp: hpFor(2), walkSpeed: speedFor(5), runSpeed: speedFor(5) * 1.7, jumpVy: 8.5, reach: 38, grabReach: 20, grabOffset: 24,
   freeChain: true,
   // Double Jump + one air dash per airborne state, dodge recovery 5f, takes 15% more damage (GDD 2.2 unique trait)
-  traits: { extraJumps: 1, airDashes: 1, dodgeRecovery: 5, damageTakenMult: 1.15 },
+  // Static Ward (GDD 2.2 / 7 shields): the smallest pool and by far the fastest — 14 points back in half a second,
+  // one second after the last hit. It pays for hit-and-run and gives her nothing at all if she stands in the crowd.
+  traits: { extraJumps: 1, airDashes: 1, dodgeRecovery: 5, damageTakenMult: 1.15,
+    shield: { name: 'STATIC WARD', max: 14, regen: 0.45, delay: 60, breakDelay: 120 } },
   build,
   anims,
   hooks,

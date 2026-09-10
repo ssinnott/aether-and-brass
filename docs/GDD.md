@@ -42,6 +42,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
   - *Grab + throw:* forward = hammer-golf swing, enemy flies 200px as a projectile (20); back = piledriver (22, 40px shockwave).
   - *Taunt:* leans on hammer, whistle.
   - *Unique trait:* **Heavy Frame**: 15% less damage taken; Sootborn light attacks cannot knock her down; combo hits 3–4 absorb 1 hit each.
+  - *Shield:* **Boiler Plate**, 34 points, refilling 9/s once she has gone 2.5s without damage (5s after it breaks). The biggest slab in the cast and the slowest to come back.
 - **Play feel:** Slow, but every swing is a wall, you stand in the crowd and the crowd regrets it.
 
 ## 2.2 Sael Windwright, Speed
@@ -57,6 +58,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
   - *Grab + throw:* forward = jet-boot kick, enemy flies 160px and she gains 15px height (air-combo opener); back = vault-over kick, enemy sent 90px behind (12).
   - *Taunt:* flips and catches the rapier.
   - *Unique trait:* **Double Jump** plus one air dash per airborne state; dodge recovery 5f; takes 15% more damage.
+  - *Shield:* **Static Ward**, 14 points, refilling 27/s after 1s without damage (2s after it breaks). Tiny and nearly instant: it pays for hit-and-run and gives her nothing while she stands in the crowd.
 - **Play feel:** A hummingbird with a knife, always at the enemy you weren't looking at.
 
 ## 2.3 Captain Rook Halloway, Balanced (ranged hybrid)
@@ -72,6 +74,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
   - *Grab + throw:* forward = 3 pommel hits (6 each) then a boot kick; back = hip toss, enemy lands 90px behind and bounces (juggle-able).
   - *Taunt:* tips hat, spins revolver.
   - *Unique trait:* **Parry**: his dodge is a normal roll, but an enemy melee attack that would connect during frames 1–6 of the roll is parried instead: roll cancels, enemy stunned 40f, +15 meter, 8f hit-stop. A mistimed press is still a full roll.
+  - *Shield:* **Bulwark**, 22 points, refilling 18/s after 1.7s without damage (3.3s after it breaks). The middle of the cast in every number, and one more thing a parry keeps intact.
 - **Play feel:** The jack-of-all-trades who answers every question with the right tool, sword, boot, or bullet.
 
 ## 2.4 Pip Gearlock & The Rig, Grappler
@@ -87,6 +90,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
   - *Grab + throw:* forward = hurl 220px as a projectile (20); back = piledriver (25, 40px shockwave); Attack while holding = **Crush**, 3 × 8.
   - *Taunt:* vents both stacks.
   - *Unique trait:* **Grab Armor**: uninterruptible grab startup; reach 30px (standard 20); can grab Iron Wardens, Cinder Hulks and partners (§7); grab damage +25%.
+  - *Shield:* **Pressure Hull**, 28 points, refilling 12/s after 2.2s without damage (4.3s after it breaks). The walk-in budget: the rig eats the hit that would otherwise interrupt the approach.
 - **Play feel:** A crane operator in a bar fight, reel them in, pick them up, turn one enemy into a weapon against the rest.
 
 # 3. Enemy Type A (base + 5 variants): The Brassbound
@@ -257,7 +261,19 @@ All timings at 60fps. Every attack carries `dmg`, `hitstun` (f), `knockback` (px
 - **Hitstun / knockback / knockdown:** *Flinch:* hitstun only (light 14f, medium 20f, heavy 26f). *Stagger:* hitstun + 30f wobble. *Launch:* vertical velocity 7px/f, gravity 0.35px/f². *Knockdown:* pops 16px, lands, lies 40f, gets up with 12f i-frames. Hitstun scales −2f per hit after the 5th consecutive hit (min 8f), no standing infinites. Combo enders and throws always knock down. Players get 30f i-frames after get-up; **tech** (Jump within 6f of landing) rolls 60px and stands instantly.
 - **Juggling & air combos:** launched enemies can be hit up to 4 times in the air; each hit resets vertical velocity to +3px/f and juggle gravity rises +0.05px/f² per hit; the 5th hit forces a hard knockdown. Air hits deal 1.2× and count double toward the combo. Shielded Iron Wardens cannot be launched.
 - **Dodge:** 20f roll along x (or z if Up/Down held), 60px, **i-frames 2–12**, recovery 8f (Sael 5f), 6f cooldown. Dodge **cancels any attack's recovery frames**. Dodging through an enemy's active frames grants 4f hit-stop and +10 meter.
-- **Blocking:** none. Defense is dodge, parry (Rook), armor (Brunhild, Pip), movement.
+- **Blocking:** none. Defense is dodge, parry (Rook), armor (Brunhild, Pip), shields, movement.
+- **Shields:** every hero carries a small **regenerating shield** in front of their health — `max` points that soak
+  damage before HP, refilling `regen` per second once they have gone `delay` without taking any, and `breakDelay`
+  (twice the wait) after the pool is emptied. Per character: Brunhild **Boiler Plate** 34 / 9 per s / 2.5s,
+  Sael **Static Ward** 14 / 27 per s / 1s, Rook **Bulwark** 22 / 18 per s / 1.7s, Pip **Pressure Hull** 28 / 12 per s / 2.2s.
+  It is a *buffer, not a block*: the hit still connects, still staggers, launches or knocks down, and only the damage
+  is eaten — so a shield buys back a mistake, it never replaces a dodge. Any damage restarts the wait, chip damage
+  (burns, hold hits) included, so a fighter cannot recharge while burning. Breaking one costs the attacker nothing
+  and the defender the longer wait, which is what makes pressure worth keeping up. Damage a shield ate does not count
+  toward **Damage Taken** on the results screen. Shields come back full on respawn. Enemies and bosses have none by
+  default; the same `traits.shield` block gives one to any fighter that should.
+  **HUD:** a 120×2 brass strip directly above the health bar — pale when full, dim and slowly pulsing while it is
+  down and waiting; the character-select card prints each hero's pool, rate and wait.
 - **Special meter:** 3 bars of 100 per player. Gain: +4 per hit landed, +8 per knockdown, +12 per kill, +10 per sidestep, +2 per hit taken, taunt +20 over 60f (vulnerable), Aether Vial / Golden Sprocket +100. Spend: Special = 1 bar; **if no bar is full, a special costs 8% max HP** (only above 15% HP; meter shows red). Super = all 3 bars: 12f screen freeze with portrait cut-in, then invulnerable. Meter resets on death.
 - **Grabs:** pressing Attack within 20px (Pip 30px) of an enemy that is **not in hitstun and not armored** grabs instead of striking, walking into enemies never grabs, so combos are never interrupted. Startup 8f, invulnerable; hold 60f max. Forward + Attack = forward throw, Back + Attack = back throw, Attack = hold hits. Thrown enemies are projectiles (15 + knockdown to anything hit) and count toward the combo. Grabs beat armor and Riposte stance. Bosses are grabbable only in stated windows.
 - **Hit-stop & screen shake:** hit-stop freezes attacker and victim only: light 3f, medium 5f, heavy/launcher 8f, throw 6f, super finisher 14f. Shake: heavy hits 3px/6f, knockdowns 4px/8f, explosions 8px/12f, boss slams 12px/16f, supers 6px/20f; clamped 16px.
@@ -291,9 +307,9 @@ Global: Escape pauses/unpauses, M mutes, F1 debug overlay. P2 joins by pressing 
 # 9. Screens & HUD
 
 - **Title:** navy gradient; a brass gear outline (r 140px) rotates behind the tiered-city silhouette. Logo "**CALDERWICK**" in chunky brass rects with a 3px bevel; "*Brass & Aether*" in cyan italic; the four heroes idle on the gear. Menu: START (1P) / START (2P) / OPTIONS (difficulty, friendly fire, volumes, scale) / CONTROLS. "PRESS START" blinks 30f.
-- **Character select:** four portrait cards (140×200, brass frames) holding 2.5× rig busts: **Brunhild** (copper; beard rect, goggles, hammer on shoulder), **Sael** (teal; ear triangles, ponytail, rapier spark), **Rook** (oxblood; tricorne, gear eye-patch, revolver spin), **Pip** (iron grey; red hat inside the cockpit cage, claws clacking). Under each: name, archetype, five 5-pip stat bars. Hovered card plays its taunt. P1 cursor white gear ring, P2 cyan.
+- **Character select:** each hero's shield (name, pool, refill rate, wait) prints under the cards; four portrait cards (140×200, brass frames) holding 2.5× rig busts: **Brunhild** (copper; beard rect, goggles, hammer on shoulder), **Sael** (teal; ear triangles, ponytail, rapier spark), **Rook** (oxblood; tricorne, gear eye-patch, revolver spin), **Pip** (iron grey; red hat inside the cockpit cage, claws clacking). Under each: name, archetype, five 5-pip stat bars. Hovered card plays its taunt. P1 cursor white gear ring, P2 cyan.
 - **Stage intro card:** §6, plus both portraits with "P1 / P2 READY".
-- **In-game HUD (top strip 640×40, alpha 0.5):** P1 left, P2 right. 24×24 bust portrait; name; **health bar** 120×8 (`#59C3A0` → `#F2C94C` under 50% → `#FF5C5C` under 25%; white 4f flash on damage; a "ghost" bar drains behind after 20f); **special meter** 120×5 in three segments, filling cyan, full = pulsing white rim, red tint when a special would cost health; **lives** as character icons (goggles / scarf / tricorne / red hat); **score** 7 digits. Center: stage timer and "GO →". **Combo counter** on the player's side: 24px number + grade word, scales 1.3→1.0 over 6f per hit, color climbs grey → yellow → orange → cyan → white. **Enemy health:** 40×3 bar above the head, shown 90f after each hit; elites 60×4 with an armor icon; bosses a 400×10 bottom bar with name plate and phase segments. Pickups show floating "+25" text.
+- **In-game HUD (top strip 640×40, alpha 0.5):** P1 left, P2 right. 24×24 bust portrait; name; **shield strip** 120×2 in brass directly above the health bar (pale when full, dim slow pulse while down); **health bar** 120×8 (`#59C3A0` → `#F2C94C` under 50% → `#FF5C5C` under 25%; white 4f flash on damage; a "ghost" bar drains behind after 20f); **special meter** 120×5 in three segments, filling cyan, full = pulsing white rim, red tint when a special would cost health; **lives** as character icons (goggles / scarf / tricorne / red hat); **score** 7 digits. Center: stage timer and "GO →". **Combo counter** on the player's side: 24px number + grade word, scales 1.3→1.0 over 6f per hit, color climbs grey → yellow → orange → cyan → white. **Enemy health:** 40×3 bar above the head, shown 90f after each hit; elites 60×4 with an armor icon; bosses a 400×10 bottom bar with name plate and phase segments. Pickups show floating "+25" text.
 - **Pause:** 60% dim, brass plate: RESUME / CONTROLS / OPTIONS / QUIT TO TITLE, plus "P2 PRESS START TO JOIN" when a slot is free.
 - **Game over / continue:** a player at 0 lives shows "CONTINUE? 9…0" on their side, the digit cracking like a gear each second; the partner keeps playing. Both out → frozen screen, grey overlay alpha 0.6, same countdown; Start uses a continue. Expiry: "THE ENGINE WINS." then results with a D-rank ceiling.
 - **Results / ranking:** §6.

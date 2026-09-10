@@ -176,7 +176,7 @@ export class GameplayScreen extends Screen {
     return {
       ...rs,
       sectionIndex: w.sectionIndex, cameraX: w.camera.x, locked: w.camera.locked, wavesCleared: w.wavesCleared,
-      players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out })),
+      players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, shield: p.shield, shieldMax: p.shieldMax, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out })),
       enemies: w.enemies.filter((e) => e.kind !== 'boss').map((e) => ({ name: e.name, type: e.def.type || '', variant: e.def.variant || '', hp: e.hp, state: e.state, x: e.x, z: e.z, ai: e.aiState })),
       boss: b ? { kind: b.bossKind || 'boss', name: b.name, hp: b.hpTotal != null ? b.hpTotal : b.hp, maxHp: b.hpTotalMax || b.maxHp, phase: b.phase || 1, state: b.state, phaseName: b.phaseName } : null,
       enemiesDefeated: this.enemiesDefeated, time: this.time, continues: this.continues,
