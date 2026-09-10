@@ -76,7 +76,10 @@ export class GameplayScreen extends Screen {
     if (!def) return null;
     const opt = this.game.options, cam = this.world.camera;
     const x = clamp(Math.max(cam.x, cam.left) + START_X + slot * 40, 20, this.stage.length - 20);
-    const p = new Player(def, slot, { input: this.game.input, x, z: 70 + slot * 24, facing: 1, bot: !!opt.bot, godmode: !!opt.godmode });
+    // ?botstyle=aggressive,defensive gives each slot its own autopilot archetype; one name applies to both.
+    const styles = opt.botStyle || [];
+    const p = new Player(def, slot, { input: this.game.input, x, z: 70 + slot * 24, facing: 1,
+      bot: !!opt.bot, botStyle: styles[slot] || styles[0] || '', godmode: !!opt.godmode });
     const other = this.players[1 - slot];
     if (other && other.def === def) { p.tint = '#1a1a2e'; p.tintAlpha = 0.3; }
     this.world.add(p);

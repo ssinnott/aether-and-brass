@@ -174,16 +174,32 @@ save. `?unlockall=1` opens every board for one page load without touching the sa
 npm test                              # full headless Playwright suite
 node tools/playtest.js playthrough    # one scenario; screenshots land in tools/screens/
 node tools/sheet-capture.js out char=brunhild    # character contact sheets
+npm run winrate -- --stages 1 --styles all       # balance sweep: how often does the engine win?
 ```
 
 The suite boots the game, walks the character select, drives every hero's whole moveset,
 runs an autopilot bot through all four boards to their results screens, plays co-op, spawns
-every enemy variant, and renders every sound effect and music track offline to check none
-are silent.
+every enemy variant, exercises every autopilot archetype, and renders every sound effect and
+music track offline to check none are silent.
+
+`npm test` answers "does it work"; `npm run winrate` answers "is it fair". The latter plays real
+runs with no godmode and counts how often the ENGINE wins — a run lost is the continue stack
+running out — across boards, difficulties, heroes, party sizes and autopilot styles:
+
+```
+npm run winrate                                          # 4 boards x 4 heroes, solo, balanced, normal
+npm run winrate -- --stages 1 --styles all --seeds 8     # one board against every archetype
+npm run winrate -- --party 1,2 --difficulty easy,normal,hard --json out.json
+```
+
+Autopilot archetypes (`src/game/bot.js`): `balanced` (the default, and what the test suite is
+written against), `aggressive` (fast buttons, never dodges), `defensive` (fights at range,
+dodges hard, backs off when hurt), `masher` (no spacing, no patience). A run that never reaches
+a result is reported apart as unfinished — that is a soft-lock, not a loss.
 
 Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,2`,
-`?skipTo=gallery`, `?bot=1`, `?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=4`, `?unlockall=1`,
-`?resetprogress=1`.
+`?skipTo=gallery`, `?bot=1`, `?botstyle=aggressive,defensive` (one archetype per slot),
+`?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=4`, `?unlockall=1`, `?resetprogress=1`.
 
 ### Deployment
 

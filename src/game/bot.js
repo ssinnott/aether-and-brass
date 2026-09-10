@@ -1,10 +1,45 @@
 // Autopilot for players (?bot=1, ARCHITECTURE.md section 15): walk toward the nearest enemy (align z), attack in range,
 // occasional jump attack / special / super / dodge, forward-throw held enemies, walk (run) right when no enemies remain.
+//
+// The autopilot has named STYLES (?botstyle=NAME, one per slot: `aggressive,defensive`). `balanced` is the default and
+// is the behaviour every scenario in tools/playtest.js was written against; the others exist so tools/winrate.js can
+// sweep a board against more than one kind of player before anyone calls it tuned.
 import { ST, METER } from '../constants.js';
 import { rng } from '../engine/rng.js';
 import { laneAroundHazards } from './hazards.js';
 
-const ATTACK_EVERY = 8, Z_TOL = 14, RUN_DIST = 170, STOP_RUN_DIST = 110;
+const Z_TOL = 14, RUN_DIST = 170, STOP_RUN_DIST = 110;
+
+/**
+ * Autopilot styles. Each is a whole player archetype, not a difficulty knob:
+ * - `attackEvery`   frames between attack presses in range (lower = faster buttons)
+ * - `dodgeChance`   chance per eligible frame to dodge an incoming hitbox (0 = never dodges)
+ * - `specialChance` chance to spend a full special meter when it is up
+ * - `superEvery`    frames between super attempts once the meter allows it
+ * - `jumpChance`    chance to throw the periodic jump-in
+ * - `spacing`       extra px of reach kept before committing (positive = fights at range)
+ * - `retreatHp`     fraction of max HP below which it backs off to heal/space (0 = never retreats)
+ */
+export const BOT_STYLES = {
+  // the original autopilot, unchanged: trades freely, dodges when something is coming
+  balanced: { attackEvery: 8, dodgeChance: 0.3, specialChance: 0.5, superEvery: 20, jumpChance: 0.5, spacing: 0, retreatHp: 0 },
+  // buttons down, never blocks: the ceiling on how fast a board can be cleared and the floor on how much it costs
+  aggressive: { attackEvery: 5, dodgeChance: 0, specialChance: 0.9, superEvery: 12, jumpChance: 0.8, spacing: -6, retreatHp: 0 },
+  // fights at the tip of its reach, dodges hard, backs off when hurt: a cautious player
+  defensive: { attackEvery: 12, dodgeChance: 0.65, specialChance: 0.35, superEvery: 40, jumpChance: 0.15, spacing: 10, retreatHp: 0.35 },
+  // no spacing, no patience, mashes one button: a first-time player on a keyboard
+  masher: { attackEvery: 3, dodgeChance: 0.05, specialChance: 0.15, superEvery: 90, jumpChance: 0.35, spacing: -10, retreatHp: 0 },
+};
+export const DEFAULT_BOT_STYLE = 'balanced';
+/** @returns {typeof BOT_STYLES.balanced} the named style, falling back to `balanced`. */
+export function botStyle(name) { return BOT_STYLES[name] || BOT_STYLES[DEFAULT_BOT_STYLE]; }
+
+// A dodge is invulnerable, so a bot that re-presses it every eligible frame can stand in a crowd forever: it never
+// takes a hit and never throws one, and a locked wave then never clears (a real soft-lock, not a loss). Every style
+// therefore gets a hard ceiling on how much of any window it may spend dodging.
+const DODGE_WINDOW = 90, DODGE_BUDGET = 6;
+// `retreatHp` styles back off for RETREAT_FRAMES out of every RETREAT_CYCLE, then commit again.
+const RETREAT_CYCLE = 240, RETREAT_FRAMES = 120;
 
 /** Pick the most attackable enemy: standing targets first, then knocked-down ones; never ones fleeing off-screen. */
 function pickTarget(p, world) {
@@ -19,11 +54,22 @@ function pickTarget(p, world) {
   return best;
 }
 
+/** True while `p` may still spend a dodge in the current window (see DODGE_BUDGET). */
+function dodgeAllowed(p, world) {
+  const f = world.frame;
+  if (p.botDodgeWindow === undefined || f - p.botDodgeWindow >= DODGE_WINDOW) { p.botDodgeWindow = f; p.botDodgeSpent = 0; }
+  return p.botDodgeSpent < DODGE_BUDGET;
+}
+
 /**
  * Compute a synthetic intent for `p` (same shape as Player.readIntent produces). Fields are edge-style (true = pressed this frame).
+ * @param {object} p player
+ * @param {object} world
+ * @param {string} [style] key into BOT_STYLES; defaults to `balanced`
  * @returns {{x:number, y:number, attack:boolean, jump:boolean, special:boolean, super:boolean, dodge:boolean, taunt:boolean, run:boolean, start:boolean}}
  */
-export function botIntent(p, world) {
+export function botIntent(p, world, style) {
+  const s = botStyle(style || p.botStyle);
   const it = { x: 0, y: 0, attack: false, jump: false, special: false, super: false, dodge: false, taunt: false, run: false, start: false };
   const f = world.frame + (p.index || 0) * 3;
   if (p.state === ST.LYING || p.state === ST.GETUP || p.state === ST.HURT) { if (f % 5 === 0) it.jump = true; return it; }
@@ -43,9 +89,13 @@ export function botIntent(p, world) {
   }
   const dx = e.x - p.x, dz = e.z - p.z, adx = Math.abs(dx);
   const gap = adx - (e.w || 28) / 2;               // distance to the target's hurtbox edge
-  const reach = (p.def.reach || 40) + 8;
+  const reach = (p.def.reach || 40) + 8 + s.spacing;
   const dir = dx > 0 ? 1 : -1;
   if (Math.abs(dz) > 10) it.y = dz > 0 ? 1 : -1;
+  // hurt and cautious: give ground rather than trade, so the style actually reads as defensive. The retreat is
+  // time-boxed — a wave that will not chase (a locked arena) must not turn into a standoff neither side can end.
+  const hurt = s.retreatHp > 0 && p.hp > 0 && p.hp < (p.maxHp || 200) * s.retreatHp;
+  if (hurt && gap < RUN_DIST && f % RETREAT_CYCLE < RETREAT_FRAMES && f % 3 !== 0) { it.x = -dir; return it; }
   if (gap > reach - 6) {
     it.x = dir;
     if (gap > RUN_DIST) it.run = true;
@@ -53,13 +103,14 @@ export function botIntent(p, world) {
   } else {
     if (dir !== p.facing) it.x = dir;
     if (Math.abs(dz) <= Z_TOL) {
-      if (p.meter >= METER.super && f % 20 === 0) it.super = true;
-      else if (p.meter >= METER.special && f % 60 === 0 && rng.chance(0.5)) it.special = true;
-      else if (f % ATTACK_EVERY === 0) it.attack = true;
+      if (p.meter >= METER.super && f % s.superEvery === 0) it.super = true;
+      else if (p.meter >= METER.special && f % 60 === 0 && rng.chance(s.specialChance)) it.special = true;
+      else if (f % s.attackEvery === 0) it.attack = true;
     }
   }
   if (p.state === ST.JUMP && f % 4 === 0) it.attack = true;
-  if (f % 300 === 150 && adx < 110 && Math.abs(dz) <= Z_TOL && rng.chance(0.5)) it.jump = true;
-  if (e.hitboxes && e.hitboxes().length && adx < 70 && Math.abs(dz) < 20 && f % 3 === 0 && rng.chance(0.3)) it.dodge = true;
+  if (f % 300 === 150 && adx < 110 && Math.abs(dz) <= Z_TOL && rng.chance(s.jumpChance)) it.jump = true;
+  if (s.dodgeChance > 0 && e.hitboxes && e.hitboxes().length && adx < 70 && Math.abs(dz) < 20 && f % 3 === 0
+      && rng.chance(s.dodgeChance) && dodgeAllowed(p, world)) { it.dodge = true; p.botDodgeSpent++; }
   return it;
 }
