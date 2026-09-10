@@ -474,6 +474,7 @@ export function riteFlash(f, world) {
  * Hooks every Chandler shares. onUpdate drives `rig.lamp` and keeps the recipient; onHitTaken is the rite-break rule
  * (with the armour guard, because the hook runs BEFORE the armour branch in fighter.js takeHit); drawBefore paints the
  * cone, drawAfter the tether; onDeath is COSMETIC ONLY — the buffs are cleared by each rite's own onTick.
+ * @type {Hooks}
  */
 export const BASE_HOOKS = {
   onSpawn(f) { f.riteTarget = null; f.riteTarget2 = null; f.riteBroken = 0; f.riteHold = 0; f.rig.lamp = 1; },

@@ -3,10 +3,14 @@
   // compiles, transpiles or bundles, so `src/` stays plain ES modules that a browser loads
   // straight from a static server. TypeScript is a linter for the JSDoc we already write.
   //
-  // `include` starts at the layers where a type error is most expensive and the code is most
-  // stable: `engine/` (the fixed-timestep loop and deterministic math) and `net/` (lockstep,
-  // where a contract mismatch desyncs a match rather than throwing). Widen it a directory at a
-  // time — `npm run typecheck` must stay green, so a directory joins only once it is clean.
+  // `include` covers the layers that are clean, and widens a directory at a time —
+  // `npm run typecheck` must stay green, so a directory joins only once it is:
+  //   engine/   the fixed-timestep loop and the deterministic math
+  //   net/      lockstep, where a wrong contract desyncs a match rather than throwing
+  //   content/  the largest layer, and the one where a bad key is quietest: a misspelled frame
+  //             or hook field does not throw, it silently does nothing. types/content.d.ts
+  //             declares the shapes it conforms to by convention.
+  // Still out: game/ and art/.
   "compilerOptions": {
     "allowJs": true,
     "checkJs": true,
@@ -31,6 +35,7 @@
   "include": [
     "types/**/*.d.ts",
     "src/engine/**/*.js",
-    "src/net/**/*.js"
+    "src/net/**/*.js",
+    "src/content/**/*.js"
   ]
 }

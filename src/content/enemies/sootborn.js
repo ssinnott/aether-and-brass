@@ -311,7 +311,11 @@ const BASE = {
   sfx: { hurt: 'soot_hurt', death: 'soot_death' },
   ai: { attackRange: 34, zTolerance: 12, retreatChance: 0.35, attackCooldown: [35, 80], aggression: 0.7, firstAttackDelay: 40, flank: true, fleeLast: true, tokenGroup: 'sootborn', maxAttackers: 2 },
 };
-/** Fleeing goblins use the arms-up `flee` cycle; a panicking Slinger the `panic` hop (both while the core keeps its run / stagger states). */
+/**
+ * Fleeing goblins use the arms-up `flee` cycle; a panicking Slinger the `panic` hop (both while the core keeps its
+ * run / stagger states).
+ * @type {Hooks}
+ */
 const BASE_HOOKS = {
   onUpdate(f) {
     if (f.aiState === 'FLEE' && f.state === ST.RUN && f.anim.name === 'run') f.play('flee');

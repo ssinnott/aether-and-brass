@@ -768,11 +768,10 @@ export function makeGleanBase(c, o = {}) {
  * Shared hooks (every variant merges these first): the two-channel tell state the bladder reads, and the faction rule.
  * SHOT DOWN — this 1.25x on top of the core's own 1.2x air bonus (fighter.js) makes any hit on an airborne Gleaner 1.5x,
  * and the engine's juggle branch has already turned it into a juggle before the hook returns. Air time is the liability.
+ * @type {Hooks}
  */
 export const BASE_HOOKS = {
-  // `world` is unused here, but the hook contract is onUpdate(f, world) (fighter.js) and every
-  // faction variant forwards both — declare it so the signature matches what it is called with.
-  onUpdate(f, world) {
+  onUpdate(f) {
     const r = f.rig;
     r.swell = r.tell ? (r.tellWarn ? 1.18 : 1.12) : 1;
     r.gas = r.tell ? 1 : 0.25;

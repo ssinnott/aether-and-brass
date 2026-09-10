@@ -415,6 +415,7 @@ const SLAM_POSE = { ...EC, legR: [22, 8], legL: [-20, 10], torso: 10, head: 4, r
 const SHOT_POSE = { ...EC, armL: [70, 8], armR: [38, 34], torso: -10, head: -6, root: [-7, 1], legR: [16, 8], legL: [-20, 12], face: 'shout' };
 const SHOT_FX = { event: 'spawnProjectile', projectile: SHELL, sfx: 'cannon', ease: 'out', fx: FX_MUZZLE };
 
+/** @type {AnimSet} */
 const engineAnims = {
   ...EBASE,
   // idle: the pistons breathe, the barrel rocks 3 deg, the boiler chuffs and the saw idles over (drawSaw / rig.tick)
@@ -526,7 +527,10 @@ const engineAnims = {
 };
 engineAnims.run = engineAnims.walk;
 engineAnims.flee = engineAnims.walk;
-/** Phase 2: the same rig with the collapsed rest poses (the legs are down; the barrel is at floor height and hittable). */
+/**
+ * Phase 2: the same rig with the collapsed rest poses (the legs are down; the barrel is at floor height and hittable).
+ * @type {AnimSet}
+ */
 const engineBodyAnims = { ...engineAnims,
   idle: { loop: true, frames: [
     FK(16, { ...LOW, torso: 6, root: [0, 25] }, { ease: 'inout' }),
@@ -817,6 +821,7 @@ const WATCH_SPEC = { style: 'watch', aimAt: true, flight: 40, gravity: 0.4, noCo
 const vThrust = (k) => ({ ...VC, grip: 1, armR: [96, -8], weapon: 8, armL: [-46, 24], torso: 16, head: 4, root: [4 + k, 0], legR: [40, 8], legL: [-30, 26], face: 'shout' });
 const vCoil = (k) => ({ ...VC, grip: 1, armR: [32, 40], weapon: -8, armL: [-38, 20], torso: 6, head: -2, root: [1 + k, 0], legR: [26, 14], legL: [-22, 22], face: 'angry' });
 
+/** @type {AnimSet} */
 const vaneAnims = {
   ...VBASE,
   // idle: an unhurried fencer's rest — weight on the back foot, cane at the side, coat tails and queue drifting

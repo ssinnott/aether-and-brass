@@ -108,6 +108,7 @@ const BASE = {
  * `rig.down` says the aeronaut is dead so the two sealed helms can put their lens out and keep it out. fighter.js
  * stops calling onUpdate once `dead` is set, so the flag latches on death and clears itself when the rig is reused
  * — which is why every variant hook must call BASE_HOOKS.onUpdate first (galeHooks and corsairHooks do).
+ * @type {Hooks}
  */
 const BASE_HOOKS = {
   onUpdate(f) {
