@@ -223,6 +223,27 @@ const W3_LEAD = `C5:2 Eb5:2 G5:2 C6:4 G5:2 Eb5:2 C5:2 | Ab4:2 C5:2 Eb5:2 Ab5:4 E
   Eb5:2 G5:2 Bb5:2 Eb6:4 Bb5:2 G5:2 Eb5:2 | G4:2 B4:2 D5:2 G5:4 F5:2 D5:2 B4:2`;
 const LEDGER_LEAD = `D5:2 F5:2 A5:2 D6:4 A5:2 F5:2 D5:2 | Bb4:2 D5:2 F5:2 Bb5:4 F5:2 D5:2 Bb4:2 |
   G4:2 Bb4:2 D5:2 G5:4 D5:2 Bb4:2 G4:2 | A4:2 C#5:2 E5:2 A5:4 G5:2 E5:2 C#5:2`;
+// ---- Stage 4: The Gleaning of Calderwick (docs/STAGE4.md section 6) ----
+// The Calderwick motif, finally in a minor key that is not the city's: the guild has no anthem, so its three
+// section tracks are the motif being carried away a piece at a time — G1 has it slowed to a field song, G2 has it
+// under a windlass tick, G3 has it inside the bag with the harp answering itself. The boss theme is the whole motif
+// at speed, and it is the only track in the game that lands on its own tonic instead of resolving somewhere else.
+const G1_LEAD = `A4:4 C5:4 E5:6 C5:2 | A4:4 E4:4 A4:8 |
+  F4:4 A4:4 C5:6 A4:2 | G4:4 B4:4 D5:8 |
+  A4:4 C5:4 E5:4 A5:4 | E5:4 C5:4 A4:8 |
+  F4:2 G4:2 A4:4 C5:4 E5:4 | E4:8 A4:8`;
+const G2_LEAD = `E5:2 G5:2 B5:2 E6:4 B5:2 G5:2 | E5:2 B4:2 E5:2 G5:4 -:4 |
+  C5:2 E5:2 G5:2 C6:4 G5:2 E5:2 | C5:2 G4:2 C5:2 E5:4 -:4 |
+  A4:2 C5:2 E5:2 A5:4 E5:2 C5:2 | A4:2 E4:2 A4:2 C5:4 -:4 |
+  B4:2 D5:2 F#5:2 B5:4 F#5:2 D5:2 | B4:4 F#5:4 B5:8`;
+const G3_LEAD = `B4:2 D5:2 F#5:2 B5:4 F#5:2 D5:2 B4:2 | -:2 F#5:2 B5:2 D6:6 -:2 |
+  G4:2 B4:2 D5:2 G5:4 D5:2 B4:2 G4:2 | -:2 D5:2 G5:2 B5:6 -:2 |
+  E5:2 G5:2 B5:2 E6:4 B5:2 G5:2 E5:2 | -:2 B5:2 E6:2 G6:6 -:2 |
+  F#5:2 A5:2 C#6:2 F#6:4 C#6:2 A5:2 F#5:2 | F#5:2 A5:2 C#6:2 F#6:8 -:2`;
+const CROP_LEAD = `A5:2 C6:2 E6:2 A6:4 E6:2 C6:2 A5:2 | F5:2 A5:2 C6:2 F6:4 C6:2 A5:2 F5:2 |
+  D5:2 F5:2 A5:2 D6:4 A5:2 F5:2 D5:2 | E5:2 G#5:2 B5:2 E6:4 D6:2 B5:2 G#5:2 |
+  A5:2 C6:2 E6:2 A6:6 E6:2 C6:2 | F5:2 A5:2 C6:2 F6:6 C6:2 A5:2 |
+  D5:2 F5:2 A5:2 D6:4 F6:4 E6:4 | A5:4 E6:4 A6:8`;
 const HAT16 = 'HhhhHhhhHhhhHhhh';
 export const TRACKS = {
   title: { name: 'title', bpm: 100, key: 'D', chords: ['Dm', 'Bb', 'F', 'C'], channels: [
@@ -370,6 +391,38 @@ export const TRACKS = {
     { inst: 'brass', oct: 3, vol: 1, pat: 'chord:3 . chord:3 . chord:3 . chord:3 .' },
     { inst: 'lead_saw', oct: 5, vol: 1, pat: LEDGER_LEAD },
     { inst: 'lead_pulse', oct: 5, vol: 0.8, combat: true, pat: LEDGER_LEAD, transpose: 7 },
+    { inst: 'drums', vol: 1, pat: 'K.hhS.hhK.hhS.hC' },
+    { inst: 'drums', vol: 0.5, pat: 'T...t...T...t...' },
+  ] },
+  // ---- Stage 4: The Gleaning of Calderwick ----
+  glean1: { name: 'glean1', bpm: 118, key: 'A', chords: ['Am', 'F', 'G', 'Am'], channels: [
+    { inst: 'pad', oct: 3, vol: 0.8, pat: 'chord:32', wide: 12 },
+    { inst: 'bass_tri', oct: 2, vol: 0.9, pat: 'r:4 -:2 r+7:2 r:4 r+12:2 r+7:2' },
+    { inst: 'pluck', oct: 4, vol: 1, pat: G1_LEAD },
+    { inst: 'whistle', oct: 5, vol: 0.6, combat: true, pat: G1_LEAD, transpose: 12 },
+    { inst: 'drums', vol: 0.6, pat: 'K......hS......h' },
+  ] },
+  glean2: { name: 'glean2', bpm: 130, key: 'E', chords: ['Em', 'C', 'Am', 'B7'], channels: [
+    { inst: 'bass_square', oct: 2, vol: 1, pat: 'r:2 r:2 r+7:2 r:2 r+12:2 r+7:2 r:4' },
+    { inst: 'lead_saw', oct: 4, vol: 0.9, pat: G2_LEAD },
+    { inst: 'organ', oct: 3, vol: 0.45, pat: 'chord:8 . chord:8 .' },
+    { inst: 'lead_pulse', oct: 4, vol: 0.7, combat: true, pat: G2_LEAD, transpose: 7 },
+    // the windlass, ticking all the way through: the float is hauling the whole time you are fighting on it
+    { inst: 'drums', vol: 0.85, pat: 'K.hhS.h.K.hhS.hO' },
+  ] },
+  glean3: { name: 'glean3', bpm: 142, key: 'B', chords: ['Bm', 'G', 'Em', 'F#7'], channels: [
+    { inst: 'bass_square', oct: 2, vol: 1, pat: 'r:2 r:1 r+7:1 r+12:2 r+7:1 r:1 r:2 r+10:1 r+7:1 r:2 r:2' },
+    { inst: 'harpsi', oct: 5, vol: 0.75, pat: 'c0:1 . c1:1 . c2:1 . c1:1 . c0:1 . c1:1 . c2:1 . c1:1 .' },
+    { inst: 'lead_saw', oct: 5, vol: 0.9, pat: G3_LEAD },
+    { inst: 'pad', oct: 3, vol: 0.5, pat: 'chord:32', wide: 10 },
+    { inst: 'lead_pulse', oct: 5, vol: 0.7, combat: true, pat: G3_LEAD, transpose: -5 },
+    { inst: 'drums', vol: 0.95, pat: 'K.h.S.h.K.h.S.hH' },
+  ] },
+  cropboss: { name: 'cropboss', bpm: 160, key: 'A', chords: ['Am', 'F', 'Dm', 'E'], channels: [
+    { inst: 'bass_dist', oct: 2, vol: 1, pat: 'r r r+12 r r r r+7 r r r r+12 r r r+10 r+7 r' },
+    { inst: 'brass', oct: 3, vol: 1, pat: 'chord:3 . chord:3 . chord:3 . chord:3 .' },
+    { inst: 'lead_saw', oct: 5, vol: 1, pat: CROP_LEAD },
+    { inst: 'lead_pulse', oct: 5, vol: 0.8, combat: true, pat: CROP_LEAD, transpose: 7 },
     { inst: 'drums', vol: 1, pat: 'K.hhS.hhK.hhS.hC' },
     { inst: 'drums', vol: 0.5, pat: 'T...t...T...t...' },
   ] },

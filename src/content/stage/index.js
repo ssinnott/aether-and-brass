@@ -3,9 +3,10 @@
 import { stage1 } from './stage1.js';
 import { stage2 } from './stage2.js';
 import { stage3 } from './stage3.js';
+import { stage4 } from './stage4.js';
 
 /** Every playable board, in order. */
-export const STAGES = [stage1, stage2, stage3];
+export const STAGES = [stage1, stage2, stage3, stage4];
 
 /** Short labels for menus (the full name is on the intro card). */
 export const STAGE_LABELS = STAGES.map((s) => s.name);
@@ -29,4 +30,4 @@ export function getStage(which) {
 /** Index of a stage in STAGES (0 when it is not registered). */
 export function stageIndex(stage) { return Math.max(0, STAGES.indexOf(stage)); }
 
-export { stage1, stage2, stage3 };
+export { stage1, stage2, stage3, stage4 };

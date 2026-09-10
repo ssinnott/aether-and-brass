@@ -66,6 +66,7 @@ src/
       section1.js ... section4.js    # stage 1
       storm1.js ... storm3.js        # stage 2
       works1.js ... works3.js        # stage 3
+      glean1.js ... glean3.js        # stage 4
     props.js               # breakable/static prop renderers (crates, barrels, lamps, pipes, gears...)
     portraits.js           # character-select portraits & HUD icons drawn from rigs
   game/
@@ -96,17 +97,20 @@ src/
       sootborn.js          # stage 1 type B
       stormcrowRig.js      # stage 2 faction rig (parts, palette, base animation set)
       stormcrow.js         # stage 2 type C: 5 variant overrides
-      gleaningRig.js, gleaning.js  # unaffiliated roster: the Gleaning (no board of its own yet)
+      gleaningRig.js       # stage 4 faction rig (parts, palette, bladder, gleanStrike)
+      gleaning.js          # stage 4 type D: 5 variant overrides
       chandlerRig.js       # stage 3 faction rig (parts, palette, lamp/rite plumbing, chandStrike)
       chandler.js          # stage 3 type E: 5 variant overrides + the four rites
       midboss.js, boss.js          # stage 1 bosses
       midboss2.js, boss2.js        # stage 2 bosses (reuse the Stormcrow rig)
       midboss3.js, boss3.js        # stage 3 bosses (reuse the Chandlery rig and its rites)
+      midboss4.js, boss4.js        # stage 4 bosses (reuse the Gleaning rig and its bladder)
     stage/
       index.js             # STAGES registry + getStage(n): the boards BOARD SELECT offers
       stage1.js            # stage data (sections, waves, props, hazards) per section 7 format
       stage2.js
       stage3.js
+      stage4.js
 ```
 
 ## 2. Coordinate system (semi-isometric beat-em-up plane)

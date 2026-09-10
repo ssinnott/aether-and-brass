@@ -102,6 +102,7 @@ export function drawVignette(ctx, x, y, w, h, pv, f) {
   ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
   if (pv.motif === 'sky') drawSkyMotif(ctx, x, y, w, h, pv, f);
   else if (pv.motif === 'works') drawWorksMotif(ctx, x, y, w, h, pv, f);
+  else if (pv.motif === 'crop') drawCropMotif(ctx, x, y, w, h, pv, f);
   else drawCityMotif(ctx, x, y, w, h, pv, f);
   const gh = pv.groundH == null ? 10 : pv.groundH;
   if (gh > 0) {
@@ -218,6 +219,61 @@ function drawWorksMotif(ctx, x, y, w, h, pv, f) {
   circle(ctx, cx + 5, base + 1, 4, '#2E2A24', null, 0);
   circle(ctx, cx + 17, base + 1, 4, '#2E2A24', null, 0);
   ctx.fillStyle = road; ctx.fillRect(x, base + 5, w, y + h - base - 5);   // the road surface closes over the tyres
+}
+
+/** Board 4: the tailings at dusk under a sky of the guild's bladders, with one loaded net crossing on its line. */
+function drawCropMotif(ctx, x, y, w, h, pv, f) {
+  const base = y + h - 12;
+  // the gas sitting on the field: a rose band along the bottom of the sky, which is where this board's light is
+  ctx.fillStyle = 'rgba(255,87,176,0.16)'; ctx.fillRect(x, base - 26, w, 26);
+  // THE BLADDERS, which are the subject of the plaque: pale silk bulbs at three depths, each one on its own line
+  // with something of somebody's hanging off the end of it. They drift, so the picture is never the same twice.
+  const bags = [[0.18, 20, 9], [0.52, 13, 12], [0.82, 26, 7]];
+  for (let i = 0; i < bags.length; i++) {
+    const [fx, by, r] = bags[i];
+    const bx = x + ((fx * w + (f >> (5 + i))) % (w + 40)) - 20;
+    if (bx < x - 24 || bx > x + w + 24) continue;
+    const bob = Math.sin((f + i * 90) * 0.03) * 1.5;
+    circle(ctx, bx, by + y + bob, r, '#9CC4D6', '#171426', 1);
+    ctx.fillStyle = 'rgba(255,87,176,0.32)';
+    ctx.beginPath(); ctx.ellipse(bx, by + y + bob + r * 0.25, r * 0.6, r * 0.38, 0, 0, Math.PI * 2); ctx.fill();
+    line(ctx, bx, by + y + bob + r, bx + 1, base - 14, 'rgba(20,16,32,0.8)', 1);
+    ctx.fillStyle = '#9C893F'; ctx.fillRect(Math.round(bx - 4), Math.round(base - 18), 9, 5);
+  }
+  // the heaps: a low sawtooth of spoil, dark, with the gas pooling in the hollow behind each one
+  ctx.fillStyle = '#3A4240';
+  for (let i = 0; i < 6; i++) {
+    const hx = x + i * (w / 5.4), hh = 8 + ((i * 11) % 4) * 4;
+    poly(ctx, [hx - 22, base, hx, base - hh, hx + 24, base], '#3A4240', null, 0);
+  }
+  ctx.fillStyle = 'rgba(255,87,176,0.18)';
+  for (let i = 0; i < 5; i++) ctx.fillRect(x + 8 + i * (w / 5), base - 4, 14, 4);
+  // THE FIELD IS PAINTED HERE, not by drawVignette (stage4's preview sets `groundH: 0` for exactly this reason), so
+  // that the loaded net can hang ACROSS the line rather than sit on top of a band drawn over it. On this board the
+  // crop is always leaving the ground, and a net whose bottom edge stops at the horizon reads as a crate on a shelf.
+  const field = pv.ground || '#4E5A55';
+  ctx.fillStyle = field; ctx.fillRect(x, base, w, y + h - base);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x, base, w, 2);
+  // a wreck or two still in the field, half-buried, so the ground reads as somewhere a war came down
+  ctx.fillStyle = '#2E3438'; ctx.fillRect(x + Math.round(w * 0.16), base - 5, 13, 5);
+  ctx.fillStyle = '#2E3438'; ctx.fillRect(x + Math.round(w * 0.68), base - 4, 17, 4);
+  // THE LOADED NET, on the line that crosses the whole frame: the one thing on this plaque that is going UP
+  const cx = Math.round(x + w * 0.42), top = base - 20;
+  line(ctx, x - 4, base - 34, x + w + 4, base - 26, 'rgba(20,16,32,0.9)', 2);
+  line(ctx, x - 4, base - 34, x + w + 4, base - 26, '#6E6942', 1);
+  line(ctx, cx + 6, base - 30, cx + 6, top, 'rgba(20,16,32,0.9)', 1);
+  ctx.fillStyle = '#9C893F'; ctx.fillRect(cx - 4, top, 22, 16);
+  ctx.fillStyle = '#5A5348'; ctx.fillRect(cx - 1, top + 3, 16, 10);
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1;
+  for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(cx - 4 + k * 5.5, top); ctx.lineTo(cx - 4 + k * 5.5, top + 16); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(cx - 4, top + 13, 22, 3);
+  // and its shadow on the field, because it is between you and the light
+  ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(cx - 2, base + 2, 18, 2);
+  // the guild's pole lamp, the one saturated mark on the ground
+  const lx = x + Math.round(w * 0.86);
+  ctx.fillStyle = '#4A4E56'; ctx.fillRect(lx, base - 22, 2, 22);
+  ctx.fillStyle = pv.accent;
+  if (((f >> 4) % 9) !== 0) ctx.fillRect(lx - 2, base - 26, 6, 5);
 }
 
 /** The sealed plate behind a locked board: hatched steel with rivets. */
