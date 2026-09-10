@@ -1,20 +1,14 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat playthrough playthrough2 playthrough3 playthrough4 coop audio gallery)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat playthrough playthrough2 playthrough3 playthrough4 coop audio gallery botstyles)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
 import { createServer } from './server.js';
+import { loadPlaywright } from './browser.js';
 
-const require = createRequire(import.meta.url);
-function loadPlaywright() {
-  const candidates = ['playwright', 'playwright-core', '/opt/node22/lib/node_modules/playwright', '/usr/lib/node_modules/playwright'];
-  for (const c of candidates) { try { return require(c); } catch { /* next */ } }
-  throw new Error('Playwright not found. Install with `npm i -D playwright-core` or set NODE_PATH to the global node_modules.');
-}
 const { chromium } = loadPlaywright();
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -589,6 +583,35 @@ const scenarios = {
         await g.shot(`40-enemy-${e.type}-${e.variant}`);
       });
     }
+  },
+
+  // 8. Every autopilot archetype (src/game/bot.js BOT_STYLES) plays, and two of them play co-op in one run.
+  // tools/winrate.js sweeps these for balance; this only proves each one fights and none of them wedges.
+  async botstyles(server) {
+    for (const style of ['balanced', 'aggressive', 'defensive', 'masher']) {
+      await withPage(server, `seed=5&skipTo=gameplay&chars=0&bot=1&godmode=1&botstyle=${style}`, async (g) => {
+        await g.step(60);
+        const start = await g.summary();
+        await g.step(6000);
+        const s = await g.summary();
+        assert(s.players[0] && s.players[0].hp > 0, `${style}: player alive after 6000 frames`);
+        assert(s.cameraX > start.cameraX || s.wavesCleared > start.wavesCleared,
+          `${style}: makes progress (x ${Math.round(start.cameraX)} -> ${Math.round(s.cameraX)}, waves ${start.wavesCleared} -> ${s.wavesCleared})`);
+        await g.shot(`80-botstyle-${style}`);
+      });
+    }
+    // one style per slot: the pair must both be on autopilot and both still standing
+    await withPage(server, 'seed=5&skipTo=gameplay&chars=0,2&bot=1&godmode=1&botstyle=aggressive,defensive', async (g) => {
+      await g.step(60);
+      const start = await g.summary();
+      await g.step(6000);
+      const s = await g.summary();
+      assert(s.players.length === 2, `co-op autopilot has both slots (got ${s.players.length})`);
+      const styles = await g.eval(() => window.__game.world.players.filter(Boolean).map((p) => p.botStyle));
+      assert(styles[0] === 'aggressive' && styles[1] === 'defensive', `?botstyle applies per slot (got ${JSON.stringify(styles)})`);
+      assert(s.cameraX > start.cameraX || s.wavesCleared > start.wavesCleared, 'co-op autopilot pair makes progress');
+      await g.shot('81-botstyle-coop');
+    });
   },
 };
 

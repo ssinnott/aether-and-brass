@@ -43,6 +43,8 @@ export function parseOptions(search = window.location.search) {
     touch: flag('touch'),
     spawn: devOnly ? spawn : [],
     bot: devOnly && flag('bot'),
+    // ?botstyle=NAME[,NAME] — autopilot archetype per slot (game/bot.js BOT_STYLES); empty = balanced
+    botStyle: devOnly ? (q.get('botstyle') || '').split(',').map((s) => s.trim()).filter(Boolean) : [],
     godmode: devOnly && flag('godmode'),
     section: devOnly ? (parseInt(q.get('section') || '0', 10) || 0) : 0,
     // which board to play: 1-based stage number (see content/stage/index.js). Honoured outside dev mode too so a

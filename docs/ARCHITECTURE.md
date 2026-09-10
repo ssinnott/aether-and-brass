@@ -505,7 +505,15 @@ debug mode) — tests fail on any error.
   5. `coop`: two players, same as 4 for 3000 frames.
   6. `enemies`: spawn every one of the 10 variants + midboss + boss via
      `?skipTo=gameplay&spawn=typeA:grunt`, screenshot each for a visual review sheet (`tools/screens/enemies.png` contact sheet).
+  7. `botstyles`: every `BOT_STYLES` archetype fights and makes progress, and `?botstyle=a,b`
+     puts a different archetype in each co-op slot.
   Exit code non-zero on any assertion failure or `__game.errors.length > 0`.
+
+`tools/winrate.js` (`npm run winrate`) is the balance counterpart: it plays runs with NO godmode
+and reports how often the engine wins, sweeping `--stages`, `--difficulty`, `--chars`, `--party`
+(1 or 2, both slots on autopilot) and `--styles`. Every playtest bot run is in godmode, so the
+suite can prove the game works but never that it is fair; this answers the second question.
+Runs that never reach the results plaque are reported as unfinished — a soft-lock, not a loss.
 
 ## 14. Code conventions
 - ES2022, `const`/`let`, named exports, one class per file where sensible, JSDoc on
@@ -527,6 +535,11 @@ URL params (all only honored when `?autotest=1` or `?debug=1`):
 - `spawn=typeA:grunt@80,typeB:brute@-90` — spawn enemies at `player.x + dx` on load.
 - `bot=1` — autopilot for every player: walk toward the nearest enemy (align z), attack when
   in range, occasionally jump-attack/special, walk right when no enemies; skip intro/results prompts.
+- `botstyle=NAME[,NAME]` — which `BOT_STYLES` archetype each slot's autopilot plays as
+  (`src/game/bot.js`): `balanced` (default, the behaviour the playtest scenarios are written
+  against), `aggressive`, `defensive`, `masher`. One name applies to both slots; two give each
+  slot its own. A style is a whole player archetype (button speed, dodge rate, spacing, when it
+  retreats), not a difficulty setting — difficulty stays a title-screen choice.
 
 `window.__game` extra members: `ready` (true once the first screen entered),
 `spawnEnemy(type, variant, dx, dz)` (relative to P1), `killAllEnemies()`,

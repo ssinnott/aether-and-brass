@@ -26,13 +26,15 @@ export class Player extends Fighter {
   /**
    * @param {object} def character definition (content/characters)
    * @param {number} index player slot 0|1
-   * @param {{ input: object, x?: number, z?: number, facing?: number, bot?: boolean, godmode?: boolean, lives?: number }} o
+   * @param {{ input: object, x?: number, z?: number, facing?: number, bot?: boolean, botStyle?: string, godmode?: boolean, lives?: number }} o
    */
-  constructor(def, index, { input, x = 100, z = 70, facing = 1, bot = false, godmode = false, lives = 3 } = {}) {
+  constructor(def, index, { input, x = 100, z = 70, facing = 1, bot = false, botStyle = '', godmode = false, lives = 3 } = {}) {
     super(def, { team: TEAM.PLAYER, kind: 'player', x, z, facing });
     this.index = index;
     this.input = input;
     this.bot = bot;
+    /** Which BOT_STYLES entry this slot's autopilot plays as (game/bot.js); '' = the default. */
+    this.botStyle = botStyle;
     this.godmode = godmode;
     this.lives = lives;
     this.meter = 0; this.score = 0;

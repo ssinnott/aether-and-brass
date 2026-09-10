@@ -107,6 +107,8 @@ export class Fighter extends Entity {
     this.hp = this.maxHp;
     this.state = ST.IDLE; this.stateTimer = 0;
     this.invuln = 0; this.hitstop = 0; this.flashTimer = 0; this.busy = 0;
+    /** Last attack instance dodged through, PER attacker (see takeHit): one scalar cannot track two players at once. */
+    this.dodgedInstances = new WeakMap();
     this.armor = this.traits.superArmor; this.armorHits = 0; this.armorInstance = -1; this.armorSuppressed = false;
     this.juggleCount = 0; this.juggleGravity = 0; this.juggleImmune = false;
     this.hurtTimer = 0; this.chainHits = 0; this.chainTimer = 0; this.hitCount = 0;
@@ -404,8 +406,11 @@ export class Fighter extends Entity {
     }
     if (this.invuln > 0 && !hit.unblockable) {
       // dodging through an enemy's active frames: 4f hit-stop for both + meter (GDD 7), once per attack instance
-      if (this.state === ST.DODGE && attacker && attacker.anim && this.dodgedInstance !== attacker.anim.instance) {
-        this.dodgedInstance = attacker.anim.instance;
+      // Keyed by attacker: with a single shared field, two players alternating attacks each overwrite the other's
+      // instance, so every frame counts as a fresh dodge-through and re-applies the hit-stop to both. That froze
+      // the dodger's state timer indefinitely — a co-op soft-lock, most visibly on Grubbik's evade (tools/winrate.js).
+      if (this.state === ST.DODGE && attacker && attacker.anim && this.dodgedInstances.get(attacker) !== attacker.anim.instance) {
+        this.dodgedInstances.set(attacker, attacker.anim.instance);
         this.hitstop = Math.max(this.hitstop, DODGE_THROUGH_HITSTOP); attacker.hitstop = Math.max(attacker.hitstop, DODGE_THROUGH_HITSTOP);
         this.onDodged(attacker);
       }
