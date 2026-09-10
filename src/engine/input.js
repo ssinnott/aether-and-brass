@@ -39,6 +39,11 @@ const globalPressed = { pause: false, mute: false, debug: false };
 let boundCodes = null;
 let joinCodes = null; // per player: keyboard codes that count as "this player pressed a key of their own"
 
+/**
+ * A per-action map. Pressed states hold booleans; the buffer map holds frame ages, so `v` is
+ * whichever of the two the caller needs.
+ * @param {boolean|number} [v]
+ */
 function makeActionMap(v = false) {
   const o = {};
   for (const a of ACTIONS) o[a] = v;

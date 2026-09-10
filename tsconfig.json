@@ -1,0 +1,41 @@
+{
+  // Type checking only — see ARCHITECTURE.md section 0. `noEmit` is the point: nothing here
+  // compiles, transpiles or bundles, so `src/` stays plain ES modules that a browser loads
+  // straight from a static server. TypeScript is a linter for the JSDoc we already write.
+  //
+  // `include` covers the layers that are clean, and widens a directory at a time —
+  // `npm run typecheck` must stay green, so a directory joins only once it is:
+  //   engine/   the fixed-timestep loop and the deterministic math
+  //   net/      lockstep, where a wrong contract desyncs a match rather than throwing
+  //   content/  the largest layer, and the one where a bad key is quietest: a misspelled frame
+  //             or hook field does not throw, it silently does nothing. types/content.d.ts
+  //             declares the shapes it conforms to by convention.
+  // Still out: game/ and art/.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom"],
+
+    // Deliberately off. The codebase is untyped JS with sparse JSDoc; strict mode reports
+    // thousands of "implicitly any" findings that say nothing about correctness. What is on
+    // below are the checks that catch real mistakes without demanding annotations first.
+    "strict": false,
+    "noImplicitAny": false,
+
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "types/**/*.d.ts",
+    "src/engine/**/*.js",
+    "src/net/**/*.js",
+    "src/content/**/*.js"
+  ]
+}

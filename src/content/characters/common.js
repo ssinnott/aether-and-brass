@@ -65,6 +65,7 @@ export function makeHeroAnims(o) {
     ] };
   }
   const d = o.dashAttack;
+  /** @type {Frame[]} */
   const dFrames = [{ dur: d.startup || 4, pose: STYLES[d.style].w, sfx: d.sfx || o.swingSfx, invuln: d.invuln || undefined, armor: d.armor || undefined }];
   const dHit = d.projectile ? null : (d.area ? areaBox(d.area, { damage: d.dmg, type: d.type || 'knockdown', kbX: d.kbX != null ? d.kbX : 6, kbY: d.kbY || 4, hitstun: d.hitstun || 20 })
     : frontBox(d.reach || reach, { damage: d.dmg, type: d.type || 'knockdown', kbX: d.kbX != null ? d.kbX : 6, kbY: d.kbY || 4, hitstun: d.hitstun || 20 }, { low: d.low, behind: d.behind }));

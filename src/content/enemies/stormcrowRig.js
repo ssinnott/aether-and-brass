@@ -692,6 +692,7 @@ export function makeCrowBase(c, o = {}) {
 export function crowStrike(o) {
   const tell = o.tell || 20, t0 = Math.max(1, Math.round(tell * 0.55));
   const hold = o.hold || o.h, holdDur = o.holdDur || 3;
+  /** @type {Frame[]} */
   const frames = [
     { dur: t0, pose: P(o.w1), tell: true, sfx: o.tellSfx, armor: o.armor || undefined, event: o.aimEvent, ease: 'in' },
     { dur: Math.max(1, tell - t0), pose: P(o.w2), tell: true, armor: o.armor || undefined, ease: 'out' },
