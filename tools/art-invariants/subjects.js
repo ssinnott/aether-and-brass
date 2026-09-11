@@ -6,8 +6,25 @@
 // distinct rig with its own animation table. Phases that only re-skin the AI (no build) are not rigs and are skipped.
 import { buildRig } from '../../src/art/rig.js';
 import { CHARACTERS } from '../../src/content/characters/index.js';
-import { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4 } from '../../src/content/enemies/index.js';
+import { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4, getEnemyDef } from '../../src/content/enemies/index.js';
+import { applyMods } from '../../src/game/traits.js';
 import { classOf } from './helpers.js';
+
+/**
+ * Spawn-modifier subjects (issue #28 part 3). Mods are applied at spawn by game/traits.js, so the modded rigs — a
+ * strapped-on bladder, the scrip badge, the salvage plate, the holdout's dead lens — were drawn by nothing the suite
+ * could see and `art-check`'s zero errors said nothing about them. One subject per modifier on a def the stages
+ * actually put it on, plus the two foreign rigs the bladder has to sit on.
+ */
+const MOD_SUBJECTS = [
+  ['brassbound', 'footman', ['holdout']],
+  ['brassbound', 'footman', ['crusted']],
+  ['brassbound', 'footman', ['salvaged']],
+  ['brassbound', 'footman', ['winged']],
+  ['sootborn', 'cutthroat', ['scrip']],
+  ['sootborn', 'cutthroat', ['winged']],
+  ['stormcrow', 'deckhand', ['winged']],
+];
 
 /** Stable subject id for an enemy/boss def: always `${type}:${variant}` (the boss defs' own `id` is the short slug). */
 function subjectId(def) { return `${def.type}:${def.variant}`; }
@@ -53,6 +70,11 @@ export function collectSubjects() {
       out.push(make('boss-phase', `${base}#${i}`, ph.name || `${def.name} phase ${i}`, def, ph.build, ph.anims || def.anims, i));
     }
   }
+  for (const [type, variant, mods] of MOD_SUBJECTS) {
+    const d = applyMods(getEnemyDef(type, variant), mods);
+    if (!(d.mods || []).length) continue;   // the mod was skipped for this def (traits.js `skip`): there is no modded rig
+    out.push(make('enemy-mod', `${type}:${variant}+${mods.join('+')}`, d.name, d, d.build, d.anims));
+  }
   return out;
 }
 
@@ -71,8 +93,14 @@ export function filterSubjects(subjects, selectors) {
   });
 }
 
-/** True for stage-1 reference content: these subjects must produce zero errors. */
+/**
+ * True for stage-1 reference content: these subjects must produce zero errors.
+ * A modded rig is never reference even on a reference faction: a spawn modifier is a re-dress of the faction's art,
+ * not the art that DEFINES the invariants — holding it to "the Brassbound may never error" would make the reference
+ * contract depend on the mod table.
+ */
 export function isReference(subject) {
+  if (subject.kind === 'enemy-mod') return false;
   return subject.kind === 'character' || REFERENCE_TYPES.includes(subject.type);
 }
 /** True for the known-bad control content the suite exists to flag. */

@@ -12,8 +12,13 @@ import { ACTIONS } from '../engine/input.js';
  * Bumped whenever ACTIONS, the message layout or a simulation rule changes. Peers compare this in
  * HELLO and refuse to start on a mismatch: GitHub Pages is CDN-cached, so one player can easily be
  * on yesterday's bundle, and a shifted bit would silently turn their 'jump' into someone's 'dodge'.
+ *
+ * 2 — the faction expansion (issue #28). The wire format is untouched, but the SIMULATION is not: six new enemy
+ *     defs, the spawn-modifier system (game/traits.js SPAWN_MODS) and rewritten spawn tables for boards 2-4. Two
+ *     peers on different bundles agree on every input and still diverge on the first wave, which is exactly the
+ *     silent desync this constant exists to turn into an honest "different game version" refusal.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** Bit index of `run`, after the 11 actions. Frozen: changing it is a wire break, so bump the version. */
 export const RUN_BIT = 11;

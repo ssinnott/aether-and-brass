@@ -313,7 +313,10 @@ const corsair = def({
 // Quartermaster Skree's trick in miniature (midboss2.js): THE GRAPNEL LINE goes out flat down the lane, and whoever
 // it bites is REELED back along it into his hands - the engine's grapple reel (projectile.js onHit 'reel' ->
 // startGrab), the same path Pip's Grapple Shot uses. Three squeezes, then the throw goes BACKWARD over his shoulder
-// (grabs.js dir -1): on a railed deck the hero is thrown at the edge behind him, which is what the trick is for.
+// (grabs.js dir -1), which drags the hero off the line he chose and back down the lane he just fought up.
+// NOT a ring-out: this used to claim the back throw put the hero over a rail, and it cannot. hazards.js updateRails
+// rings out `kind === 'enemy'` only (a player is clamped back into the lane), and grabs.js thrown() imparts vx/vy but
+// never vz, so no throw in the game can cross a rails edge — that boundary is in z. The value is the repositioning.
 /** The grapnel head on its line: the iron as drawGrapnelIron draws it in the fist, plus the line back to that fist. */
 const LINE_J = { x: 0, y: 0 };
 function drawGrapnelLine(ctx, p, sx, sy) {

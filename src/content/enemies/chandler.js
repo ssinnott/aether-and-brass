@@ -104,13 +104,15 @@ function drawTaper(ctx, rig) {
   celRect(ctx, rig, -6, -1.5, 24, 3, 1, WOOD, 0.4, 0.25);
   celRect(ctx, rig, 17, -3, 6, 6, 1, CH.pewter, 0.4, 0.3);
   if (rig.override) return;
-  // flat, no ramp (ART_STYLE 4 glow rule): a 7x6 body (over the §0.7 6 px glow floor), a tongue that flickers 2-3 px
-  // on rig.tick (draw-side only), and the 4x4 hot core the rite state adds. State 0 is a grey wick stub.
+  // flat, no ramp (ART_STYLE 4 glow rule). These are LOCAL units and the Runner is the smallest Chandler (scale 0.82),
+  // so every mark is sized to clear its floor ON THE DEVICE GRID, which is where §0.7 measures: an 8x8 body is 6.6 device
+  // px against the 6 px glow floor (the old 7x6 measured 5.7 and missed it), and the tongue flickers 3-4 local = 2.5-3.3
+  // device against the flat 2 px detail floor (the old 2-3 measured 1.6). State 0 is a grey wick stub.
   const s = lampState(rig);
   ctx.fillStyle = rig.col(lampGlass(rig));
   if (s === 0) { ctx.fillRect(23, -2, 4, 4); return; }
-  ctx.fillRect(22, -3, 7, 6); ctx.fillRect(28, -2, 2 + ((rig.tick >> 1) & 1), 4);
-  if (s === 2) { ctx.fillStyle = rig.col(CH.hot); ctx.fillRect(23, -2, 4, 4); }
+  ctx.fillRect(22, -4, 8, 8); ctx.fillRect(29, -2, 3 + ((rig.tick >> 1) & 1), 4);
+  if (s === 2) { ctx.fillStyle = rig.col(CH.hot); ctx.fillRect(23, -2, 5, 5); }
 }
 /**
  * Drayman: the cart hook — a 26px iron shaft with a curled bill and a short ash T-grip at the pommel. Two-handed for the
@@ -1072,7 +1074,10 @@ const drayman = def({
   traits: { flinchEvery: 2, weight: 1.6 },
   moves: { grabHit: { damage: 6, hits: 4 }, throwFwd: { damage: 16, vx: 7, vy: 4 }, throwBack: { damage: 18, vx: 6, vy: 5 } },
   ai: {
-    attackRange: 48, zTolerance: 15, attackCooldown: [60, 110], grabHoldHits: 4, grabHitEvery: 18, flank: false, tellWarnFrames: 14, tokenGroup: 'chandler',
+    // `ignoresTokens: false` is what makes tokenGroup mean anything: ROLE_DEFAULTS.grabber (enemy.js) ignores tokens, so
+    // without this the Drayman never asked the world for one and the Chandlery's maxAttackers cap never counted a 140hp
+    // non-elite grabber pressing alongside the whole roster. The Grapnel Mate and the Riggerman set it for the same reason.
+    attackRange: 48, zTolerance: 15, attackCooldown: [60, 110], grabHoldHits: 4, grabHitEvery: 18, flank: false, tellWarnFrames: 14, tokenGroup: 'chandler', ignoresTokens: false,
     // the shove's wide `range` raises maxAttackRange so thinkApproach fires it from across the lane; its minRange keeps
     // the cart from being shoved point-blank (no lane to roll down), and chooseAttack(adx) still picks grab / slam up close
     attacks: DRAY_ALL,

@@ -358,7 +358,9 @@ export function brassTorsoB(ctx, rig, pose, inf) {
 }
 /** Gear pauldron at the shoulder joint (shoulder hook, torso space); ticks round with the wind-up key while the automaton acts. */
 export function brassPauldronB(ctx, rig, pose, inf) {
-  const p = rig.p, hw = RB(p.torsoW / 2), a = (rig.keyAngle || 0) * 0.5 * (inf.far ? -1 : 1);
+  // holdout (game/traits.js) takes the key off the back; the gears run off the SAME keyAngle, so without this they kept
+  // ticking and the tell the mod means to remove stayed legible at the shoulders. No key, no drive: the gears sit still.
+  const p = rig.p, hw = RB(p.torsoW / 2), a = rig.build.noKey ? 0 : (rig.keyAngle || 0) * 0.5 * (inf.far ? -1 : 1);
   // the shoulder joints sit near the torso centre: push the gear out to the torso's top corner so it clears the stripe / core
   const dx = inf.far ? -hw + 4 + p.shoulderX + 2 : hw - 3 - p.shoulderX, dy = inf.far ? 0 : -1;
   pathGear(ctx, dx, dy, 6.5, 6, a, 2);

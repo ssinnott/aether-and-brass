@@ -340,6 +340,10 @@ export const RULES = [
     severity: 'error',
     describe: 'Require each faction\'s per-variant signature field to be present, a hex, and distinct.',
     check(subject, helpers) {
+      // A spawn modifier re-dresses a variant; it does not create one. Sharing the base variant's regiment stripe or
+      // clan colour is the CORRECT result for a holdout Footman (`salvaged` is the one mod that deliberately repaints
+      // it), so comparing a modded rig against the roster it came from only ever reports its own base as a clash.
+      if (subject.kind === 'enemy-mod') return [];
       const out = [], build = subject.build, type = subject.def && subject.def.type;
       const group = factionGroup(subject, helpers);
       const signature = (field, label) => {

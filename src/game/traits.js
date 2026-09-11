@@ -5,6 +5,8 @@
 import { normalizeShield } from './shield.js';
 import { particles } from '../engine/particles.js';
 import { audio } from '../engine/audio.js';
+import { buildRig } from '../art/rig.js';
+import { ST } from '../constants.js';
 /** Normalise `def.traits` + legacy def fields (damageTaken, armor, unlaunchable, grabbable, grabReach, grabDamageMult, throwDamageMult, doubleJump, grabAll). */
 export function normalizeTraits(def) {
   const t = def.traits || {};
@@ -38,16 +40,45 @@ const modAcc = (attach, name) => ({ attach, draw: (ctx, rig, pose) => { const fn
 const QUICKLIME = '#E6ECDC';
 /** Dead-grey lens / core glow of an automaton nobody has wound in years (holdout). The RED tell lens is a constant in brassLensB, so the tell survives. */
 const DEAD_GLOW = '#5A6068';
-/** Slowest a winged body may fall (px/frame): the bladder hangs it, the Gleaning's descent. */
+/** Slowest a winged body may fall (px/frame) once the bag is venting: the Gleaning's settle onto the deck. */
 const WINGED_SINK = 1.4;
+/** Rate of the ARRIVAL descent, above the hang line. Faster than the settle: enemy.js think() returns early while airborne,
+ *  so every frame spent in the air is a frame the body cannot act — the hang is the beat, the fall to it is not. */
+const WINGED_DROP = 3;
+/** The Gleaning hang line (content/enemies/gleaning.js): clear of every ground hitbox, inside a jump attack's apex. */
+const WINGED_HANG = 64;
+/** Frames a winged body hangs on the line before the bag vents and it settles. Fixed, never rng: netplay runs in lockstep. */
+const WINGED_HANG_FRAMES = 48;
+/** Fraction of the body below the bag when winged tiles its own hurtParts (the Gleaning defs sit at 0.54-0.58). */
+const WINGED_BODY_FRAC = 0.55;
+/** States in which a winged body still owns its altitude. A hit takes the hang away, so launches and juggles fall normally. */
+const WINGED_HANG_STATES = new Set([ST.IDLE, ST.WALK, ST.RUN, ST.JUMP, ST.ATTACK, ST.JUMP_ATTACK, ST.DASH_ATTACK, ST.SPECIAL, ST.GRAB]);
+/** True when a def already hangs under a bladder of its own (every Gleaning but the Picker). */
+function hasBladder(def) {
+  const b = def.build || {};
+  if (b.bagShape && b.bagShape !== 'none') return true;
+  return !!(def.hurtParts || []).some((p) => p.name === 'bag' || p.name === 'bags');
+}
 /**
  * The crusted status: one hit of frame armour. A spawn-time, engine-generic copy of the Limeburner's LIMECRUST (chandler.js)
  * with `hits: 1`: super armour + no launch until the first hit is COUNTED (fighter.js advances hitCount before the armour
  * branch, so the armoured hit itself counts), then the crust falls off as quicklime debris and the previous armour flags return.
  * normalizeTraits builds a fresh per-instance traits object, so the flags written here never leak into the shared def.
  */
+/**
+ * The crust's outline: a 1px quicklime rim round the hurtbox, the same read the Limeburner's LIMECRUST gets from
+ * chandlerRig.drawRiteRim. Re-drawn here rather than imported because `crusted` goes on ANY faction and the game layer
+ * never imports content — a 20% tint on its own left the one cue that this body eats a hit before it flinches invisible.
+ */
+function drawCrustRim(ctx, f, sx, sy, s) {
+  const w = f.w + 6, h = f.h + 6, x = Math.round(sx - w / 2), y = Math.round(sy - f.h - 3);
+  ctx.save();
+  ctx.globalAlpha = 0.85; ctx.strokeStyle = s.rim || QUICKLIME; ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w, h);
+  ctx.restore();
+}
 const CRUSTED = {
-  frames: 1e9, tint: QUICKLIME, tintAlpha: 0.2,
+  frames: 1e9, tint: QUICKLIME, tintAlpha: 0.2, rim: QUICKLIME, draw: drawCrustRim,
   onTick(f, s) { if (s.hits0 != null && f.hitCount - s.hits0 >= 1) f.clearStatus('crusted'); },
   onEnd(f, s) {
     if (s.hits0 == null) return;
@@ -75,9 +106,10 @@ function crust(f) {
  *  scrip     Sootborn on the Company's payroll: a lime-ringed badge and it NEVER flees — flee / fleeHp / fleeLast / fleeHpFrac /
  *            fleeChance zeroed and the Slinger's panic-flee with them (panic is stagger-then-run, the same flee).
  *  winged    any grounded variant with a salvage bladder strapped on: spawns from the sky (Enemy constructor fromSky), sinks at
- *            WINGED_SINK px/frame while airborne, the Gleaning's shot-down rule (x1.25 on any hit taken airborne) plus
- *            traits.jumpAttackTakenMult >= 1.25, and the bladder weak point (hurtParts 'bag' above the rig, x1.6). A Gleaner
- *            already hangs under one: the mod is a no-op on type 'gleaning'.
+ *            WINGED_SINK px/frame to the Gleaning hang line and HANGS there for WINGED_HANG_FRAMES before the bag vents and
+ *            it settles; the Gleaning's shot-down rule (x1.25 on any hit taken airborne); and the bladder weak point —
+ *            hurtParts tile the body, the upper band takes x1.6, and holing it while the bag carries drops the body as a
+ *            knockdown. Skipped whole (`skip`) on anything that already hangs under a bladder; the bagless Picker takes it.
  *  salvaged  Brassbound re-plated by the Gleaning in guild colours: plum coat tones over brass joints, hemp stripe + a riveted
  *            hemp plate, drops a Brass Cog where the base dropped nothing, gear-slip on the 3RD hit (ai.staggerEvery 3), score x1.1.
  */
@@ -106,28 +138,59 @@ export const SPAWN_MODS = Object.freeze({
     },
   },
   winged: {
-    label: 'WINGED', factions: ['brassbound', 'sootborn', 'stormcrow', 'chandler'],
-    apply(d, base) {
-      if (base.type === 'gleaning') return;
+    label: 'WINGED', factions: ['brassbound', 'sootborn', 'stormcrow', 'chandler', 'gleaning'],
+    // A body that already hangs under a bladder gets nothing from a second one: skipped WHOLE (applyMods drops the name), so
+    // no chained hooks, no '(WINGED)' suffix and no forced sky spawn. The Picker is bagless and is the one Gleaning it takes.
+    skip: hasBladder,
+    apply(d) {
       d.build.accessories.push(modAcc('back', 'bladder'));
-      if (!d.build.bagShape) d.build.bagShape = 'slack';  // the Chaff's slack bag; only drawBladder reads it
-      // hurtParts are rig-space px: the body tiles the rig height, the bag box sits above it (gleaning.js convention)
-      const H = Math.round((d.build.scale || 1) * 72), bag = { name: 'bag', y: [H, H + 28], damageMult: 1.6 };
-      d.hurtParts = d.hurtParts && d.hurtParts.length ? [...d.hurtParts, bag] : [{ name: 'body', y: [0, H] }, bag];
-      d.traits.jumpAttackTakenMult = Math.max(d.traits.jumpAttackTakenMult || 1, 1.25);
+      // 'none' is the Picker's bagless rig and drawBladder returns on it, so the shape has to be replaced, not defaulted.
+      if (!d.build.bagShape || d.build.bagShape === 'none') d.build.bagShape = 'slack';   // the Chaff's slack bag
+      // hurtParts TILE the body the way every Gleaning def does (chaff [0,38]+[38,66] against h=65): the bag is the upper
+      // band OF the body, not a box above it. Boxes are disjoint, so combat.js's first-overlap match still picks the right
+      // one — and the height is the rig's real height, not a hard-coded 72 (Brassbound measure 74, the goblin 66).
+      if (!d.hurtParts || !d.hurtParts.length) {
+        const H = Math.round((buildRig(d.build).height || 72) * (d.build.scale || 1));
+        const split = Math.round(H * WINGED_BODY_FRAC);
+        d.hurtParts = [{ name: 'body', y: [0, split] }, { name: 'bag', y: [split, H], damageMult: 1.6 }];
+      }
     },
     hooks: {
+      onSpawn(f) { f.wingedHang = WINGED_HANG_FRAMES; f.bladderGone = false; },
       onUpdate(f) {
-        if (f.airborne && f.vy < -WINGED_SINK) f.vy = -WINGED_SINK;
-        f.rig.gas = f.airborne ? 0.8 : 0.25;  // the bag glows while it carries (drawBladder reads rig.gas)
+        const r = f.rig;
+        // drawBladder falls back to the pose face when nothing drives gasDead, and every non-Brassbound faction poses
+        // `dazed` on its stagger keys — which deflated the bag a third and put the gas out on any stagger. Drive it here.
+        r.gasDead = false; r.gasDeadAt = null;
+        if (f.bladderGone || !f.airborne) { r.gas = 0.25; return; }
+        r.gas = 0.8;   // the bag glows while it carries
+        if (!WINGED_HANG_STATES.has(f.state)) return;   // hurt / knocked down / thrown: the body falls on its own terms
+        if (f.wingedHang == null) f.wingedHang = WINGED_HANG_FRAMES;
+        if (f.y > WINGED_HANG) { if (f.vy < -WINGED_DROP) f.vy = -WINGED_DROP; return; }
+        // on the line: re-arm noGravity every step to pin the altitude (physics decrements it), the way the Gleaning hangs
+        if (f.wingedHang > 0) { f.wingedHang--; f.noGravity = 2; f.y = WINGED_HANG; f.vy = 0; }
+        else if (f.vy < -WINGED_SINK) f.vy = -WINGED_SINK;   // the bag vents and it settles onto the deck
       },
-      onHitTaken(f, h) { if (!f.airborne || f.dead) return undefined; return { ...h, damage: Math.round((h.damage || 0) * 1.25) }; },
+      onHitTaken(f, h) {
+        if (!f.airborne || f.dead) return undefined;
+        const hit = { ...h, damage: Math.round((h.damage || 0) * 1.25) };   // the Gleaning's shot-down rule
+        // the weak point: hole the bag while it carries and the bladder gives — it comes down instead of settling
+        const part = f.hitPart;
+        if (!f.bladderGone && part && (part.name === 'bag' || part.name === 'bags')) {
+          f.bladderGone = true; f.wingedHang = 0; f.noGravity = 0;
+          f.rig.gasDead = true; f.rig.gasDeadAt = f.rig.tick | 0;
+          hit.type = 'knockdown';
+        }
+        return hit;
+      },
     },
   },
   salvaged: {
     label: 'SALVAGED', factions: ['brassbound'],
     apply(d, base) {
-      Object.assign(d.build.palette, { primary: '#6E5A78', secondary: '#4E3C58', sleeve: '#4E3C58' });
+      // #453352, not #4E3C58: torso(primary)/hips(secondary) has to clear the human-machine value ladder, and the old
+      // pair measured 0.310 against a 0.331 reference baseline — a plum coat that went flat across the hips.
+      Object.assign(d.build.palette, { primary: '#6E5A78', secondary: '#453352', sleeve: '#453352' });
       d.build.stripe = '#9C893F';
       d.build.accessories.push(modAcc('torso', 'salvagePlate'));
       if (!base.drops || base.drops === 'none') d.drops = 'brassCog';
@@ -175,7 +238,14 @@ const MOD_CACHE = new WeakMap();
  */
 export function applyMods(def, mods) {
   const list = [];
-  for (const m of mods || []) if (SPAWN_MODS[m] && !list.includes(m)) list.push(m);
+  // `spec.skip(def)` drops a mod WHOLE rather than letting apply() no-op: a half-applied mod still chained its hooks,
+  // suffixed the name and (via def.mods) forced a sky spawn, which is how a winged Gleaner used to arrive bagless.
+  for (const m of mods || []) {
+    const spec = SPAWN_MODS[m];
+    if (!spec || list.includes(m)) continue;
+    if (spec.skip && spec.skip(def)) continue;
+    list.push(m);
+  }
   if (!list.length || !def) return def;
   const key = list.join('+');
   let byKey = MOD_CACHE.get(def);
