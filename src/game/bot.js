@@ -4,7 +4,7 @@
 // The autopilot has named STYLES (?botstyle=NAME, one per slot: `aggressive,defensive`). `balanced` is the default and
 // is the behaviour every scenario in tools/playtest.js was written against; the others exist so tools/winrate.js can
 // sweep a board against more than one kind of player before anyone calls it tuned.
-import { ST, METER, THROW } from '../constants.js';
+import { ST, METER, THROW, TEAM } from '../constants.js';
 import { rng } from '../engine/rng.js';
 import { laneAroundHazards } from './hazards.js';
 import { WEAPONS, nearestWeaponPickup, WEAPON_SEEK_DIST, WEAPON_SEEK_SAFE_X, WEAPON_SEEK_SAFE_Z } from './weapons.js';
@@ -78,6 +78,17 @@ export function botIntent(p, world, style) {
   if (p.state === ST.LYING || p.state === ST.GETUP || p.state === ST.HURT) { if (f % 5 === 0) it.jump = true; return it; }
   if (p.state === ST.GRAB) { if (f % 10 === 0) { it.attack = true; it.x = p.facing; } return it; }
   if (p.state === ST.GRABBED) { if (f % 3 === 0) it.attack = true; return it; }
+  // netted (Gutter Wrangler, Riggerman): a human mashes attack to tear out of it (player.js -> status.mashNet)
+  if (p.status && p.status.netted) { if (f % 3 === 0) it.attack = true; return it; }
+  // a netted partner within reach: a teammate's swing cuts them free (fighter.js takeHit), so walk over and cut
+  const mate = nettedMate(p, world);
+  if (mate) {
+    const mx = mate.x - p.x, mz = mate.z - p.z;
+    if (Math.abs(mx) > 34) it.x = Math.sign(mx); else if (Math.sign(mx) && Math.sign(mx) !== p.facing) it.x = Math.sign(mx);
+    if (Math.abs(mz) > 8) it.y = Math.sign(mz);
+    if (Math.abs(mx) <= 44 && Math.abs(mz) <= 12 && f % 6 === 0) it.attack = true;
+    return it;
+  }
   const e = pickTarget(p, world);
   // weapon pickups (game/weapons.js): walk over one nearby while unarmed and nothing is close enough to punish it
   if (!p.weaponId && p.pickUpWeapon && !p.airborne) {
@@ -140,7 +151,43 @@ export function botIntent(p, world, style) {
   }
   if (p.state === ST.JUMP && f % 4 === 0) it.attack = true;
   if (f % 300 === 150 && adx < 110 && Math.abs(dz) <= Z_TOL && rng.chance(s.jumpChance)) it.jump = true;
-  if (s.dodgeChance > 0 && e.hitboxes && e.hitboxes().length && adx < 70 && Math.abs(dz) < 20 && f % 3 === 0
-      && rng.chance(s.dodgeChance) && dodgeAllowed(p, world)) { it.dodge = true; p.botDodgeSpent++; }
+  // Something is coming: a live hitbox on the target, a GRAB wind-up (the Hulk, the Resurrection Man, the Grapnel Mate,
+  // the Drayman, the Riggerman - a grab is the one hit a human never trades into), or an enemy projectile closing on
+  // this lane (a reel line, a net, a harpoon). Every style dodges at its own rate; only the dodge budget is shared.
+  const grabbing = !!(e.anim && (e.anim.name === 'grabTell' || e.pendingAttack === 'grab')) && adx < 90 && Math.abs(dz) < 24;
+  const threat = (e.hitboxes && e.hitboxes().length && adx < 70 && Math.abs(dz) < 20) || grabbing || incomingShot(p, world);
+  if (s.dodgeChance > 0 && threat && f % 3 === 0 && rng.chance(s.dodgeChance) && dodgeAllowed(p, world)) { it.dodge = true; p.botDodgeSpent++; }
+  // a cautious player who is not going to dodge a grab still steps out of its reach
+  else if (grabbing && s.spacing > 0 && f % 2 === 0) { it.x = -dir; it.attack = false; }
   return it;
+}
+
+/** A living teammate pinned under a net within 140px of `p` (the Wrangler's and the Riggerman's nets), or null. */
+function nettedMate(p, world) {
+  for (const q of world.players) {
+    if (!q || q === p || !q.alive || q.dead || q.out || !q.status || !q.status.netted) continue;
+    if (Math.abs(q.x - p.x) <= 140 && Math.abs(q.z - p.z) <= 40) return q;
+  }
+  return null;
+}
+
+/**
+ * Something inbound in this z lane: an enemy projectile (team ENEMY, not yet spent) within 70px and moving toward the
+ * player or falling on it, or a ROLLING prop (the Drayman's shoved handcart, a dumped chassis, a batted barrel) within
+ * 90px coming this way — a rolling prop's hits belong to whoever rolled it, so the bot reads the cart, not the Drayman.
+ */
+function incomingShot(p, world) {
+  for (const q of world.entities) {
+    if (q.removeMe) continue;
+    const dx = q.x - p.x;
+    if (q.kind === 'prop') {
+      if (q.state !== 'rolling' || Math.abs(dx) > 90 || Math.abs(q.z - p.z) > 24) continue;
+      if (Math.sign(q.vx) === -Math.sign(dx)) return true;
+      continue;
+    }
+    if (q.kind !== 'projectile' || q.team !== TEAM.ENEMY || q.style === 'explosion' || q.style === 'fire') continue;
+    if (Math.abs(dx) > 70 || Math.abs(q.z - p.z) > 20) continue;
+    if (!q.vx || Math.sign(q.vx) === -Math.sign(dx)) return true;   // heading at us, or falling on us
+  }
+  return false;
 }

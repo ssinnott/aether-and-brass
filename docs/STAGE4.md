@@ -24,7 +24,7 @@ over your head.**
 **Tone:** Stage 1 was warm and sooty at night; Stage 2 was cold, high and wet; Stage 3 was dry, pale and flat.
 **Stage 4 is a rose dusk over a cold field** — the last board, the last light, and the only board where the thing
 you are fighting is mostly *above* you. Gas seeps out of the spoil and lights rose where it catches; salvage lines
-go up out of the field into a sky full of bladders; nothing here is a building, and by section 3 nothing here is
+go up out of the field into a sky full of bladders; nothing here is a building, and by section 4 nothing here is
 even ground.
 
 **Visual language deltas from the GDD:**
@@ -44,31 +44,51 @@ even ground.
 - The faction's universal tell is unchanged: **the bladder swells and the gas lights** above the head, where nothing
   else in the game puts anything. Sootborn (white eye-flash) and Stormcrow (hot white sighting lens) keep theirs.
 
-# 2. The faction: The Gleaning
+# 2. The factions: The Gleaning, and everyone the Gleaning is carrying away
 
-The roster already exists in `src/content/enemies/gleaning.js` — five variants built unaffiliated, to be dropped
-onto a board. This is that board, and its whole design is the faction's one idea: **everything here fights from the
-air, and everything here has to land.**
+The roster lives in `src/content/enemies/gleaning.js` — seven variants built unaffiliated, to be dropped onto a
+board. This is that board, and its whole design is the faction's one idea: **everything here fights from the air,
+and everything here has to land.**
 
 | Variant | Role | What it does with the sky |
 |---|---|---|
+| **Picker** | fodder (30 HP) | nothing — no bladder at all, a kerchief, a pick and a sack: the guild's ground crew, and the only Gleaner you can grab whenever you like |
 | **Chaff** | rusher | bounces — a flying kick that whiffs under low pokes and always lands inside its own punish |
 | **Winnow** | ranged | cranks up to the hang line and drops three re-aimed ballast bags |
 | **Thresher** | bruiser | the shadow that dives: a shoulder drop with real armour on the way down |
 | **Sickle** | thief | grounded, kites at 96px, takes one purse and runs for the edge with it |
 | **Harvestman** | elite | hangs 40 frames and calls two more Chaff down out of the sky on top of you |
+| **Riggerman** | grabber (130 HP) | hauls to the hang line and drops a NET that pins you for 90f, glides in and lands beside the man it pinned — the landing is a 1.5x grabbable punish window, and the grab is the pay-off if you are still in the net |
 
 **Faction rules (both are the board's counterplay):** *shot down* — a Gleaner hit while airborne takes 1.5x and
 juggles, so anti-air is not a tactic on this board, it is the tactic; and *the landing is the hero moment* — every
 hover ends in a long punishable recovery in which the Gleaner can finally be grabbed, because `grabs.js` refuses
 airborne targets outright. The bladder itself is a weak point: the bag box takes 1.6x wherever it is hit.
 
-**The rule that shapes the board:** the sky fills up as you go. Section 1 is a field with **Sootborn** in it — the
-goblins have picked these heaps since before the guild had a name, and they work the ground while the Gleaning work
-the air. Section 2 puts you on the guild's own float with **grounded Stormcrows** — the Ninth Wing came down in the
-sea a week ago and its survivors have wing-packs, no ship and no wages, so they fly for whoever is buying. Section 3
-is the loft, where it is nothing but the guild, four storeys of other people's war stacked in nets, and no floor to
-speak of.
+**The other three factions are on this board because the guild is buying them.** Board 4 is four factions
+(`tools/stage-census.js`: the Gleaning 7 variants / 48 spawns, the Sootborn 6 / 7, the Stormcrows 5 / 10, the
+Brassbound 3 / 8), and the two spawn modifiers that are this board's own (`src/game/traits.js` SPAWN_MODS) are how
+it says who the guild has already made its own:
+- **The Sootborn field hands** (section 1 only): Cutthroat, Slinger, Firebrand, Cinder Hulk and Gutter Wrangler.
+  The goblins have picked these heaps since before the guild had a name, and they work the ground while the
+  Gleaning work the air. The **Firebrand is the field's fire**: his flame is what lights a gas seep.
+- **The grounded Wing** (sections 2–3): Deck Crimper, Line Corsair, Powder Bosun, Galewright and Ironwing Marine.
+  The Ninth Wing came down in the sea a week ago; its survivors have wing-packs, no ship and no wages, so they fly
+  for whoever is buying — on the guild's own float, fighting from a raft instead of a deck.
+- **`winged`** — a salvage bladder strapped onto any grounded variant: the enemy **arrives from the sky** over the
+  middle of the screen, sinks slowly on the bag, takes 1.25x while it hangs there (the Gleaning's own shot-down
+  rule, applied to a Tin Footman) and carries the bag weak point above its head. Four winged Tin Footmen and one
+  winged Soot Cutthroat, from the press onward: *the Gleaning flying the Concordat's own machine.*
+- **`salvaged`** — Brassbound re-plated by the guild in its own colours: plum coat tones over the brass joints, a
+  hemp stripe and a riveted hemp plate on the chest, a Brass Cog where the base dropped nothing, and a gear-slip on
+  the third hit. Two salvaged Tin Footmen and two salvaged Brass Halberdiers, the press and the loft.
+
+**The rule that shapes the board:** *the sky fills up as you go.* Section 1 is the field — Pickers and Sootborn on
+the spoil, the first bladders over it. Section 2 is the guild's own float with the **whole Stormcrow roster
+grounded** on it and the Harvestman a section early. Section 3 is the press end of that float, where the guild
+flies the Concordat's own machine and walks its re-plated Footmen in under the Gleaners. Section 4 is the loft,
+four storeys of other people's war stacked in nets, the Riggerman held back for it, the elite pair together for the
+only time on the board, and no floor to speak of.
 
 # 3. Mid-boss: Reeve Tansy Culm & the Baler
 
@@ -113,60 +133,128 @@ shows you.
 
 # 5. The board (end to end)
 
-Three sections, `length: 5300`, the same data format as `stage1.js` / `stage2.js` / `stage3.js`
-(`ARCHITECTURE.md` section 7 + `RECONCILIATION` `zones` / `transition`). Enemy slugs come from
-`src/content/enemies`: `gleaning` throughout, `sootborn` in section 1, `stormcrow` from the float onward.
+**Stage name:** *The Gleaning of Calderwick.* World x runs 0–5300. Four sections, the same data format as
+`stage1.js` / `stage2.js` / `stage3.js` (`ARCHITECTURE.md` section 7 + `RECONCILIATION` `zones` / `transition` /
+`mode: 'locked'` + `timedWaves`); the second section is the board's one **locked screen** with timed waves, and it
+is the set piece. `tools/stage-census.js` measures it at 73 enemies in 15 waves, 21 distinct variants (a modifier
+counts), the top variant (Chaff) at 23%, 11 mixed-faction waves, one reinforcement wave, four timed waves, and a
+hazard layout no other section in the game shares. Enemy slugs come from `src/content/enemies`: `gleaning`
+throughout, `sootborn` in section 1 (and one winged Cutthroat in section 3), `stormcrow` on the float and the
+press, `brassbound` — winged and salvaged — from the press onward.
 
-## Section 1, The Tailings (x 0–1800; rose dusk, open field)
+**Intro card:**
+> THREE POWERS ARE DOWN AND THE FIELD IS FULL OF THEM.
+> SOMEBODY HAS BEEN FOLLOWING YOU THE WHOLE WAY, PICKING IT UP.
+> **THE BRASSGUARD ARE GOING OUT TO THE TAILINGS TO SEE WHO IS BUYING.**
+
+## Section 1, The Tailings (x 0–1800; rose dusk, open field; `glean1`)
 
 Spoil heaps, gas seeping out of them, a dead Brassbound half-buried in the slag with its chest already cut out, and
 salvage lines going up into a sky with bladders in it. Flat, open, and the widest floor band on the board — this is
-where the game teaches you to look up.
+where the game teaches you to look up, and where it teaches you that the rose haze is only a warning.
 
-- **Hazards:** two gas seeps (`steamVent`) and one swinging salvage hook (`hook`) on the line to the float.
-- **Waves:** three Chaff (the bounce, alone, so you learn the punish) → Chaff and Sootborn cutthroats in the same
-  wave → the first Winnow, with a Sootborn slinger to keep you honest under it → a Sickle and a Winnow together
-  with two Chaff, which is the section's exam: something is stealing at your feet while something else is aiming at
-  them.
-- **Exit:** the guild's own cargo hoist takes the party up off the field (`transition: lift`).
+- **Props:** two **spoil heaps** (x 300, x 1690; Coal Scrip), the guild's pole **lantern** at x 580 (Coal Scrip —
+  and a **fire** when it breaks: the spilt oil lights the seep beside it, which is the one thing on the field that
+  lights a seep *on purpose*), a **salvage line** at x 1000 (cut it for an Aether Vial), a crate (Brass Cogs), a
+  **keg** at x 1460 (Coal Scrip; it goes off 30f after breaking, and the blast lights the back-lane seep), a bucket
+  (Roast Bird).
+- **Hazards:** two **gas seeps** (`gasSeep`, x 620 on the front lane, x 1400 on the back lane) — rose haze,
+  HARMLESS until any fire touches it (a burning body, the Firebrand's flame, a broken lantern, a keg, an explosion),
+  then a 12 knockdown + burn burst within 34px and 360f dormant — and the salvage **hook** swinging at x 1120 on the
+  line up to the float.
+- **Zone:** **sinking spoil** (`spoil`, x 900–1150, z 80–140): every step, slide and dash inside the patch keeps
+  55% of its distance. It sits under the hook's arc, and it is the ground you fight the Hulk on.
+- **Waves (21):** (1) 3x **Picker** — fodder first, and grounded: the only Gleaners you can grab whenever you like.
+  (2) 2x Picker + 2x **Chaff** + 2x Soot Cutthroat — the first thing you will ever see off the ground, over the
+  goblins who have always picked here. (3) 1x **Winnow** + 2x Chaff + 1x Scrap Slinger + 1x **Firebrand** — two
+  things aiming at the same square of floor, and the first fire on the field (the seep at x 1400 is in this wave's
+  view). (4) 1x **Sickle** + 1x Winnow + 1x Picker + 1x Cinder Hulk + 1x Gutter Wrangler — the section's exam:
+  something is stealing at your feet while something else is aiming at them, on spoil that will not let you run —
+  and when one is left standing **the bladder goes up and the next wave comes down**: 2x Chaff out of the sky.
+- **Exit:** the guild's own cargo hoist takes the party **up** off the field (`kind: 'lift'`, `up: true`, atX
+  1740) — onto the float.
 
-## Section 2, The Lash-Up (x 1800–3600; the guild's float, open air)
+## Section 2, The Lash-Up (x 1800–2440; the guild's float, one locked screen, timed waves — the set piece; `glean2`)
 
 A raft of lashed-together wrecks — a Concordat hull plate, half a Wing gunboat, a Chandlery kiln drum — hanging over
-the field on forty bladders, with the crop coming up onto it on lines. No bulwark for the first two thirds of it: the
-front and back 12px are open air (`zones: rails`, x 1800–3120), so anything thrown over the edge goes into the field
-for +200. The press end, where the Reeve is, is decked in — a ring-out zone inside a boss arena can only cost a
-player a life, since the boss cannot be thrown out of it.
+the field on forty bladders, **under way**: the camera locks to the screen and the far parallax (the field a long
+way below, the loft off the end of the float) scrolls itself at `drift: 0.4` px/frame, so the raft reads as a thing
+drifting toward the press end rather than a still screen. No bulwark anywhere on it.
 
-- **Hazards:** two gas seeps venting through the decking and one hook on the loading line.
-- **Waves:** a Thresher with a Chaff screen → two grounded Stormcrow crimpers with a Winnow above them → a Sickle,
-  a Thresher and two Chaff, the last wave before the Reeve.
-- **Mid-boss:** **Reeve Tansy Culm & the Baler** at the press at the far end (`atX: 3400`, arena `3120–3600`).
-- **Exit:** the loft hatch comes down against the float and the party goes in (`transition: board`).
+- **Props:** two **salvage lines** (x 1930, x 2380; Aether Vials, one at either end), a **gas bag** at x 2060 (a
+  Meat Pie and a rose puff — never a fire source), a ballast bag at x 2200 (Meat Pie). The arrival spot (x
+  1870–1910) stays clear.
+- **Hazards:** two **ballast drops** (`ballastDrop`) — the lines landing their loads: a shadow grows on the deck
+  for 36f, then a ballast bag lands for 14 knockdown, every 240f — at x 1960 on the middle lane and at x 2280 on the
+  front lane half a cycle later.
+- **Zone:** `rails` over the whole raft (x 1800–2440): the front and back 12px are open air over the field, and
+  anything thrown over goes into it for +200.
+- **Timed waves (17)** — each fires at its time, or as soon as the one before it is cleared: **0s** 1x
+  **Thresher** + 2x Picker + 1x **Deck Crimper** (the first Stormcrow on the board, grounded and working). **22s**
+  1x **Harvestman** (a section early: he hangs and calls the crop down) + 2x Chaff + 1x **Powder Bosun** + 1x Deck
+  Crimper. **50s**, banner **THE WING COMES DOWN**: 1x **Galewright** + 2x Deck Crimper + 1x **Line Corsair** — a
+  coil on a raft with no rails and two Crimpers to walk you toward the edge. **80s** 1x Thresher + 1x Winnow + 1x
+  **Ironwing Marine** (down out of the bladders above the raft, `side: 'sky'`) + 1x Chaff.
+- **Exit:** the raft noses in against the press end — `kind: 'dock'`, banner **THE PRESS END**, the hemp hoist
+  platform as the landing (look `hoist`), two Meat Pies on it.
 
-## Section 3, The Crop Loft (x 3600–5300; inside the guild's great bag)
+## Section 3, The Press (x 2440–3600; the float's press end, decked in; `glean2`)
+
+The end of the float where the crop is baled: the press crane, the windlasses, and the Reeve's baler at the far end
+of it. **Decked in** — no rails and no net squares, because the Reeve's arena is at the end of it and a ring-out
+zone inside a boss arena can only cost a player a life (the boss cannot be thrown out of it). The backdrop paints a
+low hull-plate bulwark along the deck edges here instead of the raft's rope-and-air.
+
+- **Props:** a crate (Brass Cogs), a keg (Coal Scrip), a **gas bag** at x 2790 (Meat Pie), the urn holding the
+  board's **Brass Heart** (1-UP) at x 2900, a **lantern** at x 3012 (the fire that lights the seep beside it), and
+  in the Reeve's arena a **salvage line** at x 3200 (Aether Vial) and a gas bag at x 3400 (Meat Pie).
+- **Hazards:** a **ballast drop** at x 2640 on the back lane, the press crane's **hook** at x 2900 over the middle
+  lane, and one **gas seep** at x 3060 on the front lane just short of the arena — a different layout from the
+  field and the raft.
+- **Waves (15):** (1) 1x Sickle + 2x **Tin Footman (salvaged)** + 1x Chaff — *meet the salvage*: two Footmen
+  re-plated in plum and hemp, walking in under a Sickle. (2) 1x Thresher + 2x **Tin Footman (winged)** + 1x Line
+  Corsair + 1x Picker — the guild flying the Concordat's own machine: two Footmen sink in out of the sky on salvage
+  bladders. (3) 1x Winnow + 1x **Brass Halberdier (salvaged)** + 1x **Soot Cutthroat (winged)** + 2x Chaff + 1x
+  Powder Bosun — the last line before the Reeve.
+- **Mid-boss** (x 3400): **Reeve Tansy Culm & the Baler** at the press (`arena: 3120..3600`).
+- **Exit:** the loft hatch comes down against the float and the party goes in (`kind: 'board'`, atX 3540).
+
+## Section 4, The Crop Loft (x 3600–5300; inside the guild's great bag; `glean3`)
 
 The belly of the biggest bladder the guild owns, and the only interior in the game with no floor: net decking over a
 drop, four storeys of stripped war in cargo nets overhead, and rose gas lighting all of it from inside the silk.
+Only the guild in here, and the scrap it has made its own.
 
-- **Hazards:** two seeps through the netting and one hook on the sorting line.
-- **Zone:** `daisVents` from x 4880 in rose — the Harvestlord's canopy is eating the loft's own gas and the deck
-  edge vents where it does (5 damage every 20f inside).
-- **Waves:** a Harvestman with two Chaff → a Winnow, a Thresher and two Stormcrow corsairs on the nets → the last
-  wave of the campaign: a Harvestman, a Thresher, a Sickle and two Chaff, with everything in the room in the air at
-  once.
-- **Boss:** **Harvestlord Briar Oke** on the loft's own hang line (`atX: 5200`, arena `4880–5300`). The floor band
-  shrinks 20px an edge per phase as it always does, and phase 2 takes another 16 on top: by the time he is on the
-  deck with you there is very little deck left.
+- **Props:** two **cargo nets** overhead (x 3960, x 4660) — only a **jump attack** opens one, and when it does its
+  load, a rolling **chassis**, comes down on the floor under it and rolls away from whoever opened it as a live
+  hazard (Brass Cog when it breaks); a case (Golden Sprocket), a **lantern** at x 4170 on the sorting line (the only
+  fire in a bag full of gas), a **salvage line** at x 4240 (Aether Vial), an urn and a **gas bag** (Meat Pies) before
+  the hang line, a bucket (Roast Bird).
+- **Hazards:** one **gas seep** at x 4120 on the back lane (the loft's own gas coming up through the netting) and a
+  **ballast drop** at x 4500 on the front lane, from the nets above.
+- **Zones:** **net decking** (`netGive`, x 3700–4800) with three marked squares — x 3900 z 60, x 4300 z 110, x 4600
+  z 40 — that give way under a knockdown or thrown landing: the square sags for 10f and is open for 60f, enemies
+  standing in it ring out (+200), players lose 8% of max HP, are knocked down and set on the nearest edge. All
+  three are short of the boss camera box. And `daisVents` from x 4880 in rose — the Harvestlord's canopy is eating
+  the loft's own gas and the deck edge vents where it does.
+- **Waves (20):** (1) 1x **Riggerman** (held for the loft: *meet the net*) + 2x Chaff + 1x Picker. (2) 1x Winnow +
+  1x Thresher + 2x Tin Footman (winged) + 1x Sickle — the Concordat's machine on the guild's bladders, over a net
+  floor. (3) 1x Harvestman + 1x Riggerman + 2x Chaff + 1x Brass Halberdier (salvaged) — the elite pair, together
+  for the first time on the board: the Harvestman's call over the Riggerman's net. (4) 1x Harvestman + 1x Thresher
+  + 1x Sickle + 1x Riggerman + 1x Chaff + 1x Winnow — the last wave of the campaign, everything in the room in the
+  air at once.
+- **Boss:** **Harvestlord Briar Oke** on the loft's own hang line (`atX: 5200`, arena `4880–5300`, camera
+  `4660–5300`). The floor band shrinks 20px an edge per phase as it always does, and phase 2 takes another 16 on
+  top: by the time he is on the deck with you there is very little deck left.
 
 # 6. Audio
 
 | Cue | Track | Notes |
 |---|---|---|
 | Section 1 | `glean1` | 118 bpm, Am — a slow field track: bowed pad, hemp-rope pizzicato, no drums until the first wave |
-| Section 2 | `glean2` | 130 bpm, Em — the float: a rolling bass and a windlass tick under the lead |
-| Section 3 | `glean3` | 142 bpm, Bm — inside the bag: pad, harp figure and the loft's own creak on the drums |
-| Mid-boss | `midboss2` | the Wing's mid-boss track, reused: a winch is a winch |
+| Sections 2–3 | `glean2` | 130 bpm, Em — the float: a rolling bass and a windlass tick under the lead |
+| Section 4 | `glean3` | 142 bpm, Bm — inside the bag: pad, harp figure and the loft's own creak on the drums |
+| Mid-boss | `midboss4` | 150 bpm, Em (Em–C–Am–B7) — **the Baler's own track**: a triangle bass and an organ pad under a saw lead (a pulse lead doubles it a fourth down while she is swinging), and the press on the drums — **the ram on the one and the three** (kick on beats 1 and 3, the snare answering on 4) **over a windlass tick** (toms on every eighth) and a closed hat. A yard machine, not a winch: `stage.music.midboss` is unique per board |
 | Boss | `cropboss` | 160 bpm, Am — the campaign's last track, and the only one that ends on the tonic |
 | Stage clear | `results` | as every board |
 

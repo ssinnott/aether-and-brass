@@ -20,6 +20,8 @@ import { midboss3 } from './midboss3.js';
 import { boss3 } from './boss3.js';
 import { midboss4 } from './midboss4.js';
 import { boss4 } from './boss4.js';
+// spawn-modifier art (issue #28 part 3): registers the bladder / scrip badge / salvage plate drawings in game/traits.js MOD_ART
+import './mods.js';
 
 // keys are lower-case: resolveType() lower-cases the slug before the lookup
 const TYPE_ALIASES = {
@@ -34,9 +36,13 @@ const TYPE_ALIASES = {
 const VARIANT_ALIASES = {
   brassbound: { tin: 'footman', grunt: 'footman', halberd: 'halberdier', brass: 'halberdier', copper: 'sapper', bomber: 'sapper', iron: 'warden', shield: 'warden', brute: 'warden', chrome: 'duelist', fencer: 'duelist' },
   sootborn: { soot: 'cutthroat', grunt: 'cutthroat', goblin: 'cutthroat', knife: 'cutthroat', scrap: 'slinger', sling: 'slinger', fire: 'firebrand', flame: 'firebrand', cinder: 'hulk', brute: 'hulk', gutter: 'wrangler', whip: 'wrangler' },
-  stormcrow: { deck: 'crimper', grunt: 'crimper', hook: 'crimper', line: 'corsair', harpoon: 'corsair', powder: 'bosun', keg: 'bosun', chain: 'bosun', storm: 'galewright', coil: 'galewright', ironwing: 'marine', wing: 'marine', shield: 'marine' },
-  gleaning: { bounce: 'chaff', grunt: 'chaff', perch: 'winnow', ballast: 'winnow', shadow: 'thresher', dive: 'thresher', brute: 'thresher', thief: 'sickle', hook: 'sickle', caller: 'harvestman', canopy: 'harvestman' },
-  chandler: { wick: 'wickboy', boy: 'wickboy', ledger: 'tallyman', chalk: 'tallyman', lime: 'limeburner', kiln: 'limeburner', officer: 'purser', dram: 'purser', cart: 'resurrectionist', tongs: 'resurrectionist', resurrection: 'resurrectionist' },
+  stormcrow: { deck: 'crimper', grunt: 'crimper', hook: 'crimper', line: 'corsair', harpoon: 'corsair', powder: 'bosun', keg: 'bosun', chain: 'bosun', storm: 'galewright', coil: 'galewright', ironwing: 'marine', wing: 'marine', shield: 'marine',
+    // issue #28 part 2: the pressed crew and the Quartermaster's trick in miniature
+    deckhand: 'deckhand', pressed: 'deckhand', grapnel: 'grapnel', mate: 'grapnel', linemate: 'grapnel' },
+  gleaning: { bounce: 'chaff', grunt: 'chaff', perch: 'winnow', ballast: 'winnow', shadow: 'thresher', dive: 'thresher', brute: 'thresher', thief: 'sickle', hook: 'sickle', caller: 'harvestman', canopy: 'harvestman',
+    picker: 'picker', riggerman: 'riggerman', rigger: 'riggerman' },
+  chandler: { wick: 'wickboy', boy: 'wickboy', ledger: 'tallyman', chalk: 'tallyman', lime: 'limeburner', kiln: 'limeburner', officer: 'purser', dram: 'purser', cart: 'resurrectionist', tongs: 'resurrectionist', resurrection: 'resurrectionist',
+    runner: 'runner', taper: 'runner', drayman: 'drayman', dray: 'drayman' },
 };
 
 /** All enemy defs keyed by `${type}:${variant}`. */

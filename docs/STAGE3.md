@@ -44,8 +44,8 @@ and it is the one about money.
 
 # 2. The faction: the Chandlery of Calderwick
 
-The roster already exists in `src/content/enemies/chandler.js` — five variants built unaffiliated, to be dropped onto
-a board. This is that board, and its whole design is the faction's one idea: **nothing here kills you; everything
+The roster lives in `src/content/enemies/chandler.js` — seven variants built unaffiliated, to be dropped onto a
+board. This is that board, and its whole design is the faction's one idea: **nothing here kills you; everything
 here keeps the thing that kills you standing up.**
 
 | Variant | Role | Rite |
@@ -55,6 +55,18 @@ here keeps the thing that kills you standing up.**
 | **Limeburner** | bruiser | SLAKE — hands an ally an Iron Warden's 4-hit LIMECRUST |
 | **Purser** | elite | DRAM — doses two allies: +35% damage, +25% speed, −40% cooldown |
 | **Resurrection Man** | grabber | RECREW — tips whatever army is already on this board out of his cart |
+| **Runner** | rusher (35 HP) | LIGHT IT — he is not here for you: he sprints to a Chandler mid-rite and lights the lamp, and the rite finishes at 2.5x. Between rites a taper jab, nothing more |
+| **Drayman** | grabber (140 HP) | SHOVE — a handcart heaves in behind him and rolls 180px down the lane (14 knockdown to whoever it meets; the cart stays, breakable and re-shovable). At most two of his carts live at once; with both out he closes in with the grab set and a hook slam instead |
+
+**The people the company works on wear its mark too.** Two spawn modifiers (`src/game/traits.js` SPAWN_MODS) are
+how the board says whose side a body is on without a word of text:
+- **`scrip`** on the Sootborn of the lime road — a scrip badge on the torso and *no flee, no panic*: a Cutthroat,
+  Slinger or Wrangler who took the company's coal scrip stands and dies for it. Ten of them on the board, all in the
+  first three sections; the Ledger House has no Sootborn left to pay.
+- **`crusted`** on Brassbound the Limeburners have already worked on — one hit of frame armour at spawn, the
+  Limeburner's quicklime shell pre-applied (never on a shielded Iron Warden). Six crusted Tin Footmen walk in on
+  their own feet across sections 2–4, and three more machines tip **out of the handcarts** standing in the works: a
+  Tin Footman, a crusted Tin Footman and a crusted Brass Halberdier (`handcart` props with a `release`).
 
 **Faction rules (all three are the board's counterplay):** *one touch breaks a rite* — a single hit during the
 wind-up cancels it and locks the lamp out for 90 frames; *the rite dies with the ritualist, however it died* — kill
@@ -62,10 +74,13 @@ wind-up cancels it and locks the lamp out for 90 frames; *the rite dies with the
 does not insure its own* — every rite filters `faction !== 'chandler'`, so a room of nothing but Chandlers is a room
 of people with no one to work on.
 
-**The rule that shapes the board:** the *recipients* escalate while the ritualists stay the same. Section 1 is
-Chandlers working on **Sootborn** who took the company's coal scrip. Section 2 is Chandlers working on each other's
-machines in the works itself. Section 3 is Chandlers working on **Brassbound they have just put back together** —
-Vane's soldiery, re-wound, crusted and invoiced. The last wave of the board is the war being restarted in front of
+**The rule that shapes the board:** *the closer to the ledger, the more machines and the fewer people.* The
+ritualists stay the same; the recipients escalate. Section 1 is Chandlers working on **Sootborn** who took the
+company's coal scrip — nineteen people and not one machine. Section 2 is the cart lane, where the **first Brassbound
+on the board** walk in, tip out of the carts and get crusted in front of you. Section 3 is the yard, Chandlers
+working on the Brassbound they have just put back on their feet. Section 4 is the Ledger House, where the
+**re-wound machines outnumber the people** for the first time — Vane's soldiery, right up to an Iron Warden and a
+Chrome Duelist, re-wound, crusted and invoiced. The last wave of the board is the war being restarted in front of
 you, which is the argument the whole game has been making.
 
 # 3. Mid-boss: Yardmaster Marl & the Lime Kiln
@@ -135,8 +150,11 @@ with a book, in a room he owns.
 
 # 5. The board (end to end)
 
-**Stage name:** *The Reckoning of Calderwick.* World x runs 0–5300. Three sections; camera, wave locks and the GO
-arrow work exactly as in Stages 1 and 2.
+**Stage name:** *The Reckoning of Calderwick.* World x runs 0–5300. Four sections; camera, wave locks and the GO
+arrow work exactly as in Stages 1 and 2, and the second section is the board's one **locked screen** with timed
+waves (the Brass Funicular's format). `tools/stage-census.js` measures it at 72 enemies in 15 waves, 16 distinct
+variants (a modifier counts), the top variant (Wickboy) at 19%, 14 mixed-faction waves, one reinforcement wave, and
+a hazard layout no other section in the game shares.
 
 **Intro card:**
 > THE CHANCELLOR IS DOWN. THE ADMIRAL IS DOWN.
@@ -151,30 +169,64 @@ arrow work exactly as in Stages 1 and 2.
   lamps on poles. *Near* (1.2x): cart shafts and hanging tarpaulin at the screen edges, lime dust blowing along the
   ground.
 - **Floor:** rutted lime road over old rail, sleeper lines, spilled quicklime, cart tracks.
-- **Props:** crates, kegs, carts, ballast bags (Meat Pie), a signal locker (Golden Sprocket).
-- **Hazards:** two **kiln vents** (x 620, 1540) — the roadside lime pits blow off — and a loading **hook** swinging
-  from a wagon crane at x 1120.
-- **Waves:** (1) 3x Wickboy — *the first rite you will ever see: the one you are hitting keeps getting back up.*
-  (2) 2x Wickboy + 2x **Soot Cutthroat**. (3) 1x Tallyman + 1x Limeburner + 2x Soot Cutthroat.
-  (4) 1x Limeburner + 1x Tallyman + 2x Wickboy + 2x **Scrap Slinger**.
-- **Transition:** the works' cargo lift takes you down off the road into the yard (`kind: 'lift'`).
+- **Props:** crates (Brass Cogs), kegs (Coal Scrip), a cart (Meat Pie), a **lime sack** at x 1140 (a Meat Pie under
+  the quicklime, which goes up in a white puff), a **tally board** at x 1300 (the company's Coal Scrip).
+- **Hazards:** two **lime pits** (x 620 on the front lane, x 1540 on the back lane) — the roadside quicklime blows
+  off every 180f: 5 damage and **BLINDED** for 30f (no attacking), no launch — and the **runaway lime wagon**: parked
+  at x 1780, it rocks on its chocks for 45f and then rolls the *whole road* leftward along the middle rut (z 70) to
+  x 20 at 4px/f, once every 600f. 14 knockdown to whoever is standing in the rut; you hear the brake lever from off
+  screen before you see it.
+- **Waves (19):** (1) 3x Wickboy — *the first rite you will ever see: the one you are hitting keeps getting back
+  up*, and nothing else. (2) 2x Wickboy + 1x **Runner** + 2x Soot Cutthroat (scrip) — the Runner is not here for
+  you, he is here to light the Wickboys' rites before you can break them. (3) 1x Tallyman + 1x Limeburner + 2x Soot
+  Cutthroat (scrip) + 1x Runner. (4) 1x Limeburner + 1x Tallyman + 1x Wickboy + 2x Scrap Slinger (scrip) + 1x Gutter
+  Wrangler (scrip).
+- **Transition:** the works' cargo lift takes you down off the road (`kind: 'lift'`) — onto the cart lane.
 
-## Section 2, The Tallow Works (x 1800–3600; the company's yard, open air)
+## Section 2, The Cart Lane (x 1800–2440; one locked screen, timed waves — the set piece)
+- **Setting:** the company's traverser lane between the lift and the yard gate. A **belt runs the front 40px of the
+  lane** (z ≥ 100, x 1990–2440) and carries everything on it — carts, crates, the fight — **left at 1px/f toward the
+  kiln head**, for the whole section (`conveyor` zone, `active: true`); a crate with Brass Cogs or a Meat Pie comes
+  down off the belt head every 4s. The backdrop is the yard's (`works2`) with `drift: 0.3`: the far and mid parallax
+  auto-scroll, so the lane reads as a thing that is moving through the yard rather than a still screen with a belt
+  painted on it.
+- **Hazards:** the **kiln head** at x 2000 (`kilnMouth`, z 12, reach 128) — its draw-cone runs the **full width of the
+  floor band**, so the belt feeds *into* it: a 36f lime glow, then 14f of fire across x 1972–2028 (12 knockdown +
+  burn) every 300f; the arrival spot (x 1870–1910) stays clear of it. A **tallow vat** at x 2300 on the back lane
+  bubbles for 40f and boils over for 30f every 240f (6 knockdown + burn; a fire source while it boils).
+- **Props:** a lime sack (Meat Pie), a keg, a bucket (Roast Bird), and **two handcarts**: a live **Tin Footman tips
+  out** of each when it breaks. The second cart stands *on the belt* at x 2410 and rides it down to the kiln head,
+  and its Footman was **crusted** before it was loaded.
+- **Timed waves (16, plus the two out of the carts)** — each fires at its time, or as soon as the one before it is
+  cleared: **0s** 1x **Drayman** (the first Chandler who is a threat on his own) + 2x Wickboy + 1x Soot Cutthroat
+  (scrip). **20s** 2x Tin Footman (the first machines on the board, on their own feet) + 1x Limeburner (here to crust
+  them) + 1x Runner. **45s**, banner THE CARTS COME DOWN: 1x Resurrection Man + 2x Tin Footman (crusted) + 1x Soot
+  Cutthroat (scrip). **75s** 2x Copper Sapper + 1x Tallyman + 1x Wickboy.
+- **Exit:** the belt stops at the yard gate — `kind: 'dock'`, banner **THE YARD GATE**, the counting-house's yard
+  door shown open on the arrival landing (look `door`), one Meat Pie on it.
+
+## Section 3, The Tallow Works (x 2440–3600; the company's yard, open air)
 - **Setting:** the works themselves — tallow vats under gantries, the draw-kilns, cart lanes with the company's lime
   cones burnt into the ground, tally boards on every wall, and the kiln head at the far end.
 - **Parallax:** *Far* (0.2x): the works' long roof line, four kiln chimneys drawing smoke, a hoarding with the
   company's mark on it. *Mid* (0.5x): tallow vats and their gantries, stacked handcarts, tally boards, pole lamps.
   *Near* (1.2x): kiln flues and hanging tarpaulin passing in front of the fight; lime dust.
 - **Floor:** yard cobble with cart ruts, chalk lane lines and quicklime spill.
-- **Props:** carts, crates, kegs, an urn holding the board's **Brass Heart** (1-UP) at x 2960, a signal locker.
-- **Hazards:** kiln vents at x 2180 and x 3020, the yard crane's hook at x 2600.
-- **Waves:** (1) 1x Limeburner + 2x Wickboy + 1x Soot Cutthroat. (2) 1x Purser + 1x Tallyman + 2x **Copper Sapper**.
-  (3) 1x Resurrection Man + 1x Wickboy + 2x **Tin Footman** — the first cart, and the first thing you see come out
-  of one.
-- **Mid-boss** (x 3400): Yardmaster Marl & the Lime Kiln, at the kiln head.
+- **Props:** kegs, a **handcart** at x 2700 (a **crusted Brass Halberdier** tips out of it), a bucket (Roast Bird),
+  the urn holding the board's **Brass Heart** (1-UP) at x 2960, a tally board, a lime sack (Meat Pie) in the
+  kiln-head arena.
+- **Hazards:** **tallow vats** at x 2600 (front lane) and x 3040 (back lane, on the opposite half of the cycle), the
+  shed wall's **draw-kiln** at x 2760 (a 90px cone across the back lane every 300f), and the yard crane's **hook**
+  swinging at x 2880 over the middle lane.
+- **Waves (14, plus the one out of the cart):** (1) 1x Limeburner + 1x **Purser** + 1x Wickboy + 1x Copper Sapper —
+  the company's dram, on a Limeburner who is about to crust a Sapper. (2) 1x Drayman + 1x Tallyman + 2x Tin Footman
+  (crusted) + 1x Runner. (3) 1x Resurrection Man + 2x **Brass Halberdier** + 1x Wickboy + 1x Soot Cutthroat (scrip) —
+  the first re-wound Brassbound with a reach, out of the Resurrection Man's cart. The Purser and the Resurrection Man
+  are never in the same wave here: the elite pair is held for the last section.
+- **Mid-boss** (x 3400): Yardmaster Marl & the Lime Kiln, at the kiln head (`arena: 3120..3600`).
 - **Transition:** the counting-house doors come up and you go in (`kind: 'board'`).
 
-## Section 3, The Ledger House (x 3600–5300; interior)
+## Section 4, The Ledger House (x 3600–5300; interior)
 - **Setting:** the company's counting floor — brass ledger cages, a wall of pigeon-holes, the wax press, tally boards
   floor to ceiling, and one enormous kiln behind the desk that has never once gone out. **A cold room**: the walls,
   the desks and the boards are all green-grey, and the only two warm things in it are the lamps and the kiln, so a
@@ -183,12 +235,18 @@ arrow work exactly as in Stages 1 and 2.
   end of the room. *Mid* (0.5x): counting desks, chained ledgers, the wax press, cart lanes running into the hall.
   *Near* (1.2x): pillars passing in front of the fight; paper dust turning in the lamp light.
 - **Floor:** waxed board with brass inlay lines and lime tracked in from the yard.
-- **Props:** cabinets, cases, crates, kegs, an urn (Meat Pie).
-- **Hazards:** two kiln vents (x 3980, 4520) and the wax press's hook at x 4260.
-- **Zone:** `daisVents` over the counting floor (4880–5300).
-- **Waves:** (1) 1x Resurrection Man + 2x Wickboy + 2x **Tin Footman**. (2) 1x Purser + 1x Limeburner + 2x **Brass
-  Halberdier** + 1x Wickboy. (3) 1x Resurrection Man + 1x Tallyman + 1x Purser + 2x Tin Footman + 1x **Iron Warden** —
-  the war, restarted, in one wave.
+- **Props:** cabinets (a Golden Sprocket; the second, at x 4760, an Aether Vial), two **ledger stacks** (Brass Cogs),
+  a case (Golden Sprocket), a tally board, urns (Meat Pie — one of them out on the counting floor, for the fight).
+- **Hazards:** two **ledger drops** (x 3980 on the front lane, x 4320 on the back lane, half a cycle apart) — the
+  house drops its ledgers off the galleries: a shadow grows on the floor for 36f and then the book lands, 10
+  knockdown — and one **lime pit** at x 4560 on the front lane, where the lime lamp on the floor is the tell.
+- **Zone:** `daisVents` over the counting floor (4880–5300), in rite lime.
+- **Waves (23):** (1) 1x Resurrection Man + 1x Wickboy + 2x Tin Footman (crusted) + 1x Runner. (2) 1x Purser + 1x
+  Limeburner + 2x Brass Halberdier + 1x **Chrome Duelist** — the company has got as far as Vane's officers. (3) 1x
+  Tallyman + 1x Copper Sapper + 1x **Iron Warden** + 1x Drayman. (4) 1x Resurrection Man + 1x Purser + 2x Tin Footman
+  + 1x Iron Warden + 1x Chrome Duelist — *the war, restarted, in one wave*: the company's elite pair together for the
+  only time on the board, and Vane's iron and chrome with them — and when two are left standing **the company sends
+  more hands**: 2x Wickboy + 1x Runner come in from the doors.
 - **Final boss** (x 5200): Factor Oriel Hasp.
 
 # 6. Audio
@@ -202,13 +260,16 @@ straight** — this board's music is the least ornamented in the game, because i
 - `works2` 132 BPM, Gm–B♭–E♭–F — organ pumping on the off-beat under a saw lead; the company at work.
 - `works3` 138 BPM, Cm–A♭–E♭–G — a harpsichord ledger-tick on every beat with brass under it, and no let-up.
 - `ledgerboss` 156 BPM, Dm–B♭–Gm–A — the motif at full weight: brass stabs, distorted bass, hats through the bar.
-- The mid-boss reuses `midboss` (the Grubbik theme): she is a yard boss, not a flag officer.
+- `midboss3` 146 BPM, Gm–E♭–B♭–F — the yardmaster's own track: a **harpsichord ledger-tick on every beat** over
+  a square bass and brass stabs on the two-and-four, the kiln lead on pluck (a pulse lead doubles it a fifth up while
+  she is swinging), and a **kiln clang on the last sixteenth of every bar** — the crash where the draw-door slams.
+  She is a yard boss, not a flag officer, and the book-keeping never stops under her.
 
 # 7. Picking the board
 
 Stage 3 starts **locked** behind Stage 2, exactly as Stage 2 is locked behind Stage 1 (`src/game/progress.js`): its
 plaque shows the padlock plate, `? ? ? ? ?` and CLEAR STAGE 2 TO OPEN. Clearing Stage 2 opens it for good and the
-results screen plays the same unlock flourish on its plaque. The plaque carries the board's name, its three sections,
+results screen plays the same unlock flourish on its plaque. The plaque carries the board's name, its four sections,
 THE CHANDLERY and your best rank; its vignette is the `works` motif — a low works roof under a chalk sky, four
 chimneys drawing smoke, kiln mouths lit lime along the ground.
 

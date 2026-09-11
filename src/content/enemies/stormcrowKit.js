@@ -1,20 +1,22 @@
-// Stormcrow kit: the per-aeronaut gear that makes five freebooters read as five different people — headgear, back
+// Stormcrow kit: the per-aeronaut gear that makes seven aeronauts read as seven different people — headgear, back
 // pieces and weapons — plus the shared part table. Art only (ARCHITECTURE.md section 14); the rig, palette and base
 // animation set live in ./stormcrowRig.js.
 //
 // Headgear is the single biggest silhouette lever (docs/ART_STYLE.md section 0.6 / 11), and it is also the RATE
-// ladder: a knotted bandana, a wide slouch hat, a bald head with a brass loupe, a sealed keel visor and a sealed
-// iron muzzle. THE HIGHER THE RATE, THE MORE SEALED THE MASK — the bottom three keep their faces, the two elites
-// are welded shut. Every one of them carries a piece of glass — goggles, a loupe, a sighting lens — and every one
-// of them ends with ONE crowTell() on that glass, so the wind-up tell is the same violet light on all five heads.
+// ladder: a knitted watch cap, a knotted bandana, a wide slouch hat, a peaked cap over goggles worn DOWN, a bald head
+// with a brass loupe, a sealed keel visor and a sealed iron muzzle. THE HIGHER THE RATE, THE MORE SEALED THE MASK —
+// the line rates keep their faces, the Mate's eyes are behind glass, the two elites are welded shut. Every one of
+// them carries a piece of glass — goggles, a loupe, a sighting lens — and every one of them ends with ONE crowTell()
+// on that glass, so the wind-up tell is the same violet light on all seven heads.
 // On the two sealed heads the dome, the crest and the mask belong to crowHelmShell / crowVisorMask (they must sit
 // BEHIND the mask plate, and the hat hook draws last); `hatVisor` / `hatHelm` keep only what goes above the
 // hairline and on top of the dome (the Galewright's storm ridge and rank brow strap, the Marine's dome rim).
 // On a sealed head the hat is the LAST thing drawn over the lens, so its geometry is a hard constraint, not a
 // preference: nothing a hat draws may reach the eye row, or it buries the lens shutter that is the helm's only
 // expression and the head renders identically in idle, angry and shout.
-// Back pieces are the second lever: a rope coil, a line drum, a powder keg, two lightning rods and the wing-pack.
-import { celRect, celBall, celPoly, celCapsule, tones, rimTop, band } from '../../art/shading.js';
+// Back pieces are the second lever: a bedroll, a rope coil, a line drum, a grapnel drum, a powder keg, two lightning
+// rods and the wing-pack.
+import { celRect, celBall, celPoly, celCapsule, celTaper, tones, rimTop, band } from '../../art/shading.js';
 import { getChain } from '../../art/secondary.js';
 import { rad } from '../../engine/math.js';
 import {
@@ -25,7 +27,7 @@ import {
 const R = Math.round, TAU = Math.PI * 2;
 const EMPTY = {};
 const WOOD = '#7A5230', WOOD_D = '#54371F', IRON = '#647294', KEG = '#584038';   // the keg down to the neutral ceiling and out of the stages' amber cells
-const WOOD_F = farTone(WOOD);
+const WOOD_F = farTone(WOOD), WOOD_DF = farTone(WOOD_D);
 
 // ---------------------------------------------------------------- headgear (head space, facing right)
 /**
@@ -116,7 +118,43 @@ function hatHelm(ctx, rig, r) {
   if (rig.override || !(rig.build.crow || EMPTY).sealed) return;
   rimTop(ctx, rig, R(-r * 1.0), R(-r * 1.05), R(r * 0.4), R(-r * 1.34), CROW.pewter);
 }
-const HATS = { bandana: hatBandana, slouch: hatSlouch, loupe: hatLoupe, visor: hatVisor, helm: hatHelm };
+/**
+ * C0 Deckhand: a knitted watch cap hugging the skull, brim turned up, the goggles shoved up onto the turn-up. Rate 0:
+ * no band, no badge, nothing warm - a pressed hand in a borrowed knit. The cap is deliberately the SMALLEST headgear
+ * on the deck (it adds no width and no tails), which is half of what keeps his silhouette off the Crimper's.
+ */
+function hatWatchcap(ctx, rig, r) {
+  const col = CROW.wool;
+  // pulled down to -0.72r (the brow row tops out at -0.6r) and slumped back over the crown; the goggles then ride
+  // HIGH on the knit (-1.6r) so the cuff shows between them and the brows - at -1.2r the rims buried the whole cap
+  celPoly(ctx, rig, [-r - 1, R(-r * 0.72), R(-r * 1.15), R(-r * 1.2), R(-r * 0.7), R(-r * 1.7), R(r * 0.1), R(-r * 1.8), R(r * 0.75), R(-r * 1.6), r + 1, R(-r * 1.15), r + 1, R(-r * 0.72)], col, 0.4, 0.26);
+  if (!rig.override) {
+    // the turn-up: a form fold INSIDE one knit, so a 4px tone step and no line (section 0.2 / 0.7)
+    ctx.fillStyle = tones(rig, col).hi; ctx.fillRect(-r - 1, R(-r * 0.72) - 4, R(r * 2) + 2, 4);
+  }
+  const cy = R(-r * 1.6);
+  crowGoggles(ctx, rig, r, cy);
+  crowTell(ctx, rig, r, R(r * 0.55), cy);
+}
+/**
+ * C2b Grapnel Mate: a petty officer's short peaked cap - flat navy crown, a stubby leather peak, the rank band round
+ * the base. His goggles are DOWN (crowGogglesDown in the face hook), so this hat is all crown: nothing here reaches
+ * the eye row, and the peak stops at -0.82r, above the brows. The tell rides the near lens, on the eye row, because
+ * that is where his glass is.
+ */
+function hatPeaked(ctx, rig, r) {
+  const col = CROW.coatDark;
+  celPoly(ctx, rig, [R(-r * 1.05), R(-r * 1.0), R(-r * 1.0), R(-r * 1.55), R(-r * 0.5), R(-r * 1.75), R(r * 0.6), R(-r * 1.72), R(r * 1.05), R(-r * 1.5), R(r * 1.1), R(-r * 1.0)], col, 0.38, 0.28);
+  // the band is 6 units, not the Corsair's hatband 5: tools/stormcrow-pixels.mjs is measured in RATE order and the
+  // Mate has to out-signal the Corsair below him while staying under the Bosun (at 4 units he measured 0.670 % of
+  // actor pixels against the Corsair's 0.723 %). Re-run that census after touching any rank carrier on any rate.
+  if (!rig.override) rankBand(ctx, rig, R(-r * 1.02), R(-r * 1.16), R(r * 2.08), rankH(rig, 6));
+  celPoly(ctx, rig, [R(r * 0.3), R(-r * 1.02), R(r * 1.9), R(-r * 1.1), R(r * 2.0), R(-r * 0.9), R(r * 0.4), R(-r * 0.82)], CROW.leatherDark, 0.36, 0.3);
+  if (rig.override) return;
+  rimTop(ctx, rig, R(-r * 0.9), R(-r * 1.5), R(r * 0.5), R(-r * 1.68), CROW.pewterDark);
+  crowTell(ctx, rig, r, R(r * 0.45), R(-r * 0.15));
+}
+const HATS = { bandana: hatBandana, slouch: hatSlouch, loupe: hatLoupe, visor: hatVisor, helm: hatHelm, watchcap: hatWatchcap, peaked: hatPeaked };
 /** Headgear dispatch (hat hook, drawn last in head space so the tell sits over everything). */
 export function crowHat(ctx, rig, pose, inf) {
   const f = HATS[(rig.build.crow || 0).head];
@@ -178,6 +216,38 @@ export function crowBandolier(ctx, rig) {
   }
   ctx.restore();
 }
+/**
+ * C0: a canvas bedroll slung diagonally across the back on a rope - the pressed hand's whole kit. ONE capsule from
+ * the near shoulder down behind the far hip, two rope ties; no brass, no copper, nothing that fires. It is the
+ * back piece a man carries when the Wing has not issued him one.
+ */
+export function crowBedroll(ctx, rig) {
+  const p = rig.p, hw = R(p.torsoW / 2), H = p.torsoH;
+  const x0 = hw - 2, y0 = -R(H * 0.92), x1 = -hw - 6, y1 = -R(H * 0.12);
+  celCapsule(ctx, rig, x0, y0, x1, y1, 5.5, CROW.canvasSh, 0.3);
+  if (rig.override) return;
+  // the ties are rope across canvas: a material change, inked (section 0.2), at the 4px floor
+  band(ctx, rig, R(x0 * 0.55 + x1 * 0.45) - 2, R(y0 * 0.55 + y1 * 0.45) - 4, 5, 9, CROW.rope);
+  band(ctx, rig, R(x0 * 0.15 + x1 * 0.85) - 2, R(y0 * 0.15 + y1 * 0.85) - 4, 5, 9, CROW.rope);
+}
+/**
+ * C2b: the grapnel line drum - a round wooden drum seen end-on, low on the back, wound with line, an iron boss on
+ * the spindle. The drum pays out while the iron is on the line (`rig.fired` spins it). It is ROUND where the
+ * Corsair's reel is a box and the Crimper's coil is a ball on the shoulder: three back pieces, three shapes.
+ */
+export function crowDrum(ctx, rig) {
+  const p = rig.p, hw = R(p.torsoW / 2), x = -hw - 5, y = -R(p.torsoH * 0.46);
+  // no highlight cap on the drum face: with the body on the deck it thinned to a sub-2 px sliver (section 0.7);
+  // the rope disc and the iron boss give the face its form
+  celBall(ctx, rig, x, y, 10, WOOD, false);
+  celBall(ctx, rig, x, y, 6.5, CROW.rope, false);
+  if (rig.override) return;
+  // one winding seam across the coil, turned with the drum while the line runs out
+  const a = rig.fired ? rig.tick * 0.5 : 0.6;
+  ctx.strokeStyle = rig.col(tones(rig, CROW.rope).sh); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x - Math.cos(a) * 6, y - Math.sin(a) * 6); ctx.lineTo(x + Math.cos(a) * 6, y + Math.sin(a) * 6); ctx.stroke();
+  celBall(ctx, rig, x, y, 2.6, IRON, false);
+}
 /** C4: the storm battery — a copper canister with two ribbed lightning rods that bead violet as `rig.coil` climbs. */
 export function crowRods(ctx, rig) {
   const p = rig.p, hw = R(p.torsoW / 2), x = -hw - 3, y = -R(p.torsoH * 0.55), k = rig.coil || 0;
@@ -212,6 +282,32 @@ export function drawBoatHook(ctx, rig, pose, inf) {
   if (rig.override) return;
   band(ctx, rig, -8, -3, 10, 6, CROW.rope); ctx.fillStyle = rig.col(CROW.rope); ctx.fillRect(24, -3, 4, 6);
   ctx.fillStyle = tones(rig, far ? WOOD_F : WOOD).deep; ctx.fillRect(2, -1, 22, 3);
+}
+/**
+ * Belaying pin: a turned hardwood pin off the fife rail, bulb handle in the fist, a plain shaft (Deckhand). Half the
+ * length of the boat hook and no metal on it at all: the weapon of a man who was handed the nearest thing.
+ */
+export function drawBelayingPin(ctx, rig, pose, inf) {
+  const far = inf && inf.far, wood = far ? WOOD_F : WOOD;
+  // no seam on the shaft: a 2 px tone stripe on a 0.9-scale rig is 1.8 device px (section 0.7), and the taper's
+  // own cel shadow already says "round pin"
+  celTaper(ctx, rig, -2, 0, 26, 0, 3, 2, wood, 0.3);
+  celBall(ctx, rig, -6, 0, 3.6, far ? WOOD_DF : WOOD_D, false);
+}
+/**
+ * Boarding grapnel on a whipped rope grip (Grapnel Mate): a short iron shank ending in a crown with two flukes
+ * curling back toward the hand. While the iron is out on the line (`rig.fired`) only the grip and a frayed rope end
+ * stay in the fist - the head is the projectile (stormcrow.js drawGrapnelLine draws the same shape on the wire).
+ */
+export function drawGrapnelIron(ctx, rig) {
+  // the grip is the capsule and nothing else: a 2 px whipping stripe on it fell under the floor whenever the wrist
+  // turned (section 0.7), and the capsule's cel shadow is the wrap
+  celCapsule(ctx, rig, -8, 0, 8, 0, 3, CROW.rope, 0.3);
+  if (rig.fired) return;
+  celCapsule(ctx, rig, 8, 0, 22, 0, 2.2, CROW.pewterDark, 0.3);
+  celPoly(ctx, rig, [20, -2, 27, -7, 24, -14, 18, -11, 21, -5], CROW.pewter, 0.34, 0.3);
+  celPoly(ctx, rig, [20, 2, 27, 7, 24, 14, 18, 11, 21, 5], CROW.pewter, 0.34, 0.3);
+  celPoly(ctx, rig, [20, -3, 31, 0, 20, 3], CROW.pewter, 0.34, 0.3);
 }
 /** Line gun: a stubby harpoon launcher with a wooden stock and a reel drum; the harpoon seats until `rig.fired`. */
 export function drawLineGun(ctx, rig) {

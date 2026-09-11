@@ -14,9 +14,10 @@
 // `palette.rank`, mirrored into `build.clan`), a single warm ramp heated one step per rate — ash rust, brick red,
 // ember orange, flame amber, signal gold — and it is the ONLY high-chroma warm left on a rig, so nothing competes
 // with it. The ladder is carried by COUNT and AREA, not by hue alone, and it climbs the body as it climbs the
-// rates: 1 carrier on the Crimper (armband) -> 2 on the Corsair (+ hatband) -> 3 on the Bosun (brow band, smock
-// collar, waist sash; nothing on his bare arms) -> 4 on the Galewright (brow band, gorget, armband, trouser lace)
-// -> 6 on the Marine (helm-crest edge, cuirass band, armband, cuff, lace, wing-plate boss).
+// rates: 0 carriers on the Deckhand (`crow.noRank`: a pressed hand wears a plain strap where the brassard goes) ->
+// 1 on the Crimper (armband) -> 2 on the Corsair (+ hatband) and on the Grapnel Mate (+ cap band, a hotter rung) ->
+// 3 on the Bosun (brow band, smock collar, waist sash; nothing on his bare arms) -> 4 on the Galewright (brow band,
+// gorget, armband, trouser lace) -> 6 on the Marine (helm-crest edge, cuirass band, armband, cuff, lace, wing-plate boss).
 // COUNT AND AREA MUST AGREE. The Bosun is the trap: he is the widest body in the faction at scale 1.15, so a band
 // given the full width of a part outranks the same band on the smaller elite above him. His brow band and the
 // Galewright's are both kept to strap width for exactly that reason - measure the rank-hue pixel census before
@@ -27,7 +28,9 @@
 //
 // SEALED HEADS: `crow.sealed` swaps the bare skull + face for a beaked storm helm (crowHelmShell + crowVisorMask).
 // THE HIGHER THE RATE, THE MORE SEALED THE MASK — bandana, slouch hat and brass loupe keep their faces; the two
-// elites are welded shut behind a lens. Only the two elites set it; the three line troops and both bosses never do.
+// elites are welded shut behind a lens. Only the two elites set it; the line troops and both bosses never do.
+// `crow.goggled` is the half-step between: the goggles are DOWN, two brass rims on the eye row with the eyes still
+// drawn inside the glass (crowFace), so the face keeps its expression and the glass sits where the ladder puts it.
 //
 // Value ladder (docs/ART_STYLE.md section 0.1 / 3): light canvas sleeves > warm skin > pale slate trousers >
 // slate/teal/violet coat > dark plum leather boots > near-black outline. Sleeves are NEVER the coat colour and the
@@ -75,6 +78,9 @@ export const CROW = {
   // flag-rank hardware: the dark-gold edge that frames a boss's rank band and no line trooper's
   goldDark: '#8A6A26',
   boot: '#4C3450',   // the same dark plum at the same value, with enough chroma to be separable from a grey ground
+  // the two pressed-crew cloths: a cool charcoal knit (the Deckhand's watch cap) and the pea-coat lapel wool, both
+  // NEUTRALS under the 40% ceiling - nothing warm, so the rank ladder keeps every gram of warm chroma to itself
+  wool: '#5F6A84', lapel: '#3F5285',
   // hair lifted off the ink (#3A2A24 was 6.5 Oklab L* over the outline, so its own line died in it) and an
   // actually GREY privateer beard: at s23 the old one was a warm neutral sitting in four stages' own cells.
   skin: '#E2AE83', hair: '#46352A', beard: '#6E6E68',
@@ -85,6 +91,7 @@ export const CROW = {
 export const farTone = (hex) => farShade(hex, 0.62, 0.25);
 const LEATHER_F = farTone(CROW.leather), STRAP_F = farTone(CROW.strap),
   PEWTER_F = farTone(CROW.pewter), ROPE_F = farTone(CROW.rope);
+const LAPEL = CROW.lapel;
 
 /**
  * THE rank colour — one source of truth for every rank mark on the faction. `palette.rank` is authoritative because
@@ -176,6 +183,7 @@ export function crowFace(ctx, rig, pose, inf) {
   const r = inf.r, k = rig.build.crow || EMPTY;
   const sk = sealedOf(rig);
   if (sk) { crowVisorMask(ctx, rig, r, pose, sk); return; }
+  if (k.goggled) crowGogglesDown(ctx, rig, r);
   drawFace(ctx, rig, r, pose.face | 0, k.faceOpts || null);
   if (rig.override) return;
   const look = rig.look;
@@ -185,6 +193,23 @@ export function crowFace(ctx, rig, pose, inf) {
   if (!dx) return;
   ctx.fillStyle = rig.col('#1a1418');
   ctx.fillRect(R(r * 0.45) + 1 + dx, ey, 2, 2); ctx.fillRect(R(-r * 0.12) - 1 + dx, ey, 2, 2);
+}
+/**
+ * GOGGLES DOWN (face hook, under drawFace): the Grapnel Mate's rung of the mask ladder, between the Corsair's goggles
+ * on the brow and the Bosun's loupe. Two brass rims sit ON drawFace's own eye centres with sky-glass inside them and
+ * the strap across the temples, and drawFace then paints the whites, pupils and mouth OVER the glass: the eyes are
+ * behind glass but still there, so the expression survives (the brow bars are handed brass through `faceOpts.brow`
+ * and read as the rims tilting into a glare). It is the one place this faction puts glass on the eye row on a bare
+ * face, and it is there because that is where the ladder puts it - one more step and the head is welded shut.
+ */
+function crowGogglesDown(ctx, rig, r) {
+  const ey = R(-r * 0.15), ex = R(r * 0.45), fx = R(-r * 0.12);   // drawFace's rows and columns, so the rims land on the eyes
+  if (!rig.override) { ctx.fillStyle = rig.col(CROW.leatherDark); ctx.fillRect(R(-r * 1.1), ey - 2, R(r * 2.2), 4); }
+  for (let i = 0; i < 2; i++) {
+    const cx = i ? ex : fx;
+    celBall(ctx, rig, cx, ey, 4.8, CROW.brass, false);
+    ctx.beginPath(); ctx.arc(cx, ey, 3.2, 0, TAU); ctx.fillStyle = rig.col(rig.tell ? CROW.glassHot : CROW.glass); ctx.fill();
+  }
 }
 /**
  * SEALED HELM, shell half (head hook). Everything that must sit BEHIND the mask lives here, because art/rig.js draws
@@ -337,13 +362,34 @@ export function crowBeard(ctx, rig, pose, inf) {
  * Body garment (torso hook). `build.crow.coat` picks the cut, and the cut is most of the silhouette:
  * 'jerkin' short cut-down leather bolero over a shirt | 'oilskin' long coat with a shoulder capelet |
  * 'smock' barrel-chested powder smock with a canvas apron | 'duster' narrow closed duster with a rubber gorget |
- * 'plate' riveted breastplate. Everyone wears the brass Wing badge; the RANK bands are per-cut (`crow.collar` on the
- * smock, the duster's gorget, the cuirass band + `crow.epaulette` on the plate) and all read `crowRank()`.
+ * 'plate' riveted breastplate | 'slop' a pressed hand's loose canvas slop, bagged at the hem, drawstring yoke |
+ * 'peacoat' a petty officer's boxy double-breasted pea jacket with wide turned-down lapels. Everyone wears the
+ * brass Wing badge; the RANK bands are per-cut (`crow.collar` on the smock, the duster's gorget, the cuirass band +
+ * `crow.epaulette` on the plate) and all read `crowRank()`.
  */
 export function crowCoat(ctx, rig, pose, inf) {
   const W = inf.w, H = inf.h, hw = R(W / 2), pal = inf.pal, k = rig.build.crow || EMPTY, cut = k.coat || 'oilskin';
   const t = tones(rig, pal.primary);
-  if (cut === 'jerkin') {
+  if (cut === 'slop') {
+    // the slop hangs off the shoulders and BAGS toward the hem (hw + 4 at the belt against the oilskin's + 3): the
+    // one cut on the faction that is wider at the bottom than the top, which is what a man in borrowed canvas is.
+    celPoly(ctx, rig, [-hw - 2, -H + 5, -hw + 2, -H - 1, hw - 2, -H - 1, hw + 2, -H + 5, hw + 4, 2, -hw - 4, 2], pal.primary, 0.36, 0.28);
+    if (rig.override) return;
+    // drawstring yoke: a round canvas bib introducing a new internal boundary, so flat() inks it (section 0.2)
+    ctx.beginPath(); ctx.moveTo(R(-W * 0.24), -H + 1); ctx.lineTo(R(W * 0.24), -H + 1); ctx.lineTo(R(W * 0.14), R(-H * 0.66)); ctx.lineTo(R(-W * 0.14), R(-H * 0.66)); ctx.closePath();
+    flat(ctx, rig, CROW.canvas);
+  } else if (cut === 'peacoat') {
+    // boxy: the shoulders are square (hw + 3 at the yoke) and the hem is straight, the opposite of the slop
+    celPoly(ctx, rig, [-hw - 3, -H + 3, -hw + 1, -H - 1, hw - 1, -H - 1, hw + 3, -H + 3, hw + 3, 2, -hw - 3, 2], pal.primary, 0.36, 0.28);
+    // two wide lapels turned down over the chest, a value step UP from the coat so the collar is a shape and not a
+    // seam (pal.primary on the Mate is near-black navy; LAPEL is the same wool with the light on it)
+    celPoly(ctx, rig, [-hw - 2, -H - 1, R(-W * 0.06), -H + 3, -hw + 1, R(-H * 0.6)], LAPEL, 0.36, 0.3);
+    celPoly(ctx, rig, [hw + 2, -H - 1, R(W * 0.06), -H + 3, hw - 1, R(-H * 0.6)], LAPEL, 0.36, 0.3);
+    if (rig.override) return;
+    // double-breasted: two columns of two brass buttons, 3x3 (the floor), below the lapel points
+    ctx.fillStyle = rig.col(CROW.brass);
+    for (let i = 0; i < 2; i++) { ctx.fillRect(R(-W * 0.14), R(-H * 0.5) + i * 7, 3, 3); ctx.fillRect(R(W * 0.1), R(-H * 0.5) + i * 7, 3, 3); }
+  } else if (cut === 'jerkin') {
     // shirt first (the whole trunk), then a short leather bolero that stops well above the belt
     celPoly(ctx, rig, [-hw + 1, -H + 3, hw - 1, -H + 3, hw + 2, 2, -hw - 2, 2], CROW.canvas, 0.36, 0.3);
     celPoly(ctx, rig, [-hw - 2, -H + 5, -hw + 2, -H - 1, hw - 2, -H - 1, hw + 2, -H + 5, hw + 1, R(-H * 0.34), R(W * 0.16), R(-H * 0.26), R(-W * 0.14), R(-H * 0.4), -hw - 1, R(-H * 0.3)], pal.primary, 0.36, 0.28);
@@ -434,13 +480,17 @@ export function crowArmUpper(ctx, rig, pose, inf) {
   celTaper(ctx, rig, 0, 0, 0, len, r * 1.12, r - 0.5, sleeve, 0.3);
   // `crow.bareArm`: the Powder Bosun's sleeve IS his skin, and a warm band on warm tan fails section 0.1 - his
   // rank rides cloth only (sash, brow band, smock collar).
-  if (rig.override || (rig.build.crow || EMPTY).bareArm) return;
+  const k = rig.build.crow || EMPTY;
+  if (rig.override || k.bareArm) return;
   // y = 1: hard against the shoulder, one unit of sleeve left above it so the band's own line and the cap's stay apart
-  const rank = inf.pal.rank || CROW.wine, h = crossH(rig, 4), y = 1, bw = R(r * 2);
+  // `crow.noRank` (rate 0, the Deckhand): the same strap in plain leather and NO wing stud - a pressed man wears
+  // the Wing's tie where the brassard goes, and nothing on him says he was ever rated. Still the limb's ONE crossing.
+  const rank = k.noRank ? (inf.far ? STRAP_F : CROW.strap) : (inf.pal.rank || CROW.wine), h = crossH(rig, 4), y = 1, bw = R(r * 2);
   // INKED (section 0.2): the armband is cloth on canvas, and it is the one rank carrier every rate above the
   // Crimper shares - it has to survive against the sleeve behind it, not blend into it.
   band(ctx, rig, R(-r), y, bw, h, rank);
   ctx.fillStyle = tones(rig, rank).sh; ctx.fillRect(R(-r), y + h - 1, bw, 1);
+  if (k.noRank) return;
   // the wing stud rides the middle of the band whatever height the band ends up at
   ctx.fillStyle = rig.col(inf.far ? farTone(CROW.brass) : CROW.brass); ctx.fillRect(-1, R(y + (h - 3) / 2), 3, 3);
 }
@@ -587,6 +637,11 @@ export const AD = (a, du, dl) => [a[0] + du, a[1] + dl];
  * every step, the free arm swings wide and the scarf / coat tails (secondary chains) do the rest.
  * Covers idle 4 / walk 8 / run 8 / jump / fall / land / hurt 3 / stagger 4 / hurtAir / knockdown / lying 2 /
  * getup 3 / dead 2 / dodge 5 (the wing-pack back-hop). `o.holdOffArm` keeps a strapped shield still while moving.
+ * `o.noWings`: a rig with no wing-pack (the Deckhand) kicks off the deck on the dodge instead of firing the vanes -
+ * the only place the base set assumes a pack; `rig.wings` itself is only ever read by the crowWings accessory, so a
+ * rig that does not carry it never sees the flag. `o.grab`: appends the grabber set (grabTell / grab / grabHold /
+ * grabHit / throw / throwBack) the way sootborn.js does for the Cinder Hulk - the Grapnel Mate's hands go on the
+ * hero, the throwBack heaves over the shoulder BEHIND him (grabs.js dir -1: the rail is behind a Stormcrow).
  */
 export function makeCrowBase(c, o = {}) {
   const hold = !!o.holdOffArm, st = o.stagger || EMPTY;
@@ -595,6 +650,59 @@ export function makeCrowBase(c, o = {}) {
   const K = (s) => ({ torso: lean, head: hd, legR: LR, legL: LL, ...c, ...s });
   const walk = (lr, ll, al, ty, tw, sq, fr, fl) => K({ legR: lr, legL: ll, armL: hold ? c.armL : al, armR: AD(c.armR, 4, -4), torso: lean + tw, head: hd - tw * 0.5, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, footR: fr || 0, footL: fl || 0 });
   const run = (lr, ll, al, ty, sq) => K({ legR: lr, legL: ll, armL: hold ? AD(c.armL, 18, -18) : al, armR: AD(c.armR, -14, -6), torso: lean + 19, head: hd - 10, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'grit' });
+  const anims = makeCrowSet(c, o, K, walk, run, lean, hd, st);
+  if (o.grab) Object.assign(anims, makeCrowGrabSet(c, K, lean, hd));
+  return anims;
+}
+/**
+ * The grabber set (makeCrowBase `o.grab`). Both hands on the hero, the weapon dropped to hang under the fists
+ * (G.weapon 96: rolled UP it stood past the face, ART_STYLE section 0.6). grab key 0 carries the engine's grab box
+ * (type 'grab', damage 0: combat.js hands the target to startGrab), the hold loop breathes, the squeeze is a
+ * headbutt, and BOTH throws are keyed: grabs.js plays 'throwBack' for dir -1 when the set has one.
+ */
+function makeCrowGrabSet(c, K, lean, hd) {
+  const G = { armR: [86, 14], armL: [86, 14], weapon: 96 }, w0 = c.weapon || 0;
+  return {
+    grabTell: { loop: false, frames: [
+      FK(11, K({ armR: [-46, -34], armL: [-56, -30], weapon: w0 + 40, torso: lean - 8, head: hd - 8, root: [-2, 0], legR: [12, 8], legL: [-16, 10], face: 'shout' }), { tell: true, sfx: 'crow_call', ease: 'in' }),
+      FK(9, K({ armR: [-70, -30], armL: [-80, -26], weapon: w0 + 60, torso: lean - 14, head: hd - 12, root: [-5, -1], legR: [10, 8], legL: [-18, 12], face: 'shout', squash: 0.96, stretch: 1.05 }), { tell: true, ease: 'out' }),
+    ] },
+    grab: { loop: false, frames: [
+      FK(4, K({ ...G, armR: [92, 8], armL: [92, 8], torso: lean + 14, head: hd + 4, root: [4, 0], legR: [36, 8], legL: [-28, 26], face: 'shout', squash: 1.04, stretch: 0.97 }),
+        { hitbox: { x: 2, y: -62, w: 52, h: 62, z: 24, type: 'grab', once: true, damage: 0 }, move: { x: 2 }, sfx: 'whiff', ease: 'overshoot' }),
+      FK(6, K({ ...G, torso: lean + 10, head: hd + 2, root: [3, 0], legR: [32, 8], legL: [-26, 24], face: 'angry' }), { ease: 'out' }),
+      FK(10, K({ ...G, armR: [64, 30], armL: [64, 30], torso: lean + 6, root: [2, 1], legR: [26, 8], legL: [-22, 20], face: 'angry' }), { punish: true, ease: 'inout' }),
+    ] },
+    grabHold: { loop: true, frames: [
+      FK(14, K({ ...G, torso: lean + 2, root: [0, 0], legR: [22, 6], legL: [-20, 12], face: 'angry' }), { ease: 'inout' }),
+      FK(14, K({ ...G, armR: [88, 18], armL: [88, 18], torso: lean + 5, head: hd + 2, root: [0, 1], legR: [22, 6], legL: [-20, 12], face: 'angry' }), { ease: 'inout' }),
+    ] },
+    // the squeeze: a headbutt - head and torso rear back, then snap into the hero
+    grabHit: { loop: false, frames: [
+      FK(4, K({ ...G, armR: [76, 28], armL: [76, 28], torso: lean - 10, head: hd - 18, root: [-2, 0], legR: [20, 6], legL: [-20, 12], face: 'angry' }), { ease: 'in' }),
+      FK(4, K({ ...G, armR: [94, 20], armL: [94, 20], torso: lean + 16, head: hd + 16, root: [4, 1], legR: [30, 10], legL: [-24, 18], face: 'shout', squash: 1.06, stretch: 0.95 }), { sfx: 'hit_medium', ease: 'overshoot' }),
+      FK(6, K({ ...G, torso: lean + 2, root: [0, 0], legR: [22, 6], legL: [-20, 12], face: 'angry' }), { ease: 'out' }),
+    ] },
+    // forward: hoist and shove down the lane
+    throw: { loop: false, frames: [
+      FK(5, K({ ...G, armR: [60, 30], armL: [60, 30], torso: lean - 16, head: hd - 8, root: [-3, 0], legR: [16, 6], legL: [-20, 14], face: 'angry', squash: 1.04, stretch: 0.96 }), { ease: 'in' }),
+      FK(6, K({ ...G, armR: [138, -8], armL: [138, -8], torso: lean + 24, head: hd + 8, root: [6, 0], legR: [36, 8], legL: [-30, 30], face: 'shout', squash: 0.96, stretch: 1.04 }), { sfx: 'throw', smear: { from: 40, to: -20, a: 0.35, r: 44 }, ease: 'overshoot' }),
+      FK(10, K({ ...G, armR: [128, 0], armL: [128, 0], torso: lean + 18, head: hd + 4, root: [6, 1], legR: [32, 8], legL: [-28, 26], face: 'grit' }), { ease: 'inout' }),
+      FK(6, K({ torso: lean + 4 }), { ease: 'out' }),
+    ] },
+    // backward: a crouch under the weight, then the hero goes up and over the shoulder behind him (releaseAt lands
+    // on the overshoot key), and he ends bent backward with both arms flung at the rail
+    throwBack: { loop: false, frames: [
+      FK(5, K({ ...G, armR: [72, 30], armL: [72, 30], torso: lean + 22, head: hd + 6, root: [-2, 2], legR: [30, 30], legL: [-20, 30], face: 'angry', squash: 1.08, stretch: 0.93 }), { ease: 'in' }),
+      FK(6, K({ ...G, armR: [-150, -22], armL: [-162, -26], weapon: w0, torso: lean - 26, head: hd - 14, root: [-6, -2], legR: [8, 4], legL: [-30, 32], face: 'shout', squash: 0.94, stretch: 1.08 }),
+        { sfx: 'throw', smear: { from: 30, to: -170, a: 0.45, r: 50 }, fx: [{ kind: 'dust', x: -30, y: 0, count: 5 }], ease: 'overshoot' }),
+      FK(10, K({ ...G, armR: [-160, -12], armL: [-172, -16], weapon: w0, torso: lean - 30, head: hd - 12, root: [-6, 0], legR: [12, 6], legL: [-32, 34], face: 'grit' }), { ease: 'out' }),
+      FK(6, K({ torso: lean + 4 }), { ease: 'out' }),
+    ] },
+  };
+}
+/** The locomotion / reaction half of makeCrowBase (split out so the grab set above reads on its own). */
+function makeCrowSet(c, o, K, walk, run, lean, hd, st) {
   return {
     // idle: weight shifting from boot to boot, the coat settling, a slow scan of the deck
     idle: { loop: true, frames: [
@@ -670,10 +778,11 @@ export function makeCrowBase(c, o = {}) {
       FK(8, { ...FLOOR, legR: [40, -26], legL: [30, -18], armR: [-40, -20], armL: [48, 10], torso: -4, root: [26, -12, -92], squash: 1.05, stretch: 0.95 }, { ease: 'out', fx: [{ kind: 'dust', x: 0, y: 0, count: 6 }] }),
       FK(60, { ...FLOOR, torso: 8, head: -16, legR: [10, 2], legL: [-8, 6], armR: [-28, -10], armL: [38, 22], root: [26, -8, -92] }),
     ] },
-    // dodge: a wing-pack / kick-off back-hop (the vanes flare: hooks set rig.wings from the anim name)
+    // dodge: a wing-pack / kick-off back-hop (the vanes flare: hooks set rig.wings from the anim name). A packless
+    // rig (`o.noWings`) makes the same hop off its boots with no violet spark - there is nothing on its back to fire.
     dodge: { loop: false, frames: [
       FK(4, K({ torso: lean + 11, root: [0, 3], legR: [36, 42], legL: [-20, 42], armL: [-30, 30], face: 'grit', squash: 1.08, stretch: 0.92 }), { sfx: 'dodge', ease: 'in' }),
-      FK(6, K({ torso: lean - 9, head: hd - 8, root: [0, -20], legR: [40, -60], legL: [30, -50], armR: AD(c.armR, -28, -18), armL: [-64, -40], face: 'closed', squash: 0.94, stretch: 1.06 }), { ease: 'out', fx: [{ kind: 'spark', x: -14, y: 40, count: 2 }] }),
+      FK(6, K({ torso: lean - 9, head: hd - 8, root: [0, -20], legR: [40, -60], legL: [30, -50], armR: AD(c.armR, -28, -18), armL: [-64, -40], face: 'closed', squash: 0.94, stretch: 1.06 }), { ease: 'out', fx: o.noWings ? [{ kind: 'dust', x: -6, y: 0, count: 2 }] : [{ kind: 'spark', x: -14, y: 40, count: 2 }] }),
       FK(5, K({ torso: lean - 3, head: hd - 6, root: [0, -10], legR: [30, -30], legL: [20, -20], armR: AD(c.armR, -14, -10), armL: [-42, -30], face: 'closed' }), { ease: 'in' }),
       FK(4, K({ torso: lean + 9, root: [0, 3], legR: [30, 38], legL: [-18, 38], armL: [-20, 20], face: 'grit', squash: 1.1, stretch: 0.9 }), { ease: 'out' }),
       FK(4, K({ torso: lean, root: [0, 1] }), { ease: 'out' }),
@@ -688,10 +797,14 @@ export function makeCrowBase(c, o = {}) {
  * `o.tell`, the hitbox still lives on a single `o.active`-frame key, and the `punish: true` recovery is still
  * `o.recovery` long. Poses are the caller's: `w1` / `w2` anticipation, `h` hit, `hold` (defaults to `h` nudged by
  * `hold` hit-hold (a few degrees past the hit key), `r` follow-through, and `carry` to return to.
+ * `o.rest` ({ legR, legL, head }) is merged into the return key so it sets its own legs instead of inheriting them
+ * (anim/legs-explicit). `o.h2` chains a SECOND strike before the recovery — `w3` (a short re-wind, `tell2` frames,
+ * not a tell: the goggles stay dark inside a combo) -> `h2` (`active2`, `hitbox2`, `smear2`, `fx2`, `sfx2`, `move2`)
+ * -> `hold2` — for the two-hit swings; the two hitboxes are separate keys, so combat.js keys them apart on its own.
  */
 export function crowStrike(o) {
   const tell = o.tell || 20, t0 = Math.max(1, Math.round(tell * 0.55));
-  const hold = o.hold || o.h, holdDur = o.holdDur || 3;
+  const hold = o.hold || o.h, holdDur = o.holdDur || 3, rest = o.rest || EMPTY;
   /** @type {Frame[]} */
   const frames = [
     { dur: t0, pose: P(o.w1), tell: true, sfx: o.tellSfx, armor: o.armor || undefined, event: o.aimEvent, ease: 'in' },
@@ -702,7 +815,14 @@ export function crowStrike(o) {
   if (o.hitboxes) h.hitboxes = o.hitboxes; else if (o.hitbox) h.hitbox = o.hitbox;
   frames.push(h);
   frames.push({ dur: holdDur, pose: P(hold), ease: 'out' });
+  if (o.h2) {
+    if (o.w3) frames.push({ dur: o.tell2 || 5, pose: P(o.w3), ease: 'in' });
+    const h2 = { dur: o.active2 || o.active || 8, pose: P(o.h2), sfx: o.sfx2 || o.sfx, fx: o.fx2, move: o.move2, smear: o.smear2, ease: 'overshoot', armor: o.armor || undefined };
+    if (o.hitbox2) h2.hitbox = o.hitbox2;
+    frames.push(h2);
+    frames.push({ dur: holdDur, pose: P(o.hold2 || o.h2), ease: 'out' });
+  }
   frames.push({ dur: o.recovery || 20, pose: P(o.r), punish: true, ease: 'inout', fx: o.recoverFx });
-  frames.push({ dur: 6, pose: P({ ...o.carry, torso: (o.lean || 3) + 3 }), ease: 'out' });
+  frames.push({ dur: 6, pose: P({ ...o.carry, ...rest, torso: (o.lean || 3) + 3 }), ease: 'out' });
   return { loop: false, frames };
 }

@@ -1,8 +1,9 @@
 // The Chandlery of Calderwick — shared faction rig (ART_STYLE.md pass). Cel-shaded contractor parts used by
 // content/enemies/chandler.js: waxed-canvas coat with a quicklime apron panel, a numbered lead tally-tag with the
 // variant's wax seal at the throat, a single dark rubber respirator BAR across the nose (real eyes above it, a bare
-// jaw below it — NOT twin bottle-glass discs, which merge into one pale bar on a 18px head), flat-topped canvas caps,
-// leather bracers under quicklime sleeve wraps, quicklime gaiters over rubber boots, rubber gauntlets.
+// jaw below it — NOT twin bottle-glass discs, which merge into one pale bar on a 18px head), flat-topped canvas caps
+// (the Drayman's is a drover's brim, the Runner goes bare-headed), leather bracers under quicklime sleeve wraps,
+// quicklime gaiters over rubber boots, rubber gauntlets.
 //
 // THE FACTION TELL lives on the FLOOR, not the face: every Chandler carries one shuttered lamp somewhere different
 // on the silhouette (`build.chand.lampJoint` + lampDX/lampDY) with three states driven by `rig.lamp` — 0 DARK (dead
@@ -91,9 +92,14 @@ export const CH_PROPS = {
  * and the Purser's cockade rides his dark officer crown, which is why his amber may sit at the coat's own value.
  * The Limeburner's kiln red is held exactly; the Purser's company amber keeps its hue and value and moves only
  * chroma (#D08A2E -> #D68C24) so the top of the ladder stays strict. Re-run tools/chandler-census.mjs after any
- * edit here: the ladder is carried by AREA as well as chroma, and the five variants are five different sizes.
+ * edit here: the ladder is carried by AREA as well as chroma, and the seven variants are seven different sizes.
+ * The two issue-#28 variants slot INTO the ladder rather than onto its ends: the Runner (35 hp, the company's
+ * cheapest hand) takes a slate teal UNDER the Wickboy (okH 215, C 6.0, L* 43.7 - 13 under the tag's pewter and 31
+ * under the canvas satchel it rides), and the Drayman (140 hp, the second grabber) a claret BETWEEN the Purser and
+ * the Resurrection Man (okH 358, C 14.3, L* 43.8 - 38 under the ash yoke it is painted on). Six rungs now read
+ * 6.0 / 9.2 / 10.7 / 13.4 / 14.1 / 14.3 / 14.5, still strictly climbing.
  */
-export const CLAN = { wickboy: '#5F7A3E', tallyman: '#316AA2', limeburner: '#A8482A', purser: '#D68C24', resurrectionist: '#622E86' };
+export const CLAN = { wickboy: '#5F7A3E', tallyman: '#316AA2', limeburner: '#A8482A', purser: '#D68C24', resurrectionist: '#622E86', runner: '#245A66', drayman: '#8B2451' };
 
 const EMPTY = Object.freeze({});
 // jaw 0.62 (not 0.44): the respirator bar eats the middle of the head, so the chin polygon has to reach far enough
@@ -162,17 +168,23 @@ export function chFace(ctx, rig, pose, inf) {
   ctx.fillStyle = t.hi; ctx.fillRect(R(-r * 0.9), y, w - 2, 1);                          // the bar stays DARK: its own rim, not lime
   ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(R(r * 0.4), y + 1, 3, 2);            // filter stud
 }
-/** Flat-topped waxed-canvas cap with a short brim, above the hairline; 'peaked' for the Purser's officer cap. */
+/**
+ * Flat-topped waxed-canvas cap with a short brim, above the hairline; 'peaked' for the Purser's officer cap; 'brim'
+ * for the Drayman's drover's hat — a LOW crown under a wide brim that reaches both ways, the one hat in the faction
+ * that is wider than the head below it (the silhouette delta a 1.25-scale man needs against the Limeburner).
+ */
 export function chHat(ctx, rig, pose, inf) {
   const r = inf.r, ch = rig.build.chand || EMPTY;
   if (ch.cap === 'none') return;
-  const peaked = ch.cap === 'peaked', col = ch.capCol || CH.limedust, y = R(-r);
-  const crown = peaked ? 9 : 6;
+  const peaked = ch.cap === 'peaked', brim = ch.cap === 'brim', col = ch.capCol || CH.limedust, y = R(-r);
+  const crown = peaked ? 9 : brim ? 5 : 6;
   // ONE mass, not two boards: the crown runs all the way down to the brim line (crown + 3) so the two shapes share a
   // bottom edge and sit ON the skull, and the 2 px t.deep band that used to split them horizontally is gone (§0.5).
   celRect(ctx, rig, R(-r * 0.95), y - crown, R(r * 1.9), crown + 3, 1, col, 0.36, 0.3);
-  // brim trimmed from r*1.5 (13.5 px, a shelf) to r*1.25
-  celPoly(ctx, rig, [R(-r * 1.1), y - 1, R(r * 1.2), y - 2, R(r * 1.25), y + 2, R(-r * 1.1), y + 2], col, 0.4, 0.2);
+  // brim trimmed from r*1.5 (13.5 px, a shelf) to r*1.25; the drover's brim is the deliberate exception — a 4 px slab
+  // that overhangs BOTH sides by 0.7 r, still above the hairline (y <= -r) so it never touches the brow row
+  if (brim) celPoly(ctx, rig, [R(-r * 1.7), y - 2, R(r * 1.7), y - 2, R(r * 1.75), y + 2, R(-r * 1.75), y + 2], col, 0.4, 0.2);
+  else celPoly(ctx, rig, [R(-r * 1.1), y - 1, R(r * 1.2), y - 2, R(r * 1.25), y + 2, R(-r * 1.1), y + 2], col, 0.4, 0.2);
   if (rig.override) return;
   // THE OFFICER CAP IS THE PURSER'S RUNG of the company ladder — a hat band across the base of the crown plus the
   // wax cockade above it, both in the variant's own colour and both inked. It used to be one pewter stud, which is
@@ -523,7 +535,7 @@ export const BASE_HOOKS = {
 
 // ---------------------------------------------------------------- the faction's gaits
 /**
- * FOUR gaits, not one. The base set used to hand every variant the same 32f / 8-key cycle, which put a scampering boy,
+ * SIX gaits, not one. The base set used to hand every variant the same 32f / 8-key cycle, which put a scampering boy,
  * a kiln-carrier at half speed and a straight-backed officer on identical feet (§10). `o.gait` picks the table; the
  * helper `w(legR, legL, armL, rootY, squash, footR, footL, headBob, armRdU, armRdL, torsoRock)` is closed over the
  * variant's own carry pose, so the load still rides where that variant carries it.
@@ -561,6 +573,32 @@ const WALKS = {
     FK(6, w([-10, 26], [16, 14], A(aL, -18, -8), 3, 1.05, 0, 0, 3, 6, -4, 7), { ease: 'out' }),
     FK(5, w([-2, 14], [6, 22], A(aL, -10, -6), 1, 0, 0, 0, 2, 2, -2, 3), { ease: 'inout' }),
     FK(5, w([12, 2], [-6, 12], A(aL, -2, -4), 0, 0, -4, 0, -1, -3, 1, -1), { ease: 'in' }),
+  ],
+  // RUNNER — 32f toe-walk, a boy who cannot quite stand still: +3 root bob on the down keys, a dip (-2) and a heel
+  // lift on the pass keys, the taper arm held STEADY (drift 2, the flame must not swing) while the off arm swings
+  // wide. Same 8 x 4f as `work` so it stays inside the §8 cycle band that the Wickboy's 24f scamper already leaves.
+  bounce: (w, aL, A) => [
+    FK(4, w([30, 2], [-26, 22], A(aL, 18, -2), 0, 0, -10, 0, 0, 2, -2, 1), { ease: 'out' }),
+    FK(4, w([22, 14], [-14, 34], A(aL, 8, -6), 3, 1.05, 0, 0, 3, 4, -4, 5), { ease: 'out' }),
+    FK(4, w([4, 28], [2, 12], A(aL, -10, -8), 0, 0.97, 0, 0, -1, 1, -2, 2), { ease: 'inout' }),
+    FK(4, w([-14, 14], [20, -4], A(aL, -28, -10), -2, 0, 0, -10, -3, -2, 1, -1), { ease: 'in' }),
+    FK(4, w([-26, 22], [30, 2], A(aL, -40, -12), 0, 0, 0, -10, 0, 2, -2, 1), { ease: 'out' }),
+    FK(4, w([-14, 34], [22, 14], A(aL, -32, -12), 3, 1.05, 0, 0, 3, 4, -4, 5), { ease: 'out' }),
+    FK(4, w([2, 12], [4, 28], A(aL, -18, -10), 0, 0.97, 0, 0, -1, 1, -2, 2), { ease: 'inout' }),
+    FK(4, w([20, -4], [-14, 14], A(aL, -4, -6), -2, 0, -10, 0, -3, -2, 1, -1), { ease: 'in' }),
+  ],
+  // DRAYMAN — 32f haul: the yoke man is always pushing something, so the torso rocks FORWARD only (+5..+9 over the
+  // stoop, never back), the root sinks 3 on every contact with a 1.06 squash, and the head barely moves under the
+  // beam. Short, flat strides — the heaviest Chandler who still keeps a 32f cycle (the Resurrection Man is at 44).
+  haul: (w, aL, A) => [
+    FK(4, w([24, 6], [-18, 14], A(aL, 10, 0), 0, 0, -6, 0, 0, 2, -2, 6), { ease: 'inout' }),
+    FK(4, w([18, 14], [-12, 26], A(aL, 6, -2), 3, 1.06, 0, 0, 2, 5, -4, 9), { ease: 'out' }),
+    FK(4, w([6, 22], [-2, 12], A(aL, -4, -4), 1, 0, 0, 0, 1, 2, -2, 7), { ease: 'inout' }),
+    FK(4, w([-8, 12], [14, 0], A(aL, -16, -6), -1, 0, 0, -6, 0, -2, 1, 5), { ease: 'in' }),
+    FK(4, w([-18, 14], [24, 6], A(aL, -26, -8), 0, 0, 0, -6, 0, 2, -2, 6), { ease: 'inout' }),
+    FK(4, w([-12, 26], [18, 14], A(aL, -22, -8), 3, 1.06, 0, 0, 2, 5, -4, 9), { ease: 'out' }),
+    FK(4, w([-2, 12], [6, 22], A(aL, -12, -6), 1, 0, 0, 0, 1, 2, -2, 7), { ease: 'inout' }),
+    FK(4, w([14, 0], [-8, 12], A(aL, -2, -2), -1, 0, -6, 0, 0, -2, 1, 5), { ease: 'in' }),
   ],
   // PURSER — parade march: the back never bends (torso rock 0), the cane arm swings from the SHOULDER, the off hand
   // stays clasped behind the back on every key

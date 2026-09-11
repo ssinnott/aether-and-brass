@@ -23,17 +23,19 @@ brass is still here; there is just a lot more sky behind it.
 **Visual language deltas from the GDD:**
 - Palette: storm slate `#44557A`, canvas `#D6CBB2`, pewter `#9AA6B4`, wine `#7C2B34`, deck timber `#8A7250`.
 - **Static violet `#9B7BFF` is the new energy colour.** It appears on Stormcrow coils, wing-packs and powder marks.
-  Aether cyan `#4DF0E0` stays reserved for Concordat machinery, so on this board it reads as "old regime": the two
-  Tin Footmen in the last wave and the summit glow far below.
+  Aether cyan `#4DF0E0` stays reserved for Concordat machinery, so on this board it reads as "old regime": the
+  Brassbound the Wing carries aboard (section 2 below) and the summit glow far below. The board-select plaque's
+  accent is the violet too, not the cyan.
 - Every faction keeps its universal tell. Brassbound: lens goes red. Sootborn: eyes flash white. **Stormcrow: the
   glass on the head — goggles, loupe or sealed sighting lens — goes hot white and blinks in the last frames of the
   wind-up.** One unmistakable light per head, whatever the head is wearing.
 
-# 2. The faction: The Stormcrows (base + 5 variants)
+# 2. The factions: The Stormcrows (base + 7 variants) and the clockwork marines
 
 **Type identity:** people, not machines and not goblins. Aeronauts fight the way people fight on a windy deck — they
 give ground, they hop back out of a swing that missed, they keep their feet. They are the *pressure* faction: nothing
-here is unkillable, but nothing here stands still to be hit either.
+here is unkillable, but nothing here stands still to be hit either. The Wing is the board; the **Brassbound** are its
+second faction — the clockwork marines it carries aboard (the end of this section).
 
 **Base rig** (`src/content/enemies/stormcrowRig.js`): a tall wedge. High-collared storm coat flaring into two tails
 (a secondary-motion chain, so they lag in the run), crossed canvas boarding straps, a folded **wing-pack** on the back
@@ -43,24 +45,28 @@ that flares open on any hop or lunge, oiled canvas sleeves over warm skin, and a
 
 | Rate | Variant | Head |
 |---|---|---|
+| 0 | Deckhand | watch cap, **goggles shoved up** onto it, no wing-pack — a pressed hand, not a rate |
 | 1 | Deck Crimper | knotted bandana, **goggles shoved up** onto the knot — a whole face |
 | 2 | Line Corsair | slouch hat, **goggles under the brim** — a face behind glass |
+| 2b | Grapnel Mate | peaked cap, **goggles DOWN over the eyes** — a petty officer, one rung over the Corsair |
 | 3 | Powder Bosun | bald and bearded, **one eye behind a brass loupe** — half a face |
 | 4 | Galewright | **sealed keel visor**: pewter dome, storm cowl, long gun-metal beak, one big lens |
 | 5 | Ironwing Marine | **sealed iron muzzle**: crest, short grilled beak, one small hot-white sighting lens |
 
 The Powder Bosun is the hinge — one eye glassed, one eye human — so the step from face to mask happens exactly
 between him and the Galewright. The two sealed heads keep the eye row, the eye spacing, the brass lens rim and the
-copper filter can at the chin that the bare three have, so they read as the same species, welded shut.
+copper filter can at the chin that the bare ones have, so they read as the same species, welded shut.
 
-**Rank colour.** Every Stormcrow's rank is one warm ramp heated a step per rate — ash rust, brick red, ember orange,
-flame amber, signal gold (`WATCH` in `stormcrow.js`, mirrored into `palette.rank` so far limbs shade correctly) —
-and the marks that carry it multiply as the rate climbs and move UP the body: 1 carrier on the Crimper (the arm
-band), 2 on the Corsair (+ hatband), 3 on the Bosun (brow band, smock collar, waist sash — never on his bare arms),
-4 on the Galewright (brow band, gorget, armbands, trouser lace), 6 on the Marine (helm-crest edge, cuirass band,
-armbands, cuffs, lace, wing-plate boss). Rank colour is the ONLY high-chroma warm left on a rig — every scarf and
-the Crimper's bandana are neutral — so nothing on the deck competes with the mark that says who is in charge.
-The brass wing badge in the same chest position on all seven is what still says "Ninth Wing".
+**Rank colour.** Every Stormcrow's rank is one warm ramp heated a step per rate — brick rust, ember red, flame
+orange, signal amber, hot gold (`WATCH` in `stormcrow.js`, mirrored into `palette.rank` so far limbs shade
+correctly) — and the marks that carry it multiply as the rate climbs and move UP the body: 0 carriers on the
+Deckhand (plain strap leather where the brassard goes), 1 on the Crimper (the arm band), 2 on the Corsair
+(+ hatband), 2 on the Grapnel Mate (+ cap band, one rung hotter than the Corsair), 3 on the Bosun (brow band, smock
+collar, waist sash — never on his bare arms), 4 on the Galewright (brow band, gorget, armbands, trouser lace), 6 on
+the Marine (helm-crest edge, cuirass band, armbands, cuffs, lace, wing-plate boss). Rank colour is the ONLY
+high-chroma warm left on a rig — every scarf and the Crimper's bandana are neutral — so nothing on the deck competes
+with the mark that says who is in charge. The brass wing badge in the same chest position on every rate is what
+still says "Ninth Wing".
 
 **Flag rank** does not continue the ramp, it steps out of it: the two bosses wear the Wing's **red in a gold frame**
 (a `GOLD_DK` edge under every band, and gold hardware round it). Cloth alone = rated; cloth in a gold frame = flag
@@ -76,22 +82,40 @@ rank — which also keeps the Marine's signal gold from reading as a boss.
 
 | Variant | HP | Dmg | Speed | Score |
 |---|---|---|---|---|
+| Deckhand | 35 | 7 | 1.10x | 100 |
 | Deck Crimper | 45 | 6 | 1.20x | 150 |
 | Line Corsair | 40 | 9 | 1.15x | 200 |
+| Grapnel Mate | 120 | 8 | 0.90x | 550 |
 | Powder Bosun | 85 | 14 | 0.85x | 300 |
 | Galewright | 90 | 12 | 1.00x | 500 |
 | Ironwing Marine | 190 | 16 | 0.70x | 1000 |
 
-**C1. Deck Crimper** — *the fodder.* Base coat, one ash-rust armband and nothing else (a dirty canvas rag for a
-bandana — the lowest rate wears no rank above the collar), a 46px ash boat hook. Jabs at 50px (18f tell), a low
+**C0. Deckhand** — *the pressed crew.* Undyed canvas slop, a watch cap with the goggles shoved up, a bedroll for a
+back piece and a belaying pin off the fife rail; **no wing-pack** and no rank. Short, stooped and cowed (scale 0.9),
+the one Stormcrow who does not keep his feet: he flinches on every hit, weighs 0.8 and is throwable — he is what you
+throw off the Spine. A two-hit **club** (5 + 5, the return stroke is its own hit) and a shoulder **barge** from mid
+range (7, medium, real knockback). *First:* Section 1, Wave 1 — the fodder-only opener, so the first thing the board
+teaches is the rail.
+
+**C1. Deck Crimper** — *the fodder with a hook.* Base coat, one ash-rust armband and nothing else (a dirty canvas rag
+for a bandana — the lowest rate wears no rank above the collar), a 46px ash boat hook. Jabs at 50px (18f tell), a low
 **sweep** that hooks both feet out (knockdown), and a **lunge** from mid range with the wing-pack popping for the
-step. Flanks on both lanes. *First:* Section 1, Wave 1.
+step. Flanks on both lanes. *First:* Section 1, Wave 2.
 
 **C2. Line Corsair** — *the reason you keep moving.* Teal coat, brick-red armband and hatband — the first rate
 whose colour reaches the head — a stubby reel-gun. Holds 150px and
 puts a **harpoon** down the lane (24f tell, sighting down the barrel). **Any player attack bats the harpoon back for
 14** — exactly like the Scrap Slinger's bolt, and exactly as necessary, because a Corsair at the far end of the deck
 is otherwise free damage. Butt-strokes anything that gets inside the gun. *First:* Section 1, Wave 2.
+
+**C2b. Grapnel Mate** — *the line.* Pea-coat navy, peaked cap, goggles down, a grapnel drum on his back and the iron
+in his fist; scale 1.05, the longest arms on the deck. Quartermaster Skree's trick in miniature: 28f whirling the
+iron up behind him (the lenses light), then the **grapnel line** goes out flat down the lane for 240px (8, medium)
+and whoever it bites is **reeled back along it** into his hands. Three squeezes (6 each), then the throw goes
+**BACKWARD** over his shoulder (18) — on a railed deck that is at the edge behind him, which is what the trick is
+for. Not reflectable; the counterplay is the 30 frames he spends paying out line after a cast, when a hit on him
+drops the line slack. Comes straight down your lane (no flanking), flinches every second hit, drops meter.
+*First:* Section 2, Wave 3; he is at his best on the railed gun deck of Section 3.
 
 **C3. Powder Bosun** — *the crowd control.* Grey-violet coat, ember-orange brow band, smock collar and waist sash
 (the widest rank field on the deck; nothing on his bare arms), scale 1.08, a four-link **chain shot**.
@@ -116,6 +140,28 @@ while the plate is up; **every 4th hit staggers him for 30 frames**, and a
 launcher during that stagger **strips the plate for good** (it blows apart in a shower of pewter). After that he
 flinches and launches like anybody else. Grabbable only by Pip. Shove (armoured, advancing) chains into a chop that
 puts you on the deck. *First:* Section 2, Wave 2 — he comes through the gas-cell netting from above.
+
+## The second faction: the clockwork marines
+
+The Concordat's blockade ships carried Brassbound the way any warship carries marines, and the Wing still has them.
+**THE HIGHER YOU BOARD, THE MORE CLOCKWORK:** the Spine has two, the freighter five, the flagship's gun deck eleven
+in one screen, and the bridge is the Admiral's own people with her Duelists over them. Every Brassbound variant
+(`docs/GDD.md` section 4: Tin Footman, Copper Sapper, Brass Halberdier, Iron Warden, Chrome Duelist) keeps its Stage 1
+behaviour and its red-lens tell; what changes is the wind-up.
+
+- **Holdouts** (`mods: ['holdout']`, `game/traits.js SPAWN_MODS`): the machines the Wing never bothered to unbolt,
+  still walking their old posts on the Spine and in the freighter's hold and brig. Dead-grey lens and core (the red
+  tell still fires), **no wind-up key** on the back, walk and run at 0.8x, **1.3x HP**, 1.2x score. Seven on the
+  board: a Footman in each of Section 1's last two waves, two Sappers and a Halberdier in the Gas-Halls, and the two
+  Footmen the brig gives up in Section 3. They are the only modifier this board uses.
+- **Re-wound** (no modifier): the Brassbound the Wing wound back up for its boarding parties — the un-modded Stage 1
+  machines, first seen as the two Footmen guarding the winch bay (Section 2, Wave 4), then the gun crews, the
+  Wardens and the Duelists of the flagship.
+- **Elite pairs** fight together only in the last section: Galewright + Marine share a wave once (Section 4, Wave 2);
+  Warden + Duelist never do on this board (the Wardens hold the gun deck, the Duelists the bridge).
+
+Board census (`node tools/stage-census.js`): 74 enemies over 15 waves, **15 distinct variants** (a holdout counts as
+its own), Stormcrows 51 (7 variants) / Brassbound 23 (8), top share Deck Crimper 20%.
 
 # 3. Mid-boss: Quartermaster Skree & the Grapnel Winch
 
@@ -170,8 +216,12 @@ band shrinks 16px as the deck edge starts venting.
 
 # 5. The board (end to end)
 
-**Stage name:** *The Storm Above Calderwick.* World x runs 0–5200. Three sections; camera, wave locks and the GO arrow
-work exactly as in Stage 1.
+**Stage name:** *The Storm Above Calderwick.* World x runs 0–5200. **Four sections**: two scrolling decks, one locked
+screen while the flagship comes about, and the run along her bridge deck. Camera, wave locks and the GO arrow work
+exactly as in Stage 1; the locked section works as Stage 1's funicular does (`mode: 'locked'`, `timedWaves`, a `dock`
+exit). Every section has its own hazard identity, its own prop set out of the board's family (`PROP_FAMILIES.stage2`:
+powder keg, ballast bag, signal locker, powder tub — plus the neutral crate, bucket and urn) and one thing the section
+before it did not do.
 
 **Intro card:**
 > THE HEART-ENGINE IS COLD AND THE SKY IS OPEN.
@@ -185,13 +235,19 @@ work exactly as in Stage 1.
   lattice masts every 300px with gantry arms, mooring rings, sagging cables and hanging lanterns. *Near* (1.2x): rope
   rails on stanchions, coiled rope; wind-driven rain over everything.
 - **Floor:** wet iron grating under raised walkway plates, hazard chevrons along the back edge, standing water.
-- **Props:** crates, **powder kegs** (they go off 30f after they break: 20, r 40 — bat one into a boarding party),
-  **ballast bags** (Meat Pie), a **signal locker** (Golden Sprocket).
-- **Hazards:** **lightning conductors** at x 700 and 1620 (40f violet ring tell, then 12 + knockdown + 10f stunned);
-  the loading hook still swinging at x 1180.
-- **Zone:** `rails` over the whole section. There is no bulwark up here — **anything thrown over the edge is gone**
-  (+200), which is the cheapest damage on the board and by far the most satisfying.
-- **Waves:** (1) 3x Crimper. (2) 3x Crimper + 2x Corsair. (3) 1x Bosun + 2x Crimper. (4) 1x Bosun + 2x Corsair + 3x Crimper.
+- **Props:** crates (2x Brass Cog), **powder kegs** (they go off 30f after they break: 20, r 40 — bat one into a
+  boarding party; Coal Scrip), **ballast bags** (Meat Pie), a **signal locker** (Golden Sprocket).
+- **Hazards:** **lightning conductors** at x 700 (z 96) and x 1620 (z 40, half a cycle behind): a 40f violet ring,
+  then 12 + knockdown + 10f stunned; the loading hook still swinging at x 1180 (z 70).
+- **Zones:** `rails` over the whole section — there is no bulwark up here, **anything thrown over the edge is gone**
+  (+200), the cheapest damage on the board and by far the most satisfying — and a **`gust`** over the whole section:
+  every 7s (420f) a 45f gale, then 40f in which everyone on their feet drifts 1.3 px/f toward one rail or the other
+  (the direction alternates each cycle, ~52px a gust). The gust never rings anyone out by itself; with the rails live
+  it decides who is standing where when the next swing lands.
+- **Waves (20):** (1) 3x Deckhand — fodder only, learn the rail. (2) 2x Deckhand + 2x Crimper + 1x Corsair.
+  (3) "meet the holdout": 1x Bosun + 2x Crimper + **1x Tin Footman (holdout)** off the gantry; **reinforcements** —
+  2x Deckhand come up the lines once the wave is down. (4) 1x Bosun + 2x Corsair + 2x Crimper + 1x Tin Footman
+  (holdout).
 - **Transition:** the freighter warps in against the spine and the cargo gate comes down; the players board.
 
 ## Section 2, The Gas-Halls (x 1900–3600; interior)
@@ -202,27 +258,62 @@ work exactly as in Stage 1.
   hanging chains and hooks, ballast bags on lanyards, cargo stacked along the back, gantry lamps. *Near* (1.2x):
   structural frames passing in front of the fight; canvas dust turning in the cell light.
 - **Floor:** plank catwalk over mesh, caulked bay seams with brass screw heads, a dark drop along the back edge.
-- **Props:** ballast bags, kegs, crates, a signal locker, a hanging bucket (Roast Bird).
-- **Hazards:** gas valves venting at x 2280 and 3060; a loading hook at x 2680.
-- **Waves:** (1) 2x Galewright + 3x Crimper. (2) 1x Marine **through the netting from above** + 2x Crimper + 1x Corsair.
-  (3) 2x Bosun + 2x Corsair + 2x Crimper.
-- **Mid-boss** (x 3400): Quartermaster Skree & the Grapnel Winch.
+- **Props:** ballast bags (Meat Pie) x2, kegs x2, crates x2, a signal locker holding the Wing's **Aether Vial**
+  (meter before the winch bay), a hanging bucket (Roast Bird), and a **powder tub** at x 2900 under the Bosuns' wave
+  for their kegs to cook (it rolls 50 and goes off 30f after it breaks: 18, r 44).
+- **Hazards:** two of the cells have split. **Gas cells** at x 2300 (z 70, the cloud drifts right at 2 px/f) and
+  x 3060 (z 40, drifts left, 210f behind): the cell swells and hisses for 40f, then a green cloud rolls 300px along
+  its lane for 150f — 4 and **30f of stunned** to whoever it rolls over, once each. **Any fire inside the cloud
+  ignites it** — a Bosun's keg, a keg or tub going off, a burning body: 14 + knockdown + burn on everyone within
+  1.6r, and the cell is empty until its next cycle. The loading hook swings at x 2680 (z 66). No gas valves any more:
+  the section's tell is the hiss, not the rattle.
+- **Waves (20):** (1) 2x Galewright behind 2x Deckhand. (2) 1x Marine **through the netting from above** + 2x Crimper
+  + 1x Corsair + **2x Copper Sapper (holdout)** lobbing bombs into the gas. (3) "meet the line": **1x Grapnel Mate** +
+  2x Crimper + **1x Brass Halberdier (holdout)**. (4) the winch bay's guard: 2x Bosun + 1x Corsair + 1x Grapnel Mate +
+  **2x Tin Footman** — the first machines the Wing has re-wound.
+- **Mid-boss** (x 3400, arena 3120–3600): Quartermaster Skree & the Grapnel Winch.
 - **Transition:** past the winch bay the hull is open to the weather — a boarding ramp across to the flagship.
 
-## Section 3, The Cold Sovereign (x 3600–5200; the flagship's weather deck)
-- **Setting:** from the gun batteries aft to the bridge tower, inside the storm the whole way.
+## Section 3, The Cold Sovereign (x 3600–4240; the gun deck, one locked screen)
+- **Setting:** the flagship's gun deck, amidships, the moment she comes about with the party aboard. The camera locks
+  to the one screen and **the ship moves**: the `storm3` far layer auto-scrolls (`drift: 0.6` px/f, frame-based) so
+  the storm wall and the rest of the blockade slide past the rail while the deck, bulwark and near rail stay put; the
+  bridge tower is left off this section's mid layer — the bridge is the next one.
 - **Parallax:** *Far* (0.2x): a black storm wall, a cold seam of light on the horizon, the rest of the blockade heeled
   over with violet running lights, and **forked lightning** redrawn from a seed on every strike. *Mid* (0.5x): the
-  bulwark with gun ports and run-out cannon, hinged lids, powder tubs and shot, shrouds climbing out of the rail, and
-  **the bridge tower standing at the end of the section** so the boss arena is visible long before you reach it.
+  bulwark with gun ports and run-out cannon, hinged lids, powder tubs and shot, shrouds climbing out of the rail.
   *Near* (1.2x): the leeward rail and rigging falls; rain, spray and the flash.
 - **Floor:** holystoned planking, treenails, caulked butt seams with brass inlay, ring bolts, wet patches.
-- **Props:** kegs, crates, a signal locker, ballast bags, and an urn holding the board's **Brass Heart** (1-UP) at x 4460.
-- **Hazards:** three **lightning conductors** (x 3880, 4260, 4560) — the storm earths itself all along the deck.
+- **Props:** a **powder tub at each gun port** (x 3760 z 26 aft, x 4080 z 116 forward), a ballast bag (Meat Pie), the
+  signal locker (Aether Vial) and a bucket (Roast Bird) amidships — food and meter for the densest screen on the board.
+- **Hazards:** two **run-out cannon**. The aft gun at the left edge (x 3604, z 22) fires right up the **back lane**
+  (z 4–40); the forward gun at the right edge (x 4236, z 118) fires left down the **front lane** (z 100–136), 180f
+  behind it. Every 360f: 45f of the carriage running the barrel out while its lane lights on the deck, then the shot
+  crosses the whole screen in 10f — 12 + knockdown, the body thrown downrange. The middle of the deck is never in a
+  lane; the gust is what puts you in one.
+- **Zones:** `rails` (throw-overs ring out — the Grapnel Mate's back throw lives here) and the **bank**: a `gust`
+  every 7s (420f), 45f of gale then 40f at **1.3 px/f** — 52px toward one rail or the other, alternating.
+- **Timed waves (19)** — each fires at its time or the moment the one before it is cleared, whichever is first:
+  - **0s:** the gun crew — 2x Copper Sapper + 2x Tin Footman + 1x Deckhand.
+  - **22s:** 2x Brass Halberdier + 1x Grapnel Mate + 1x Corsair.
+  - **50s, banner THE BRIG OPENS:** 1x Iron Warden + **2x Tin Footman (holdout)** the Wing kept bolted below + 2x Crimper.
+  - **80s:** 1x Galewright + 1x Iron Warden + 1x Copper Sapper + 2x Crimper.
+- **Transition:** `dock` — banner **THE SHIP COMES ABOUT**, and the party arrives at the foot of a ship's companion
+  ladder on the bridge deck with 2 Meat Pies.
+
+## Section 4, The Bridge (x 4240–5200; the flagship's upper deck)
+- **Setting:** from the companion ladder to the bridge tower, still inside the storm; the `storm3` backdrop again, with
+  the tower standing at the end of the section so the boss arena is visible long before you reach it.
+- **Props:** a keg, an urn holding the board's **Brass Heart** (1-UP) at x 4460, a bucket (Roast Bird), the signal
+  locker (Golden Sprocket) and a ballast bag (Meat Pie) at the foot of the dais.
+- **Hazards:** two masts, no hook — **lightning conductors** at x 4420 (z 100, the front lane) and x 4640 (z 36, the
+  back lane, 105f behind): the storm earths itself on both lanes of the bridge deck, never on both at once.
 - **Zone:** `daisVents` over the bridge dais (4760–5200): the band shrinks per boss phase and the edges vent.
-- **Waves:** (1) 1x Marine + 2x Corsair + 2x Crimper. (2) 2x Galewright + 1x Bosun + 3x Crimper. (3) 2x Marine +
-  1x Galewright + **2x Tin Footman** (Concordat holdouts the Wing never bothered to unbolt) + 2x Crimper.
-- **Final boss** (x 5100): Admiral Odaline Kestrel.
+- **Waves (15):** (1) 1x Marine + 2x Corsair + **1x Chrome Duelist** (the Admiral's second — the last new face on the
+  board) + 1x Crimper. (2) **1x Galewright + 1x Marine** (the Wing's elite pair, together for the only time on the
+  board) + 2x Copper Sapper + 1x Bosun. (3) the last line: 2x Chrome Duelist + 1x Galewright + 1x Grapnel Mate +
+  1x Deckhand.
+- **Final boss** (x 5100, arena 4760–5200, camera 4560–5200): Admiral Odaline Kestrel.
 
 # 6. Audio
 
@@ -244,7 +335,8 @@ New music tracks (`src/engine/audio/music.js`): the **Calderwick motif D–F–A
 - `storm3` 144 BPM, Em–C–Am–B7 — brass stabs and an open hat, the run to the bridge.
 - `stormboss` 158 BPM, Gm–E♭–B♭–D — brass on every other beat under a saw lead, with a ticking rim on the second
   drum channel.
-- The mid-boss reuses `midboss2` (the half-time cut of the Grubbik theme).
+- The mid-boss track is `midboss2` (the half-time cut of the Grubbik theme) — this board's own; boards 3 and 4 have
+  `midboss3` / `midboss4`, so `stage.music.midboss` is unique per board.
 
 # 7. Picking the board
 
@@ -253,7 +345,7 @@ registered board. Stage 2 starts **locked**: its plaque shows a padlock plate, `
 OPEN, and confirming it buzzes rather than starting a run. Clearing Stage 1 opens it for good — the results screen
 announces it, and dismissing the plaque returns to BOARD SELECT to play the unlock on Stage 2's own plaque (the
 padlock rattles apart, the hatch retracts as two doors, `? ? ? ? ?` resolves into THE STORM ABOVE CALDERWICK and a
-STAGE 2 OPEN stamp lands). The plaque then carries the board's name, its three sections, THE STORMCROWS and your
+STAGE 2 OPEN stamp lands). The plaque then carries the board's name, its four sections, STORMCROWS & BRASSBOUND and your
 best rank. Unlocks persist in `localStorage` via `src/game/progress.js`.
 
 `?stage=2` still jumps straight to the board and opens it for that page load, so a direct link works on a fresh

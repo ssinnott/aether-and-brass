@@ -1,10 +1,14 @@
-// Stage 2, section 3: THE COLD SOVEREIGN (docs/STAGE2.md section 6). The flagship's weather deck, running from the
-// gun batteries aft to the bridge tower where the Admiral is waiting — and the whole thing is inside the storm.
+// Stage 2, sections 3 and 4: THE COLD SOVEREIGN and THE BRIDGE (docs/STAGE2.md section 5). The flagship's decks, from
+// the gun batteries aft to the bridge tower where the Admiral is waiting — and the whole thing is inside the storm.
 // Far (0.2): a black storm wall with rolling cloud, forked lightning, and the rest of the blockade heeling over in it.
 // Mid (0.5): the ship — a bulwark of gun ports with run-out cannon, rigging, boarding nets, and the bridge tower
 //            standing at the end of the section so the boss arena is visible long before you reach it.
 // Floor: holystoned deck planking with brass inlay, a caulked seam grid and a compass rose on the dais.
 // Near (1.2, drawFront): the leeward rail and rigging ropes; rain, spray and the flash of the strikes.
+// UNDER WAY: a section with `drift` (px/frame; the locked gun deck, stage2.js m3) is the ship coming about with the party
+// aboard — the camera is locked, so the far sky scrolls itself by `drift` every frame (frame-based, deterministic: the
+// blockade and the storm wall slide past the rail), and the bridge tower is left off the mid layer (the bridge is the
+// next section). The deck, bulwark and near rail stay put: you are standing on the thing that is moving.
 import {
   VIEW_W, FLOOR_TOP, Z_MAX, PARALLAX, BLEED, SKY_H, FLOOR_H, INK,
   makeLayer, blitTiled, blitAt, layerSpace, drawDarkBand, vGradient, radialGlow, makeGlowSprite,
@@ -51,7 +55,7 @@ function paintFar(g, w, h, rnd) {
   g.fillStyle = 'rgba(120,140,190,0.07)';
   for (let i = 0; i < 14; i++) { const x = rnd() * w; g.fillRect(Math.round(x), 30, 30 + Math.round(rnd() * 60), 160); }
 }
-function paintMid(g, w, h, rnd) {
+function paintMid(g, w, h, rnd, tower = true) {
   g.translate(0, BLEED);
   // the bulwark: a black timber wall with a rail cap, running the whole section
   boxOutlined(g, -4, 128, w + 8, 78, HULL_D, INK, 2);
@@ -87,8 +91,11 @@ function paintMid(g, w, h, rnd) {
     g.strokeStyle = 'rgba(185,164,126,0.6)'; g.lineWidth = 1;
     for (let y = 0; y < 120; y += 16) { g.beginPath(); g.moveTo(x - 16 - y * 0.1, y); g.lineTo(x + 16 + y * 0.1, y); g.stroke(); }
   }
-  // the bridge tower at the far end of the section: the boss arena, visible from a long way off
-  const bx = w - 400;
+  // the bridge tower at the far end of the section: the boss arena, visible from a long way off (not while under way).
+  // The layer runs VIEW_W * f past the last camera position (layerSpace), so "the end of the section" on screen is
+  // w - 2 * VIEW_W * f, not w: the tower (150 wide, funnel to +176) sits just inside that, behind the boss's spawn.
+  if (!tower) return;
+  const bx = w - 2 * VIEW_W * PARALLAX.mid - 200;
   boxOutlined(g, bx, 24, 150, 182, HULL_D, INK, 2);
   g.fillStyle = HULL; g.fillRect(bx + 4, 28, 142, 176);
   g.fillStyle = 'rgba(0,0,0,0.3)'; for (let y = 40; y < 200; y += 14) g.fillRect(bx + 4, y, 142, 2);
@@ -157,10 +164,12 @@ function paintNear(g, w, h, rnd) {
 }
 
 export function create(section) {
+  /** Under way (see the header): the far sky auto-scrolls this many px per frame and the tower stays off the mid layer. */
+  const drift = Number(section.drift) || 0;
   const mid = layerSpace(section, PARALLAX.mid);
   const near = layerSpace(section, PARALLAX.near);
   const farL = makeLayer(FAR_W, SKY_H, paintFar, 71);
-  const midL = makeLayer(mid.width, SKY_H, paintMid, 72);
+  const midL = makeLayer(mid.width, SKY_H, (g, w, h, rnd) => paintMid(g, w, h, rnd, !drift), 72);
   const floorL = makeLayer(FLOOR_TILE, FLOOR_H, paintFloor, 73);
   const nearL = makeLayer(near.width, 100, paintNear, 74);
   const boltGlow = makeGlowSprite(60, 'rgba(200,214,255,0.34)');
@@ -193,7 +202,8 @@ export function create(section) {
     },
     drawBack(ctx, cam) {
       const sy = cam.shakeY || 0, shx = cam.shakeX || 0;
-      blitTiled(ctx, farL, Math.round(-cam.x * PARALLAX.far + shx), -BLEED + sy);
+      // the far layer tiles, so the drift is one extra term in its origin (it wraps for free); f is the fixed-step frame
+      blitTiled(ctx, farL, Math.round(-cam.x * PARALLAX.far - f * drift + shx), -BLEED + sy);
       if (flash > 0) {
         ctx.globalAlpha = flash;
         ctx.drawImage(boltGlow.canvas, boltX - 60, 40 + sy);

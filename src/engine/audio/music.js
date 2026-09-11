@@ -240,6 +240,19 @@ const G3_LEAD = `B4:2 D5:2 F#5:2 B5:4 F#5:2 D5:2 B4:2 | -:2 F#5:2 B5:2 D6:6 -:2 
   G4:2 B4:2 D5:2 G5:4 D5:2 B4:2 G4:2 | -:2 D5:2 G5:2 B5:6 -:2 |
   E5:2 G5:2 B5:2 E6:4 B5:2 G5:2 E5:2 | -:2 B5:2 E6:2 G6:6 -:2 |
   F#5:2 A5:2 C#6:2 F#6:4 C#6:2 A5:2 F#5:2 | F#5:2 A5:2 C#6:2 F#6:8 -:2`;
+// Stage 3 mid-boss, Yardmaster Marl & the Lime Kiln (docs/STAGE3.md section 6): the works' own track at boss weight.
+// Gm like the yard (works2), a harpsichord ledger-tick on every beat with brass under it, and a kiln CLANG on the
+// last sixteenth of every bar - a yard boss, not a flag officer, so it shares nothing with the Grubbik theme.
+const KILN_LEAD = `G4:2 Bb4:2 D5:2 F5:4 D5:2 Bb4:2 G4:2 | -:4 D5:2 F5:2 G5:6 -:2 |
+  Eb5:2 G5:2 Bb5:2 D6:4 Bb5:2 G5:2 Eb5:2 | -:4 Bb5:2 G5:2 Eb5:6 -:2 |
+  Bb4:2 D5:2 F5:2 Ab5:4 F5:2 D5:2 Bb4:2 | -:4 F5:2 D5:2 Bb4:6 -:2 |
+  F4:2 A4:2 C5:2 Eb5:4 C5:2 A4:2 F4:2 | F4:2 A4:2 C5:2 F5:8 -:2`;
+// Stage 4 mid-boss, Reeve Tansy Culm & the Baler (docs/STAGE4.md section 6): the float's Em with the press in the
+// drums - a thump on the one and the three (the ram) and the windlass tick running the whole way through.
+const BALER_LEAD = `E5:2 G5:2 B5:2 E6:4 B5:2 G5:2 E5:2 | -:2 B5:2 E6:2 G6:6 E6:2 B5:2 |
+  C5:2 E5:2 G5:2 C6:4 G5:2 E5:2 C5:2 | -:2 G5:2 C6:2 E6:6 -:4 |
+  A4:2 C5:2 E5:2 A5:4 E5:2 C5:2 A4:2 | -:2 E5:2 A5:2 C6:6 A5:2 E5:2 |
+  B4:2 D#5:2 F#5:2 B5:4 F#5:2 D#5:2 B4:2 | B4:2 D#5:2 F#5:2 B5:8 -:2`;
 const CROP_LEAD = `A5:2 C6:2 E6:2 A6:4 E6:2 C6:2 A5:2 | F5:2 A5:2 C6:2 F6:4 C6:2 A5:2 F5:2 |
   D5:2 F5:2 A5:2 D6:4 A5:2 F5:2 D5:2 | E5:2 G#5:2 B5:2 E6:4 D6:2 B5:2 G#5:2 |
   A5:2 C6:2 E6:2 A6:6 E6:2 C6:2 | F5:2 A5:2 C6:2 F6:6 C6:2 A5:2 |
@@ -425,6 +438,25 @@ export const TRACKS = {
     { inst: 'lead_pulse', oct: 5, vol: 0.8, combat: true, pat: CROP_LEAD, transpose: 7 },
     { inst: 'drums', vol: 1, pat: 'K.hhS.hhK.hhS.hC' },
     { inst: 'drums', vol: 0.5, pat: 'T...t...T...t...' },
+  ] },
+  midboss3: { name: 'midboss3', bpm: 146, key: 'G', chords: ['Gm', 'Eb', 'Bb', 'F'], channels: [
+    { inst: 'bass_square', oct: 2, vol: 1, pat: 'r:1 . r:1 . r+7:1 . r:1 . r:1 . r+10:1 . r+7:1 . r:1 .' },
+    { inst: 'harpsi', oct: 4, vol: 0.85, pat: 'c0:1 . c1:1 . c2:1 . c1:1 . c0:1 . c2:1 . c1:1 . c0:1 .' },
+    { inst: 'brass', oct: 3, vol: 0.9, pat: 'chord:2 . . chord:2 . . chord:2 . . chord:2 . .' },
+    { inst: 'pluck', oct: 4, vol: 1, pat: KILN_LEAD },
+    { inst: 'lead_pulse', oct: 4, vol: 0.8, combat: true, pat: KILN_LEAD, transpose: 7 },
+    { inst: 'drums', vol: 0.95, pat: 'K.hhS.h.K.hhS.hC' },
+    { inst: 'drums', vol: 0.5, pat: 'T...t...T...t...' },
+  ] },
+  midboss4: { name: 'midboss4', bpm: 150, key: 'E', chords: ['Em', 'C', 'Am', 'B7'], channels: [
+    { inst: 'bass_tri', oct: 2, vol: 1, pat: 'r:2 . . r+7:2 . . r:2 . . r+12:2 . .' },
+    { inst: 'organ', oct: 3, vol: 0.5, pat: 'chord:8 . . . . . . . .' },
+    { inst: 'lead_saw', oct: 4, vol: 0.9, pat: BALER_LEAD },
+    { inst: 'lead_pulse', oct: 4, vol: 0.75, combat: true, pat: BALER_LEAD, transpose: -5 },
+    // the press: the ram on the one and the three, the windlass ticking underneath the whole fight
+    { inst: 'drums', vol: 0.9, pat: 'K.......K...S...' },
+    { inst: 'drums', vol: 0.7, pat: 'T.t.T.t.T.t.T.t.' },
+    { inst: 'drums', vol: 0.45, pat: 'h.h.h.h.h.h.h.h.' },
   ] },
   results: { name: 'results', bpm: 110, key: 'D', chords: ['D', 'G', 'A', 'D'], channels: [
     { inst: 'brass', oct: 3, vol: 1, pat: 'chord:2 . . chord:2 . . chord:2 . . chord:2 . .' },

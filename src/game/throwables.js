@@ -125,7 +125,7 @@ export function landWeapon(world, proj) {
  */
 export function spawnLimePatch(world, owner, x, z, patch) {
   const proj = world.spawnProjectile({
-    owner, team: TEAM.NONE, kind: 'puddle', style: 'fire', color: '#D8FF6E', hit: null,
+    owner, team: TEAM.NONE, kind: 'puddle', style: 'fire', isFire: false, color: '#D8FF6E', hit: null,
     every: 20, r: patch.r, life: patch.life, x, y: 0, z,
     onTick: (w, p) => limeTick(w, p, patch, owner), draw: drawLimePatch,
   });

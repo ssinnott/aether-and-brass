@@ -7,9 +7,14 @@
 // Floor: mismatched decking over hull plate, rope lashings, and the gaps where the field shows through.
 // Near (1.2, drawFront): the lashings themselves at the top of the frame; gas motes rising.
 //
-// There is no bulwark anywhere on this section (stage4.js gives it a `rails` zone): the front and back of the deck
-// are open air, so the floor layer's first and last rows are painted as EDGE — rope, then nothing, then the field a
-// long way down — rather than as a wall. What you can throw somebody off has to look like it.
+// Two sections share this backdrop (stage4.js g2 THE LASH-UP and g3 THE PRESS) and createBackdrop is called per section:
+// - THE LASH-UP is the locked screen and it carries `drift` (px/frame): the raft is under way, so the far layer — the
+//   field a long way below and the loft off the end of the float — scrolls itself by `drift` every frame (frame-based,
+//   deterministic, the storm3.js / works2.js pattern; the far layer tiles, so the drift is one extra term in its origin).
+//   The mid layer is the float's own mast of bladders and the wrecks it is built from, so it stays put: it is the raft.
+// - A section with a `rails` zone has no bulwark: the floor's first and last rows are painted as EDGE — rope, then
+//   nothing, then the field a long way down — rather than as a wall. What you can throw somebody off has to look like it.
+//   THE PRESS has no rails (the Reeve's arena is decked in), so it gets a low hull-plate bulwark on those rows instead.
 import {
   VIEW_W, FLOOR_TOP, Z_MAX, PARALLAX, BLEED, SKY_H, FLOOR_H, INK,
   makeLayer, blitTiled, blitAt, layerSpace, drawDarkBand, vGradient, radialGlow, makeGlowSprite,
@@ -112,7 +117,8 @@ function paintMid(g, w, h, rnd) {
     }
   }
 }
-function paintFloor(g, w, h, rnd) {
+/** `open`: the deck edges are open air (a `rails` section); otherwise a low bulwark of hull plate runs along them. */
+function paintFloor(g, w, h, rnd, open = true) {
   // decking off six different ships: planks of three lengths, laid across hull plate, none of it matching
   g.fillStyle = HULL_D; g.fillRect(0, 0, w, h);
   for (let y = 12; y < Z_MAX - 12; y += 13) {
@@ -138,14 +144,23 @@ function paintFloor(g, w, h, rnd) {
     g.fillStyle = '#14121E'; g.fillRect(x, y, ww, 7);
     g.fillStyle = 'rgba(255,87,176,0.14)'; g.fillRect(x + 2, y + 2, ww - 4, 3);
   }
-  // THE OPEN EDGES. Front and back are rope, then air: stage4 gives this section a `rails` zone and a ring-out has
-  // to be legible before somebody goes over it.
-  g.fillStyle = INK; g.fillRect(0, 0, w, 4);
-  g.fillStyle = ROPE; g.fillRect(0, 4, w, 3);
-  for (let x = 0; x < w; x += 44) { g.fillStyle = IRON; g.fillRect(x, 0, 5, 10); }
-  g.fillStyle = ROPE; g.fillRect(0, Z_MAX - 7, w, 3);
-  g.fillStyle = INK; g.fillRect(0, Z_MAX - 4, w, 4);
-  for (let x = 22; x < w; x += 44) { g.fillStyle = IRON; g.fillRect(x, Z_MAX - 10, 5, 10); }
+  if (open) {
+    // THE OPEN EDGES. Front and back are rope, then air: stage4 gives the raft a `rails` zone and a ring-out has
+    // to be legible before somebody goes over it.
+    g.fillStyle = INK; g.fillRect(0, 0, w, 4);
+    g.fillStyle = ROPE; g.fillRect(0, 4, w, 3);
+    for (let x = 0; x < w; x += 44) { g.fillStyle = IRON; g.fillRect(x, 0, 5, 10); }
+    g.fillStyle = ROPE; g.fillRect(0, Z_MAX - 7, w, 3);
+    g.fillStyle = INK; g.fillRect(0, Z_MAX - 4, w, 4);
+    for (let x = 22; x < w; x += 44) { g.fillStyle = IRON; g.fillRect(x, Z_MAX - 10, 5, 10); }
+  } else {
+    // DECKED IN (the press end): a low bulwark of riveted hull plate along both edges, lashed down like everything else here
+    g.fillStyle = INK; g.fillRect(0, 0, w, 11); g.fillRect(0, Z_MAX - 11, w, 11);
+    g.fillStyle = HULL; g.fillRect(0, 2, w, 7); g.fillRect(0, Z_MAX - 9, w, 7);
+    g.fillStyle = HULL_D; g.fillRect(0, 2, w, 2); g.fillRect(0, Z_MAX - 4, w, 2);
+    for (let x = 10; x < w; x += 22) { g.fillStyle = '#8A93A3'; g.fillRect(x, 4, 2, 2); g.fillRect(x, Z_MAX - 7, 2, 2); }
+    for (let x = 60; x < w; x += 240) { g.fillStyle = ROPE; g.fillRect(x, 0, 5, 11); g.fillRect(x, Z_MAX - 11, 5, 11); }
+  }
   // scuffs, tar and old rope marks
   for (let i = 0; i < 30; i++) {
     g.fillStyle = rnd() < 0.6 ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.06)';
@@ -168,11 +183,15 @@ function paintNear(g, w, h, rnd) {
 }
 
 export function create(section) {
+  /** Under way (see the header): the far layer auto-scrolls this many px per frame; 0 on the scrolling press end. */
+  const drift = Number(section.drift) || 0;
+  /** Open edges (a `rails` section) or a decked-in bulwark (the press, which holds the Reeve's arena). */
+  const open = (section.zones || []).some((z) => z.type === 'rails');
   const mid = layerSpace(section, PARALLAX.mid);
   const near = layerSpace(section, PARALLAX.near);
   const farL = makeLayer(FAR_W, SKY_H, paintFar, 85);
   const midL = makeLayer(mid.width, SKY_H, paintMid, 86);
-  const floorL = makeLayer(FLOOR_TILE, FLOOR_H, paintFloor, 87);
+  const floorL = makeLayer(FLOOR_TILE, FLOOR_H, (g, w, h, rnd) => paintFloor(g, w, h, rnd, open), 87);
   const nearL = makeLayer(near.width, 36, paintNear, 88);
   const loftGlow = makeGlowSprite(60, 'rgba(255,87,176,0.16)');
 
@@ -191,7 +210,8 @@ export function create(section) {
     },
     drawBack(ctx, cam) {
       const sy = cam.shakeY || 0, shx = cam.shakeX || 0;
-      const farOrigin = Math.round(-cam.x * PARALLAX.far + shx);
+      // the far layer tiles, so the raft's drift is one extra term in its origin (it wraps for free); f is the fixed-step frame
+      const farOrigin = Math.round(-cam.x * PARALLAX.far - f * drift + shx);
       blitTiled(ctx, farL, farOrigin, -BLEED + sy);
       // the loft burns rose through the haze: the thing at the end of the board, visible from the whole of it
       const loftX = ((farOrigin + 940) % FAR_W + FAR_W) % FAR_W;

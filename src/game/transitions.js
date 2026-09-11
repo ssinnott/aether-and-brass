@@ -1,5 +1,7 @@
-// Stage transitions & cutscenes (GDD section 6): the dock gate + freight-lift ride (180f, one Meat Pie), the cargo gate +
-// boarding the Aether Funicular, the funicular docking + the summit stair (2 Meat Pies), Vane's 2s spiral-stair descent,
+// Stage transitions & cutscenes (GDD section 6): the dock gate + freight-lift ride (180f, one Meat Pie; `up: true` rides the
+// shaft upward), the cargo gate + boarding the Aether Funicular, the docking ('dock': the vehicle comes about and the party
+// arrives on a `look` — board 1's summit stair with 2 Meat Pies by default, or a ship's companion ladder, a counting-house
+// double door, a hemp hoist platform, or nothing — with `pies` Meat Pies waiting), Vane's 2s spiral-stair descent,
 // boss intro spotlight / name plates and the defeat spectacle (valves blowing open, dawn). Owned by game/stage.js.
 import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MAX, ST, UI } from '../constants.js';
 import { Entity } from './entity.js';
@@ -12,8 +14,12 @@ import { buildRig, drawRig } from '../art/rig.js';
 import { tones } from '../art/props.js';
 import { boss as vaneDef } from '../content/enemies/index.js';
 
-const OL = '#2B2B30', BRASS = '#C9963A', IRON = '#3A3F4B';
+const OL = '#2B2B30', BRASS = '#C9963A', IRON = '#3A3F4B', WOOD = '#6A4A2A', HEMP = '#9C893F', PLANK = '#8A6A3A';
 const FADE = 30;
+/** Frames a dock `look` takes to settle after the switch (the door swings open, the hoist pulley spins down). */
+const LOOK_SETTLE = 40;
+/** Dock arrivals by `spec.look`; 'stairs' is board 1's summit landing and the default. */
+const DOCK_LOOKS = { stairs: drawStairs, ladder: drawLadder, door: drawDoor, hoist: drawHoist };
 const PHASES = {
   lift: [['gate', 50], ['ride', 180], ['fadeOut', FADE], ['switch', 1], ['fadeIn', FADE]],
   board: [['gate', 50], ['fadeOut', FADE], ['switch', 1], ['fadeIn', FADE]],
@@ -43,7 +49,8 @@ export class Transition {
   /**
    * @param {import('./stage.js').StageRunner} runner
    * @param {'lift'|'board'|'dock'|'descent'} kind
-   * @param {{ gateX?: number, nextSection?: number, boss?: object }} spec
+   * @param {{ gateX?: number, nextSection?: number, boss?: object, stairX?: number, banner?: string, look?: 'stairs'|'ladder'|'door'|'hoist'|'none', pies?: number, up?: boolean }} spec
+   *   dock: look (default 'stairs') + pies (default 2; 0 allowed); the runner shows `banner`. lift: up = the shaft scrolls the other way (the party rises).
    */
   constructor(runner, kind, spec = {}) {
     this.runner = runner; this.kind = kind; this.spec = spec;
@@ -68,7 +75,8 @@ export class Transition {
     }
     if (this.kind === 'lift') {
       // freight-lift shaft walls scroll up behind the fighters (fade in during the ride); one Meat Pie rides along
-      this.addLayer(-5, (ctx, c, l) => drawShaft(ctx, c, l), cam.x).alpha = 0; // fades in once the lift starts dropping
+      const up = !!this.spec.up;
+      this.addLayer(-5, (ctx, c, l) => drawShaft(ctx, c, l, up), cam.x).alpha = 0; // fades in once the lift starts moving
       const px = w.players.reduce((a, p) => a + (p ? p.x : 0), 0) / Math.max(1, w.players.length);
       w.add(new Pickup('meatPie', Math.min(this.gateX - 40, px + 60), 100, { pop: true }));
     }
@@ -123,11 +131,11 @@ export class Transition {
     for (const e of w.entities) if (e.kind === 'item' && e.x < sec.x0) e.removeMe = true;
     particles.clear();
     if (this.kind === 'dock') {
-      // the summit stair: a brass landing with three risers, two Meat Pies waiting on it
-      this.stairs = new SceneLayer(-4, (ctx, c) => drawStairs(ctx, c, sec.x0), sec.x0 + 50);
-      w.add(this.stairs);
-      w.add(new Pickup('meatPie', sec.x0 + 60, 56, { pop: false, life: 1800 }));
-      w.add(new Pickup('meatPie', sec.x0 + 90, 100, { pop: false, life: 1800 }));
+      // the arrival: board 1's summit stair (a brass landing with three risers) by default, or the look the stage names;
+      // `pies` Meat Pies wait on it (default 2, alternating the two pie spots the stair has always used)
+      const look = DOCK_LOOKS[this.spec.look || 'stairs'], pies = this.spec.pies != null ? this.spec.pies | 0 : 2;
+      if (look) { this.stairs = new SceneLayer(-4, (ctx, c, l) => look(ctx, c, sec.x0, l), sec.x0 + 50); w.add(this.stairs); }
+      for (let i = 0; i < pies; i++) w.add(new Pickup('meatPie', sec.x0 + 60 + i * 30, i % 2 ? 100 : 56, { pop: false, life: 1800 }));
     }
     if (this.kind === 'board') audio.play('go_arrow');
   }
@@ -211,12 +219,13 @@ function ironPost(ctx, x, y, h) {
   ctx.fillStyle = tones(IRON).hi; ctx.fillRect(x + 1, y + 1, 1, h - 2);
   ctx.fillStyle = tones(BRASS).hi; for (let yy = y + 6; yy < y + h - 4; yy += 16) ctx.fillRect(x + 3, yy, 2, 2);
 }
-/** Lift shaft: dark rock + iron ribs scrolling upward behind the sky rows; alpha ramps in as the lift drops. */
-function drawShaft(ctx, cam, l) {
+/** Lift shaft: dark rock + iron ribs scrolling upward behind the sky rows (downward when the party rides UP); alpha ramps in as the lift moves. */
+function drawShaft(ctx, cam, l, up = false) {
   const a = l.alpha == null ? 1 : l.alpha;
   if (a <= 0) return;
   ctx.globalAlpha = a; ctx.fillStyle = '#17141c'; ctx.fillRect(0, 0, VIEW_W, FLOOR_TOP + cam.shakeY);
-  const off = (l.t * 3) % 48, iron = tones(IRON);
+  const travel = up ? -l.t : l.t;                       // the walls run the other way when the cage rises
+  const off = ((travel * 3) % 48 + 48) % 48, iron = tones(IRON);
   for (let y = -48 + (48 - off); y < FLOOR_TOP; y += 48) {
     ctx.fillStyle = '#221c26'; ctx.fillRect(0, y, VIEW_W, 46);
     ctx.fillStyle = '#2e2632'; for (let x = (y / 48 | 0) % 2 ? 30 : 0; x < VIEW_W; x += 60) ctx.fillRect(x, y + 8, 40, 24);
@@ -225,9 +234,78 @@ function drawShaft(ctx, cam, l) {
   }
   // guide rails at the edges + a passing shaft lamp every 144px
   for (const x of [40, VIEW_W - 48]) { rrect(ctx, x, 0, 8, FLOOR_TOP, 0, iron.sh, OL, 1); }
-  const ly = (l.t * 3) % 144 - 20;
+  const ly = ((travel * 3) % 144 + 144) % 144 - 20;
   ctx.fillStyle = '#ffd070'; ctx.fillRect(VIEW_W - 60, ly, 4, 6); ctx.globalAlpha = a * 0.25; ctx.fillStyle = '#ffb040'; ctx.beginPath(); ctx.arc(VIEW_W - 58, ly + 3, 30, 0, Math.PI * 2); ctx.fill();
   ctx.globalAlpha = 1;
+}
+/**
+ * Dock look 'ladder': a ship's companion ladder rising off the right edge of the arrival landing and out of the top of the
+ * frame — the party has come up from below decks. Two wooden rails, brass-tipped rungs, a hemp hand-rope, a hatch lip at the foot.
+ */
+function drawLadder(ctx, cam, x0) {
+  const sx = cam.toScreenX(x0 + 104), y0 = FLOOR_TOP + cam.shakeY;
+  if (sx > VIEW_W || sx + 40 < 0) return;
+  const wood = tones(WOOD), brass = tones(BRASS), hemp = tones(HEMP);
+  // hatch lip: a brass-edged dark coaming the ladder stands in
+  ctx.fillStyle = '#1a1418'; ctx.fillRect(sx - 8, y0, 40, 14);
+  rrect(ctx, sx - 10, y0 - 2, 44, 4, 1, brass.base, OL, 1); ctx.fillStyle = brass.hi; ctx.fillRect(sx - 9, y0 - 2, 42, 1);
+  for (const x of [sx, sx + 20]) { rrect(ctx, x, -4, 5, y0 + 6, 1, wood.base, OL, 1); ctx.fillStyle = wood.hi; ctx.fillRect(x + 1, 0, 1, y0 + 2); }
+  for (let y = y0 - 6; y > 0; y -= 10) { rrect(ctx, sx + 3, y, 19, 3, 1, wood.sh, OL, 1); ctx.fillStyle = brass.base; ctx.fillRect(sx + 3, y, 2, 3); ctx.fillRect(sx + 20, y, 2, 3); }
+  ctx.strokeStyle = hemp.base; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx + 30, y0 - 2); ctx.lineTo(sx + 30, 0); ctx.stroke();
+  ctx.strokeStyle = OL; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(sx + 31.5, y0 - 2); ctx.lineTo(sx + 31.5, 0); ctx.stroke();
+}
+/**
+ * Dock look 'door': the counting-house double door the party has just been shown through. A brass lintel over two tall
+ * panelled leaves that swing open (foreshortened) over LOOK_SETTLE frames after the switch and then stand open.
+ */
+function drawDoor(ctx, cam, x0, l) {
+  const sx = cam.toScreenX(x0 + 10), y0 = FLOOR_TOP + cam.shakeY, top = y0 - 96, h = 100, W = 80;
+  if (sx > VIEW_W || sx + W < 0) return;
+  const k = Math.min(1, (l.t || 0) / LOOK_SETTLE), e = 1 - (1 - k) * (1 - k), open = Math.max(0.12, 1 - e);
+  const wood = tones(WOOD), brass = tones(BRASS);
+  // the dark hall behind the leaves, the frame posts, the lintel plate
+  ctx.fillStyle = '#14101a'; ctx.fillRect(sx + 4, top + 8, W - 8, h - 8);
+  ironPost(ctx, sx - 2, top - 6, h + 10); ironPost(ctx, sx + W - 6, top - 6, h + 10);
+  for (const side of [0, 1]) {
+    const hinge = side ? sx + W - 4 : sx + 4, dir = side ? -1 : 1;
+    ctx.save(); ctx.translate(hinge, 0); ctx.scale(open * dir, 1);
+    rrect(ctx, 0, top + 6, 36, h - 6, 2, wood.base, OL, 1);
+    ctx.fillStyle = wood.sh; ctx.fillRect(4, top + 12, 28, 34); ctx.fillRect(4, top + 52, 28, 38); // two recessed panels
+    ctx.fillStyle = wood.hi; ctx.fillRect(4, top + 12, 28, 1); ctx.fillRect(4, top + 52, 28, 1);
+    rrect(ctx, 28, top + 48, 4, 10, 1, brass.base, OL, 1);                                      // handle
+    ctx.restore();
+  }
+  rrect(ctx, sx - 6, top - 10, W + 12, 14, 2, brass.base, OL, 1); ctx.fillStyle = brass.sh; ctx.fillRect(sx - 4, top, W + 8, 3);
+  drawText(ctx, 'LEDGER', sx + W / 2, top - 8, { size: 1, color: UI.ink, align: 'center', shadow: false });
+}
+/**
+ * Dock look 'hoist': the hemp hoist platform the party rode up on — planks over the landing with a brass lip, four hemp lines
+ * rising to a pulley block at the top of the frame; the sheave spins down over LOOK_SETTLE frames as the load settles.
+ */
+function drawHoist(ctx, cam, x0, l) {
+  const sx = cam.toScreenX(x0), y0 = FLOOR_TOP + cam.shakeY;
+  if (sx > VIEW_W || sx + 120 < 0) return;
+  const plank = tones(PLANK), brass = tones(BRASS), hemp = tones(HEMP), iron = tones(IRON);
+  // the platform paints the floor band like the stair does: planks running along x, a dark seam every 16px
+  ctx.fillStyle = plank.base; ctx.fillRect(sx, y0, 120, Z_MAX);
+  ctx.fillStyle = plank.sh; for (let x = sx + 16; x < sx + 120; x += 16) ctx.fillRect(x, y0, 1, Z_MAX);
+  ctx.fillStyle = plank.hi; ctx.fillRect(sx, y0 + 1, 120, 1);
+  ctx.fillStyle = brass.base; ctx.fillRect(sx + 116, y0, 4, Z_MAX); ctx.fillStyle = brass.hi; ctx.fillRect(sx + 116, y0, 1, Z_MAX);
+  ctx.fillStyle = OL; ctx.fillRect(sx + 119, y0, 1, Z_MAX);
+  rrect(ctx, sx, y0 - 3, 120, 5, 1, brass.base, OL, 1);
+  // four hemp lines from the corners to the block
+  const bx = sx + 60, by = 14;
+  ctx.lineWidth = 2; ctx.strokeStyle = hemp.base; ctx.beginPath();
+  for (const x of [sx + 6, sx + 114]) for (const z of [6, Z_MAX - 6]) { ctx.moveTo(x, y0 + z); ctx.lineTo(bx + (x < bx ? -4 : 4), by + 8); }
+  ctx.stroke();
+  // the pulley block: iron cheeks, a brass sheave whose spokes turn while the load settles
+  rrect(ctx, bx - 12, by - 8, 24, 20, 3, iron.base, OL, 1);
+  const ang = Math.min(l.t || 0, LOOK_SETTLE) * 0.18;
+  circle(ctx, bx, by + 2, 7, brass.base, OL, 1);
+  ctx.strokeStyle = brass.sh; ctx.lineWidth = 2; ctx.beginPath();
+  for (let i = 0; i < 3; i++) { const a = ang + i * Math.PI / 3; ctx.moveTo(bx - Math.cos(a) * 5, by + 2 - Math.sin(a) * 5); ctx.lineTo(bx + Math.cos(a) * 5, by + 2 + Math.sin(a) * 5); }
+  ctx.stroke();
+  ctx.fillStyle = hemp.base; ctx.fillRect(bx - 1, 0, 3, by - 6);
 }
 /** Summit landing: three brass-edged marble steps rising out of the funicular dock onto the Heart-Engine floor. */
 function drawStairs(ctx, cam, x0) {
