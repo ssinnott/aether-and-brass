@@ -72,6 +72,10 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
   character select, pause or mid-run. A pad is never tied to a fixed slot — whichever one you press first
   becomes P1 if nobody else has, and a pad you set down keeps its slot until you return to the title screen,
   where every claim resets.
+- **COMMANDS** on either pause plate opens a one-page reference: every command (move, run, attack, jump,
+  dodge, special, super, taunt, throw, pause, mute) with the key and gamepad button actually bound to it
+  and a line on what it does, plus MUSIC / SFX / MUTE sliders you can move without leaving the run. Like
+  MOVES and OPTIONS it is hidden during online co-op.
 - Keys and gamepad buttons can be remapped from **OPTIONS** (a row on the title menu, or on the pause plate
   during a local game) → **CONTROLS**: one key per action per layout. A key already used by the other player,
   by the arcade / co-op sibling layout for a different action, or a global key (Escape, M, F1) is refused;

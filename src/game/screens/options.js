@@ -136,7 +136,9 @@ export class OptionsScreen extends Screen {
   }
 }
 
-function drawVolumeRow(ctx, x, y, value, sel, color) {
+/** A volume slider plus its 0..VOLUME_STEPS number, drawn at `x, y`. Shared with the COMMANDS plate
+ *  (screens/help.js), whose SOUND rows are the same two settings so both read one drawing. */
+export function drawVolumeRow(ctx, x, y, value, sel, color) {
   drawSlider(ctx, x, y + 1, value, sel);
   drawText(ctx, STEP_LABELS[value], x + SLIDER_W + 4, y, { size: 1, color });
 }
