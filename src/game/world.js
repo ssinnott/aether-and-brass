@@ -48,7 +48,19 @@ export class World {
     this._fighters = [];
     this._enemies = [];
     this._valves = new Set();
+    /**
+     * Fire sources registered THIS frame as { x, z, r }, cleared at the top of every update. Burn ticks (status.js),
+     * fire projectiles / puddles (projectile.js), a breaking lantern (items.js) and boiling vats call `addFire`; the gas
+     * hazards (hazards.js gasSeep / gasCell) read it to decide whether they ignite. A per-frame list, not a flag, so a
+     * hazard can ask "is there fire HERE" without every fire source knowing about every hazard. `lastFires` is the
+     * previous frame's list: entities update in list order, so a hazard placed before a burning fighter would otherwise
+     * never see its fire (the list is empty when the hazard runs and cleared again before it runs next).
+     */
+    this.fires = [];
+    this.lastFires = [];
   }
+  /** Register a fire at (x, z) with radius r for this frame (see `fires`). */
+  addFire(x, z, r = 16) { this.fires.push({ x, z, r }); }
   /** Add an entity. */
   add(e) {
     e.world = this;
@@ -90,6 +102,9 @@ export class World {
   /** Fixed step. */
   update() {
     this.frame++;
+    // fire sources re-register every step (a puddle that burned out last frame lights nothing two frames on); the swap keeps
+    // last frame's list readable for hazards that update earlier in the entity order than the fire that reached them
+    const swap = this.lastFires; this.lastFires = this.fires; this.fires = swap; this.fires.length = 0;
     if (this.cutsceneTimer > 0) { this.cutsceneTimer--; this.camera.update(); this._tickFx(); particles.update(); if (this.cutsceneTimer === 0) this.cutsceneDraw = null; return; }
     if (this.freeze > 0) { this.freeze--; this.camera.update(); this._tickFx(); if (this.freeze === 0) this.freezeFocus = null; return; }
     this._refreshLists();
@@ -263,7 +278,7 @@ export class World {
     if (f.kind === 'boss' && this.boss === f) this.boss = null;
   }
   /** Reset for a new run. */
-  clear() { this.entities.length = 0; this.players.length = 0; this.fx.length = 0; this.boss = null; this.attackTokens.holders.clear(); this._valves.clear(); this.resetBand(); this.cutsceneTimer = 0; particles.clear(); }
+  clear() { this.entities.length = 0; this.players.length = 0; this.fx.length = 0; this.fires.length = 0; this.lastFires.length = 0; this.boss = null; this.attackTokens.holders.clear(); this._valves.clear(); this.resetBand(); this.cutsceneTimer = 0; particles.clear(); }
   /** Living enemies excluding bosses (wave bookkeeping). */
   get waveEnemies() { return this._enemies.filter((e) => e.kind !== 'boss' && !e.fleeing && !e.dead); }
 }
