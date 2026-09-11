@@ -308,13 +308,23 @@ Global: Escape pauses/unpauses, M mutes, F1 debug overlay. Any free slot joins b
 
 # 9. Screens & HUD
 
-- **Title:** navy gradient; a brass gear outline (r 140px) rotates behind the tiered-city silhouette. Logo "**CALDERWICK**" in chunky brass rects with a 3px bevel; "*Brass & Aether*" in cyan italic; the four heroes idle on the gear. Menu: START / ONLINE CO-OP / OPTIONS (difficulty, friendly fire, volumes, scale, controls); any free slot joins with its own key or pad. "PRESS START" blinks 30f.
+- **Title:** navy gradient; a brass gear outline (r 140px) rotates behind the tiered-city silhouette. Logo "**CALDERWICK**" in chunky brass rects with a 3px bevel; "*Brass & Aether*" in cyan italic; the four heroes idle on the gear. Menu: START / ONLINE CO-OP / TRAINING / OPTIONS (difficulty, friendly fire, volumes, scale, controls); any free slot joins with its own key or pad. "PRESS START" blinks 30f.
 - **Character select:** each hero's shield (name, pool, refill rate, wait) prints under the cards; four portrait cards (140×200, brass frames) holding 2.5× rig busts: **Brunhild** (copper; beard rect, goggles, hammer on shoulder), **Sael** (teal; ear triangles, ponytail, rapier spark), **Rook** (oxblood; tricorne, gear eye-patch, revolver spin), **Pip** (iron grey; red hat inside the cockpit cage, claws clacking). Under each: name, archetype, five 5-pip stat bars. Hovered card plays its taunt. P1 cursor white gear ring, P2 cyan.
 - **Stage intro card:** §6, plus both portraits with "P1 / P2 READY".
 - **In-game HUD (top strip 640×40, alpha 0.5):** P1 left, P2 right. 24×24 bust portrait; name; **shield strip** 120×2 in brass directly above the health bar (pale when full, dim slow pulse while down); **health bar** 120×8 (`#59C3A0` → `#F2C94C` under 50% → `#FF5C5C` under 25%; white 4f flash on damage; a "ghost" bar drains behind after 20f); **special meter** 120×5 in three segments, filling cyan, full = pulsing white rim, red tint when a special would cost health; **lives** as character icons (goggles / scarf / tricorne / red hat); **score** 7 digits. Center: stage timer and "GO →". **Combo counter** on the player's side: 24px number + grade word, scales 1.3→1.0 over 6f per hit, color climbs grey → yellow → orange → cyan → white. **Enemy health:** 40×3 bar above the head, shown 90f after each hit; elites 60×4 with an armor icon; bosses a 400×10 bottom bar with name plate and phase segments. Pickups show floating "+25" text. With three or four players the strip becomes four 158px columns left to right (P1..P4 in slot order, name above the bar, bars filling rightward); the timer, GO arrow and target readout drop below the strip.
-- **Pause:** 60% dim, brass plate: RESUME / CONTROLS / OPTIONS / QUIT TO TITLE, plus a join hint for every free slot (P2 key / P3-P4 any pad button) while a slot is free.
+- **Pause:** 60% dim, brass plate: RESUME / MUTE / OPTIONS / MOVES / QUIT TO TITLE, plus a join hint for every free slot (P2 key / P3-P4 any pad button) while a slot is free. MOVES opens the same move list as the training pause plate for whichever heroes are in the run; it is hidden during online co-op, since a screen popped by only one peer's local edge would leave the two peers' screen stacks disagreeing.
 - **Game over / continue:** a player at 0 lives shows "CONTINUE? 9…0" on their side, the digit cracking like a gear each second; the partner keeps playing. Both out → frozen screen, grey overlay alpha 0.6, same countdown; Start uses a continue. Expiry: "THE ENGINE WINS." then results with a D-rank ceiling.
 - **Results / ranking:** §6.
+- **Training room:** TRAINING on the title menu opens character select into the Brass Funicular roof
+  stripped of its props, hazards, waves and the rails ring-out, holding one standing practice dummy. Its
+  own pause plate swaps the dummy between standing still, blocking with an armored stagger, or fighting
+  back as any of the 25 rank-and-file variants; locks its facing so a hero can drill a move that only
+  connects from behind; tops up health,
+  locks the meter full or empty, and overlays hitboxes and a live startup/active/recovery frame-data
+  readout under the HUD. MOVES lists every move with its bound key and a one-line description, the rig
+  playing it out beside the row; TRIALS gives each hero a handful of set-piece combos to land — the
+  starter combo, a jump-in into a grab, a dodge-cancel into a special, a body throw — ticking off and
+  saving alongside board progress.
 
 # 10. Audio Direction
 

@@ -18,6 +18,7 @@
 // floor, never across the face) while the free arm hangs back so both arms show. The renderer does the rest: contact
 // shadows under limbs, far-limb darkening, thin-part two-tone shading.
 import { speedFor, hpFor, areaBox, frontBox, P, F, hit } from './common.js';
+import { moveList, trials } from './brunhildMoves.js';
 import { JUMP_VY, METER } from '../../constants.js';
 import { celRect, celBall, celPoly, celPath, tones, flat, band } from '../../art/shading.js';
 import { drawSkull, drawFace, drawBoot, drawFist, drawBelt } from '../../art/rigParts.js';
@@ -484,6 +485,7 @@ export const brunhild = {
     shield: { name: 'BOILER PLATE', max: 34, regen: 0.15, delay: 150, breakDelay: 300 } },
   build,
   anims,
+  moveList, trials,
   moves: {
     special: { name: 'PISTON QUAKE', cost: METER.special }, super: { name: 'OVERPRESSURE', cost: METER.super, damage: 100 },
     // forward: hammer-golf swing released on the smear key (frame 5), ~200 px flight (measured 203); back: piledriver released

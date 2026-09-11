@@ -7,6 +7,7 @@
 // keys are authored with G(): the pose is grounded automatically (root.y solved so the lowest boot sole sits on the floor),
 // so long-legged stances never float; root[1] in a G() spec is an EXTRA sink (breathing / squash), not an absolute offset.
 import { speedFor, hpFor, areaBox, frontBox, P, F, hit } from './common.js';
+import { moveList, trials } from './saelMoves.js';
 import { METER, FLOOR_TOP, ST } from '../../constants.js';
 import { celBall, celPoly, tones, flat } from '../../art/shading.js';
 import { drawSkull, drawBoot, drawBelt } from '../../art/rigParts.js';
@@ -499,6 +500,7 @@ export const sael = {
   build,
   anims,
   hooks,
+  moveList, trials,
   moves: {
     special: { name: 'TEMPEST WALTZ', cost: METER.special }, super: { name: 'SKY LANE', cost: METER.super, damage: 126 },
     throwFwd: { damage: 12, vx: 10, vy: 5, selfVy: 4, releaseAt: 6 }, throwBack: { damage: 12, vx: 6, vy: 4, releaseAt: 6 }, grabHit: { damage: 5, hits: 3 },

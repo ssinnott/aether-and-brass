@@ -172,3 +172,11 @@ interface Hooks {
   drawBefore?(ctx: CanvasRenderingContext2D, f: any, sx: number, sy: number, cam?: any): void;
   drawAfter?(ctx: CanvasRenderingContext2D, f: any, sx: number, sy: number, cam?: any): void;
 }
+
+/** Combat-log event kinds (game/world.js logEvent) a trial step may name. Area / shockwave hits are 'projectile'. */
+type TrialKind = 'hit' | 'projectile' | 'body' | 'grab' | 'grabHit' | 'throw' | 'parry' | 'dodge' | 'cancel' | 'airDash' | 'armor';
+/** One row of a hero's MOVES list (screens/moves.js). `anims` plays in sequence beside the row; `anim` is the one-anim shorthand. */
+interface MoveEntry { id: string; name: string; input: string; desc: string; anim?: string; anims?: string[]; }
+interface TrialStep { kind?: TrialKind | TrialKind[]; anim?: string | string[]; air?: boolean; type?: HitType; label: string; }
+/** A combo trial: ordered steps matched against the combat log (game/trials.js). `spacing` = px between the two bodies. */
+interface Trial { id: string; name: string; hint: string; steps: TrialStep[]; window?: number; strict?: boolean; bodies?: 1 | 2; spacing?: number; dummyMode?: 'stand' | 'block' | 'cpu'; }

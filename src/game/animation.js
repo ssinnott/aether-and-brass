@@ -121,3 +121,34 @@ export class AnimPlayer {
 export function frames(list) {
   return list.map(([dur, pose, extra]) => ({ dur, pose, ...(extra || {}) }));
 }
+
+// ---------- frame data (training room: screens/training.js frame-data readout) ----------
+const ACTIVE_EVENTS = new Set(['spawnProjectile', 'shockwave', 'area', 'grapple']);
+const EMPTY_TIMING = Object.freeze({ startup: 0, active: 0, recovery: 0, total: 0 });
+const TIMING = new WeakMap();
+/** True for a frame that can connect: a hitbox, an area, a spawn, or an event that spawns one. */
+export function isActiveFrame(f) { return !!(f.hitbox || f.hitboxes || f.area || f.spawn || f.projectile || f.hit || ACTIVE_EVENTS.has(f.event)); }
+/** Startup / active / recovery frame counts of one anim def (cached per def; a frame with no dur counts 1, like tick()). */
+export function animTiming(def) {
+  if (!def || !def.frames || !def.frames.length) return EMPTY_TIMING;
+  const cached = TIMING.get(def);
+  if (cached) return cached;
+  let first = -1, last = -1, total = 0;
+  for (let i = 0; i < def.frames.length; i++) {
+    const f = def.frames[i], dur = f.dur || 1;
+    total += dur;
+    if (isActiveFrame(f)) { if (first < 0) first = i; last = i; }
+  }
+  let out;
+  if (first < 0) out = Object.freeze({ startup: total, active: 0, recovery: 0, total });
+  else {
+    let startup = 0, active = 0, recovery = 0;
+    for (let i = 0; i < def.frames.length; i++) {
+      const dur = def.frames[i].dur || 1;
+      if (i < first) startup += dur; else if (i <= last) active += dur; else recovery += dur;
+    }
+    out = Object.freeze({ startup, active, recovery, total });
+  }
+  TIMING.set(def, out);
+  return out;
+}

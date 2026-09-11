@@ -101,14 +101,20 @@ export class Hud {
     if (this.targetTimer > 0) this.targetTimer--; else this.target = null;
     if (this.banner && ++this.banner.timer >= this.banner.life) this.banner = null;
     if (this.cutIn && ++this.cutIn.timer >= this.cutIn.life) this.cutIn = null;
-    // Join hints: rebuilt only when the joined/unbound-pad bitmask changes, never every frame (draw() just reads them).
-    const inp = this.game.input, k = inp.joinState();
+    // Join hints: rebuilt only when the joined/unbound-pad bitmask (or the owning screen's own cap) changes,
+    // never every frame (draw() just reads them). A screen that caps the room below MAX_PLAYERS (TrainingScreen
+    // maxPlayers() = 1) has nowhere for a join press to land -- GameplayScreen.update's drop-in loop breaks
+    // before setJoined -- so the hint must not blink for a slot the room can never seat (review finding).
+    const inp = this.game.input, scr = this.screen;
+    const cap = scr && scr.maxPlayers ? scr.maxPlayers() : MAX_PLAYERS;
+    const full = this.world.players.length >= cap;
+    const k = inp.joinState() * 2 + (full ? 1 : 0);
     if (k !== this.joinKey) {
       this.joinKey = k;
       const online = !!(this.game.net && this.game.net.active);
-      this.hint = joinHint(inp, online);
+      this.hint = full ? '' : joinHint(inp, online);
       for (let s = 1; s < MAX_PLAYERS; s++) {
-        this.slotHints[s] = online || inp.joined(s) || (!inp.hasKeyboard(s) && inp.unboundPads === 0) ? '' : inp.joinHint(s);
+        this.slotHints[s] = full || online || inp.joined(s) || (!inp.hasKeyboard(s) && inp.unboundPads === 0) ? '' : inp.joinHint(s);
       }
     }
   }

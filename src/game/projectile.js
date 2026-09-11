@@ -38,6 +38,8 @@ export class Projectile extends Entity {
   constructor(o) {
     super('projectile');
     this.owner = o.owner || null;
+    /** Name of the owner's animation at the moment of construction (training-room log/frame-data readout). */
+    this.fromAnim = this.owner && this.owner.anim ? this.owner.anim.name : '';
     this.team = o.team != null ? o.team : (this.owner ? this.owner.team : TEAM.NONE);
     this.motion = o.kind || 'straight';
     const kd = KIND_DEFAULTS[this.motion] || {};
@@ -155,7 +157,7 @@ export class Projectile extends Entity {
     this.x = t.x; this.y = t.y + 30; this.z = t.z;
     if (++this.reelT >= this.reelFrames || Math.abs(gx - t.x) < 4) {
       this.reelTarget = null; this.removeMe = true;
-      if (t.grabbableBy && t.grabbableBy(o, { ignoreHitstun: true }) && !t.grabbedBy) { t.x = gx; t.z = o.z; t.hurtTimer = 0; o.startGrab(t); }
+      if (t.grabbableBy && t.grabbableBy(o, { ignoreHitstun: true }) && !t.grabbedBy) { t.x = gx; t.z = o.z; t.hurtTimer = 0; o.startGrab(t); if (world.logEvent) world.logEvent('grab', o, t, { anim: this.fromAnim }); }
       else t.hurtTimer = 8;
     }
   }

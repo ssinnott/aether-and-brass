@@ -110,15 +110,20 @@ src/
     stage.js               # StageRunner: sections, wave director, camera locks, GO arrow, boss trigger
     storage.js             # guarded localStorage probe: store(namespace), shared by progress.js + options.js
     options.js             # persisted options (difficulty, music/sfx volume, screen shake, bindings)
+    trials.js              # issue #22: TrialRunner (matches world.log against a Trial's steps) + trialProgress (guarded save)
     hud.js                 # in-game HUD
     screens/
       title.js, boardselect.js, select.js, intro.js, gameplay.js, pause.js, gameover.js, results.js
       gallery.js, lobby.js       # rig gallery; online co-op lobby (net/)
       charcards.js, boardcards.js  # hero cards / board plaques, shared by select+lobby and boardselect+lobby
       options.js, controls.js     # OPTIONS overlay (main plate) and its CONTROLS sub-plate
+      training.js, trainpause.js  # issue #22: TrainingScreen (extends gameplay.js) + its own pause plate
+      trialsScreen.js, moves.js   # issue #22: per-hero trial list with ticks; move list with animated rig previews
   content/
     characters/            # one file per playable character (rig build, palette, anims, moves)
       index.js, brass.js, ... (names from GDD)
+      <hero>Moves.js         # issue #22: sibling per hero — MoveEntry[] moveList + Trial[] trials, imported and
+                             # attached by the hero file (kept separate so pip.js stays close to the 700-line cap)
     enemies/
       index.js             # registry: getEnemyDef(type, variant), ENEMY_LIST, ENEMY_GALLERY
       common.js            # shared rig parts / animation + def builders for every faction
@@ -386,6 +391,13 @@ Rules implemented ONCE in `Fighter` (players and enemies both inherit):
   damage (`breakDelay` after the pool empties), and never while dead, frozen or in hit-stop (the update returns
   first). `initShield` on spawn and respawn, `syncShield` after a def swap (boss phases). Absorbed damage is not
   counted in the results screen's Damage Taken, which stays HP lost.
+- **Training dummy** (`traits.dummy`, issue #22): a def spread with `traits.dummy: true` (passed through
+  `spawnEnemyAt`'s optional `opts.def`, never on a normal spawn) makes `Enemy.think` short-circuit into
+  `thinkDummy` — face the nearest player (unless `e.dummyFaceLock`) and stand, no attacks, no tokens, no
+  riposte/flee — unless `e.dummyMode === 'cpu'`, in which case the variant's own AI fights back at the
+  current difficulty. `traits.weight` (already read by `Fighter.takeHit` as a knockback divisor) is set to
+  1000 per instance to pin a STAND/BLOCK dummy in place so combos keep it inside a bot's attack band;
+  hitstun, launch height and throws are unaffected. See `game/screens/training.js`.
 - `hitstop`: while `> 0` the fighter's own update is frozen (anim and physics) but it still draws; camera shake on heavy hits.
 - Wall/edge bounce: when a knocked-down fighter hits the camera lock edge with `|vx| > 4`, it bounces back (`vx *= -0.5`) — feels great, cheap.
 - Grabs: `grab` hitbox type → if target is grabbable (`def.grabbable !== false`, not a boss unless allowed) attacker → `GRAB`, target → `GRABBED` (positioned in front of attacker each frame). From `GRAB`: attack = grab hit (up to 3, then auto-throw), direction + attack = throw in that direction (`THROWN` = knockdown with strong velocity; thrown bodies hit other enemies for damage `hit.friendly = true`). Grab breaks after `def.grabHoldFrames` (90).
@@ -529,11 +541,23 @@ the nearest lock edge (prevents stuck waves).
 `Game` holds a stack `screens[]`; top screen gets `update()`, all screens draw bottom
 to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
 `update()`, `draw(ctx)`. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`.
-Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `OPTIONS`, "PRESS ATTACK", blinking; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`). The online co-op lobby
+Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `OPTIONS`, "PRESS ATTACK", blinking; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
 (`boardcards.js`, compact) on one screen, with the peer driving the P2 cursor and no two
 players allowed on one hero (docs/MULTIPLAYER.md). Intro: stage card 2.5s
 (skip on attack). Results: score, max combo, grade, time, "PRESS START".
+Training (issue #22): `title → select(next:'training') → training ⇄ trainpause → moves | trials`.
+`TrainingScreen` (`screens/training.js`) extends `GameplayScreen` and runs stage 1's THE BRASS FUNICULAR
+section through a derived arena stage (every section stripped of props/hazards/zones/waves, so nothing
+but the floor and one or two dummies exist in the room); its `pauseScreenId` is `'trainpause'` instead of
+`'pause'`. `trainpause.js` is a sibling of `pause.js` (shares its extracted `drawPlate` / `drawMenuRows` /
+`consumeMenuBuffers` helpers) with rows for DUMMY (STAND/BLOCK-STAGGER/CPU), VARIANT (any of the 25
+non-boss enemies), FACING lock, REFILL HEALTH, METER lock, HITBOXES overlay, FRAME DATA readout, RESET
+POSITIONS, MOVES and TRIALS. `moves.js` (pushed from either pause plate; hidden from the normal plate
+while `game.net.active`) lists a hero's `moveList` with an animated rig preview beside each row and its
+bound key via `inputLabel()`. `trialsScreen.js` lists a hero's `trials` with a `[X]`/`[ ]` tick
+(`game/trials.js` `trialProgress`) and hands the picked id to `TrainingScreen.setTrial()`.
+`gameplay ⇄ pause → moves` too (hidden online, same guard) so the move list is reachable from a real run.
 `title | pause → options`: `OptionsScreen` (`screens/options.js`) is a transparent overlay pushed on top
 of either opener and popped on back (both openers freeze underneath exactly like `pause` freezes
 `gameplay`, since `Game.update()` only ticks the top of the stack); it is hidden from the pause plate
@@ -565,7 +589,8 @@ URL params: `?debug=1` (hitboxes, hurtboxes, AI state labels, FPS), `?autotest=1
 `?seed=123`, `?skipTo=gameplay&chars=0,2&section=3` (jump straight into gameplay with
 chosen characters and section), `?stage=2` (which board to play; honoured outside dev mode
 too, and it opens that board on BOARD SELECT for the page load), `?unlockall=1` (open every board for
-this page load, save untouched), `?resetprogress=1` (wipe the saved unlocks), `?godmode=1`, `?bot=1`
+this page load, save untouched), `?resetprogress=1` (wipe the saved unlocks and, issue #22, the saved
+trial ticks under `aetherAndBrass.trials.v1`), `?godmode=1`, `?bot=1`
 (built-in autopilot that walks right and attacks the nearest enemy — used for headless playthroughs),
 `?difficulty=easy|normal|hard` (session-only override of the saved difficulty: sets
 `game.options.difficulty` for this page load via `userOptions.setSessionDifficulty()`, never written
@@ -580,10 +605,20 @@ window.__game = {
   setInput(p, actions) / clearInput(p),
   userOptions,                       // the game/options.js module object (load/apply/get/set/cycle/adjust/difficulty/saveBindings/reset/state)
   optionsState() -> object,          // userOptions.state(): { storage, saved, ...current values } for test assertions
+  setTraining(partial) -> object,    // issue #22: delegates to the top screen's setTraining(); null off training
+  trialState() -> object,            // issue #22: { saved (raw aetherAndBrass.trials.v1 string, or null), heroes: { [heroId]: string[] } }
+  moveAnims,                         // issue #22: MOVE_ANIMS.slice() — the anim names every hero's moveList must cover
   errors: []                         // window.onerror + unhandledrejection push here
 }
 ```
 Every uncaught error must be pushed to `__game.errors` (and rendered in a red box in debug mode) — tests fail on any error. `players[].index` is the input slot (0-3); `players[].id` is `def.id` — both let a test find an entry in a slot-sparse party without relying on array position.
+`__game.world` reads only the TOP screen (`net.afterStep` depends on that for the desync checksum), so it
+is `null` whenever an overlay (`pause`, `trainpause`, `options`, `moves`, `trials`) sits on top of
+`gameplay`/`training` — a test must read `world` only while the screen it wants is on top.
+`World.log` (`world.logEvent(kind, attacker, target, opts)`, issue #22, capped at 64 entries) is a combat
+log of player-dealt hits/grabs/throws/parries/dodges read by the training room's frame-data readout and
+`game/trials.js`'s `TrialRunner`; like `world.fx` it is derived state, deliberately **not** hashed by
+`src/net/checksum.js` (`node tools/nettest.js` proves this stays true).
 
 ## 13. Tooling & tests
 - `npm run dev` → `node tools/server.js` (serves repo root on http://localhost:8080 with correct
@@ -632,6 +667,18 @@ Every uncaught error must be pushed to `__game.errors` (and rendered in a red bo
      pattern: a small file exporting one function of the form `(server, { withPage, assert }) => {...}`,
      imported and added to the `scenarios` map here.
   9. `coop4` (`tools/scenarios/coop4.js`, issue #23): a four-bot run to results (`attackTokens.max===4`, 4 stats rows); pad-only drop-in mid-run/pause; title pad-claim assignment (arrows-then-pad stays P2, `resetClaims()` releases on title entry); a four-cursor select into gameplay; the netplay guard (own room) — `beginMatch` un-joins local slots above `NET_PLAYERS`, no pad claims the peer's slot, no desync.
+  10. `training` (`tools/scenarios/training.js`, issue #22 — same sibling-module pattern as `options`/`coop4`,
+     registered from here as `training: (server) => trainingScenario(server, { withPage, assert, CHARACTER_COUNT })`):
+     Part A, per hero, `?skipTo=training`: lands on `training` with one STAND Tin Footman dummy and no props/
+     rails in the arena; every move-list animation is covered and each hero has 5-8 trials; walks in and
+     lands attack1, asserting the frame-data readout's startup/active/recovery against the hand-checked
+     table; BLOCK/VARIANT/METER-LOCK plate settings and dummy respawn-after-death; hero 0 also screenshots
+     the hitbox overlay, the training pause plate, the trial list and the MOVES screen reached from it.
+     Part B (`?seed=3&chars=0&bot=1&resetprogress=1`): the built-in bot completes Brunhild's 4-hit combo
+     trial against the pinned dummy within a frame budget, the tick is readable via `trialState()` and
+     persists under `aetherAndBrass.trials.v1`, a two-body trial keeps two dummies standing, and a trial's
+     `dummyMode` override (and its release) is asserted. Part C: the title's TRAINING row reaches `select`
+     then `training`; the normal gameplay pause plate's MOVES row opens `moves` and returns.
   Exit code non-zero on any assertion failure or `__game.errors.length > 0`.
 
 `tools/winrate.js` (`npm run winrate`) is the balance counterpart: it plays runs with NO godmode
@@ -652,9 +699,11 @@ Runs that never reach the results plaque are reported as unfinished — a soft-l
 
 ## 15. Additional debug hooks required by `tools/playtest.js`
 URL params (all only honored when `?autotest=1` or `?debug=1`):
-- `skipTo=gameplay|gallery|results|title` — `gallery` is a debug screen that draws every
+- `skipTo=gameplay|gallery|results|title|training` — `gallery` is a debug screen that draws every
   playable character, every enemy variant and both bosses in a labelled grid, cycling
-  animations (`right` = next anim: idle → walk → attack1 → hurt …, `left` = previous).
+  animations (`right` = next anim: idle → walk → attack1 → hurt …, `left` = previous). `training`
+  (issue #22, `game/screens/training.js`) opens the training room directly for the chosen `chars`
+  hero: one STAND dummy on the Funicular roof, no waves, no props, ready for `__game.setTraining()`.
 - `chars=0,2` — character indices by slot, up to four (`MAX_PLAYERS`): `chars=0,1,2,3` fills slots 0-3.
 - `nowaves=1` — the stage runner never triggers waves/bosses (free-roam test arena).
 - `spawn=typeA:grunt@80,typeB:brute@-90` — spawn enemies at `player.x + dx` on load.
@@ -681,6 +730,13 @@ P1 toward and steps toward the nearest enemy — used by the enemy test), `summa
 `summary().sectionIndex` = index of the section containing the camera center.
 `summary().players[]` has no held-prop or thrown-projectile fields (issue #21); the `thrown` scenario reaches those directly off `world.entities` (`heldProp`, `thrownWeapon`, `thrownProp`,
 `lost`), the same convention the `weapons` scenario already uses for dropped `WeaponPickup`s.
+`__game.setTraining(partial)` (issue #22) delegates to the current screen's `setTraining` (`null` off
+`training`) and returns its `summary().training` — `{ mode, userMode, variant, faceLock, meterLock,
+hitboxes, frameData, dummies, trial, readout, done }` — the same object `summary().training` exposes
+directly while `training` is the top screen; `partial` may set any of `mode`, `variant`, `faceLock`,
+`meterLock`, `hitboxes`, `frameData`, `refill: true`, `reset: true`, or `trial: id | null`.
+`__game.trialState()` returns the raw `aetherAndBrass.trials.v1` string and each hero's completed trial
+ids, independent of which screen is on top. `__game.moveAnims` is `MOVE_ANIMS.slice()` (`content/characters/common.js`) — the animation names a hero's `moveList` must cover (move-list coverage assertion, scenario `training`).
 
 ## 16. Input bindings
 The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Y T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V N B until P2 joins; Space jumps on both P1 sets; gamepads are not index-bound — an unbound pad's first button press claims the lowest free slot; P3/P4 are gamepad-only, no keyboard half). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.

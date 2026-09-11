@@ -21,8 +21,16 @@ export class SelectScreen extends Screen {
     super.enter(params);
     this.chars = this.game.characters;
     this.slots = buildCharSlots(this.chars);
+    // issue #22: the TRAINING route caps the room at one player (TrainingScreen.maxPlayers), so slots 1-3
+    // never join here -- a slot already claimed before select (title.js P2 drop-in) is ignored outright,
+    // not merely blocked from confirming, or its card cursor and "same hero" bookkeeping would still show it.
+    this.single = params.next === 'training';
+    // A slot claimed on the title screen (P2 drop-in) must be released here too, or input.joined(1) stays
+    // true all the way into the single-player training room with no P2 player: P2's start would pause the
+    // room and P2's own keys would drive the training plate, trials and moves overlays (review finding).
+    if (this.single) for (let i = 1; i < MAX_PLAYERS; i++) if (this.game.input.joined(i)) this.game.input.setJoined(i, false);
     this.p = Array.from({ length: MAX_PLAYERS }, (_, i) => ({
-      joined: i === 0 || this.game.input.joined(i),
+      joined: i === 0 || (!this.single && this.game.input.joined(i)),
       cursor: Math.min(i, Math.max(0, this.chars.length - 1)),
       confirmed: false,
     }));
@@ -43,7 +51,9 @@ export class SelectScreen extends Screen {
         const chars = this.p.map((ps) => (ps.joined ? ps.cursor : null));
         while (chars.length > 1 && chars[chars.length - 1] == null) chars.pop();
         this.game.options.chars = chars;
-        const next = this.game.factories.intro ? 'intro' : 'gameplay';
+        // issue #22: the title's TRAINING row routes here with params.next = 'training'; every other
+        // caller (BOARD SELECT) keeps the intro/gameplay default.
+        const next = this.params.next || (this.game.factories.intro ? 'intro' : 'gameplay');
         this.game.fadeTo(() => this.game.replace(next, { chars }), 0.1);
       }
       return;
@@ -51,7 +61,7 @@ export class SelectScreen extends Screen {
     for (let i = 0; i < MAX_PLAYERS; i++) {
       const ps = this.p[i];
       if (!ps.joined) {
-        if (inp.joinPressed(i)) { ps.joined = true; inp.setJoined(i, true); audio.play('join'); this.slots[ps.cursor].anim.play('taunt', { restart: true, fallback: 'idle' }); this.dirty = true; }
+        if (!this.single && inp.joinPressed(i)) { ps.joined = true; inp.setJoined(i, true); audio.play('join'); this.slots[ps.cursor].anim.play('taunt', { restart: true, fallback: 'idle' }); this.dirty = true; }
         continue;
       }
       if (ps.confirmed) {
@@ -70,7 +80,8 @@ export class SelectScreen extends Screen {
         audio.play('menu_back');
         this.starting = true;
         // back out to wherever the board was chosen, so P1 can change board without restarting from the title
-        const back = this.game.factories.boardselect ? 'boardselect' : 'title';
+        // (params.back = 'title' for the TRAINING route: there is no board to return to)
+        const back = this.params.back || (this.game.factories.boardselect ? 'boardselect' : 'title');
         this.game.fadeTo(() => this.game.replace(back), 0.08);
         return;
       }
@@ -79,7 +90,8 @@ export class SelectScreen extends Screen {
     if (allReady && this.p[0].confirmed) { this.readyTimer = 0; audio.play('rank_stamp'); }
     if (this.dirty) { this.rebuild(); this.dirty = false; }
     const k = inp.joinState();
-    if (k !== this.joinKey) {
+    if (this.single) this.hint = '';
+    else if (k !== this.joinKey) {
       this.joinKey = k;
       const h = joinHint(inp);
       // Free slot 1 has its own keyboard half; the composite hint's short form for it is swapped
@@ -120,7 +132,8 @@ export class SelectScreen extends Screen {
     const f = this.frame;
     ctx.fillStyle = '#1c1420'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.globalAlpha = 0.22; gear(ctx, 60, 320, 90, 14, '#3a2a48', null, 0, f * 0.004, 30); gear(ctx, 600, 30, 70, 12, '#3a2a48', null, 0, -f * 0.005, 24); ctx.globalAlpha = 1;
-    drawTextOutlined(ctx, 'CHOOSE YOUR FIGHTER', 320, 8, { size: 2, color: UI.brass, outline: '#3a2010', align: 'center' });
+    const heading = this.params.next === 'training' ? 'TRAINING ROOM' : 'CHOOSE YOUR FIGHTER';
+    drawTextOutlined(ctx, heading, 320, 8, { size: 2, color: UI.brass, outline: '#3a2010', align: 'center' });
     const n = this.slots.length;
     if (!n) { drawText(ctx, 'NO CHARACTERS REGISTERED', 320, 170, { size: 1, color: UI.red, align: 'center' }); return; }
     const p1 = this.p[0];

@@ -76,6 +76,14 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
   sliders, a SCREEN SHAKE setting (off / low / full) and difficulty, and everything there persists in the
   browser under `aetherAndBrass.options.v1` — same caveat as progress: if storage is unavailable the game
   still plays, it just falls back to defaults every session and nothing throws.
+- **Training**: TRAINING on the title menu, then pick a hero, opens the Funicular roof with a standing
+  dummy. Its pause plate (same Escape/Start as a real run) sets the dummy to STAND, BLOCK-STAGGER or
+  CPU, picks any of the 25 enemy variants, locks its facing so you can practice hits from behind, locks
+  your meter full or empty, and toggles a hitbox overlay and a frame-data readout under the HUD. MOVES
+  (from either pause plate) lists every move with its bound key and a short description, animating the
+  rig beside each row. TRIALS gives each hero a handful of scripted combos and setups to land — a combo,
+  a jump-in grab, a dodge-cancel, a body throw — ticked off and saved next to board progress the moment
+  you land them; `?resetprogress=1` clears both saves together.
 
 ## The heroes
 
@@ -221,7 +229,8 @@ dodges hard, backs off when hurt), `masher` (no spacing, no patience). A run tha
 a result is reported apart as unfinished — that is a soft-lock, not a loss.
 
 Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,1,2,3`,
-`?skipTo=gallery`, `?bot=1`, `?botstyle=aggressive,defensive` (one archetype per slot),
+`?skipTo=gallery`, `?skipTo=training&chars=0` (straight into the training room), `?bot=1`,
+`?botstyle=aggressive,defensive` (one archetype per slot),
 `?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=4`, `?unlockall=1`, `?resetprogress=1`,
 `?difficulty=easy|normal|hard` (session only — overrides the saved difficulty for this page load without
 writing it back).

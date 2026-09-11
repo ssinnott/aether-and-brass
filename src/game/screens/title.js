@@ -22,8 +22,10 @@ import { joinHint } from '../party.js';
 
 // A remapped legend line is centred at x=320 and must not clip the view; 16px clears the side gutter.
 const LEGEND_MAX_W = VIEW_W - 16;
-const MENU = ['START', 'ONLINE CO-OP', 'OPTIONS'];
-const I_START = 0, I_ONLINE = 1, I_OPTIONS = 2;
+// TRAINING sits directly after ONLINE CO-OP (issue #22 decision); DIFFICULTY already moved off this
+// menu onto OPTIONS (#19), so TRAINING lands where DIFFICULTY used to be rather than after it.
+const MENU = ['START', 'ONLINE CO-OP', 'TRAINING', 'OPTIONS'];
+const I_START = 0, I_ONLINE = 1, I_TRAIN = 2, I_OPTIONS = 3;
 const PLATE_H = MENU.length * 14 + 10;
 // Controls legend text is rebuilt from the live bindings (engine/input.js legend()/joinHint()) in
 // refreshLegends() below, so a remap in OPTIONS is reflected here without any hardcoded key literal.
@@ -114,6 +116,10 @@ export class TitleScreen extends Screen {
       this.starting = true;
       audio.play('menu_confirm');
       this.game.fadeTo(() => this.game.replace('lobby'), 0.08);
+    } else if (i === I_TRAIN) {
+      this.starting = true;
+      audio.play('menu_confirm');
+      this.game.fadeTo(() => this.game.replace('select', { next: 'training', back: 'title' }), 0.08);
     } else if (i === I_OPTIONS) { audio.play('menu_confirm'); this.game.push('options'); }
   }
   draw(ctx) {

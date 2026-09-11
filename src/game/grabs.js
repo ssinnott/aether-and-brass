@@ -77,6 +77,7 @@ export const grabMethods = {
     t.takeHitRaw(Math.round(mv.damage * this.traits.grabDamageMult * t.traits.throwDamageTakenMult), 'medium', this);
     if (this.world) this.world.addFx('spark', t.x, t.y + t.h * 0.6, t.z, { type: 'heavy' });
     this.onHitConfirmed(t, { type: 'heavy', damage: mv.damage });
+    if (this.world) this.world.logEvent('grabHit', this, t, { hit: { type: 'heavy', damage: mv.damage } });
     if (t.dead) { t.knockDown(KNOCKDOWN_POP_VY, this.facing * 3); this.grabTarget = null; this.setState(ST.IDLE, 'idle'); return true; }
     if (this.grabHits >= (mv.hits || 3)) this.throwTarget(1);
     return true;
@@ -105,6 +106,7 @@ export const grabMethods = {
     }
     audio.play('throw');
     this.onHitConfirmed(t, { type: 'throw', damage: dmg });
+    if (this.world) this.world.logEvent('throw', this, t, { hit: { type: 'throw', damage: dmg } });
     if (mv.selfVy) { this.vy = mv.selfVy; this.y = 0.01; }
     this.callHook('onThrow', t, dir);
   },

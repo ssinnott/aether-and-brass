@@ -37,6 +37,7 @@
 //  extraJumps 0 | airDashes 0 | dodgeRecovery 8 | dodgeIFrames [2, 12] | parry { frames: 6, stun: 40, meter: 15, hitstop: 8 }
 //  tauntMeter 25 (gained over the taunt animation)
 //  shield { max, regen, delay, breakDelay, name }  regenerating buffer spent before hp (game/shield.js); absent = no shield
+//  dummy false           training dummy (screens/training.js): Enemy stands / blocks / fights per e.dummyMode, never flees or ripostes
 // ================================ FRAME FIELDS honoured by the core ==================================================
 //  hitbox { x, y, w, h, z, type: light|medium|heavy|launch|knockdown|grab|throw, damage, kbX, kbY, hitstun, once, rehit, multiHit: N,
 //           friendly, hitsBehind (mirrored copy), maxTargets, pierceDamage (damage for the 2nd+ target), reaction: flinch|stagger|launch|knockdown,
@@ -492,7 +493,9 @@ export class Fighter extends Entity {
     if (this.hp <= 0) { this.die(); this.knockDown(Math.max(hit.kbY || 0, KNOCKDOWN_POP_VY), (kbX != null ? Math.max(2, kbX) : 3) * face * kw); this.onHurt(hit, attacker); return true; }
     if (armored) {
       if (frameArmor && !tr.superArmor && --this.armorHits <= 0 && this.state !== ST.SUPER) this.armor = false;
-      this.vx += face * 0.5; this.onHurt(hit, attacker); audio.play('armor'); return true;
+      this.vx += face * 0.5; this.onHurt(hit, attacker); audio.play('armor');
+      if (this.world) this.world.logEvent('armor', this, attacker, { hit });
+      return true;
     }
     if (air || this.state === ST.KNOCKDOWN) {
       this.juggleCount++;
@@ -530,6 +533,7 @@ export class Fighter extends Entity {
     if (this.world) { this.world.addFx('spark', this.x + this.facing * 14, this.y + this.h * 0.6, this.z, { type: 'heavy' }); this.world.addFx('ring', this.x + this.facing * 10, 40, this.z, { r0: 4, r1: 36, color: '#ffffff' }); }
     floatText(this.x, this.y + this.h + 10, this.z, 'PARRY!', '#ffffff', 2);
     audio.play('parry');
+    if (this.world) this.world.logEvent('parry', this, attacker, {});
     this.callHook('onParry', attacker, hit);
   }
   /** Launch / knock down with a pop. */
@@ -651,11 +655,12 @@ export class Fighter extends Entity {
       }
     }
   }
-  /** Debug: draw hurtboxes and current hitboxes. */
-  drawDebug(ctx, cam) {
+  /** Debug: draw hurtboxes and current hitboxes; `labels` false omits the state text (training room hitbox overlay). */
+  drawDebug(ctx, cam, labels = true) {
     for (const hb of this.hurtboxes()) { ctx.strokeStyle = hb.part ? 'rgba(255,220,80,0.9)' : 'rgba(80,200,255,0.8)'; ctx.strokeRect(cam.toScreenX(hb.x0), FLOOR_TOP + this.z - hb.y1, hb.x1 - hb.x0, hb.y1 - hb.y0); }
     const list = this.hitboxes();
     for (const h of list) { const b = worldHitbox(this, h); ctx.strokeStyle = 'rgba(255,80,80,0.9)'; ctx.strokeRect(cam.toScreenX(b.x0), FLOOR_TOP + this.z - b.y1, b.x1 - b.x0, b.y1 - b.y0); }
+    if (!labels) return;
     const stn = Object.keys(this.status).join(',');
     drawText(ctx, `${this.state}${this.hitstop ? ' HS' : ''}${this.armor ? ' A' : ''}${stn ? ' ' + stn : ''}`, cam.toScreenX(this.x), FLOOR_TOP + this.z + 4, { size: 1, color: '#9f9', align: 'center' });
   }

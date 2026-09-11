@@ -13,16 +13,22 @@ import { BoardSelectScreen } from './game/screens/boardselect.js';
 import { SelectScreen } from './game/screens/select.js';
 import { GalleryScreen } from './game/screens/gallery.js';
 import { GameplayScreen } from './game/screens/gameplay.js';
+import { TrainingScreen } from './game/screens/training.js';
 import { IntroScreen } from './game/screens/intro.js';
 import { PauseScreen } from './game/screens/pause.js';
+import { TrainPauseScreen } from './game/screens/trainpause.js';
+import { TrialsScreen } from './game/screens/trialsScreen.js';
+import { MovesScreen } from './game/screens/moves.js';
 import { OptionsScreen } from './game/screens/options.js';
 import { GameOverScreen } from './game/screens/gameover.js';
 import { LobbyScreen } from './game/screens/lobby.js';
 import { ResultsScreen } from './game/screens/results.js';
 import { createNetSession } from './net/session.js';
 import { progress } from './game/progress.js';
+import { trialProgress, TRIALS_KEY } from './game/trials.js';
 import { options as userOptions } from './game/options.js';
 import { CHARACTERS } from './content/characters/index.js';
+import { MOVE_ANIMS } from './content/characters/common.js';
 import { ENEMY_LIST, ENEMY_GALLERY } from './content/enemies/index.js';
 import { weaponGalleryEntries } from './game/weapons.js';
 
@@ -86,7 +92,7 @@ window.addEventListener('unhandledrejection', (e) => { if (!hooks._record) hooks
 function boot() {
   const options = parseOptions();
   // Unlock state has to settle before the title / board select read it.
-  if (options.resetprogress) progress.reset();
+  if (options.resetprogress) { progress.reset(); trialProgress.reset(); }
   if (options.unlockall) progress.unlockAllForSession();
   if (options.stage > 1) progress.allowSession(options.stage - 1); // a `?stage=N` link is its own key to board N
   audio.testMode = options.autotest;
@@ -115,7 +121,11 @@ function boot() {
   game.registerScreen('gallery', (g) => new GalleryScreen(g));
   game.registerScreen('lobby', (g) => new LobbyScreen(g));
   game.registerScreen('gameplay', (g) => new GameplayScreen(g));
+  game.registerScreen('training', (g) => new TrainingScreen(g));
   game.registerScreen('pause', (g) => new PauseScreen(g));
+  game.registerScreen('trainpause', (g) => new TrainPauseScreen(g));
+  game.registerScreen('trials', (g) => new TrialsScreen(g));
+  game.registerScreen('moves', (g) => new MovesScreen(g));
   game.registerScreen('options', (g) => new OptionsScreen(g));
   game.registerScreen('gameover', (g) => new GameOverScreen(g));
   game.registerScreen('results', (g) => new ResultsScreen(g));
@@ -200,6 +210,8 @@ function boot() {
     enemyList: () => (game.enemyList || []).map((e) => ({ type: e.type, variant: e.variant, name: e.name, role: e.role })),
     characterList: () => (game.characters || []).map((c) => ({ id: c.id, name: c.name })),
     fillMeter: delegate('fillMeter', undefined),
+    setTraining: delegate('setTraining', null),
+    moveAnims: MOVE_ANIMS.slice(),
     facePlayerToNearestEnemy: delegate('facePlayerToNearestEnemy', undefined),
     toggleDebug() { showDebug = !showDebug; return showDebug; },
     /** Online co-op state for tools/playtest.js. */
@@ -215,6 +227,12 @@ function boot() {
     },
     /** Persisted-options state, for tools/playtest.js (game/options.js). */
     optionsState() { return userOptions.state(); },
+    /** Trial-completion state, for tools/playtest.js (game/trials.js). `saved` proves the tick is persisted. */
+    trialState() {
+      let saved = null;
+      try { saved = window.localStorage.getItem(TRIALS_KEY); } catch (e) { saved = null; }
+      return { saved, heroes: Object.fromEntries((game.characters || []).map((c) => [c.id, trialProgress.done(c.id)])) };
+    },
     /** Netplay tests need the real gated rAF loop; autotest otherwise leaves it stopped. */
     startLoop() { loop.start(true); return true; },
     stopLoop() { loop.stop(); return true; },

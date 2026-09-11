@@ -53,6 +53,8 @@ export class Player extends Fighter {
     this.dodgeCooldown = 0; this.dodgeDx = 0; this.dodgeDz = 0; this.airDash = false; this.lastDodgeFrame = -100;
     this.jumpsLeft = 0; this.airDashesLeft = 0; this.airShotUsed = false;
     this.out = false; this.respawnTimer = 0;
+    /** Last dodge attempt was through an attack's active frames (fighter.js onDodged), else a clean roll (training readout). */
+    this.dodgeThrough = false;
     this.lastTarget = null; this.heldBody = null; this.heldProj = null; this.victory = false;
     this.crowdInst = -1; this.crowdHits = 0; this.crowdClearUntil = -1; this.tauntAcc = 0;
     this.intent = { x: 0, y: 0, attack: false, jump: false, special: false, super: false, dodge: false, taunt: false, run: false, start: false };
@@ -124,7 +126,7 @@ export class Player extends Fighter {
       if (this.callHook('onAttackPressed', world, false) === true) return;
       if (this.running && this.anim.has('dashAttack')) { this.startDashAttack(); return; }
       const g = this.findGrabTarget(world);
-      if (g) { this.startGrab(g); return; }
+      if (g) { this.startGrab(g); world.logEvent('grab', this, g, {}); return; }
       // A held weapon with a direction pressed throws instead of swinging (GDD 7 / issue #21); a neutral attack
       // with no direction stays the ordinary swing so an armed hero standing still can still fight.
       if (this.weaponId && (it.x || it.y) && startWeaponThrow(this, it)) return;
@@ -155,7 +157,7 @@ export class Player extends Fighter {
       this.consume('attack'); this.startAttack(this.comboStep + 1); return;
     }
     if (it.attack && this.state === ST.DASH_ATTACK && a.cancel === 'attack') { this.consume('attack'); this.startAttack(1); return; }
-    if (it.dodge && this.dodgeCooldown <= 0) { if (this.callHook('onDodgePressed', world, false) !== true) this.startDodge(); return; }
+    if (it.dodge && this.dodgeCooldown <= 0) { if (this.callHook('onDodgePressed', world, false) !== true) { this.startDodge(); world.logEvent('cancel', this, null, { anim: 'dodge' }); } return; }
     if (it.jump && (a.cancel === 'any' || a.cancel === 'jump')) { this.consume('jump'); if (this.callHook('onJumpPressed', world, false) !== true) this.jump(); return; }
     if (it.special && a.cancel === 'any') { this.consume('special'); if (this.callHook('onSpecial', world) !== true) this.trySpecial(world); }
   }
@@ -261,11 +263,12 @@ export class Player extends Fighter {
     this.airDashesLeft--;
     const dir = this.intent.x || this.facing;
     this.facing = dir; this.dodgeDx = dir * AIR_DASH_DIST / AIR_DASH_FRAMES; this.dodgeDz = 0;
-    this.airDash = true; this.noGravity = AIR_DASH_FRAMES; this.vy = 0;
+    this.airDash = true; this.noGravity = AIR_DASH_FRAMES; this.vy = 0; this.dodgeThrough = false;
     this.setState(ST.DODGE, 'airDash', { fallback: 'dodge' });
     this.invuln = Math.max(this.invuln, this.traits.dodgeIFrames[1] - 2);
     if (this.world) this.world.addFx('steam', this.x - dir * 10, this.y + 20, this.z, { count: 4 });
     audio.play('dodge');
+    if (this.world) this.world.logEvent('airDash', this, null, { anim: 'airDash' });
   }
   /** Pay for a special: one meter bar, else 8% max HP above 15% HP (GDD 7). Returns false (and whiffs) when unaffordable. */
   paySpecial() {
@@ -298,7 +301,7 @@ export class Player extends Fighter {
   }
   startDodge() {
     const it = this.intent;
-    this.running = false; this.airDash = false;
+    this.running = false; this.airDash = false; this.dodgeThrough = false;
     if (it.y) { this.dodgeDz = it.y * (DODGE_DIST * Z_SPEED_FACTOR) / DODGE_FRAMES; this.dodgeDx = 0; }
     else { const dir = it.x || this.facing; this.dodgeDx = dir * DODGE_DIST / DODGE_FRAMES; this.dodgeDz = 0; if (it.x) this.facing = it.x; }
     this.dodgeCooldown = DODGE_COOLDOWN + DODGE_FRAMES;
@@ -390,7 +393,7 @@ export class Player extends Fighter {
     if (++this.crowdHits === CROWD_CLEAR_HITS && this.world) { this.crowdClearUntil = this.world.frame + CROWD_CLEAR_FRAMES; floatText(this.x, this.y + this.h + 24, this.z, 'CROWD CLEAR!', UI.brassLight, 2); }
     super.onHitConfirmed(target, hit);
   }
-  onDodged(attacker) { this.addMeter(DODGE_METER); floatText(this.x, this.y + this.h + 10, this.z, 'DODGE', UI.meter, 1); }
+  onDodged(attacker) { this.addMeter(DODGE_METER); this.dodgeThrough = true; floatText(this.x, this.y + this.h + 10, this.z, 'DODGE', UI.meter, 1); if (this.world) this.world.logEvent('dodge', this, attacker, {}); }
   onHurt(hit, attacker) {
     this.throwPending = null; // a hit mid-windup cancels a pending weapon/prop throw (issue #21)
     dropHeldProp(this); // a hit mid-hold drops a held prop where it was being carried (GDD 7 decision 14)

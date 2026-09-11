@@ -28,9 +28,10 @@ export async function options(server, { withPage, assert }) {
     const dg = () => g.press(0, { dodge: true }, 2, 6);
     const strt = () => g.press(0, { start: true }, 2, 6);
 
-    // 1. Title -> OPTIONS (menu is START / ONLINE CO-OP / OPTIONS -- issue #23 dropped START (2P)).
+    // 1. Title -> OPTIONS (menu is START / ONLINE CO-OP / TRAINING / OPTIONS -- issue #23 dropped START
+    // (2P), issue #22 added TRAINING directly after ONLINE CO-OP).
     await g.step(60);
-    await dn(); await dn();
+    await dn(); await dn(); await dn();
     await atk();
     assert((await g.screen()) === 'options', 'attack on OPTIONS pushes the options overlay');
     let s = await g.summary();
@@ -230,7 +231,7 @@ export async function options(server, { withPage, assert }) {
     // OPTIONS is reachable from pause and returns to it; netplay's pause plate hides it.
     await strt();
     assert((await g.screen()) === 'pause', 'start opens pause');
-    assert((await g.eval(() => window.__game.game.screen.items.length)) === 4, 'local pause has 4 rows including OPTIONS');
+    assert((await g.eval(() => window.__game.game.screen.items.length)) === 5, 'local pause has 5 rows including OPTIONS and MOVES');
     await dn(); await dn();
     await atk();
     assert((await g.screen()) === 'options', 'OPTIONS on the pause plate opens the overlay');
@@ -260,7 +261,7 @@ export async function options(server, { withPage, assert }) {
     await page.goto(`http://localhost:${server.port}/index.html?autotest=1&seed=1`, { waitUntil: 'load' });
     await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 15000 });
     await g.step(60);
-    await dn(); await dn(); // title -> OPTIONS (menu is START / ONLINE CO-OP / OPTIONS)
+    await dn(); await dn(); await dn(); // title -> OPTIONS (menu is START / ONLINE CO-OP / TRAINING / OPTIONS)
     await atk();
     for (let i = 0; i < 6; i++) await dn();
     s = await g.summary();

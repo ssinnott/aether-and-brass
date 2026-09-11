@@ -10,6 +10,26 @@ export const F = (dur, spec, extra) => ({ dur, pose: P(spec), ...(extra || {}) }
 /** Hit data shorthand: hit(damage, type, kbX, kbY, hitstun, extra). */
 export const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
 
+/**
+ * Animation names that are moves (issue #22 acceptance 1): every hero anim key in this list must appear in some
+ * moveList entry's `anims` / `anim` (checked by the training scenario's coverage assertion, window.__game.moveAnims).
+ */
+export const MOVE_ANIMS = Object.freeze(['attack1', 'attack2', 'attack3', 'attack4', 'jumpAttack', 'jumpAttack2', 'landAttack', 'dashAttack', 'special', 'super', 'dodge', 'airDash', 'parry', 'taunt', 'grab', 'grabHit', 'throw', 'throwBack']);
+
+/** @param {string} label @param {TrialKind|TrialKind[]} [kind] @param {string|string[]} [anim] @param {Partial<TrialStep>} [extra] @returns {TrialStep} */
+export const step = (label, kind = 'hit', anim = undefined, extra = {}) => ({ label, kind, ...(anim ? { anim } : {}), ...extra });
+/** @param {number} n @returns {Trial} */
+export function comboTrial(n) {
+  const steps = Array.from({ length: n }, (_, i) => step(`HIT ${i + 1}`, 'hit', `attack${i + 1}`));
+  return { id: 'combo', name: `${n}-HIT COMBO`, hint: 'PRESS ATTACK IN THE RECOVERY OF EACH HIT', strict: true, window: 60, steps };
+}
+/** @returns {Trial} */
+export function jumpGrabTrial() { return { id: 'jumpgrab', name: 'JUMP-IN GRAB', hint: 'JUMP ATTACK, THEN GRAB WHEN IT STANDS', window: 150, steps: [step('JUMP ATTACK', 'hit', 'jumpAttack'), step('GRAB', 'grab')] }; }
+/** @returns {Trial} */
+export function dodgeCancelTrial() { return { id: 'dodgecancel', name: 'DODGE-CANCEL SPECIAL', hint: 'HIT, DODGE OUT OF THE RECOVERY, SPECIAL', window: 60, steps: [step('COMBO HIT', 'hit', ['attack1', 'attack2', 'attack3', 'attack4']), step('DODGE CANCEL', 'cancel'), step('SPECIAL', ['hit', 'projectile'], 'special')] }; }
+/** @returns {Trial} */
+export function throwBodyTrial() { return { id: 'throwbody', name: 'BODY THROW', hint: 'GRAB ONE, THROW IT INTO THE OTHER', window: 150, bodies: 2, steps: [step('GRAB', 'grab'), step('THROW', 'throw'), step('BODY HIT', 'body')] }; }
+
 /** GDD stat -> movement mapping (GDD 2: walk 1.7 / 2.2 / 2.8 px/f for Speed 2 / 3 / 5; run = walk x 1.7). */
 export function speedFor(speedStat) { return speedStat >= 5 ? 2.8 : speedStat >= 3 ? 2.2 : 1.7; }
 /** Health stat -> max HP. */

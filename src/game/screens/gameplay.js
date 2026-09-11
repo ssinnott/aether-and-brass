@@ -28,7 +28,7 @@ const DIFFICULTY = {
 
 /** The main in-game screen. */
 export class GameplayScreen extends Screen {
-  constructor(game) { super(game, 'gameplay'); }
+  constructor(game) { super(game, 'gameplay'); this.pauseScreenId = 'pause'; }
   enter(params) {
     super.enter(params);
     const game = this.game, opt = game.options;
@@ -49,10 +49,14 @@ export class GameplayScreen extends Screen {
     game.players = this.players;
     this.gameOverTimer = 0; this.gameOverShown = false;
     this.time = 0;
-    this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves: !!opt.nowaves, startSection: opt.section || 0 });
+    // #22 training room: TrainingScreen passes its own nowaves/section (arena stage, camera locked by hand
+    // since the runner only locks when !nowaves); every other caller keeps reading game.options as before.
+    const nowaves = params.nowaves != null ? !!params.nowaves : !!opt.nowaves;
+    const section = params.section != null ? params.section | 0 : (opt.section || 0);
+    this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves, startSection: section });
     this.runner.start();
     for (const s of opt.spawn || []) this.spawnEnemy(s.type, s.variant, s.dx, s.dz);
-    if (!params.resume && !(opt.section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);
+    if (!params.resume && !(section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);
   }
   /**
    * Netplay status over the scene: a stall while the peer's input is late, and the banner shown
@@ -117,7 +121,7 @@ export class GameplayScreen extends Screen {
     // Escape is folded into the `start` bit by the net session, so pause is a simulated event.
     let pause = !online && inp.globalPressed('pause');
     for (let i = 0; i < MAX_PLAYERS && !pause; i++) if (inp.joined(i) && !joinedNow.has(i) && inp.pressed(i, 'start')) pause = true;
-    if (pause && this.game.factories.pause && !this.gameOverShown) { this.game.audio.play('pause'); this.game.push('pause'); return; }
+    if (pause && this.game.factories[this.pauseScreenId] && !this.gameOverShown) { this.game.audio.play('pause'); this.game.push(this.pauseScreenId); return; }
     this.time++;
     world.update();
     this.runner.update();
@@ -203,9 +207,9 @@ export class GameplayScreen extends Screen {
     const x = p1.x + (Number(dx) || 0), z = clamp(p1.z + (Number(dz) || 0), 0, Z_MAX);
     return this.spawnEnemyAt(type, variant, x, z, { facing: x < p1.x ? 1 : -1 });
   }
-  /** Spawn an enemy from the content registry at absolute world coords. */
+  /** Spawn an enemy from the content registry at absolute world coords. `opts.def` (training room) skips the lookup. */
   spawnEnemyAt(type, variant, x, z, opts = {}) {
-    const def = getEnemyDef(type, variant);
+    const def = opts.def || getEnemyDef(type, variant);
     const e = def.boss ? new Boss(def, { x, z, facing: opts.facing != null ? opts.facing : -1 }) : new Enemy(def, { x, z, ...opts });
     const d = this.difficulty || DIFFICULTY.normal;
     if (!def.boss && d.hpMult !== 1) { e.maxHp = Math.round(e.maxHp * d.hpMult); e.hp = e.maxHp; }
