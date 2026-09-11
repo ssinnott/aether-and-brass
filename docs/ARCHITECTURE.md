@@ -537,6 +537,29 @@ from and lockstep netplay never sees a late coin flip. A prop entry forwards eve
 'chassis'` (an overhead net drops a rolling prop when a jump attack hits it) and `fire` (a breaking fire source lights gas
 seeps through `world.addFire`). `art/props.js` `PROP_FAMILIES` names which prop types belong to which board's palette.
 
+A section may declare `platform: { kind, ... }` (issue #32, `game/platforms.js`), which makes the floor band itself a
+vehicle rather than only its backdrop. Kinds and their fields are tabulated in the PLATFORM TABLE at the head of that
+module: `hoist` (the deck climbs — a body in the AIR takes `rise` px/f of extra downward velocity, because the floor
+is coming up to meet it, so a jump lands sooner than it looks like it should), `pallet` (a sub-rectangle of the floor
+slides and carries whoever is standing on it; step off and it leaves without you) and `tilt` (the deck banks on a
+tell/active cycle and every grounded body slides `slide` px/f toward the low side; `dir: 0` alternates each cycle).
+
+Three rules make this work and are not optional. **Riders are moved by writing `x`/`z` directly, never `vx`/`vz`** —
+the grounded branch of `Fighter.physics` applies `GROUND_FRICTION` and snaps anything under 0.05 to zero, so a rider
+delta put into a velocity is decayed the same frame and the rider lags the floor (`Zone.updateConveyor` and
+`Zone.updateGust` already do it this way, and their exclusion list — airborne, held, dead, boss, netted — is the one
+reused). **A hoist never raises a rider's `y`**: `get airborne` is `y > 0 || vy > 0`, so a raised deck would make every
+rider permanently airborne — unable to act (`actionable`), ungrabbable (`grabs.js`), and dragged straight back down by
+gravity with `onLand` firing every frame. **A platform stores nothing but the frame its section was entered on**: its
+whole phase is a pure function of `world.frame` and the section data, the same contract `Hazard` uses, because the
+StageRunner's own state is not hashed by `net/checksum.js` (the canary walks `world.entities`) and a platform that
+stored its position would be simulation the desync check cannot see. The effect stays visible in the fighter
+positions the canary already hashes.
+
+Note two name collisions that are *not* the same thing: a dock transition's `look: 'hoist'` (`transitions.js`
+`DOCK_LOOKS`) is the art of a landing, not a `platform.kind`; and `section.drift` is a backdrop parallax scalar, not
+platform motion. The Brass Funicular declares no `platform` at all and is unchanged.
+
 `transition` is `{ kind: 'lift'|'board'|'dock'|'descent', atX?, gateX?, banner?, look?, pies?, up? }`: a `mode: 'locked'`
 section ends in a `dock` when its last timed wave clears, showing `banner` (default the funicular's) and arriving on
 `look` ('stairs' default, 'ladder', 'door', 'hoist', 'none') with `pies` Meat Pies (default 2); `{ kind: 'lift', up: true }`
@@ -714,6 +737,11 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      running jump clears it for nothing; an enemy standing in it rings out; an enemy walled off from its target leaves
      the ground and reaches the far side; and a barricade blocks, holds its wave lock and answers `dangerBox()` until
      its Prop is broken, then stops doing all three.
+  3g. `platforms` (`tools/scenarios/platforms.js`, issue #32): one block per platform kind against the real authored
+     section — the Cold Sovereign banking and the Lash-Up float dipping (a grounded body slides with the deck, an
+     airborne one does not), the Sootfoot Docks cargo pallet (a body on it is carried, one off it is left behind) and
+     the Tallow Works hoist (a climbing hoist pulls an airborne body down faster than gravity alone, and leaves a
+     grounded one alone) — plus the regression that the Brass Funicular declares no platform.
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.

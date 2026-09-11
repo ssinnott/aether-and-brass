@@ -142,6 +142,10 @@ export const stage2 = {
     /** The flagship comes about with the party aboard: the camera locks to the screen, the far sky slides past
      *  (`drift`, storm3.js), the deck banks every 7s (a 1.3 px/f gust, 52px either way) and both gun ports are live. */
     { id: 'm3', name: 'THE COLD SOVEREIGN', x0: 3600, x1: 4240, backdrop: 'storm3', floor: 'deck', mode: 'locked', drift: 0.6,
+      /** Issue #32: she BANKS. 45f of the deck leaning over (a gale you can hear coming), then 60f of everyone on
+       *  their feet sliding toward the low rail — which on this deck is a ring-out. `dir: 0` alternates, so she rolls
+       *  one way and then the other rather than always dumping the fight over the same side. */
+      platform: { kind: 'tilt', period: 420, tell: 45, active: 60, slide: 0.9, dir: 0 },
       // one powder tub at each gun port (they roll 50 and go off 30f after breaking), food and meter amidships
       props: [
         { type: 'powderTub', x: 3760, z: 26 }, { type: 'powderTub', x: 4080, z: 116 },

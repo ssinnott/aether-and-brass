@@ -24,6 +24,9 @@ export const stage1 = {
   sections: [
     // ---------------------------------------------------------------- Section 1: Sootfoot Docks (rain, night)
     { id: 's1', name: 'SOOTFOOT DOCKS', x0: 0, x1: 1800, backdrop: 'section1', floor: 'planks',
+      /** Issue #32: the crane hook at x 1500 is not just swinging any more — it is swinging a loaded cargo pallet,
+       *  and the pallet is floor. Stand on it and it carries you; step off and it leaves without you. */
+      platform: { kind: 'pallet', x0: 1424, x1: 1508, z0: 38, z1: 102, travel: 72, period: 280, axis: 'x' },
       // crates: Brass Cog x2, one in four hides a Meat Pie; barrels roll 40px (10 to enemies) and drop Coal Scrip; the winch an Aether Vial
       // bottle + lamp (issue #21, GDD 7): throwable clutter -- an empty hand near either lifts it instead of swinging
       props: [

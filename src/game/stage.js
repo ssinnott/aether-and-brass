@@ -8,6 +8,7 @@ import { Prop } from './items.js';
 import { Hazard, Zone } from './hazards.js';
 import { Transition, drawSpotlight, VictorySpectacle } from './transitions.js';
 import { entranceFor, entranceLanding, EntranceTell, teleportShove } from './entrances.js';
+import { createPlatform } from './platforms.js';
 import { clamp } from '../engine/math.js';
 import { audio } from '../engine/audio.js';
 import { particles } from '../engine/particles.js';
@@ -95,6 +96,11 @@ export class StageRunner {
     const track = (this.stage.music && this.stage.music[sec.backdrop]) || sec.backdrop;
     this.playMusic(track);
     this.sectionTimer = 0; this.timedIndex = 0; this.timedDone = !(sec.timedWaves && sec.timedWaves.length);
+    // issue #32: the section's moving floor, if it has one. Built here (the only place a section is entered from --
+    // update() and Transition.switchSection both come through here) and thrown away with the section, keyed to the
+    // world frame we arrived on so its whole phase is derivable rather than stored.
+    this.platform = createPlatform(sec, this.world.frame);
+    this.world.platform = this.platform;
     if (!first || this.startSection > 0) this.hud.showBanner(sec.name || sec.id.toUpperCase(), sec.sub || '', 90);
     if (sec.mode === 'locked' && !this.nowaves) this.world.camera.lock(sec.x0, sec.x1);
   }
@@ -106,6 +112,9 @@ export class StageRunner {
     const world = this.world, cam = world.camera, center = cam.x + VIEW_W / 2;
     if (this.plate && ++this.plate.timer >= this.plate.life) this.plate = null;
     if (this.spotlightT >= 0 && ++this.spotlightT > SPOTLIGHT_FRAMES) this.spotlightT = -1;
+    // The platform is stepped BEFORE the transition early-return: a hoist does not stop climbing because the party is
+    // boarding something. `carry` is false during a transition so its clock runs on while nothing shoves a held body.
+    if (this.platform) this.platform.update(world, !this.transition);
     if (this.transition) { this.holdPlayers(); if (this.transition.update()) this.endTransition(); return; }
     // section by camera centre; a section whose exit is a scripted transition is left through that transition instead
     const next = this.sectionAt(center);
@@ -408,5 +417,9 @@ export class StageRunner {
   }
 
   /** window.__game.summary() contribution. */
-  summary() { return { sectionIndex: this.sectionIndex, wavesCleared: this.wavesCleared, transition: this.transition ? this.transition.kind : null }; }
+  summary() {
+    const pf = this.platform;
+    return { sectionIndex: this.sectionIndex, wavesCleared: this.wavesCleared, transition: this.transition ? this.transition.kind : null,
+      platform: pf ? { kind: pf.kind, phase: pf.phase, progress: pf.progress(this.world), offset: Math.round(pf.offset || 0) } : null };
+  }
 }

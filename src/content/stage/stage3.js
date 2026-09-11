@@ -156,6 +156,11 @@ export const stage3 = {
     // ---------------------------------------------------------------- Section 3: The Tallow Works (the company's yard)
     // MACHINES AND PEOPLE: the yard is where the Chandlery works on the Brassbound it has put back on their feet.
     { id: 'w3', name: 'THE TALLOW WORKS', x0: 2440, x1: 3600, backdrop: 'works2', floor: 'cobble',
+      /** Issue #32: the yard hoist takes the whole floor up a storey to the kiln head, where the Yardmaster is
+       *  waiting (his arena at 3120..3600 IS the top of it). Nothing on the deck moves — you are standing on the
+       *  thing that is climbing — but a body in the air is not, and the floor closes on it: a jump lands sooner than
+       *  it looks like it should for as long as the climb lasts. */
+      platform: { kind: 'hoist', frames: 1200, rise: 0.9 },
       props: [
         { type: 'keg', x: 2520, z: 120, drops: SCRIP },
         { type: 'handcart', x: 2700, z: 30, release: { type: B, variant: 'halberdier', mods: ['crusted'] } },

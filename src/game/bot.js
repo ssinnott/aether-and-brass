@@ -123,6 +123,10 @@ export function botIntent(p, world, style) {
     // the run never finishes (a soft-lock in the winrate sweep, not a loss). The lane step above already handles
     // anything side-steppable; this only fires for an obstacle that takes the whole band.
     if (jumpsSolid(p, world, lane)) { it.jump = true; it.run = true; return it; }
+    // issue #32: on a banking deck, lean into the slide rather than walking with it. Without this the autopilot
+    // strolls right while the tilt carries it right, and the two add up into the rail it was meant to avoid.
+    const tilt = world.platform;
+    if (tilt && tilt.kind === 'tilt' && tilt.phase === 'active' && tilt.tiltDir > 0) { it.x = -1; return it; }
     if (!world.camera.locked && f % 90 < 80) it.run = true;
     else if (p.running) it.x = 0;
     return it;

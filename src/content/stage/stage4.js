@@ -122,6 +122,9 @@ export const stage4 = {
     // press end. No bulwark anywhere on it, and the crop coming up onto it on lines drops ballast bags where the lines land.
     // The Wing comes down here: the whole Stormcrow roster, grounded, fighting for the guild's wages.
     { id: 'g2', name: 'THE LASH-UP', x0: 1800, x1: 2440, backdrop: 'glean2', floor: 'plank', mode: 'locked',
+      /** Issue #32: forty bladders and no keel. The float dips slower and further than a ship banks, and there is no
+       *  bulwark anywhere on it — so the slide and the plank gaps (issue #31) are the same problem twice. */
+      platform: { kind: 'tilt', period: 540, tell: 60, active: 80, slide: 0.6, dir: 0 },
       /** Auto-scroll of the far parallax (px per frame, glean2.js): the field a long way below slides past under the raft. */
       drift: 0.4,
       // two salvage lines (meter, either end), a gas bag (a pie, and a rose puff - never a fire source) and a ballast bag;
