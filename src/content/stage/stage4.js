@@ -106,9 +106,11 @@ export const stage4 = {
           ...pick(1, { z0: 30, delay0: 60 }),
           one(S, 'hulk', 'right', 70, 100),
           one(S, 'wrangler', 'left', 40, 130),
+        // the bladder goes up and the crop comes down UNDER ITS OWN SILK (issue #30 `descend`) rather than dropping out
+        // of a bare sky: slow, hittable for the airborne 1.5x the whole way, and 30f on the spoil when it lands
         ], reinforcements: [{ whenRemaining: 1, spawns: [
-          { type: G, variant: 'chaff', side: 'sky', dx: -70, z: 50, delay: 0, shake: 6 },
-          { type: G, variant: 'chaff', side: 'sky', dx: 70, z: 100, delay: 30, shake: 6 },
+          { type: G, variant: 'chaff', z: 50, delay: 0, entrance: { kind: 'descend', dx: -70 } },
+          { type: G, variant: 'chaff', z: 100, delay: 30, entrance: { kind: 'descend', dx: 70 } },
         ] }] },
       ],
       events: [],
@@ -160,11 +162,12 @@ export const stage4 = {
           ...crimp(2, { z0: 20, dz: 100, delay0: 30 }),
           one(C, 'corsair', 'left', 70, 90),
         ] },
-        // the Marine comes down out of the bladders above the raft; a Thresher and a Winnow over him
+        // the Marine comes down out of the bladders above the raft on a line, the Thresher off a second one beside it
+        // (issue #30 `ropeDrop`: both hang 30f, and a hit on either cuts it); the Winnow lowers itself on its own silk
         { at: 80, spawns: [
-          one(G, 'thresher', 'left', 40, 0),
-          one(G, 'winnow', 'right', 100, 30),
-          { type: C, variant: 'marine', side: 'sky', z: 70, delay: 60, shake: 8 },
+          { type: G, variant: 'thresher', z: 40, delay: 0, entrance: { kind: 'ropeDrop', dx: -80 } },
+          { type: G, variant: 'winnow', z: 100, delay: 30, entrance: { kind: 'descend', dx: 90 } },
+          { type: C, variant: 'marine', z: 70, delay: 60, entrance: { kind: 'ropeDrop', dx: 0 } },
           ...chaff(1, { z0: 60, side: 'left', delay0: 100 }),
         ] },
       ],

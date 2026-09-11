@@ -205,6 +205,7 @@ function boot() {
     setInput(p, actions) { input.setVirtual(p, actions); },
     clearInput(p) { input.clearVirtual(p); },
     spawnEnemy: delegate('spawnEnemy', null),
+    spawnEntrance: delegate('spawnEntrance', null),
     spawnWeapon: delegate('spawnWeapon', null),
     killAllEnemies: delegate('killAllEnemies', undefined),
     enemyList: () => (game.enemyList || []).map((e) => ({ type: e.type, variant: e.variant, name: e.name, role: e.role })),

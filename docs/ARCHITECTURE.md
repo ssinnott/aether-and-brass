@@ -466,7 +466,8 @@ export const stage1 = {
         { triggerX: 240,   // when camera.x + VIEW_W/2 >= triggerX (i.e. players reached here)
           lock: true,      // camera locks to [triggerX - VIEW_W/2, triggerX + VIEW_W/2]
           spawns: [ { type: 'typeA', variant: 'grunt', side: 'right', z: 40, delay: 0 },
-                    { type: 'typeA', variant: 'grunt', side: 'left',  z: 100, delay: 45, mods: ['holdout'] } ],
+                    { type: 'typeA', variant: 'grunt', side: 'left',  z: 100, delay: 45, mods: ['holdout'] },
+                    { type: 'typeA', variant: 'elite', z: 70, delay: 90, entrance: { kind: 'teleport', dx: -60 } } ],
           reinforcements: [ { whenRemaining: 1, spawns: [ ... ] } ]   // optional
         },
       ],
@@ -501,6 +502,19 @@ Hazard and zone types, their spec fields, timings, hits and `dangerBox` footprin
 `tallowVat`, `kilnMouth`, `ledgerDrop` / `ballastDrop` and `gasSeep` hazards and `gust`, `spoil` and `netGive`
 zones from that table next to stage 1's six; every hazard follows the same tell / active / grace contract, so the enemy
 pathing (`laneAroundHazards`) and the autopilot read them without knowing the type.
+
+A spawn entry may carry `entrance: { kind, ... }` (issue #30, `game/entrances.js`), which replaces the walk-on from
+`side` with an authored arrival. Kinds are `teleport` | `flyIn` | `descend` | `ropeDrop`; their frame budgets, paths
+and tells are tabulated in the ENTRANCE TABLE at the head of that module. Every entrance is a tell (an `EntranceTell`
+placed *before* the unit exists, which flags `isHazard` and answers `dangerBox()` so `laneAroundHazards` steers mobs
+and the autopilot around it for free), then a scripted approach in the new **ARRIVING** ai state, then a punishable,
+grabbable recovery once the body is on the floor. `entered` stays false for the whole arrival exactly as it does while
+a side spawn walks in, so the wave lock and the enemies-remaining count are unchanged. Shared spec fields: `x`
+(absolute) or `dx` (offset from the lock centre, the convention `side: 'sky'` already uses), `from` ('left'|'right',
+which side a `flyIn` crosses from — defaults to the spec's own `side`), `speed` (a `descend`'s px/frame) and `hang`
+(frames a `descend`/`ropeDrop` holds in the air before letting go; `ropeDrop` defaults to 30). A hit on a unit still
+hanging on a rope CUTS THE LINE: the hit is rewritten to a knockdown and the body drops, which works even on a
+shielded unit whose armour swallows the reaction. `arriveT`, `aiState` and `entered` are hashed by `net/checksum.js`.
 
 A spawn entry may carry `mods: ['holdout'|'crusted'|'scrip'|'winged'|'salvaged']` (issue #28): the Enemy is built from a
 derived def (`game/traits.js` `SPAWN_MODS` / `applyMods`) at spawn time, so a modifier is part of the def the rig comes
@@ -550,9 +564,11 @@ An `EnemyDef` (in `content/enemies/*.js`):
 }
 ```
 Base AI state machine (in `Enemy`), tuned by `def.ai`:
-`ENTER` (walk on-screen) → `APPROACH` (align `z` within `zTolerance`, close to `attackRange` on the target's facing-agnostic side; picks the nearest player, re-targets every 90 frames or when hit) → `ATTACK` (needs an **attack token**: `World.attackTokens.max` comes from `ATTACK_TOKENS_BY_PARTY = [2, 2, 3, 4, 4]`, indexed by the number of living players (`World.alivePlayers.length`; `World.partySize` — players not yet out — drives the `WAVE_EXTRA_BY_PARTY` clones below instead) — 1 and 2 players keep today's 2, 3 players get 3, 4 players get 4 — enemies without a token `HOVER`: shuffle at distance `attackRange + 30..60`, occasionally step in `z`) → `RECOVER` (short back-off after attacking, `retreatChance`) → loop. Ranged variants use `KEEP_DISTANCE`. Elites/bosses ignore tokens. Enemies never overlap each other perfectly: apply a soft separation force between enemies within 18px in `x` and 10px in `z`. Enemies react to being hit exactly like players (shared `Fighter`).
+`ARRIVING` (issue #30, only for a spawn with an authored `entrance`: on screen, drawn and hittable, but on a scripted path from `game/entrances.js`, taking no actions and holding no attack token; ends in a punishable, grabbable recovery, then re-arms `firstAttackDelay` against the LANDING so a long flight cannot buy the unit a free swing) → `ENTER` (walk on-screen) → `APPROACH` (align `z` within `zTolerance`, close to `attackRange` on the target's facing-agnostic side; picks the nearest player, re-targets every 90 frames or when hit) → `ATTACK` (needs an **attack token**: `World.attackTokens.max` comes from `ATTACK_TOKENS_BY_PARTY = [2, 2, 3, 4, 4]`, indexed by the number of living players (`World.alivePlayers.length`; `World.partySize` — players not yet out — drives the `WAVE_EXTRA_BY_PARTY` clones below instead) — 1 and 2 players keep today's 2, 3 players get 3, 4 players get 4 — enemies without a token `HOVER`: shuffle at distance `attackRange + 30..60`, occasionally step in `z`) → `RECOVER` (short back-off after attacking, `retreatChance`) → loop. Ranged variants use `KEEP_DISTANCE`. Elites/bosses ignore tokens. Enemies never overlap each other perfectly: apply a soft separation force between enemies within 18px in `x` and 10px in `z`. Enemies react to being hit exactly like players (shared `Fighter`).
 Off-screen rule: an enemy that is > 200px outside the camera for 300 frames teleports to
-the nearest lock edge (prevents stuck waves).
+the nearest lock edge (prevents stuck waves). An `ARRIVING` unit is exempt — its path is authored and bounded, and
+yanking it to a lock edge mid-flight would break it — so `game/entrances.js` carries its own watchdog instead: an
+arrival that outlives its own length by 180 frames ends as an ordinary enemy rather than holding the wave open.
 `StageRunner.queueSpawns(list, extraDelay)` appends `WAVE_EXTRA_BY_PARTY = [0, 0, 0, 1, 2]` non-sky clones (delay + `PARTY_EXTRA_DELAY`, side flipped) to every spawn list for parties of 3-4; bosses excluded, 1-2 unchanged.
 
 ## 9. Screens (`game/screens/`)
@@ -666,6 +682,12 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   3d. `thrown` (`tools/scenarios/thrown.js`, issue #21, blocks A-F): weapon throw direction/z-drift/durability/no-accidental-throw, open-rails re-pickup and edge loss on stage 2, a lime patch
      slowing and restoring a staggered footman, bottle/lamp lift-hold-throw-and-always-shatter, defensive-vs-aggressive bot `throwChance`, and the optional Scrap Slinger / Soot Cutthroat
      prop-throw stretch behind dev-only `?enemythrow=1` (never in netplay).
+  3e. `entrances` (`tools/scenarios/entrances.js`, issue #30): each of the four entrance kinds is queued onto an empty
+     `?nowaves=1` arena and watched frame by frame — the tell is placed before the unit exists and answers `dangerBox()`,
+     the unit then spawns in `ARRIVING` with `entered` false and takes no action for its whole approach, and the arrival
+     ends in a punishable window on the floor with `firstAttackDelay` re-armed. Plus the rope-drop line cut, checked on
+     both an unarmored unit (the hit is rewritten to a knockdown) and a shielded Marine (whose armour swallows the
+     reaction, but whose line is cut all the same).
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.
@@ -741,6 +763,10 @@ URL params (all only honored when `?autotest=1` or `?debug=1`):
 `window.__game` extra members: `ready` (true once the first screen entered),
 `spawnEnemy(type, variant, dx, dz)` (relative to P1), `killAllEnemies()`,
 `spawnWeapon(id, dx, dz)` (lays a settled pickup weapon at P1.x + dx, P1.z + dz, no pop, no grace),
+`spawnEntrance(type, variant, kind, { z, delay, ...entranceFields })` (issue #30: queues ONE spawn with an authored
+entrance through the stage runner's ordinary `queueSpawns` path, so a scenario can watch a tell, an ARRIVING approach
+and a punish window on an otherwise empty `?nowaves=1` arena — the runner drains its pending queue even under
+`nowaves`, which only stops it TRIGGERING waves),
 `enemyList() -> [{type, variant, name, role}]` (10 variants + `{type:'midboss'}` + `{type:'boss'}`),
 `characterList() -> [{id, name}]`, `fillMeter(p)`, `facePlayerToNearestEnemy(p)` (turns
 P1 toward and steps toward the nearest enemy — used by the enemy test), `summary().boss` =

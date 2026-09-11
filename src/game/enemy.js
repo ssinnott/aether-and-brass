@@ -1,6 +1,11 @@
-// Enemy: Fighter + the AI framework of ARCHITECTURE.md section 8 (ENTER / APPROACH / HOVER / ATTACK / RECOVER / KEEP_DISTANCE,
-// attack tokens, z alignment, target selection, separation, off-screen teleport, ranged behaviour, armor/stagger, flee, panic, evade,
-// riposte, whiff backsteps, shields, punish windows, tells).
+// Enemy: Fighter + the AI framework of ARCHITECTURE.md section 8 (ARRIVING / ENTER / APPROACH / HOVER / ATTACK / RECOVER /
+// KEEP_DISTANCE, attack tokens, z alignment, target selection, separation, off-screen teleport, ranged behaviour, armor/stagger,
+// flee, panic, evade, riposte, whiff backsteps, shields, punish windows, tells).
+//
+// ARRIVING (issue #30, game/entrances.js) is the state a unit spawned with an authored `entrance` sits in before
+// ENTER/APPROACH: on screen, drawn and hittable, but on a scripted path, taking no actions and holding no attack
+// token. `entered` stays false throughout — exactly as it does while a side spawn walks in — so the wave lock and
+// the enemies-remaining count are unchanged. It ends in a punishable, grabbable recovery.
 //
 // ================================ AI FLAG REFERENCE (def.ai.*) — all optional, defaults in AI_DEFAULTS ================================
 //  role (def.role) fodder|bruiser|ranged|rusher|elite|grabber   role defaults (ROLE_DEFAULTS) are applied under def.ai
@@ -40,6 +45,7 @@ import { Prop } from './items.js';
 import { laneAroundHazards } from './hazards.js';
 import { tryEnemyPropThrow, thinkEnemyHeld, dropHeldProp } from './throwables.js';
 import { applyMods } from './traits.js';
+import { startArrival, stepArrival, finishArrival, isHanging } from './entrances.js';
 
 /** Defaults for `def.ai` (content overrides per type / variant). */
 export const AI_DEFAULTS = Object.freeze({
@@ -80,10 +86,12 @@ export function normalizeAi(def) {
 export class Enemy extends Fighter {
   /**
    * @param {object} def enemy definition
-   * @param {{ x?: number, z?: number, facing?: number, entered?: boolean, kind?: string, fromSky?: boolean, mods?: string[] }} o
+   * @param {{ x?: number, z?: number, facing?: number, entered?: boolean, kind?: string, fromSky?: boolean, mods?: string[],
+   *   entrance?: object }} o
    *   mods = spawn modifiers (traits.js SPAWN_MODS: holdout / crusted / scrip / winged / salvaged) applied to the def before the rig is built
+   *   entrance = a resolved entrance (game/entrances.js entranceFor): an authored arrival that replaces the walk-on
    */
-  constructor(def, { x = 0, z = 70, facing = -1, entered = true, kind = 'enemy', fromSky = false, mods = null } = {}) {
+  constructor(def, { x = 0, z = 70, facing = -1, entered = true, kind = 'enemy', fromSky = false, mods = null, entrance = null } = {}) {
     // the derived def is computed BEFORE super() (no `this` needed): the rig, traits and stats all come from the patched def
     const d = mods && mods.length ? applyMods(def, mods) : def;
     super(d, { team: TEAM.ENEMY, kind, x, z, facing });
@@ -115,6 +123,10 @@ export class Enemy extends Fighter {
     this.histX = new Float32Array(HIST); this.histZ = new Float32Array(HIST); this.histI = 0; this.histN = 0;
     this.rig.keyAngle = 0; this.rig.tell = false; this.rig.tellWarn = false; this.rig.look = { x: 0, y: 0 };
     if (fromSky) { this.y = 170; this.vy = 0; this.entered = true; this.aiState = 'APPROACH'; this.setState(ST.JUMP, 'fall', { fallback: 'jump' }); }
+    /** Authored entrance (issue #30) and its frame counter; null / 0 for every unit that walks on from a side. */
+    this.entrance = null; this.arriveT = 0; this.arrivePath = 0; this.arriveLand = 0; this.arriveX = this.x; this.cutLine = false;
+    // an entrance replaces the walk-on and the sky fall alike: it sets its own start pose, state and aiState
+    if (entrance) startArrival(this, entrance);
   }
   /** Shield / role flags that live in the traits the core reads. */
   applyAiTraits() {
@@ -161,6 +173,15 @@ export class Enemy extends Fighter {
     // punish window: stalls (STAGGER) or frames flagged punish:true
     if (this.aiState !== 'STAGGER') { this.punishable = !!(f && f.punish); this.punishMult = ai.punishDamageMult; this.punishGrab = ai.punishGrabbable; }
     this.checkOffscreen(world);
+    // ARRIVING (issue #30, game/entrances.js): step the scripted entrance path. This runs BEFORE the hitstun and
+    // airborne early-returns below, because most entrances ARE airborne and because a hit landing mid-arrival is
+    // exactly what cuts a rope drop's line. A hit heavy enough to put the unit into an air-hurt state ends the
+    // entrance outright: being knocked out of the sky is the punish, not a scripted path still running underneath it.
+    if (this.aiState === 'ARRIVING') {
+      const s = this.state;
+      if (this.dead || this.grabbedBy || s === ST.HURT_AIR || s === ST.KNOCKDOWN || s === ST.THROWN) finishArrival(this, world);
+      else if (stepArrival(this, world)) return;
+    }
     if (this.dead || this.inHitstun || this.grabbedBy || this.status.netted) { this.releaseToken(world); this.pendingAttack = null; this.inStance = false; return; }
     if (this.state === ST.GRAB) { this.thinkGrab(world); return; }
     if (this.state === ST.DODGE) { if (this.stateTimer <= 12) this.x -= this.facing * (this.backstepDist || 42) / 12; return; }
@@ -244,6 +265,8 @@ export class Enemy extends Fighter {
   checkOffscreen(world) {
     const cam = world.camera;
     if (this.fleeOff) return;
+    // an arrival is a bounded, authored path (game/entrances.js): never yank it to a lock edge part-way through
+    if (this.aiState === 'ARRIVING') { this.enterTimer = 0; this.offscreenTimer = 0; return; }
     // still walking in: after OFFSCREEN_FRAMES outside the arena, teleport to the nearest lock edge (prevents stuck waves)
     if (!this.entered) {
       if (++this.enterTimer > OFFSCREEN_FRAMES) {
@@ -541,6 +564,12 @@ export class Enemy extends Fighter {
     if (ai.launchStun && hit.type === 'launch' && this.armor && !this.unlaunchable && !this.airborne && !this.dead && this.state !== ST.KNOCKDOWN) {
       hit = { ...hit, type: 'heavy', stagger: true, hitstun: Math.max(8, ai.launchStun - 30), breaksArmor: true };
     }
+    // issue #30 ropeDrop: ANY hit on a unit still hanging on its line cuts it. The hit becomes a knockdown whatever
+    // it was, so a jab is enough to drop the body out of the sky -- that punish is the entrance's whole point.
+    if (!this.dead && hit.type !== 'grab' && isHanging(this)) {
+      hit = { ...hit, type: 'knockdown' };
+      this.cutLine = true;
+    }
     return super.takeHit(hit, attacker);
   }
   riposte(attacker, anim) {
@@ -560,7 +589,9 @@ export class Enemy extends Fighter {
     const ai = this.ai, world = this.world;
     this.pendingAttack = null; this.releaseToken(world); this.inStance = false;
     this.throwPending = null; dropHeldProp(this); // a hit mid-hold drops a held prop (step 21.6, GDD 7 decision 14)
-    if (this.aiState !== 'FLEE' && this.aiState !== 'ENTER' && this.aiState !== 'STAGGER') { this.aiState = 'APPROACH'; this.retreating = false; }
+    // ARRIVING is preserved like FLEE / ENTER / STAGGER: a hit taken mid-entrance must not drop the unit into
+    // APPROACH with a half-run path still on it (game/entrances.js decides when an arrival ends).
+    if (this.aiState !== 'FLEE' && this.aiState !== 'ENTER' && this.aiState !== 'STAGGER' && this.aiState !== 'ARRIVING') { this.aiState = 'APPROACH'; this.retreating = false; }
     this.attackCooldown = Math.max(this.attackCooldown, 25);
     if (attacker && attacker.kind === 'player') { this.target = attacker; this.retargetTimer = RETARGET; if (attacker.anim) this.hitByInst = attacker.anim.instance; }
     const grounded = !this.airborne && this.state !== ST.KNOCKDOWN && this.state !== ST.LYING;

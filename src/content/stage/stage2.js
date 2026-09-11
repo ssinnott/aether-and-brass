@@ -62,8 +62,10 @@ export const stage2 = {
       waves: [
         // the pressed crew first: three Deckhands, no wing-packs, throwable - learn the rail
         { triggerX: 420, lock: true, spawns: hands(3, { z0: 40 }) },
+        // the first thing on this board that is actually flying: the Corsair comes in off the far parallax on its
+        // wing-pack (issue #30 `flyIn`), shadow first, and lands into 20f you can collect it on
         { triggerX: 880, lock: true, spawns: [...hands(2, { z0: 30, dz: 60 }), ...crimp(2, { z0: 60, delay0: 30 }),
-          { type: C, variant: 'corsair', side: 'left', z: 120, delay: 80 }] },
+          { type: C, variant: 'corsair', side: 'left', z: 120, delay: 80, entrance: { kind: 'flyIn', dx: -40 } }] },
         // "meet the holdout": the Bosun's keg is in the air, two Crimpers keep you honest, and a Tin Footman the Wing never
         // unbolted walks in off the gantry; two Deckhands only come up the lines once the wave is down
         { triggerX: 1320, lock: true, spawns: [{ type: C, variant: 'bosun', side: 'right', z: 70, delay: 0 }, ...crimp(2, { z0: 30, dz: 60, delay0: 30 }),
@@ -71,7 +73,8 @@ export const stage2 = {
           reinforcements: [{ whenRemaining: 0, spawns: hands(2, { z0: 40, dz: 60, delay0: 20 }) }] },
         { triggerX: 1720, lock: true, spawns: [
           { type: C, variant: 'bosun', side: 'right', z: 60, delay: 0 },
-          { type: C, variant: 'corsair', side: 'left', z: 20, delay: 40 }, { type: C, variant: 'corsair', side: 'right', z: 120, delay: 70 },
+          { type: C, variant: 'corsair', z: 20, delay: 40, entrance: { kind: 'flyIn', from: 'left', dx: -70 } },
+          { type: C, variant: 'corsair', z: 120, delay: 70, entrance: { kind: 'flyIn', from: 'right', dx: 70 } },
           ...crimp(2, { z0: 40, delay0: 60 }),
           holdout('footman', 'left', 100, 110),
         ] },
@@ -145,7 +148,8 @@ export const stage2 = {
           { type: B, variant: 'footman', side: 'left', z: 60, delay: 20 }, { type: B, variant: 'footman', side: 'right', z: 90, delay: 50 },
           { type: C, variant: 'deckhand', side: 'right', z: 120, delay: 80 }] },
         { at: 22, spawns: [{ type: B, variant: 'halberdier', side: 'right', z: 50, delay: 0 }, { type: B, variant: 'halberdier', side: 'left', z: 100, delay: 30 },
-          { type: C, variant: 'grapnel', side: 'right', z: 70, delay: 60 }, { type: C, variant: 'corsair', side: 'left', z: 20, delay: 90 }] },
+          { type: C, variant: 'grapnel', side: 'right', z: 70, delay: 60 },
+          { type: C, variant: 'corsair', z: 20, delay: 90, entrance: { kind: 'flyIn', from: 'left', dx: -60 } }] },
         // the brig below the gun deck opens: the Warden and the two Footmen the Wing kept bolted down there
         { at: 50, banner: 'THE BRIG OPENS', spawns: [{ type: B, variant: 'warden', side: 'right', z: 70, delay: 0 },
           holdout('footman', 'left', 40, 30), holdout('footman', 'left', 110, 60), ...crimp(2, { z0: 20, dz: 100, delay0: 90 })] },
@@ -175,9 +179,12 @@ export const stage2 = {
         { triggerX: 4600, lock: true, spawns: [{ type: C, variant: 'marine', side: 'right', z: 60, delay: 0 },
           { type: C, variant: 'corsair', side: 'left', z: 20, delay: 40 }, { type: C, variant: 'corsair', side: 'right', z: 120, delay: 70 },
           { type: B, variant: 'duelist', side: 'left', z: 80, delay: 100 }, ...crimp(1, { z0: 100, delay0: 130 })] },
-        // the elite pair, together for the only time on the board: the Galewright's arc over the Marine's plate
+        // the elite pair, together for the only time on the board: the Galewright's arc over the Marine's plate.
+        // Marines board the weather deck the way marines do (issue #30 `ropeDrop`): a line off the rigging, a 30f
+        // hang on it — cut the line with anything and the plate comes down in a knockdown — then 18f on the deck.
         { triggerX: 4740, lock: true, spawns: [{ type: C, variant: 'galewright', side: 'right', z: 40, delay: 0 },
-          { type: C, variant: 'marine', side: 'left', z: 90, delay: 40 }, { type: B, variant: 'sapper', side: 'right', z: 120, delay: 70 },
+          { type: C, variant: 'marine', z: 90, delay: 40, entrance: { kind: 'ropeDrop', dx: -50 } },
+          { type: B, variant: 'sapper', side: 'right', z: 120, delay: 70 },
           { type: B, variant: 'sapper', side: 'left', z: 20, delay: 100 }, { type: C, variant: 'bosun', side: 'right', z: 70, delay: 130 }] },
         // the last line before the dais
         { triggerX: 4860, lock: true, spawns: [

@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown playthrough playthrough2 playthrough3 playthrough4 coop coop4 audio gallery botstyles options training weapons)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances playthrough playthrough2 playthrough3 playthrough4 coop coop4 audio gallery botstyles options training weapons)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 // This file is already close to its ~700-line budget: further scenarios belong in their own sibling
@@ -15,6 +15,7 @@ import { weaponScenarios } from './scenarios/weapons.js';
 import { thrown } from './scenarios/thrown.js';
 import { coop4Scenarios } from './scenarios/coop4.js';
 import { training as trainingScenario } from './scenarios/training.js';
+import { entrances } from './scenarios/entrances.js';
 
 const { chromium } = loadPlaywright();
 
@@ -469,6 +470,10 @@ const scenarios = {
   // 3d. Thrown weapons: input, release, landing (pickup / shatter), bot guard (tools/scenarios/thrown.js). A
   // sibling module, same pattern as tools/scenarios/weapons.js above.
   thrown: (server) => thrown(server, { withPage, assert }),
+
+  // 3e. Wave entrances: tell -> ARRIVING approach -> punishable arrival, per entrance kind, plus the rope-drop
+  // line cut (issue #30, tools/scenarios/entrances.js).
+  entrances: (server) => entrances(server, { withPage, assert }),
 
   // 4. Full bot playthrough to the results screen.
   async playthrough(server) {

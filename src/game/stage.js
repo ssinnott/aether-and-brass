@@ -7,6 +7,7 @@ import { createBackdrop, backdropsReady } from '../art/backgrounds/index.js';
 import { Prop } from './items.js';
 import { Hazard, Zone } from './hazards.js';
 import { Transition, drawSpotlight, VictorySpectacle } from './transitions.js';
+import { entranceFor, entranceLanding, EntranceTell, teleportShove } from './entrances.js';
 import { clamp } from '../engine/math.js';
 import { audio } from '../engine/audio.js';
 import { particles } from '../engine/particles.js';
@@ -120,8 +121,12 @@ export class StageRunner {
       return;
     }
     if (this.bossActive) { this.updateBoss(); return; }
-    if (this.nowaves) return;
+    // The pending-spawn queue is drained even in the free-roam test arena: `nowaves` stops the runner TRIGGERING
+    // waves, and with nothing triggering them `pending` is empty, so this is a no-op there — except when a test
+    // has queued a spawn itself through `spawnEntrance` (issue #30), which is the only way to watch an entrance's
+    // tell / arrival / punish frames without a wave running on top of it.
     this.updateSpawns();
+    if (this.nowaves) return;
     // trigger position: camera centre, or the furthest living player when the camera is pinned at the stage end
     let reach = center;
     for (const p of world.players) if (p && p.alive && !p.dead && !p.out && p.x > reach) reach = p.x;
@@ -146,14 +151,30 @@ export class StageRunner {
   updateSpawns() {
     let n = 0;
     for (const s of this.pending) {
-      if (this.frame >= s.at) this.spawn(s);
-      else this.pending[n++] = s;
+      if (this.frame < s.at) { this.pending[n++] = s; continue; }
+      // issue #30: an entrance with a tell shows the tell first and lands the unit `tell` frames later
+      if (s.ent && s.ent.tell > 0 && !s.told) { this.startTell(s); this.pending[n++] = s; continue; }
+      this.spawn(s);
     }
     this.pending.length = n;
   }
+  /** Place an entrance's tell and push its spawn back by the tell's length (game/entrances.js). */
+  startTell(s) {
+    const ent = s.ent;
+    s.told = true;
+    s.at = this.frame + ent.tell;
+    this.world.add(new EntranceTell({ kind: ent.kind, x: s.x, z: s.z, frames: ent.tell, r: ent.r, look: ent.look }));
+    if (ent.tellSfx) audio.play(ent.tellSfx);
+  }
   spawn(s) {
-    // spec.mods (spawn modifiers, traits.js SPAWN_MODS) ride the pending spec and reach the Enemy constructor through spawnEnemyAt
-    const e = this.screen.spawnEnemyAt(s.spec.type, s.spec.variant, s.x, s.z, { entered: false, facing: s.facing, fromSky: s.spec.side === 'sky', mods: s.spec.mods });
+    // spec.mods (spawn modifiers, traits.js SPAWN_MODS) ride the pending spec and reach the Enemy constructor through spawnEnemyAt;
+    // s.ent (issue #30) is the resolved entrance, which sets the unit's own start pose and takes over its first frames
+    const e = this.screen.spawnEnemyAt(s.spec.type, s.spec.variant, s.x, s.z, { entered: false, facing: s.facing, fromSky: !s.ent && s.spec.side === 'sky', mods: s.spec.mods, entrance: s.ent });
+    if (s.ent) {
+      // a ring that completes under a player shoves them clear rather than landing a free hit (entrances.js)
+      if (s.ent.kind === 'teleport') teleportShove(this.world, s.x, s.z, s.ent.r);
+      return e;
+    }
     if (s.spec.side === 'sky') {
       if (e && e.mods && e.mods.includes('winged')) {
         // lowered in on a bladder (traits.js winged): a line-release hiss and rose gas, no roof to come through
@@ -185,9 +206,23 @@ export class StageRunner {
       : list;
     specs.forEach((spec, i) => {
       const side = spec.side || (i % 2 ? 'left' : 'right');
-      const x = side === 'left' ? left - SPAWN_MARGIN - (i % 3) * 14 : side === 'sky' ? (left + right) / 2 + (spec.dx || 0) : right + SPAWN_MARGIN + (i % 3) * 14;
-      this.pending.push({ at: this.frame + (spec.delay || 0) + extraDelay, spec, x, z: clamp(spec.z != null ? spec.z : 70, 10, 130), facing: side === 'left' ? 1 : -1 });
+      // issue #30: an authored `entrance` delivers to its own spot (entranceLanding) instead of just outside the lock,
+      // and a flyIn with no `from` of its own crosses in from the side the spec already names.
+      const ent = entranceFor(spec);
+      if (ent && ent.from == null) ent.from = side === 'left' ? 'left' : 'right';
+      const x = ent ? entranceLanding(ent, left, right)
+        : side === 'left' ? left - SPAWN_MARGIN - (i % 3) * 14 : side === 'sky' ? (left + right) / 2 + (spec.dx || 0) : right + SPAWN_MARGIN + (i % 3) * 14;
+      this.pending.push({ at: this.frame + (spec.delay || 0) + extraDelay, spec, ent, x, z: clamp(spec.z != null ? spec.z : 70, 10, 130), facing: side === 'left' ? 1 : -1, told: false });
     });
+  }
+  /**
+   * Debug / test hook (ARCHITECTURE 15): queue ONE spawn with an authored entrance at the camera, through the
+   * ordinary queueSpawns path so the tell, the ARRIVING state and the punish window are exactly a wave's.
+   * @param {string} type @param {string} variant @param {object} entrance @param {{ z?: number, delay?: number }} [o]
+   */
+  spawnEntrance(type, variant, entrance, { z = 70, delay = 0 } = {}) {
+    this.queueSpawns([{ type, variant, z, delay, entrance }]);
+    return this.pending[this.pending.length - 1] || null;
   }
   lockHere() {
     const cam = this.world.camera;

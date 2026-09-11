@@ -139,10 +139,16 @@ export const stage1 = {
       waves: [
         { triggerX: 4800, lock: true, spawns: [{ type: B, variant: 'footman', side: 'right', z: 40, delay: 0 }, { type: B, variant: 'footman', side: 'left', z: 100, delay: 30 },
           { type: B, variant: 'halberdier', side: 'right', z: 110, delay: 60 }, { type: B, variant: 'halberdier', side: 'left', z: 30, delay: 90 }] },
-        { triggerX: 5150, lock: true, spawns: [{ type: B, variant: 'warden', side: 'right', z: 70, delay: 0 },
-          { type: B, variant: 'sapper', side: 'left', z: 30, delay: 30 }, { type: B, variant: 'sapper', side: 'left', z: 120, delay: 60 }, { type: B, variant: 'duelist', side: 'right', z: 40, delay: 90 }] },
-        { triggerX: 5500, lock: true, spawns: [{ type: B, variant: 'warden', side: 'right', z: 50, delay: 0 }, { type: B, variant: 'warden', side: 'left', z: 100, delay: 40 },
-          { type: B, variant: 'duelist', side: 'right', z: 110, delay: 80 }, { type: B, variant: 'duelist', side: 'left', z: 30, delay: 110 },
+        // Inside the Engine the Concordat stops walking its machines in and starts RE-FORMING them on the floor
+        // (issue #30 `teleport`): a cyan ring and a rising chime for 40f, then the unit is standing in it with 12f
+        // of lens-lighting you get to punish. The Sappers still walk on — the ring is for the heavy plate.
+        { triggerX: 5150, lock: true, spawns: [{ type: B, variant: 'warden', z: 70, delay: 0, entrance: { kind: 'teleport', dx: 60 } },
+          { type: B, variant: 'sapper', side: 'left', z: 30, delay: 30 }, { type: B, variant: 'sapper', side: 'left', z: 120, delay: 60 },
+          { type: B, variant: 'duelist', z: 40, delay: 90, entrance: { kind: 'teleport', dx: -90 } }] },
+        { triggerX: 5500, lock: true, spawns: [{ type: B, variant: 'warden', z: 50, delay: 0, entrance: { kind: 'teleport', dx: -70 } },
+          { type: B, variant: 'warden', side: 'left', z: 100, delay: 40 },
+          { type: B, variant: 'duelist', z: 110, delay: 80, entrance: { kind: 'teleport', dx: 80 } },
+          { type: B, variant: 'duelist', side: 'left', z: 30, delay: 110 },
           { type: S, variant: 'wrangler', side: 'left', z: 120, delay: 140 }, ...cut(3, { z0: 20, delay0: 160 })] },
       ],
       events: [],

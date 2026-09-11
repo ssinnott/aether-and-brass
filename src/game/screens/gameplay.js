@@ -207,6 +207,16 @@ export class GameplayScreen extends Screen {
     const x = p1.x + (Number(dx) || 0), z = clamp(p1.z + (Number(dz) || 0), 0, Z_MAX);
     return this.spawnEnemyAt(type, variant, x, z, { facing: x < p1.x ? 1 : -1 });
   }
+  /**
+   * Debug / test hook (issue #30): queue one spawn with an authored entrance through the stage runner, so a
+   * scenario can watch a `teleport` / `flyIn` / `descend` / `ropeDrop` tell, arrival and punish window on an
+   * otherwise empty `?nowaves=1` arena. Returns the queued pending entry, or null with no runner.
+   */
+  spawnEntrance(type = 'brassbound', variant = 'warden', kind = 'teleport', opts = {}) {
+    if (!this.runner) return null;
+    const { z, delay, ...entrance } = opts || {};
+    return this.runner.spawnEntrance(type, variant, { kind, ...entrance }, { z, delay });
+  }
   /** Spawn an enemy from the content registry at absolute world coords. `opts.def` (training room) skips the lookup. */
   spawnEnemyAt(type, variant, x, z, opts = {}) {
     const def = opts.def || getEnemyDef(type, variant);
