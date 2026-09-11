@@ -51,7 +51,8 @@ export class StageRunner {
   /** Place every prop / hazard / zone, position the camera, enter the first section. */
   start() {
     for (const sec of this.sections) {
-      for (const p of sec.props || []) this.world.add(new Prop(p.type, p.x, p.z, { drops: p.drops !== undefined ? p.drops : null, hp: p.hp || 0 }));
+      // every extra field of a prop entry (release / dump / solid / rider / fire ...) is forwarded to the Prop as-is: items.js owns the meaning
+      for (const p of sec.props || []) this.world.add(new Prop(p.type, p.x, p.z, { ...p, drops: p.drops !== undefined ? p.drops : null, hp: p.hp || 0 }));
       if (!this.nowaves) for (const h of sec.hazards || []) this.world.add(new Hazard(h));
       for (const z of sec.zones || []) this.world.add(new Zone(z));
       for (const w of sec.waves || []) w._state = 'idle';
@@ -150,7 +151,8 @@ export class StageRunner {
     this.pending.length = n;
   }
   spawn(s) {
-    const e = this.screen.spawnEnemyAt(s.spec.type, s.spec.variant, s.x, s.z, { entered: false, facing: s.facing, fromSky: s.spec.side === 'sky' });
+    // spec.mods (spawn modifiers, traits.js SPAWN_MODS) ride the pending spec and reach the Enemy constructor through spawnEnemyAt
+    const e = this.screen.spawnEnemyAt(s.spec.type, s.spec.variant, s.x, s.z, { entered: false, facing: s.facing, fromSky: s.spec.side === 'sky', mods: s.spec.mods });
     if (s.spec.side === 'sky') {
       // crashes through the roof: shake, roof debris and a shower of gears
       this.world.camera.shake(s.spec.shake || 8, 14); audio.play('land_heavy'); audio.play('prop_break');
@@ -208,9 +210,9 @@ export class StageRunner {
     const lockedSection = sec.mode === 'locked' && !this.timedDone;
     if (!lockedSection) { this.world.camera.unlock(); this.goTimer = GO_FRAMES; audio.play('go_arrow'); }
     else if (this.timedIndex >= (sec.timedWaves || []).length) {
-      // the last timed wave: the funicular docks (scripted transition into the next section)
+      // the last timed wave: the vehicle docks (scripted 'dock' transition into the next section; the banner / look / pies
+      // come from sec.transition — board 1's funicular is the default when the section names nothing)
       this.timedDone = true;
-      this.hud.showBanner('FUNICULAR DOCKING', '', 60);
       this.startTransition(sec.transition || { kind: 'dock' });
     } else this.updateTimed(); // next timed wave fires on clear
   }
@@ -235,12 +237,18 @@ export class StageRunner {
   }
 
   // ---------- transitions ----------
-  /** Start a scripted transition (lift / board / dock / descent). Players are held until it finishes. */
+  /**
+   * Start a scripted transition (lift / board / dock / descent). Players are held until it finishes.
+   * spec = { kind, atX?, gateX?, banner?, look?, pies?, up? }: a 'dock' shows `banner` (default 'FUNICULAR DOCKING'; '' = none) and
+   * arrives on `look` ('stairs' default | 'ladder' | 'door' | 'hoist' | 'none') with `pies` Meat Pies (default 2); a 'lift' with
+   * `up: true` rides the shaft upward (transitions.js).
+   */
   startTransition(spec, extra = {}) {
     if (this.transition) return;
     spec._done = true;
     this.goTimer = 0;
-    this.transition = new Transition(this, spec.kind, { gateX: spec.gateX, nextSection: this.sectionIndex + 1, ...extra });
+    if (spec.kind === 'dock') { const banner = spec.banner != null ? spec.banner : 'FUNICULAR DOCKING'; if (banner) this.hud.showBanner(banner, '', 60); }
+    this.transition = new Transition(this, spec.kind, { gateX: spec.gateX, nextSection: this.sectionIndex + 1, banner: spec.banner, look: spec.look, pies: spec.pies, up: spec.up, ...extra });
     this.holdPlayers();
   }
   endTransition() {
