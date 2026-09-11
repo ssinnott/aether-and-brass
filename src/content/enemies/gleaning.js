@@ -1,7 +1,9 @@
 // Enemy Type C: The Gleaning — the salvage guild that follows the fighting on tailings-gas bladders and strips whatever
-// falls out of it. Five variants: Chaff (bouncing rusher), Winnow (perching ballast dropper), Thresher (the shadow that
-// dives), Sickle (the grounded thief), Harvestman (the elite that calls the crop in from above). Rig, palette, parts,
-// bladder and the base animation set live in gleaningRig.js; every attack here is hand-keyed (docs/ART_STYLE.md 8):
+// falls out of it. Seven variants: Chaff (bouncing rusher), Winnow (perching ballast dropper), Thresher (the shadow that
+// dives), Sickle (the grounded thief), Harvestman (the elite that calls the crop in from above), and from issue #28
+// the Picker (grounded fodder with no bladder at all, the one Gleaner you grab freely) and the Riggerman (the grabber
+// who drops a net on you from the hang line and lands beside the man it pinned). Rig, palette, parts, bladder and the
+// base animation set live in gleaningRig.js; every attack here is hand-keyed (docs/ART_STYLE.md 8):
 // anticipation -> smear hit -> hold -> follow-through (punish) -> return, with an ease on every key.
 //
 // Faction rules (BASE_HOOKS in gleaningRig.js): SHOT DOWN (1.25x on top of the core's 1.2x air bonus = 1.5x and a juggle
@@ -13,7 +15,7 @@ import {
   GLEAN, GLEAN_OUTLINE, GLEAN_PAL, GLEAN_PROPS, GLEAN_PARTS, CHALK, FK,
   drawBladder, drawWristTool, drawHipGear, makeGleanBase, BASE_HOOKS, ventPuff,
 } from './gleaningRig.js';
-import { celRect } from '../../art/shading.js';
+import { celRect, band, tones } from '../../art/shading.js';
 import { pathRrect, pathPoly, paint } from '../../art/shapes.js';
 import { floatText } from '../../art/fx.js';
 import { particles } from '../../engine/particles.js';
@@ -492,5 +494,193 @@ const harvestman = def({
     attacks: [{ anim: 'haul', range: 260, minRange: 0, weight: 3, maxUses: 2, tellFrames: 40 }, { anim: 'shear', range: 60, weight: 4 }] },
 }, harvestmanHooks);
 
-/** The Gleaning, in wave-introduction order. */
-export const GLEANINGS = [chaff, winnow, thresher, sickle, harvestman];
+// ---------------------------------------------------------------- C6 PICKER (issue #28): the man on the ground. No bladder, no hang, nothing to shoot down — the one Gleaner you grab freely.
+/**
+ * GROUNDED, and the stance says so before anything else does: heels DOWN (footR -6 / footL -4 against the faction's
+ * hanging -18 / -15), knees soft, torso folded over the field he is working. Every other Gleaner stands like a man on
+ * a rope; he stands like a man with a sack. The shared idle overrides torso/head per key (the stance only reaches the
+ * legs there), so his stoop gets its own 4-key 54f idle below at the shared loop's breathing amplitudes.
+ * root y +1 on every ground key: with the knees this bent the soles sit ~1 px above the deck at root 0, and the
+ * scale pivot is the feet, so +1 puts the boot line back on the floor (measured with computeJoints, not eyeballed).
+ */
+const PICK_STANCE = { stance: { torso: 16, head: -8, legR: [22, 12], legL: [-18, 16], footR: -6, footL: -4, root: [0, 1] }, stride: 1.1, bob: 1.1 };
+const PICK_CARRY = { armR: [28, 42], armL: [-14, 30] };   // pick hand forward and low over the ground, off hand back by the sack
+const PICK_LEGS = { legR: [22, 12], legL: [-18, 16], footR: -6, footL: -4 };
+const pickerAnims = Object.assign(makeGleanBase(PICK_CARRY, PICK_STANCE), {
+  idle: { loop: true, frames: [
+    FK(14, { ...PICK_CARRY, ...PICK_LEGS, torso: 14, head: -6, root: [0, 1] }, { ease: 'inout' }),
+    FK(13, { ...PICK_CARRY, ...PICK_LEGS, torso: 20, head: -2, root: [1, 2], legR: [24, 14], armR: [32, 44], armL: [-17, 32], squash: 1.01, stretch: 0.99 }, { ease: 'inout' }),
+    FK(14, { ...PICK_CARRY, ...PICK_LEGS, torso: 15, head: -5, root: [0, 1], armR: [26, 41], armL: [-12, 29] }, { ease: 'inout' }),
+    FK(13, { ...PICK_CARRY, ...PICK_LEGS, torso: 19, head: -3, root: [-1, 2], legL: [-19, 17], armR: [29, 43], armL: [-15, 31] }, { ease: 'inout' }),
+  ] },
+  // rake: the low pick rake — a LOW box (jump it): the pick goes out flat and is dragged back across the deck, and it trips
+  rake: { loop: false, frames: [
+    FK(9, { ...PICK_CARRY, armR: [-36, -20], armL: [20, 28], torso: 10, head: -6, root: [-3, 1], legR: [18, 10], legL: [-16, 14], footR: -6, footL: -4, face: 'angry' }, { tell: true, sfx: 'whiff', ease: 'in' }),
+    FK(5, { ...PICK_CARRY, armR: [-54, -26], armL: [26, 30], torso: 6, head: -8, root: [-5, 1], legR: [16, 10], legL: [-18, 16], footR: -6, footL: -4, face: 'angry', squash: 0.98, stretch: 1.02 }, { tell: true, ease: 'out' }),
+    FK(5, { ...PICK_CARRY, armR: [86, 38], armL: [-28, 18], torso: 30, head: 4, root: [4, 1], legR: [36, 12], legL: [-26, 26], footR: -2, footL: -2, face: 'shout', squash: 1.05, stretch: 0.96 },
+      { hitbox: { ...frontBox(40, hit(5, 'light', 3, 0, 14)), low: true }, smear: { from: -40, to: 85, a: 0.4, r: 38 },
+        fx: [{ kind: 'dust', x: 30, y: 0, count: 3 }], sfx: 'whiff', ease: 'overshoot' }),
+    FK(3, { ...PICK_CARRY, armR: [92, 40], armL: [-30, 18], torso: 32, head: 4, root: [5, 1], legR: [36, 12], legL: [-26, 26], footR: -2, footL: -2, face: 'shout' }, { ease: 'out' }),
+    FK(14, { ...PICK_CARRY, armR: [70, 36], armL: [-22, 20], torso: 24, head: 0, root: [3, 1], legR: [30, 12], legL: [-22, 22], footR: -4, footL: -3, face: 'grit' }, { punish: true, ease: 'inout' }),
+    FK(6, { ...PICK_CARRY, ...PICK_LEGS, torso: 16, head: -8, root: [0, 1] }, { ease: 'out' }),
+  ] },
+  // sackSwing: the two-hand swing of the field sack. `grip: 1` on the wind-up / hit / hold keys lifts the sack off the
+  // hip into the fists (gleaningRig drawWristTool / drawHipGear read it), and the recovery key drops it back. Medium,
+  // and it pushes: the one thing a Picker can do to make room.
+  sackSwing: { loop: false, frames: [
+    FK(12, { ...PICK_CARRY, armR: [-66, -30], armL: [-72, -28], grip: 1, torso: -2, head: -10, root: [-3, 1], legR: [20, 10], legL: [-18, 14], footR: -6, footL: -4, face: 'angry' }, { tell: true, sfx: 'grapple', ease: 'in' }),
+    FK(8, { ...PICK_CARRY, armR: [-94, -20], armL: [-100, -22], grip: 1, torso: -8, head: -12, root: [-5, 1], legR: [16, 10], legL: [-20, 16], footR: -6, footL: -4, face: 'angry', squash: 0.97, stretch: 1.03 }, { tell: true, ease: 'out' }),
+    FK(6, { ...PICK_CARRY, armR: [68, 22], armL: [62, 24], grip: 1, torso: 26, head: 6, root: [5, 1], legR: [36, 10], legL: [-26, 26], footR: -2, footL: -2, face: 'shout', squash: 1.06, stretch: 0.95 },
+      { hitbox: frontBox(46, hit(8, 'medium', 5, 0, 18)), smear: { from: -120, to: 40, a: 0.4, r: 40 },
+        fx: [{ kind: 'dust', x: 36, y: 0, count: 4 }], sfx: 'whiff', ease: 'overshoot' }),
+    FK(3, { ...PICK_CARRY, armR: [74, 22], armL: [68, 24], grip: 1, torso: 28, head: 6, root: [6, 1], legR: [36, 10], legL: [-26, 26], footR: -2, footL: -2, face: 'shout' }, { ease: 'out' }),
+    FK(18, { ...PICK_CARRY, armR: [54, 30], armL: [46, 30], torso: 20, head: 0, root: [4, 1], legR: [30, 10], legL: [-22, 22], footR: -4, footL: -3, face: 'grit' }, { punish: true, ease: 'inout' }),
+    FK(6, { ...PICK_CARRY, ...PICK_LEGS, torso: 16, head: -8, root: [0, 1] }, { ease: 'out' }),
+  ] },
+});
+const picker = def({
+  variant: 'picker', name: 'PICKER', role: 'fodder', hp: 30, damage: 1, speed: 1.15, score: 100, drops: 'none', grabbable: true,
+  // no BAG_ACC and bagShape 'none': every bag reader steps aside (gleaningRig.js header). No hurtParts either — there is no
+  // weak point above his head because there is nothing above his head. His tell is the lens and the breather going rose.
+  build: { ...BASE.build, scale: 0.85, bagShape: 'none', hood: 'kerchief', chalk: CHALK.picker, tool: 'pick', hipGear: 'sack', accessories: [WRIST_ACC, HIP_ACC] },
+  anims: pickerAnims,
+  traits: { weight: 0.8 },
+  ai: { attackRange: 40, zTolerance: 12, firstAttackDelay: 30, attackCooldown: [34, 70], maxAttackers: 2, tellWarnFrames: 8,
+    attacks: [{ anim: 'rake', range: 40, weight: 3 }, { anim: 'sackSwing', range: 46, minRange: 18, weight: 2 }] },
+});
+
+// ---------------------------------------------------------------- C7 RIGGERMAN (issue #28): the net. Rises to the hang line, drops a net on you, and lands next to the man it pinned.
+/** Salvage net: rope mesh with three zinc weights, turning as it falls. Pure draw — `p.spin` is advanced by the projectile. */
+function drawNet(ctx, p, sx, sy) {
+  const r = p.r;
+  ctx.save(); ctx.translate(sx, sy - r); ctx.rotate(p.spin);
+  ctx.strokeStyle = GLEAN.rope; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.beginPath();
+  for (let k = -1; k <= 1; k++) { ctx.moveTo(k * 6, -r); ctx.lineTo(k * 6, r); ctx.moveTo(-r, k * 6); ctx.lineTo(r, k * 6); }
+  ctx.stroke();
+  for (let i = 0; i < 3; i++) {
+    const a = i * 2.094;
+    pathRrect(ctx, R(Math.cos(a) * r) - 2, R(Math.sin(a) * r) - 2, 4, 4, 1); paint(ctx, GLEAN.zinc, GLEAN_OUTLINE, 1);
+  }
+  ctx.restore();
+}
+/**
+ * The net rides the projectile's own `status`, the way the Wrangler's does (sootborn.js netSpec): fighter.hurt applies
+ * hit.status on contact and status.js pins the body — 90 frames, six mashes out, or a partner's swing cuts it. No drag
+ * (kbX 0), because the point is that you stay exactly where the net found you, which is where he is about to land.
+ * A short lob (flight 22 from the hang line at y 64) re-aimed live on the `aim` key, not a straight drop: the hero has
+ * had 24 frames of tell and 16 of rise to move, and a net that only lands under his own feet never lands on anyone.
+ */
+const NET = { style: 'net', kind: 'lob', aimAt: true, flight: 22, gravity: 0.5, bounces: 0, rest: false, offsetX: 0, offsetY: 0,
+  r: 10, muzzle: false, color: GLEAN.rope, damage: 4, type: 'medium', kbX: 0, kbY: 0, hitstun: 12, hitSfx: 'net',
+  status: { netted: { frames: 90, mashOut: 6 } }, draw: drawNet };
+/**
+ * Rigger's harness (torso accessory): a broad rope girth under the yoke with a zinc D-ring the lines clip to. Rope on
+ * coat and zinc on rope are both material changes, so both take ink (band); one tone mark inside the ring, no more.
+ */
+function drawHarness(ctx, rig) {
+  const p = rig.p, hw = R(p.torsoW / 2), y = -R(p.torsoH * 0.42);
+  band(ctx, rig, -hw - 1, y, p.torsoW + 2, 5, GLEAN.rope);
+  band(ctx, rig, R(hw * 0.2), y - 2, 6, 8, GLEAN.zinc, 2);
+  if (rig.override) return;
+  ctx.fillStyle = tones(rig, GLEAN.zinc).deep; ctx.fillRect(R(hw * 0.2) + 2, y, 2, 4);
+}
+// the rigger stands WIDE and low, feet planted a yard apart the way a man does on a moving deck, one hand always up on
+// his line: the widest leg spread in the guild under the tallest bag, which is the silhouette delta against the Winnow
+// (feet together, stooped) and the Thresher (squat, both hands down) that share his bag height and his bulk.
+// root y +3: legs splayed 26 / -28 deg shorten the standing height by cos, and at root 0 the soles hung 3.2-4.2 px
+// off the deck on every stance key (measured with computeJoints through geom/pose-audit's own sole math). The scale
+// pivot is the feet, so +3 puts the boot line on the floor; every explicit ground key below carries the same offset.
+const RIG_STANCE = { stance: { torso: -6, head: 8, legR: [26, 8], legL: [-28, 12], footR: -16, footL: -14, root: [0, 3] }, stride: 0.9, bob: 0.9 };
+// gaff hand at the hip with the forearm BENT (lower 66): the gaff hangs 22 px under the fist, and with the arm straight
+// down at scale 1.15 its hook sat on the floor line in every rest key (ART_STYLE 0.6, weapon head off the floor).
+// The other hand is UP on its line — a rigger never lets go of the rope.
+const RIG_CARRY = { armR: [30, 66], armL: [-58, 44] };
+const RIG_LEGS = { legR: [26, 8], legL: [-28, 12], footR: -16, footL: -14, root: [0, 3] };
+const RIG_HANG = { armR: [-44, 44], armL: [-56, 46], torso: -8, head: 10, legR: [22, -46], legL: [-16, -40], footR: -30, footL: -28, face: 'angry' };
+const riggermanAnims = Object.assign(makeGleanBase(RIG_CARRY, { ...RIG_STANCE, grab: true }), {
+  // netDrop: 24f harness-hitch tell (both hands haul the lines, knees drop, the bag lights) -> 16f rise to the hang line
+  // -> ~29f hang at y 64: aim (re-aimed live) -> reach (the coil comes off the hip: grip 1) -> release (both arms driven
+  // down, the net goes, smear) -> hold -> GLIDE 40px toward the man he just netted -> sink -> 32f grabbable landing.
+  // The glide is the design's whole point: he lands within grab reach of the pinned hero, not where he took off.
+  netDrop: { loop: false, frames: [
+    FK(14, { ...RIG_CARRY, armR: [-70, 30], armL: [-80, 32], torso: 8, head: 6, root: [-2, 2], legR: [26, 14], legL: [-26, 16], footR: -12, footL: -10, face: 'angry', squash: 1.04, stretch: 0.97 },
+      { tell: true, sfx: 'grapple', ease: 'in' }),
+    FK(10, { ...RIG_CARRY, armR: [-100, 20], armL: [-108, 24], torso: 12, head: 8, root: [-3, 3], legR: [30, 20], legL: [-28, 22], footR: -8, footL: -6, face: 'angry', squash: 1.08, stretch: 0.93 },
+      { tell: true, ease: 'out' }),
+    FK(16, { ...RIG_HANG, armR: [-20, 48], armL: [-30, 50], torso: -14, head: 8, root: [0, -4], squash: 0.94, stretch: 1.07, face: 'grit' },
+      { move: { vy: 8 }, sfx: 'steam_vent', fx: [{ kind: 'steam', x: -8, y: 20, count: 4 }], ease: 'out' }),
+    FK(8, { ...RIG_HANG, root: [0, 0] }, { event: 'aim', ease: 'inout' }),
+    FK(4, { ...RIG_HANG, armR: [36, 60], armL: [28, 62], grip: 1, torso: 12, head: 18, root: [0, 1], legR: [14, -34], legL: [-8, -30] }, { ease: 'in' }),
+    FK(4, { ...RIG_HANG, armR: [84, 30], armL: [78, 32], grip: 1, torso: 18, head: 14, root: [1, 2], legR: [12, -30], legL: [-6, -26], face: 'shout' },
+      { spawn: { projectile: NET, y: 0 }, smear: { from: -20, to: 90, a: 0.35, r: 36 }, sfx: 'net', ease: 'overshoot' }),
+    FK(3, { ...RIG_HANG, armR: [88, 32], armL: [82, 34], grip: 1, torso: 20, head: 14, root: [1, 2], legR: [12, -30], legL: [-6, -26], face: 'shout' }, { ease: 'out' }),
+    FK(10, { ...RIG_HANG, armR: [-60, 40], armL: [-70, 42], torso: -2, head: 12, root: [2, -1], legR: [26, -50], legL: [-18, -30] }, { move: { x: 4 }, ease: 'inout' }),
+    FK(6, { ...RIG_HANG, armR: [-10, 40], armL: [-18, 42], torso: 8, head: 14, legR: [22, -18], legL: [-14, -14], face: 'grit' }, { move: { vy: -6 }, ease: 'in' }),
+    FK(32, { ...RIG_CARRY, armR: [20, 30], armL: [-20, 32], torso: 18, head: 12, root: [0, 2], legR: [36, 28], legL: [-28, 30], footR: -6, footL: -4, face: 'grit', squash: 1.1, stretch: 0.91 },
+      { punish: true, ease: 'inout' }),
+    FK(6, { ...RIG_CARRY, ...RIG_LEGS, torso: -6, head: 8 }, { ease: 'out' }),
+  ] },
+  // hook: the ground answer, a one-hand gaff sweep with the line hand still up — the swing that hooks a netted man closer
+  hook: { loop: false, frames: [
+    FK(10, { ...RIG_CARRY, armR: [-58, -30], armL: [-70, 40], torso: -4, head: 4, root: [-3, 2], legR: [22, 8], legL: [-24, 12], footR: -16, footL: -14, face: 'angry' }, { tell: true, sfx: 'whiff', ease: 'in' }),
+    FK(6, { ...RIG_CARRY, armR: [-80, -36], armL: [-76, 42], torso: -10, head: 0, root: [-5, 1], legR: [20, 8], legL: [-26, 14], footR: -16, footL: -14, face: 'angry', squash: 0.97, stretch: 1.03 }, { tell: true, ease: 'out' }),
+    FK(7, { ...RIG_CARRY, armR: [100, -8], armL: [-40, 30], torso: 26, head: 12, root: [5, 1], legR: [40, 12], legL: [-30, 28], footR: -8, footL: -6, face: 'shout', squash: 1.05, stretch: 0.96 },
+      { hitbox: frontBox(54, hit(10, 'medium', 4, 0, 18)), smear: { from: -80, to: 30, a: 0.45, r: 58 },
+        fx: [{ kind: 'slash', x: 46, y: 40, radius: 20, angle: 0, sweep: 54 }], sfx: 'whiff', ease: 'overshoot' }),
+    FK(3, { ...RIG_CARRY, armR: [106, -6], armL: [-42, 30], torso: 28, head: 12, root: [6, 1], legR: [40, 12], legL: [-30, 28], footR: -8, footL: -6, face: 'shout' }, { ease: 'out' }),
+    FK(22, { ...RIG_CARRY, armR: [84, 6], armL: [-34, 34], torso: 18, head: 8, root: [4, 1], legR: [32, 10], legL: [-26, 24], footR: -10, footL: -8, face: 'grit' }, { punish: true, ease: 'inout' }),
+    FK(6, { ...RIG_CARRY, ...RIG_LEGS, torso: -6, head: 8 }, { ease: 'out' }),
+  ] },
+});
+/**
+ * THE NET IS THE SET-UP, THE GRAB IS THE PAY-OFF, and the table says so: while his target is in the net this is the
+ * whole attack list (the Drayman's DRAY_MELEE pattern — a frozen module table swapped onto f.ai.attacks, never a
+ * mutation of the def's own array, which normalizeAi shares by reference). Measured without it: the drop's recovery
+ * ends 36 px from the pinned hero with a 50-100f cooldown and no token, so the core's HOVER rule backs him off to
+ * 78-108 px, where only netDrop (>= 64) and hook (<= 58) qualify — he re-netted a netted man, or hooked him from 51
+ * px and knocked him further away, and in 900 frames the grab never started. With the table cut to the grab and the
+ * cooldown zeroed he walks straight off the landing into it: net lands at t, he lands ~t+30, recovery to ~t+68,
+ * grabTell 20f, grab key ~t+92 against a 90f net — and the net he glided in under was re-aimed, so he is inside 46 px
+ * more often than not. A hero who mashes out (6 presses) leaves him grabbing air inside his own 10f punish key.
+ */
+const NET_FOLLOWUP = Object.freeze([{ anim: 'grab', tell: 'grabTell', range: 46, weight: 1 }]);
+const riggermanHooks = {
+  onSpawn(f) { f.netBaseAttacks = f.ai.attacks; },
+  onUpdate(f, world) {
+    BASE_HOOKS.onUpdate(f, world);
+    const a = f.anim;
+    if (a.name === 'netDrop') {
+      // hang keys 3..7 pin the altitude; key 8 is the sink and MUST let go (see winnowHooks: re-arming the pin on the
+      // sink key zeroes `move.vy: -6` on the step it is applied and eats the front of the grabbable landing)
+      if (a.frameIndex >= 3 && a.frameIndex <= 7) f.noGravity = 2;
+      else if (a.frameIndex >= 8) f.noGravity = 0;
+      if (a.frameIndex >= 2 && a.frameIndex <= 7) { f.rig.gas = 1; f.rig.swell = 1.12; }   // the tell stays lit while he hangs
+    }
+    const t = f.target, netted = !!(t && t.status && t.status.netted && !t.dead);
+    f.ai.attacks = netted ? NET_FOLLOWUP : (f.netBaseAttacks || f.ai.attacks);
+    if (netted && f.attackCooldown > 0) f.attackCooldown = 0;
+  },
+  onLanded(f, world, from) {
+    BASE_HOOKS.onLanded(f, world, from);
+    if (!f.dead) audio.play('land_heavy');
+  },
+};
+const riggerman = def({
+  variant: 'riggerman', name: 'RIGGERMAN', role: 'grabber', hp: 130, damage: 1, speed: 0.9, score: 600, drops: 'meter',
+  elite: false, grabbable: false, grabbableByGrappler: true, lyingFrames: 50, grabOffset: 24,
+  build: { ...BASE.build, scale: 1.15, bagShape: 'tall', hood: 'rigger', chalk: CHALK.riggerman, tool: 'gaff', hipGear: 'netcoil',
+    accessories: [BAG_ACC, WRIST_ACC, HIP_ACC, { attach: 'torso', draw: drawHarness }] },
+  anims: riggermanAnims,
+  traits: { flinchEvery: 2, weight: 1.4 },
+  hurtParts: [{ name: 'body', y: [0, 50] }, { name: 'bag', y: [50, 92], damageMult: 1.6 }],
+  moves: { grabHit: { damage: 6, hits: 3 }, throwFwd: { damage: 14, vx: 8, vy: 5 } },
+  // ignoresTokens: false overrides ROLE_DEFAULTS.grabber (the Cinder Hulk's choice too): two of these over one hero is
+  // two nets, and the faction's maxAttackers 2 is the promise that the sky stays readable. netDrop's range 170 raises
+  // maxAttackRange and there is no ai.ranged, so thinkApproach fires it from down the lane and he never kites.
+  ai: { attackRange: 48, zTolerance: 14, ignoresTokens: false, attackCooldown: [50, 100], firstAttackDelay: 40, tellWarnFrames: 12,
+    punishDamageMult: 1.5, punishGrabbable: true, grabHoldHits: 3, grabHitEvery: 18, flank: false, maxAttackers: 2,
+    attacks: [{ anim: 'netDrop', range: 170, minRange: 64, weight: 3 }, { anim: 'grab', tell: 'grabTell', range: 46, weight: 4 }, { anim: 'hook', range: 58, weight: 2 }] },
+}, riggermanHooks);
+
+/** The Gleaning, in wave-introduction order (the two issue #28 variants last, so nothing that indexes the first five moves). */
+export const GLEANINGS = [chaff, winnow, thresher, sickle, harvestman, picker, riggerman];
