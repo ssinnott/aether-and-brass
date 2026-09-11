@@ -40,7 +40,7 @@ export const stage3 = {
   // BOARD SELECT vignette (game/screens/boardselect.js): sky ramp, ground band, accent light, motif to draw.
   // groundH 0: the `works` motif paints its own road band, so the handcart can stand IN the road rather than on
   // top of a band drawn over it (game/screens/boardselect.js drawWorksMotif).
-  preview: { skyTop: '#C8C4B4', skyBot: '#EAE4D2', ground: '#B9AF95', groundH: 0, accent: LIME, motif: 'works', blurb: 'THE CHANDLERY' },
+  preview: { skyTop: '#C8C4B4', skyBot: '#EAE4D2', ground: '#B9AF95', groundH: 0, accent: LIME, motif: 'works', blurb: 'CHANDLERY & BRASSBOUND' },
   introLines: [
     'THE CHANCELLOR IS DOWN. THE ADMIRAL IS DOWN.',
     'SOMEBODY SUPPLIED THEM BOTH, AND IS ALREADY QUOTING FOR THE NEXT ONE.',
@@ -152,6 +152,8 @@ export const stage3 = {
     },
     // ---------------------------------------------------------------- Section 3: The Tallow Works (the company's yard)
     // MACHINES AND PEOPLE: the yard is where the Chandlery works on the Brassbound it has put back on their feet.
+    // Past the lane the living hands start running out: the tin arrives already crusted and walks off the carts on its
+    // own, so the yard takes a larger share of machines than the lane did and fewer men standing over them.
     { id: 'w3', name: 'THE TALLOW WORKS', x0: 2440, x1: 3600, backdrop: 'works2', floor: 'cobble',
       props: [
         { type: 'keg', x: 2520, z: 120, drops: SCRIP },
@@ -176,11 +178,13 @@ export const stage3 = {
           ...wick(1, { z0: 60, delay0: 60 }),
           one(B, 'sapper', 'right', 110, 90),
         ] },
+        // the Drayman sends the carts down and the tin walks off them: no Wickboy in this wave means no rite to light,
+        // so no Runner either — the first wave on the board the company crews with more machines than men
         { triggerX: 3000, lock: true, spawns: [
           one(C, 'drayman', 'right', 70, 0),
           one(C, 'tallyman', 'left', 116, 30),
           ...crusted(2, { z0: 30, dz: 60, delay0: 60 }),
-          one(C, 'runner', 'left', 50, 120),
+          one(B, 'footman', 'left', 50, 120),
         ] },
         // the Halberdiers: the first re-wound Brassbound with a reach, out of the Resurrection Man's cart
         { triggerX: 3240, lock: true, spawns: [
@@ -195,13 +199,18 @@ export const stage3 = {
       transition: { kind: 'board', atX: 3540, gateX: 3600 },
     },
     // ---------------------------------------------------------------- Section 4: The Ledger House (interior)
-    // MACHINES, AND THE PEOPLE WHO WOUND THEM: the Brassbound outnumber everyone else for the first time on the board.
+    // MACHINES, AND THE PEOPLE WHO WOUND THEM: the Brassbound outnumber everyone else for the first time on the board,
+    // better than two to one. The only people left in the house are the ones who keep the machines standing — the
+    // Resurrection Men, the Pursers, a Tallyman, one Limeburner. No scrip hands: none of them got this far.
     { id: 'w4', name: 'THE LEDGER HOUSE', x0: 3600, x1: 5300, backdrop: 'works3', floor: 'board',
       props: [
         { type: 'cabinet', x: 3760, z: 20, drops: 'goldenSprocket' }, { type: 'ledgerStack', x: 3900, z: 116, drops: COGS },
         { type: 'case', x: 4120, z: 22, drops: 'goldenSprocket' }, { type: 'tallyBoard', x: 4300, z: 112, drops: SCRIP },
         { type: 'urn', x: 4460, z: 26, drops: 'meatPie' }, { type: 'ledgerStack', x: 4640, z: 112, drops: COGS },
         { type: 'cabinet', x: 4760, z: 24, drops: 'aetherVial' }, { type: 'urn', x: 5020, z: 118, drops: 'meatPie' },
+        // the last handcart up from the yard, stood short of the counting floor: break it and the company loses the
+        // Footman inside it before it can tip him out itself
+        { type: 'handcart', x: 4820, z: 106 },
       ],
       // the house drops its ledgers off the galleries (a growing shadow, then the book lands), and one lime lamp on the
       // counting floor is a pit: the lamp is the tell
@@ -213,11 +222,12 @@ export const stage3 = {
       /** The counting floor: the desk edge vents lime as the Factor's harness eats the room (4 damage every 30f inside). */
       zones: [{ type: 'daisVents', x0: 4880, x1: 5300, color: LIME }],
       waves: [
+        // the door of the house: one Resurrection Man and one Wickboy to keep them up, and three machines already up
         { triggerX: 3900, lock: true, spawns: [
           one(C, 'resurrectionist', 'right', 60, 0),
           ...wick(1, { z0: 24, delay0: 30 }),
           ...crusted(2, { z0: 100, dz: 60, delay0: 60 }),
-          one(C, 'runner', 'left', 70, 120),
+          one(B, 'halberdier', 'left', 70, 120),
         ] },
         // a re-wound Chrome Duelist: the company has got as far as Vane's officers
         { triggerX: 4240, lock: true, spawns: [
@@ -226,21 +236,24 @@ export const stage3 = {
           one(B, 'halberdier', 'right', 70, 60), one(B, 'halberdier', 'left', 20, 90),
           one(B, 'duelist', 'right', 100, 120),
         ] },
+        // the Iron Warden, and the counting floor down to one Tallyman: the company sends no carters this far in, only
+        // what the carters brought up from the yard
         { triggerX: 4560, lock: true, spawns: [
           one(C, 'tallyman', 'left', 118, 0),
           one(B, 'sapper', 'right', 30, 30),
           one(B, 'warden', 'right', 70, 60),
-          one(C, 'drayman', 'left', 50, 90),
+          one(B, 'footman', 'left', 50, 90),
         ] },
         // the war, restarted, in one wave: the elite pair together for the only time on the board, Vane's iron and chrome
-        // with the company standing behind them — and when it is nearly over, the company sends more hands
+        // with the company standing behind them — and when it is nearly over the company has no hands left to send, so
+        // it tips the carts instead: two more Tin Footmen, crusted in the yard before they were ever loaded
         { triggerX: 4880, lock: true, spawns: [
           one(C, 'resurrectionist', 'right', 50, 0),
           one(C, 'purser', 'left', 90, 30),
           one(B, 'footman', 'left', 30, 60), one(B, 'footman', 'right', 74, 90),
           one(B, 'warden', 'right', 108, 120),
           one(B, 'duelist', 'left', 60, 150),
-        ], reinforcements: [{ whenRemaining: 2, spawns: [...wick(2, { z0: 30, dz: 80 }), one(C, 'runner', 'left', 70, 60)] }] },
+        ], reinforcements: [{ whenRemaining: 2, spawns: [...crusted(2, { z0: 30, dz: 80 })] }] },
       ],
       events: [],
     },
