@@ -1,7 +1,7 @@
 // Enemy Type C: The Gleaning — the salvage guild that follows the fighting on tailings-gas bladders and strips whatever
 // falls out of it. Seven variants: Chaff (bouncing rusher), Winnow (perching ballast dropper), Thresher (the shadow that
 // dives), Sickle (the grounded thief), Harvestman (the elite that calls the crop in from above), and from issue #28
-// the Picker (grounded fodder with no bladder at all, the one Gleaner you grab freely) and the Riggerman (the grabber
+// the Picker (grounded fodder with no bladder at all, the one Gleaner you can grab at will) and the Riggerman (the grabber
 // who drops a net on you from the hang line and lands beside the man it pinned). Rig, palette, parts, bladder and the
 // base animation set live in gleaningRig.js; every attack here is hand-keyed (docs/ART_STYLE.md 8):
 // anticipation -> smear hit -> hold -> follow-through (punish) -> return, with an ease on every key.
@@ -494,7 +494,11 @@ const harvestman = def({
     attacks: [{ anim: 'haul', range: 260, minRange: 0, weight: 3, maxUses: 2, tellFrames: 40 }, { anim: 'shear', range: 60, weight: 4 }] },
 }, harvestmanHooks);
 
-// ---------------------------------------------------------------- C6 PICKER (issue #28): the man on the ground. No bladder, no hang, nothing to shoot down — the one Gleaner you grab freely.
+// ---------------------------------------------------------------- C6 PICKER (issue #28): the man on the ground. No bladder,
+// no hang, nothing to shoot down — and the one Gleaner you can grab AT WILL. He is not the only grabbable one: the Harvestman
+// and the Riggerman set `grabbable: false` outright, and Chaff / Winnow / Thresher / Sickle are grabbable by the default but
+// spend the fight in the air, where grabs.js refuses them (it rejects any airborne target), so they are only takeable in the
+// landing recovery each hover ends on. He is the one who is simply standing there.
 /**
  * GROUNDED, and the stance says so before anything else does: heels DOWN (footR -6 / footL -4 against the faction's
  * hanging -18 / -15), knees soft, torso folded over the field he is working. Every other Gleaner stands like a man on

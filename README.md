@@ -116,7 +116,8 @@ between the Lash-Up and the Press — flying for whoever is buying.
 
 **The Gleaning** — the salvage guild that follows the fighting on tailings-gas bladders and strips
 whatever falls out of it, and the faction of board 4: Chaff, Winnow, Thresher, Sickle, Harvestman, the
-grounded Picker (no bladder, the only guild member you can grab freely) and the Riggerman (drops a net
+grounded Picker (no bladder, the one guild member you can grab at will — the rest are either ungrabbable
+or only takeable in the landing each hover ends on) and the Riggerman (drops a net
 from the hang line and grabs whoever it pinned). Everything here fights from the air and everything here
 has to land: a Gleaner hit while airborne takes 1.5x and juggles, its hurt boxes tile the whole rig so
 that the bag it hangs from is the upper band of the body and takes 1.6x, and every hover ends in a long

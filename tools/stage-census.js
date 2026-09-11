@@ -148,7 +148,12 @@ for (const r of rows) {
   // Where else a pair meets is printed under the Sections table rather than asserted, so the strict reading stays visible.
   check(`${b}: the elite pair is together in the last section`, r.lastSectionElites >= 2,
     `${r.lastSectionId}: ${r.lastSectionElites} elite variant(s); pairs meet in ${r.elitePairSections.join(', ') || 'no section'}`);
-  // the pacing and volume targets of #28 are written for boards 2-4; board 1 is the reference they are measured against
+  // The pacing and volume targets of #28 are written for boards 2-4. Board 1 is the board they are measured AGAINST, and
+  // it does not itself clear all of them -- run it through the rows below and it fails three: 10 distinct variants against
+  // the 12 floor, a last section that introduces nothing, and two sections under the two-mixed-waves bar. That is not a
+  // defect in board 1; those targets exist because the later boards were THINNER than it (one fodder variant was half a
+  // board), and the numbers were picked to fix that rather than to describe the Ascent. Skipping it here is therefore
+  // honest only while this note is: board 1 is the reference for FEEL and volume, not a board that passes this list.
   if (r.number === 1) continue;
   check(`${b}: at least ${MIN_DISTINCT} distinct variants (mods count)`, r.distinct >= MIN_DISTINCT, `${r.distinct}`);
   check(`${b}: ${MIN_ENEMIES} to ${MAX_ENEMIES} enemies`, r.enemies >= MIN_ENEMIES && r.enemies <= MAX_ENEMIES, `${r.enemies}`);
