@@ -20,7 +20,8 @@ export const stage2 = {
   id: 'stage2', number: 2, name: 'THE STORM ABOVE CALDERWICK',
   subtitle: 'THE SKY IS OPEN. THE NINTH WING HAS DECIDED TO CLOSE IT AGAIN.',
   // BOARD SELECT vignette (game/screens/boardselect.js): sky ramp, ground band, accent light, motif to draw.
-  preview: { skyTop: '#141A32', skyBot: '#E0A070', ground: '#454D5A', groundH: 0, accent: '#4DF0E0', motif: 'sky', blurb: 'THE STORMCROWS' },
+  // Static violet, not aether cyan: cyan is Concordat-only (STAGE2.md section 1) and the Stormcrows are not Concordat.
+  preview: { skyTop: '#141A32', skyBot: '#E0A070', ground: '#454D5A', groundH: 0, accent: '#9B7BFF', motif: 'sky', blurb: 'THE STORMCROWS' },
   introLines: [
     'THE HEART-ENGINE IS COLD AND THE SKY IS OPEN.',
     'THE NINTH AERONAUT WING NEVER STOOD DOWN.',
