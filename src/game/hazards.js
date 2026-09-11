@@ -899,6 +899,9 @@ export class Zone extends Entity {
     }
     if (this.t - this.lastCrate >= CONVEYOR_EVERY) {
       this.lastCrate = this.t;
+      // an always-on belt (`active: true`, board 3's cart lane) runs for the whole board: it only feeds crates and clunks
+      // while the camera can see it, like every other periodic hazard, so the ledger house does not hear the yard
+      if (!this.onScreen(world.camera)) return;
       world.add(new Prop('crate', this.x1 - 20, this.z0 + 20, { drops: rng.chance(0.25) ? 'meatPie' : ['brassCog', 'brassCog'], rider: true }));
       audio.play('hydraulic');
     }

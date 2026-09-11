@@ -7,6 +7,12 @@
 //
 // Same value contract as the lime road: a v42 ground under a v88 sky, so the pale faction reads on the floor band
 // and the one saturated colour anywhere in the section is the lime in the company's own glass.
+//
+// Two sections share this module (docs/STAGE3.md section 5): THE CART LANE, one locked screen whose belt carries the
+// fight down to the kiln head, and THE TALLOW WORKS, the scrolling yard after it. A section that carries `drift`
+// (px per frame, stage data) auto-scrolls the far and mid layers by it — frame-based and deterministic, the same
+// `frame` every peer steps — so the locked lane reads as a traverser moving through the yard rather than a still
+// screen with a belt painted on it. The mid layer is tiled in that mode so its vats and lamps wrap round.
 import {
   VIEW_W, FLOOR_TOP, Z_MAX, PARALLAX, BLEED, SKY_H, FLOOR_H, INK,
   makeLayer, blitTiled, blitAt, layerSpace, drawDarkBand, vGradient, makeGlowSprite,
@@ -166,6 +172,10 @@ export function create(section) {
   }
   const dust = makePool(DUST_N);
   for (let i = 0; i < DUST_N; i++) { dust.x[i] = (i * 67) % VIEW_W; dust.y[i] = 236 + (i * 41) % 100; dust.vx[i] = 0.4 + (i % 4) * 0.14; dust.seed[i] = i % 3; }
+  /** The locked lane's auto-scroll (stage data `section.drift`, px/frame); 0 on the scrolling yard. */
+  const drift = section.drift || 0;
+  /** Wrap a mid-layer origin into (-width, 0] so a drifting layer tiles from the right place (blitTiled does the same). */
+  const wrapMid = (x) => ((Math.round(x) % mid.width) + mid.width) % mid.width - mid.width;
   let f = 0;
 
   return {
@@ -184,7 +194,9 @@ export function create(section) {
     },
     drawBack(ctx, cam, frame) {
       const sy = cam.shakeY || 0, shx = cam.shakeX || 0;
-      const farOrigin = Math.round(-cam.x * PARALLAX.far + shx);
+      // the drift moves the yard LEFT past a lane that is carrying everything the same way (the belt runs leftward)
+      const shift = drift ? Math.round(f * drift) : 0;
+      const farOrigin = Math.round(-cam.x * PARALLAX.far + shx) - shift;
       blitTiled(ctx, farL, farOrigin, -BLEED + sy);
       for (let i = 0; i < PUFF_N; i++) {
         const r = 5 + puffs.seed[i] * 2, a = 0.32 * Math.max(0, (puffs.y[i] - 2) / 40);
@@ -195,20 +207,23 @@ export function create(section) {
           ctx.beginPath(); ctx.arc(x, Math.round(puffs.y[i]) + sy, r, 0, Math.PI * 2); ctx.fill();
         }
       }
-      blitAt(ctx, midL, mid.originX(cam), -BLEED + sy);
+      // the mid layer is world-anchored on the yard and tiled (so it wraps) on the drifting lane
+      const midOrigin = drift ? wrapMid(mid.originX(cam) - shift) : mid.originX(cam);
+      if (drift) blitTiled(ctx, midL, midOrigin, -BLEED + sy); else blitAt(ctx, midL, midOrigin, -BLEED + sy);
       // vat condensate: a slow breath of steam off the tallow, on a long cycle so the yard feels worked, not busy
-      const midOrigin = mid.originX(cam), k = 0.25 + 0.4 * pulse(frame, 210);
+      // (on the drifting lane the decorations are drawn for the tile copy that is on screen as well)
+      const k = 0.25 + 0.4 * pulse(frame, 210), copies = drift ? 2 : 1;
       ctx.globalAlpha = k;
-      for (let vx = 40; vx < mid.width; vx += 300) {
-        const x = midOrigin + vx + 26;
+      for (let c = 0; c < copies; c++) for (let vx = 40; vx < mid.width; vx += 300) {
+        const x = midOrigin + c * mid.width + vx + 26;
         if (x < -30 || x > VIEW_W + 30) continue;
         ctx.fillStyle = 'rgba(236,236,226,0.5)';
         ctx.beginPath(); ctx.ellipse(x, 128 + sy, 22, 8, 0, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.ellipse(x + 8, 116 + sy, 13, 6, 0, 0, Math.PI * 2); ctx.fill();
       }
       ctx.globalAlpha = 1;
-      for (let lx = 250; lx < mid.width; lx += 300) {
-        const x = midOrigin + lx;
+      for (let c = 0; c < copies; c++) for (let lx = 250; lx < mid.width; lx += 300) {
+        const x = midOrigin + c * mid.width + lx;
         if (x < -40 || x > VIEW_W + 40) continue;
         ctx.drawImage(lampGlow.canvas, x - 20, 125 - 20 + sy);
       }
