@@ -140,7 +140,13 @@ export const stage4 = {
       ],
       /** No bulwark on a raft of other people's hulls: the front and back 12px are open air over the field (+200). */
       // `open: true` (issue #21): a thrown weapon / prop, or a dropped weapon pickup, drifting past the same edge is lost too.
-      zones: [{ type: 'rails', x0: 1800, x1: 2440, open: true }],
+      zones: [{ type: 'rails', x0: 1800, x1: 2440, open: true },
+        // issue #31: two planks have gone out of the float, one in each lane and well apart, so there is always a way
+        // across but never a straight line. Nothing below but the field: an enemy that goes in is gone (+200), a
+        // player pays 8% of max HP and is set back on the lip.
+        { type: 'solid', x0: 1978, x1: 2010, z0: 14, z1: 60, height: 0 },
+        { type: 'solid', x0: 2232, x1: 2264, z0: 84, z1: 130, height: 0 },
+      ],
       waves: [],
       timedWaves: [
         // the first Thresher, with the ground crew and the first Stormcrow on the board, grounded and working
@@ -246,6 +252,9 @@ export const stage4 = {
        */
       zones: [
         { type: 'netGive', x0: 3700, x1: 4800, squares: [{ x: 3900, z: 60 }, { x: 4300, z: 110 }, { x: 4600, z: 40 }] },
+        // issue #31: one square of decking is simply GONE rather than waiting to be opened by a heavy landing — the
+        // net squares above are a trap you spring, this is a hole you can see. Well short of the boss camera box.
+        { type: 'solid', x0: 4120, x1: 4156, z0: 34, z1: 84, height: 0 },
         { type: 'daisVents', x0: 4880, x1: 5300, color: ROSE },
       ],
       waves: [

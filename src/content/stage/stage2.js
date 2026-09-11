@@ -53,12 +53,19 @@ export const stage2 = {
         { type: 'lightning', x: 700, z: 96, period: 220, active: 12, tell: 40 },
         { type: 'hook', x: 1180, z: 70, period: 120 },
         { type: 'lightning', x: 1620, z: 40, period: 220, active: 12, tell: 40, offset: 110 },
+        { type: 'crossbar', x: 972, z: 0, period: 300, active: 12, tell: 40, offset: 60 },
       ],
       /** No bulwark up here: the front and back 12px are open air. Anything thrown over goes into the cloud (+200) — and the
        *  cloud tears sideways: every 7s a gust (45f of gale first) drags everyone on their feet toward one edge or the other.
        *  `open: true` (issue #21): a thrown weapon / prop, or a dropped weapon pickup, that drifts past the same edge falls
        *  into the cloud too -- lost, not landed. */
-      zones: [{ type: 'rails', x0: 0, x1: 1900, open: true }, { type: 'gust', x0: 0, x1: 1900, dir: 0 }],
+      zones: [{ type: 'rails', x0: 0, x1: 1900, open: true }, { type: 'gust', x0: 0, x1: 1900, dir: 0 },
+        // issue #31: two mooring booms cross the spine at head height. The back one is paired with a `crossbar`
+        // hazard on the same lane (hazards list above) so it SWEEPS as well as blocks -- the timing half of a boom is
+        // the crossbar's job, the blocking half is the solid's, and neither needed to learn the other's trick.
+        { type: 'solid', x0: 960, x1: 984, z0: 0, z1: 46, height: 40 },
+        { type: 'solid', x0: 1520, x1: 1544, z0: 96, z1: 140, height: 40 },
+      ],
       waves: [
         // the pressed crew first: three Deckhands, no wing-packs, throwable - learn the rail
         { triggerX: 420, lock: true, spawns: hands(3, { z0: 40 }) },
@@ -93,6 +100,10 @@ export const stage2 = {
         { type: 'ballast', x: 2760, z: 118, drops: 'meatPie' }, { type: 'powderTub', x: 2900, z: 112 },
         { type: 'bucket', x: 2980, z: 18, drops: 'roastBird' },
         { type: 'keg', x: 3120, z: 108, drops: KEGS }, { type: 'crate', x: 3320, z: 34, drops: COGS },
+        // issue #31: the Wing has stacked the hall shut with its own powder. `barricade: true` is what the paired
+        // `solid` zone below looks for -- the keg owns the health, the hit reaction and the drops, the zone owns the
+        // geometry, and the wave does not clear while it is standing. Breaking it also cooks off (keg `explode`).
+        { type: 'keg', x: 2660, z: 70, hp: 60, drops: KEGS, barricade: true },
       ],
       // two gas cells have split: their clouds drift along the catwalk (one left, one right) and stun whoever they roll
       // over - and any fire inside one (a Bosun's keg, a burning body) bursts it; the loading hook still swings over the middle
@@ -101,6 +112,10 @@ export const stage2 = {
         { type: 'hook', x: 2680, z: 66, period: 130 },
         { type: 'gasCell', x: 3060, z: 40, drift: -2, offset: 210 },
       ],
+      /** Issue #31: the powder barricade across the hall. It spans the whole band, so there is no walking round it —
+       *  and `StageRunner.barricadeHolding` keeps the wave it belongs to open until the keg is down, which is the
+       *  point: the Wing's own powder is the door, and the Bosuns keep coming from behind it while you work on it. */
+      zones: [{ type: 'solid', x0: 2640, x1: 2690, z0: 0, z1: 140, height: 46, breakable: true }],
       waves: [
         // the coil arrives: two Galewrights behind a pair of Deckhands
         { triggerX: 2260, lock: true, spawns: [{ type: C, variant: 'galewright', side: 'right', z: 40, delay: 0 },

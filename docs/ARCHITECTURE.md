@@ -497,6 +497,20 @@ A `rails` hazard zone (`game/hazards.js` `Zone`) may also carry `open: true` (is
 flight over the edge (`loseOverEdge`) instead of letting it land — only The Mooring Spine (stage2 `m1`) and The Lash-Up (stage4 `g2`) set it, because both boards say so explicitly ("no bulwark", "no
 bulwark anywhere"). The Brass Funicular's `rails` (stage1 `s3`) are railings, not an open edge, so it omits `open` and thrown items land on the roof as normal.
 
+A `solid` zone (issue #31) is the one thing in the game that BLOCKS movement: `{ type: 'solid', x0, x1, z0, z1,
+height, breakable? }`. A grounded fighter cannot cross `[x0, x1]` while its z is inside `[z0, z1]`; one whose y clears
+`height` passes over, and a body that is still RISING is measured by the apex its jump will reach, so committing to a
+jump that clears the obstacle clears it (without that, a jump started against a wall is blocked through its own
+ascent). Knockback into a solid wall-bounces with the same numbers the camera bound already uses (`AIR_FALL_STATES`,
+|vx| > 4, `vx *= -0.5`). `height: 0` is a floor GAP: an enemy that walks in rings out (+200), a player pays 8% of max
+HP and is set on the nearest lip — health, not a life, the same rule the Crop Loft's `netGive` squares use, and
+literally the same three ejectors (`ringOut` / `dropPlayer` / `loseOverEdge`). `breakable: true` blocks only while a
+Prop flagged `barricade: true` inside the rectangle is still standing, and `StageRunner.barricadeHolding` keeps that
+wave open until it is down. The health lives on the **Prop**, not the Zone, because a Prop is kind `'prop'` and its hp
+is hashed by `net/checksum.js`, whereas a Zone is kind `'fx'` and its state is invisible to the desync canary.
+Unlike every other zone a solid answers `dangerBox()` permanently (a wall has no quiet phase), which is what makes
+`laneAroundHazards` route mobs and the autopilot around it for free; a broken barricade reports `null` again.
+
 Hazard and zone types, their spec fields, timings, hits and `dangerBox` footprints are tabulated in the header of
 `game/hazards.js` (HAZARD TABLE / ZONE TABLE). Boards 2-4 declare `cannon`, `gasCell`, `limePit`, `wagon`,
 `tallowVat`, `kilnMouth`, `ledgerDrop` / `ballastDrop` and `gasSeep` hazards and `gust`, `spoil` and `netGive`
@@ -565,6 +579,12 @@ An `EnemyDef` (in `content/enemies/*.js`):
 ```
 Base AI state machine (in `Enemy`), tuned by `def.ai`:
 `ARRIVING` (issue #30, only for a spawn with an authored `entrance`: on screen, drawn and hittable, but on a scripted path from `game/entrances.js`, taking no actions and holding no attack token; ends in a punishable, grabbable recovery, then re-arms `firstAttackDelay` against the LANDING so a long flight cannot buy the unit a free swing) → `ENTER` (walk on-screen) → `APPROACH` (align `z` within `zTolerance`, close to `attackRange` on the target's facing-agnostic side; picks the nearest player, re-targets every 90 frames or when hit) → `ATTACK` (needs an **attack token**: `World.attackTokens.max` comes from `ATTACK_TOKENS_BY_PARTY = [2, 2, 3, 4, 4]`, indexed by the number of living players (`World.alivePlayers.length`; `World.partySize` — players not yet out — drives the `WAVE_EXTRA_BY_PARTY` clones below instead) — 1 and 2 players keep today's 2, 3 players get 3, 4 players get 4 — enemies without a token `HOVER`: shuffle at distance `attackRange + 30..60`, occasionally step in `z`) → `RECOVER` (short back-off after attacking, `retreatChance`) → loop. Ranged variants use `KEEP_DISTANCE`. Elites/bosses ignore tokens. Enemies never overlap each other perfectly: apply a soft separation force between enemies within 18px in `x` and 10px in `z`. Enemies react to being hit exactly like players (shared `Fighter`).
+Jump-over (issue #31): `laneAroundHazards` steers an approach around a `solid` exactly as it steers around a live
+vent, but a wall that spans the whole floor band leaves no lane to take — it returns z unchanged, and that case (and
+only that case) is where a mob goes over the top instead. `Enemy.tryJumpOver` commits within 30px of the obstacle's
+near face, or after 90 frames of failing to close on its target with one in the way, which is the anti-stick rule:
+nothing may stand grinding against a wall forever. This is the first AI-driven jump in the game — `jump` anims existed
+but nothing ever played them for an enemy. Flyers skip it: already being off the ground clears the obstacle.
 Off-screen rule: an enemy that is > 200px outside the camera for 300 frames teleports to
 the nearest lock edge (prevents stuck waves). An `ARRIVING` unit is exempt — its path is authored and bounded, and
 yanking it to a lock edge mid-flight would break it — so `game/entrances.js` carries its own watchdog instead: an
@@ -688,6 +708,12 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      ends in a punishable window on the floor with `firstAttackDelay` re-armed. Plus the rope-drop line cut, checked on
      both an unarmored unit (the hit is rewritten to a knockdown) and a shielded Marine (whose armour swallows the
      reaction, but whose line is cut all the same).
+  3f. `obstacles` (`tools/scenarios/obstacles.js`, issue #31): against the real authored obstacles — board 1's
+     Funicular roof gap and board 2's Gas-Halls powder barricade. Walking into a gap drops the player through it for
+     health (measured on hp PLUS the hero's shield, since that buffer is spent first) and sets them on the lip; a
+     running jump clears it for nothing; an enemy standing in it rings out; an enemy walled off from its target leaves
+     the ground and reaches the far side; and a barricade blocks, holds its wave lock and answers `dangerBox()` until
+     its Prop is broken, then stops doing all three.
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.

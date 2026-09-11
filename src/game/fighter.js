@@ -70,6 +70,7 @@ import { applyStatus, clearStatus, tickStatuses, tickFrozen, drawStatuses, statu
 import { normalizeTraits } from './traits.js';
 import { initShield, syncShield, tickShield, absorbShield, drawShieldFx } from './shield.js';
 import { grabMethods, BOUNCE_VY } from './grabs.js';
+import { solidAt } from './hazards.js';
 
 export { normalizeTraits };
 
@@ -178,6 +179,9 @@ export class Fighter extends Entity {
   update(world) {
     this.world = world;
     if (!this.spawned) { this.spawned = true; this.callHook('onSpawn', world); if (this.def.onSpawn) this.def.onSpawn(this, world); }
+    // where this body stood before anything moved it this frame. A solid obstacle (issue #31) is resolved against
+    // it, because which SIDE of a wall you were on is the only thing that says which side to put you back on.
+    this.prevX = this.x; this.prevZ = this.z;
     if (this.hitstop > 0) { this.hitstop--; return; }
     if (tickFrozen(this, world)) return;
     if (this.flashTimer > 0) this.flashTimer--;
@@ -278,9 +282,41 @@ export class Fighter extends Entity {
     this.x += this.vx; this.z += this.vz;
     const zb = world.zBounds ? world.zBounds(this) : null;
     this.z = clamp(this.z, zb ? zb.z0 : Z_MIN, zb ? zb.z1 : Z_MAX);
+    this.hitSolid(world);
     const b = world.boundsFor(this);
     if (this.x < b.x0) { this.x = b.x0; if (AIR_FALL_STATES.has(this.state) && this.vx < -4) this.vx *= -0.5; else if (this.vx < 0) this.vx = 0; }
     else if (this.x > b.x1) { this.x = b.x1; if (AIR_FALL_STATES.has(this.state) && this.vx > 4) this.vx *= -0.5; else if (this.vx > 0) this.vx = 0; }
+  }
+
+  /**
+   * Solid obstacles (issue #31, hazards.js `solid` zones): the first thing in the game that blocks movement. A body
+   * whose y clears the obstacle's `height` passes over it, which is what makes a jump the answer. Everyone else is
+   * set back down on the side they came from — `prevX`, captured before anything moved them this frame.
+   *
+   * The reaction is deliberately the SAME one the camera bound already applies a few lines below: a knocked-down or
+   * thrown body carrying real speed bounces off (`vx *= -0.5`), anything else just stops. A thrown body slamming
+   * into a barricade should read exactly like one slamming into the edge of the screen, because it is the same hit.
+   *
+   * A held body is not checked at all: physics() returns before this for `grabbedBy`, and grabs.js writes the
+   * victim's position directly every frame, so a carried victim is dragged through. That is a deliberate omission —
+   * making a grab fail against geometry is a combat change, not an obstacle one.
+   */
+  hitSolid(world) {
+    // A body that is RISING is measured by the apex its current jump will reach, not by where it is right now.
+    // Without this a jump started next to a wall is blocked through the first frames of its own ascent -- vx is
+    // zeroed against the face while y is still below `height`, and the jump goes straight up and comes back down
+    // on the near side. Committing to a jump that clears the obstacle is what clears the obstacle.
+    const reach = this.vy > 0 ? this.y + (this.vy * this.vy) / (2 * GRAVITY) : this.y;
+    const s = solidAt(world, this.x, this.z, reach);
+    if (!s) return;
+    const fromLeft = this.prevX <= s.x0;
+    this.x = fromLeft ? s.x0 - 1 : s.x1 + 1;
+    if (AIR_FALL_STATES.has(this.state) && Math.abs(this.vx) > 4) {
+      this.vx *= -0.5;
+      if (world.camera) world.camera.shake(2, 5);
+      burstDust(this.x, this.z, 4, 1.4);
+      audio.play('land_heavy');
+    } else if ((fromLeft && this.vx > 0) || (!fromLeft && this.vx < 0)) this.vx = 0;
   }
 
   onLand(world) {
@@ -379,6 +415,10 @@ export class Fighter extends Entity {
     if (spec.behind !== false) { this.x = clamp(e.x - e.facing * off, b.x0, b.x1); this.facing = e.facing; }
     else { const dir = sign(e.x - this.x) || this.facing; this.x = clamp(e.x - dir * off, b.x0, b.x1); this.facing = dir; }
     this.z = e.z;
+    // a blink sets x/z directly and never reaches physics()'s clamps, so it is the one path that can land a body
+    // inside a wall (issue #31). Put it down on the side of the obstacle its target is on.
+    const solid = solidAt(world, this.x, this.z, this.y);
+    if (solid) this.x = e.x <= solid.x0 ? solid.x0 - 1 : solid.x1 + 1;
     world.addFx('ring', this.x, 30, this.z, { r0: 4, r1: 40, color: col });
     if (spec.sfx !== false) audio.play(spec.sfx || 'aether_step');
     return e;

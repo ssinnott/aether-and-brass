@@ -42,7 +42,7 @@ import { clamp, sign } from '../engine/math.js';
 import { drawText } from '../engine/text.js';
 import { floatText } from '../art/fx.js';
 import { Prop } from './items.js';
-import { laneAroundHazards } from './hazards.js';
+import { laneAroundHazards, solidBetween } from './hazards.js';
 import { tryEnemyPropThrow, thinkEnemyHeld, dropHeldProp } from './throwables.js';
 import { applyMods } from './traits.js';
 import { startArrival, stepArrival, finishArrival, isHanging } from './entrances.js';
@@ -61,6 +61,10 @@ export const ROLE_DEFAULTS = Object.freeze({
   fodder: {}, rusher: { flank: true }, bruiser: {}, ranged: {}, elite: { ignoresTokens: true }, grabber: { ignoresTokens: true, retreatChance: 0 },
 });
 const OFFSCREEN_MARGIN = 200, OFFSCREEN_FRAMES = 300, SEP_X = 18, SEP_Z = 10, RETARGET = 90, HOVER_MAX = 240, HIST = 48;
+/** Jump-over (issue #31): how close to a solid's near face a mob must be before it commits to the jump, the pop it
+ *  leaves the ground with, and how long it may fail to close on its target with an obstacle between before it jumps
+ *  regardless of lane. The last one is the anti-stick rule: nothing may stand grinding against a wall forever. */
+const JUMP_OVER_RANGE = 30, JUMP_OVER_VY = 8, JUMP_OVER_VX = 2.6, STUCK_FRAMES = 90, STUCK_EPS = 6;
 const SPD_Z = Z_SPEED_FACTOR;
 
 /** Resolve the alias flags of an ai table into the canonical names. */
@@ -116,6 +120,9 @@ export class Enemy extends Fighter {
     // Soot Cutthroat throttle between prop-throw attempts on this cooldown (hashed in net/checksum.js).
     this.propThrowCooldown = 0;
     this.retreating = false; this.grabHitTimer = 0; this.stalled = false;
+    // issue #31 jump-over: frames spent failing to close on the target with a solid in the way, and the x it last
+    // made progress from. Both are plain counters off the sim, so they cost the rng stream nothing.
+    this.stuckT = 0; this.lastGapX = null;
     // whiff backsteps / riposte stance bookkeeping
     this.watchInst = -1; this.watchNear = false; this.hitByInst = -1; this.whiffs = 0; this.backstepCooldown = 0;
     this.inStance = false; this.stanceTimer = 0; this.stanceCooldown = 0; this.playerAttacks = 0; this.lastPlayerAttack = -1; this.noAttackTimer = 0;
@@ -323,8 +330,43 @@ export class Enemy extends Fighter {
     let laneZ = (ai.flank && adx > 70) ? clamp(t.z + this.flankZ, band.z0, band.z1) : t.z;
     // GDD 6: walk AROUND a hazard the approach would cross (the dock's cargo hook sweeps a 176px arc)
     laneZ = laneAroundHazards(world, this.x, wantX, laneZ, band.z0, band.z1);
+    // issue #31: laneAroundHazards steers around a solid the same way it steers around a vent, but a wall that spans
+    // the whole floor band has no lane left to take — it returns z unchanged and the mob would walk into it forever.
+    // That is the case, and only that case, where the answer is to go over the top.
+    if (this.tryJumpOver(world, laneZ)) return;
     const mz = laneZ - this.z;
     this.moveToward(wantX - this.x, Math.abs(mz) > 3 ? mz : 0, 1, false, adx > 260);
+  }
+  /**
+   * Jump a solid obstacle that is between this enemy and where it is trying to walk (issue #31). Two triggers:
+   * being close enough to its near face to clear it, or the anti-stick rule — STUCK_FRAMES of failing to close on
+   * the target with an obstacle in the way, at which point it jumps from wherever it is rather than grinding.
+   *
+   * Flyers skip all of this: a Gleaner or a Stormcrow that is already off the ground clears the obstacle by being
+   * airborne, which is the same rule the player gets.
+   * @returns {boolean} true when a jump was started this frame
+   */
+  tryJumpOver(world, laneZ) {
+    if (this.airborne || this.grabbedBy || this.state === ST.ATTACK) return false;
+    const t = this.target;
+    if (!t) { this.stuckT = 0; return false; }
+    const s = solidBetween(world, this.x, t.x, laneZ);
+    if (!s) { this.stuckT = 0; this.lastGapX = this.x; return false; }
+    // still closing on the far side? then it is walking round, not stuck
+    const moved = Math.abs(this.x - (this.lastGapX != null ? this.lastGapX : this.x));
+    if (moved > STUCK_EPS) { this.stuckT = 0; this.lastGapX = this.x; } else this.stuckT = (this.stuckT || 0) + 1;
+    const face = sign(t.x - this.x) || this.facing;
+    const nearFace = face > 0 ? s.x0 : s.x1;
+    // not close enough to commit yet: fall through and let the ordinary approach walk it up to the face
+    const close = Math.abs(nearFace - this.x) <= JUMP_OVER_RANGE;
+    if (!close && this.stuckT < STUCK_FRAMES) return false;
+    this.stuckT = 0; this.lastGapX = this.x;
+    this.facing = face;
+    this.vy = JUMP_OVER_VY; this.y = 0.01;
+    this.vx = face * Math.max(JUMP_OVER_VX, this.runSpeed || JUMP_OVER_VX);
+    this.setState(ST.JUMP, 'jump', { fallback: 'fall' });
+    audio.play('jump');
+    return true;
   }
   thinkHover(world, t) {
     this.face(t);

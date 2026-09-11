@@ -242,7 +242,22 @@ export class StageRunner {
       if (alive <= (r.whenRemaining != null ? r.whenRemaining : 0)) { aw.reinforced = true; this.queueSpawns(r.spawns || []); return; }
     }
     if (alive > 0) return;
+    if (this.barricadeHolding()) return;   // issue #31: the gate is still up, so the wave is not over
     this.clearWave();
+  }
+  /**
+   * Is a breakable `solid` (issue #31) still standing inside the current camera lock? While one is, the wave it
+   * belongs to does not clear and the lock does not release — the barricade IS the wave's last enemy. Only a locked
+   * camera is considered: a barricade the party has already walked past must never hold a later wave open.
+   */
+  barricadeHolding() {
+    const cam = this.world.camera;
+    if (!cam.locked) return false;
+    for (const e of this.world.entities) {
+      if (!e.isSolid || !e.breakable || e.removeMe || !e.blocking) continue;
+      if (e.x1 >= cam.left && e.x0 <= cam.right) return true;
+    }
+    return false;
   }
   /** Total times the players have been hit this run (GDD 7 no-damage wave bonus). */
   playerHits() { let n = 0; for (const p of this.world.players) n += p.hitCount || 0; return n; }

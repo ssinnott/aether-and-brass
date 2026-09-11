@@ -69,6 +69,9 @@ export const stage3 = {
         { type: 'wagon', x: 1780, x1: 20, z: 70, period: 600, tell: 45, speed: 4 },
         { type: 'limePit', x: 1540, z: 38, period: 180, active: 40, tell: 30, offset: 90 },
       ],
+      /** Issue #31: a slaking pit open in the road. Falling in costs an enemy the round (+200) and a player 8% of max
+       *  HP and their footing -- health, not a life. It takes the back lanes only, so the road is never actually shut. */
+      zones: [{ type: 'solid', x0: 1180, x1: 1216, z0: 16, z1: 66, height: 0 }],
       waves: [
         // the first rite you will ever see: three Wickboys, and the one you are hitting keeps getting back up (fodder only)
         { triggerX: 400, lock: true, spawns: wick(3, { z0: 40 }) },
@@ -159,6 +162,7 @@ export const stage3 = {
         { type: 'bucket', x: 2860, z: 120, drops: 'roastBird' }, { type: 'urn', x: 2960, z: 24, drops: 'brassHeart' },
         { type: 'tallyBoard', x: 3080, z: 118, drops: SCRIP },
         { type: 'keg', x: 3300, z: 30, drops: SCRIP }, { type: 'limeSack', x: 3460, z: 116, drops: 'meatPie' },
+        { type: 'handcart', x: 3086, z: 70, hp: 60, barricade: true },
       ],
       // the tallow vats boil over on both lanes, the draw-kiln in the shed wall flashes its cone across the back lane,
       // and the yard crane keeps its hook swinging over the middle of it
@@ -168,6 +172,10 @@ export const stage3 = {
         { type: 'hook', x: 2880, z: 66, period: 120 },
         { type: 'tallowVat', x: 3040, z: 34, period: 240, tell: 40, active: 30, offset: 120 },
       ],
+      /** Issue #31: a loaded handcart shoved across the yard mouth. The cart owns the health and the drops; the paired
+       *  `solid` owns the geometry, and the wave will not clear while it stands. Breaking it tips out the Tin Footman
+       *  the cart was carrying (the `handcart` type's own `release`) -- the board's whole conceit, as an obstacle. */
+      zones: [{ type: 'solid', x0: 3060, x1: 3112, z0: 0, z1: 140, height: 46, breakable: true }],
       waves: [
         // the Purser: the company's dram, on a Limeburner who is about to crust a Sapper
         { triggerX: 2800, lock: true, spawns: [

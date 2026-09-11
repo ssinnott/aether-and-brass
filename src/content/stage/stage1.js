@@ -73,6 +73,10 @@ export const stage1 = {
       zones: [
         { type: 'molten', x0: 1800, x1: 3920 },
         { type: 'conveyor', x0: 3280, x1: 3920, z0: 100 },
+        // issue #31: a conveyor arm swings through the row at head height across the two front lanes. Step back into
+        // the middle lane to walk under it, or jump it -- the molten channel closes the back lane, so there is a real
+        // choice to make rather than a free detour.
+        { type: 'solid', x0: 3056, x1: 3080, z0: 70, z1: 140, height: 44 },
       ],
       waves: [
         { triggerX: 2100, lock: true, spawns: [{ type: S, variant: 'firebrand', side: 'right', z: 40, delay: 0 }, { type: S, variant: 'firebrand', side: 'left', z: 100, delay: 30 }, ...cut(3, { z0: 60, delay0: 20 })] },
@@ -100,8 +104,14 @@ export const stage1 = {
         { type: 'mailcart', x: 4120, z: 16, drops: 'goldenSprocket' }, { type: 'lantern', x: 3860, z: 126, drops: 'coalScrip' }, { type: 'lantern', x: 4400, z: 126, drops: 'coalScrip' },
       ],
       hazards: [{ type: 'crossbar', x: 4120, z: 0, period: 360, active: 12, tell: 40 }],
-      /** front / back 12px are railings: enemies thrown over them are instant KOs (+200) */
-      zones: [{ type: 'rails', x0: 3800, x1: 4440 }],
+      /** front / back 12px are railings: enemies thrown over them are instant KOs (+200). Issue #31: the roof plating
+       *  has gone at the far end of the car -- a body that walks into the hole falls through it (an enemy rings out,
+       *  a player pays 8% of max HP and is set on the lip). It takes the back half of the band only, so the front
+       *  lanes are always a way past it. */
+      zones: [
+        { type: 'rails', x0: 3800, x1: 4440 },
+        { type: 'solid', x0: 4340, x1: 4372, z0: 20, z1: 62, height: 0 },
+      ],
       waves: [],
       timedWaves: [
         { at: 0, spawns: [{ type: B, variant: 'sapper', side: 'right', z: 30, delay: 0 }, { type: B, variant: 'sapper', side: 'left', z: 110, delay: 30 }, { type: B, variant: 'sapper', side: 'right', z: 120, delay: 60 },

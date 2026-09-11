@@ -160,13 +160,14 @@ export class Prop extends Entity {
    * Stage entries forward every extra field of a prop entry here, so these names are the stage-data contract.
    * @param {string} type PROP_TYPES key
    * @param {{ drops?: string|string[]|null, hp?: number, solid?: boolean, rider?: boolean, throwable?: boolean,
-   *   release?: { type: string, variant?: string, mods?: string[] }|null, dump?: string|null, fire?: boolean }} o
+   *   release?: { type: string, variant?: string, mods?: string[] }|null, dump?: string|null, fire?: boolean,
+   *   barricade?: boolean }} o
    *   rider = travels on the cargo-bay conveyor; release / dump / fire override the type's catalogue defaults
    *   (leave them out to keep the type's own, pass null / false to switch the behaviour off on one entry);
    *   throwable (issue #21, GDD 7) = the stage row allows lifting this instance, which only actually applies when the
    *   type also carries a `throw` spec (game/throwables.js findLiftProp).
    */
-  constructor(type, x, z, { drops = null, hp = 0, solid = true, rider = false, throwable = false, release, dump, fire } = {}) {
+  constructor(type, x, z, { drops = null, hp = 0, solid = true, rider = false, throwable = false, release, dump, fire, barricade = false } = {}) {
     super('prop');
     this.type = PROP_TYPES[type] ? type : 'crate';
     this.info = getPropType(this.type);
@@ -196,6 +197,11 @@ export class Prop extends Entity {
     /** Fire source on break (lanterns): world.addFire gets the spill; explosions are fire sources regardless of this flag. */
     this.fire = fire !== undefined ? !!fire : !!this.info.fire;
     this.fireR = 0;                          // radius re-reported to world.addFire while the pieces fly (0 = not burning)
+    /** Issue #31: this prop is what holds a breakable `solid` zone up. The Zone finds it by this flag and stops
+     *  blocking when it dies, and the stage runner will not release the wave lock while it is standing. The health
+     *  lives HERE rather than on the Zone because a Prop is kind 'prop' and its hp is hashed by net/checksum.js,
+     *  while a Zone is kind 'fx' and its state is invisible to the desync canary. */
+    this.barricade = !!barricade;
   }
   update(world) {
     this.world = world;
