@@ -561,8 +561,9 @@ to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
 `update()`, `draw(ctx)`. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`.
 Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `OPTIONS`, "PRESS ATTACK", blinking; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
-(`boardcards.js`, compact) on one screen, with the peer driving the P2 cursor and no two
-players allowed on one hero (docs/MULTIPLAYER.md). Intro: stage card 2.5s
+(`boardcards.js`, compact) on one screen, with the room's other two to three players driving the
+P2-P4 cursors, a status column per seat, and no two players allowed on one hero
+(docs/MULTIPLAYER.md). Intro: stage card 2.5s
 (skip on attack). Results: score, max combo, grade, time, "PRESS START".
 Training (issue #22): `title → select(next:'training') → training ⇄ trainpause → moves | trials`.
 `TrainingScreen` (`screens/training.js`) extends `GameplayScreen` and runs stage 1's THE BRASS FUNICULAR

@@ -108,8 +108,8 @@ export const progress = {
     return myId;
   },
 
-  /** The scope two player ids share, in either order. */
-  groupScope(a, b) { return 'g:' + hash([String(a || ''), String(b || '')].sort().join('|')); },
+  /** The scope a party of player ids shares, whoever hosts and whatever order they arrived in. */
+  groupScope(...ids) { return 'g:' + hash(ids.flat().map((v) => String(v || '')).sort().join('|')); },
 
   /** Which scope is being read and written ('solo', or 'g:...' during an online session). */
   get scope() { return active; },

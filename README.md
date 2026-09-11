@@ -3,8 +3,10 @@
 A steampunk high-fantasy side-scrolling beat-em-up in the spirit of *Golden Axe*, the *TMNT*
 arcade games and *TMNT: Shredder's Revenge*. **Four complete boards** end to end, four playable
 heroes, five enemy factions (thirty-one variants, plus five spawn modifiers that re-dress them per
-board), four mid-bosses and four multi-phase final bosses. Local co-op for up to four players (two keyboard
-halves plus gamepads, or four gamepads).
+board), four mid-bosses and four multi-phase final bosses. Co-op for up to four players, on the couch
+(two keyboard halves plus gamepads, or four gamepads) or online through a room code, with no server
+behind it: the browsers talk to each other directly and run the same simulation in lockstep
+(docs/MULTIPLAYER.md).
 
 Everything is drawn and synthesized in code: vanilla JavaScript, HTML5 Canvas 2D and WebAudio.
 No engine, no framework, and not a single image or audio file. Characters are procedural
@@ -232,7 +234,8 @@ npm run winrate -- --stages 1 --styles all       # balance sweep: how often does
 
 The suite boots the game, walks the character select, drives every hero's whole moveset,
 runs an autopilot bot through all four boards to their results screens, plays co-op (including a full
-four-player run, drop-in on every slot and gamepad-claim rules, `coop4`), spawns every enemy variant,
+four-player run, drop-in on every slot and gamepad-claim rules, `coop4`), holds a four-player ONLINE
+match over real WebRTC data channels and takes a player out of it mid-fight (`netquad`), spawns every enemy variant,
 picks up, swings, breaks and drops every enemy weapon, exercises every autopilot archetype, and renders
 every sound effect and music track offline to check none are silent.
 

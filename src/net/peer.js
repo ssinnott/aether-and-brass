@@ -12,17 +12,22 @@
 //
 // Signalling is pluggable (net/signal.js). A signal channel is a live rendezvous -
 // { send(obj), onMessage(fn), close() } - and only needs to carry a handful of small JSON objects
-// before the peers talk directly.
+// before the peers talk directly. In a four-player room it is one pairing's view of the shared
+// rendezvous (signal.js createSignalMux), so this module is still only ever about ONE link.
+//
+// Exactly one end of a link offers. Who that is is not "the host" - two guests form a link with no
+// host in it - but whichever end has the lower peer id, a rule both ends work out for themselves
+// from ids they already have (net/session.js).
 
 /** Public STUN only. A TURN relay would be a server we operate, which the no-backend rule forbids. */
 export const DEFAULT_ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
 
 /**
- * @param {{ isHost: boolean, signal: object, iceServers?: object[],
+ * @param {{ initiator: boolean, signal: object, iceServers?: object[],
  *           onOpen?: () => void, onMessage?: (bytes: Uint8Array) => void,
  *           onClose?: (reason: string) => void, onState?: (state: string) => void }} o
  */
-export function createPeer({ isHost, signal, iceServers = DEFAULT_ICE, onOpen, onMessage, onClose, onState }) {
+export function createPeer({ initiator, signal, iceServers = DEFAULT_ICE, onOpen, onMessage, onClose, onState }) {
   const pc = new RTCPeerConnection({ iceServers });
   const chans = { in: null, ctl: null };
   let opened = false;
@@ -50,7 +55,7 @@ export function createPeer({ isHost, signal, iceServers = DEFAULT_ICE, onOpen, o
     c.onerror = () => close('channel error');
   }
 
-  if (isHost) {
+  if (initiator) {
     wire(pc.createDataChannel('in', { ordered: false, maxRetransmits: 0 }));
     wire(pc.createDataChannel('ctl', { ordered: true }));
   } else {
@@ -68,7 +73,7 @@ export function createPeer({ isHost, signal, iceServers = DEFAULT_ICE, onOpen, o
   };
 
   async function makeOffer() {
-    if (!isHost || offered) return;
+    if (!initiator || offered) return;
     offered = true;
     const o = await pc.createOffer();
     await pc.setLocalDescription(o);
@@ -79,10 +84,19 @@ export function createPeer({ isHost, signal, iceServers = DEFAULT_ICE, onOpen, o
     if (closed || !m) return;
     try {
       // The rendezvous has no retention: a message sent before the peer subscribed is simply lost.
-      // Both sides therefore announce themselves repeatedly until the SDP exchange has happened.
-      if (m.hello) { signal.send({ hello: true }); await makeOffer(); return; }
+      // Both sides therefore announce themselves repeatedly until the SDP exchange has happened,
+      // and a hello is answered with the description we have already made rather than with another
+      // hello - two peers echoing hellos at each other never stop.
+      if (m.hello) {
+        if (initiator) { if (offered) resend(); else await makeOffer(); }
+        else if (pc.localDescription) resend();                  // our answer, in case it was lost
+        return;
+      }
       if (m.sdp) {
-        if (m.sdp.type === 'offer' && isHost) return;             // two hosts in one room: ignore
+        // Only the far end's half of the exchange is ever accepted, and only once: a second offer
+        // after the link is up would renegotiate a connection that is already carrying a match.
+        if (m.sdp.type === 'offer' && (initiator || pc.remoteDescription)) return;
+        if (m.sdp.type === 'answer' && pc.signalingState !== 'have-local-offer') return;
         await pc.setRemoteDescription(m.sdp);
         while (pending.length) await pc.addIceCandidate(pending.shift()).catch(() => {});
         if (m.sdp.type === 'offer') {
@@ -96,6 +110,9 @@ export function createPeer({ isHost, signal, iceServers = DEFAULT_ICE, onOpen, o
       }
     } catch (e) { close('signalling error: ' + (e && e.message ? e.message : e)); }
   });
+
+  /** Re-publish our own description: the rendezvous drops anything sent before the far end subscribed. */
+  function resend() { if (pc.localDescription) signal.send({ sdp: pc.localDescription }); }
 
   // Announce presence until the SDP exchange completes. Without this the peer that arrives second
   // never learns the first one is there, and the connection silently never forms.
