@@ -120,7 +120,7 @@ export const stage2 = {
     },
     // ---------------------------------------------------------------- Section 3: The Cold Sovereign (the gun deck, one locked screen)
     /** The flagship comes about with the party aboard: the camera locks to the screen, the far sky slides past
-     *  (`drift`, storm3.js), the deck banks every 6s (a 1.6 px/f gust, 64px either way) and both gun ports are live. */
+     *  (`drift`, storm3.js), the deck banks every 7s (a 1.3 px/f gust, 52px either way) and both gun ports are live. */
     { id: 'm3', name: 'THE COLD SOVEREIGN', x0: 3600, x1: 4240, backdrop: 'storm3', floor: 'deck', mode: 'locked', drift: 0.6,
       // one powder tub at each gun port (they roll 50 and go off 30f after breaking), food and meter amidships
       props: [
@@ -131,11 +131,11 @@ export const stage2 = {
       // the aft gun at the left edge fires up the back lane (z 4..40); the forward gun at the right edge fires down the front
       // lane (z 100..136) half a cycle later. 45f of the gun running out and the lane lighting, then the shot: 12 + knockdown.
       hazards: [
-        { type: 'cannon', x: 3604, z: 22, dir: 1, lane: 36 },
-        { type: 'cannon', x: 4236, z: 118, dir: -1, lane: 36, offset: 150 },
+        { type: 'cannon', x: 3604, z: 22, dir: 1, lane: 36, period: 360 },
+        { type: 'cannon', x: 4236, z: 118, dir: -1, lane: 36, period: 360, offset: 180 },
       ],
       /** Rails both sides (throw-overs ring out) and the bank: the gust alternates direction each cycle. */
-      zones: [{ type: 'rails', x0: 3600, x1: 4240 }, { type: 'gust', x0: 3600, x1: 4240, dir: 0, period: 360, push: 1.6 }],
+      zones: [{ type: 'rails', x0: 3600, x1: 4240 }, { type: 'gust', x0: 3600, x1: 4240, dir: 0 }],
       waves: [],
       timedWaves: [
         // the gun crew: re-wound Sappers and Footmen under one Deckhand

@@ -287,12 +287,12 @@ before it did not do.
 - **Props:** a **powder tub at each gun port** (x 3760 z 26 aft, x 4080 z 116 forward), a ballast bag (Meat Pie), the
   signal locker (Aether Vial) and a bucket (Roast Bird) amidships — food and meter for the densest screen on the board.
 - **Hazards:** two **run-out cannon**. The aft gun at the left edge (x 3604, z 22) fires right up the **back lane**
-  (z 4–40); the forward gun at the right edge (x 4236, z 118) fires left down the **front lane** (z 100–136), 150f
-  behind it. Every 300f: 45f of the carriage running the barrel out while its lane lights on the deck, then the shot
+  (z 4–40); the forward gun at the right edge (x 4236, z 118) fires left down the **front lane** (z 100–136), 180f
+  behind it. Every 360f: 45f of the carriage running the barrel out while its lane lights on the deck, then the shot
   crosses the whole screen in 10f — 12 + knockdown, the body thrown downrange. The middle of the deck is never in a
   lane; the gust is what puts you in one.
 - **Zones:** `rails` (throw-overs ring out — the Grapnel Mate's back throw lives here) and the **bank**: a `gust`
-  every 6s (360f), 45f of gale then 40f at **1.6 px/f** — 64px toward one rail or the other, alternating.
+  every 7s (420f), 45f of gale then 40f at **1.3 px/f** — 52px toward one rail or the other, alternating.
 - **Timed waves (19)** — each fires at its time or the moment the one before it is cleared, whichever is first:
   - **0s:** the gun crew — 2x Copper Sapper + 2x Tin Footman + 1x Deckhand.
   - **22s:** 2x Brass Halberdier + 1x Grapnel Mate + 1x Corsair.
