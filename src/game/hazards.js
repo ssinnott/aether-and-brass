@@ -955,14 +955,12 @@ export class Zone extends Entity {
     }
     if (this.height > 0) return;
     const rect = this.asRect();
-    // How far either side of the hole a body still counts as being knocked TOWARD it.
-    const reach = (this.x1 - this.x0) / 2 + EDGE_LANE;
+    // No edgeShove here. Its band is one whose danger lies OUTSIDE it -- `rails` passes (RAIL, Z_MAX - RAIL) and
+    // `molten` passes (MOLTEN_Z, null) -- and it pushes bodies PAST those edges. A gap's danger is INSIDE
+    // [z0, z1], so feeding it the rectangle's own bounds shoves bodies away from the hole, not into it. Knocking
+    // an enemy in is reachable anyway: the x knockback of a hit carries a body across the rectangle, and a throw
+    // aimed along it lands the body inside, where the inBox test below rings it out.
     for (const f of world.fighters) {
-      // Hits carry no z knockback, so edgeShove is the only thing that makes "knock them in" reachable -- but it MUST
-      // be gated on being near the hole. Unlike a `rails` zone, which spans its whole section, a gap is a few dozen
-      // pixels wide; ungated, this shoved every knocked-down enemy on the board in z toward the z band of a hole they
-      // were nowhere near. `updateRails` gates on inX for the same reason.
-      if (f.kind === 'enemy' && Math.abs(f.x - this.x) <= reach) this.edgeShove(f, this.z0, this.z1);
       if (f.dead || f.y > 0 || f.grabbedBy || f.kind === 'boss' || !this.inBox(f.x, f.z)) continue;
       // dropPlayer sets the body down OUTSIDE the rectangle, so there is no repeat next frame and no de-dupe to keep
       if (f.kind === 'player') this.dropPlayer(world, f, rect);
