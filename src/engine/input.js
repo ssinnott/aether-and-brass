@@ -263,6 +263,20 @@ export const input = {
   buffered(player, action, frames = INPUT_BUFFER) { return players[player].bufAge[action] < frames; },
   /** Clear the buffer for an action (after acting on it). */
   consume(player, action) { players[player].bufAge[action] = NEVER; },
+  /**
+   * Forget every pending edge and buffered press, for one slot or (with no argument) all of them.
+   *
+   * A boundary that hands the slots to somebody else has to do this or the press that CROSSED it
+   * arrives as gameplay: the buffer is INPUT_BUFFER frames deep, so a menu confirm still reads as
+   * `buffered('attack')` on the far side. Online that is a desync, not a quirk - net/session.js
+   * beginMatch calls it because the READY press lands in slot 0's buffer on every machine, and on
+   * everyone but the host slot 0 is somebody else's character (net/protocol.js is not involved: no
+   * mask ever said attack).
+   */
+  clearBuffers(player = -1) {
+    const list = player < 0 ? players : [players[player]];
+    for (const pl of list) for (const a of ACTIONS) { pl.bufAge[a] = NEVER; pl.pressedNow[a] = false; }
+  },
   /** Movement axis as {x, y} in -1|0|1. */
   axis(player) {
     const c = players[player].cur;

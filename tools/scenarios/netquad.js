@@ -22,6 +22,27 @@ export function netquadScenarios({ withPeers, assert, readyUp }) {
   const waitAll = (pages, fn, timeout = 30000) => Promise.all(pages.filter((p) => !p.isClosed())
     .map((p) => p.waitForFunction(`(${fn.toString()})(window.__game.netState())`, null, { timeout })));
 
+  /**
+   * Run one wait, and if it times out say WHICH one and what every page thought was happening.
+   * A four-page room has a lot of ways to be stuck and a bare "waitForFunction timed out" names none
+   * of them.
+   */
+  const step = async (label, pages, fn) => {
+    try { return await fn(); } catch (e) {
+      const open = pages.filter((p) => !p.isClosed());
+      const seen = await Promise.all(open.map((p) => p.evaluate(() => {
+        const n = window.__game.game.net, s = window.__game.netState();
+        return {
+          state: s.state, slot: s.slot, seated: s.party.length, frame: s.frame, waiting: s.waiting,
+          missing: s.missing, dropped: s.dropped, reason: s.reason || s.error,
+          // The links are what a room that will not form is stuck on, so name each one's real state.
+          links: [...n.links.values()].map((l) => `${l.isHost ? 'host' : 'peer'}:${l.open ? 'open' : 'forming'}:${l.peer && l.peer.pc ? l.peer.pc.connectionState + '/' + l.peer.pc.signalingState : '?'}`),
+        };
+      }).catch(() => null)));
+      throw new Error(`${label}: ${String(e.message).split('\n')[0]} | pages: ${JSON.stringify(seen)}`);
+    }
+  };
+
   return {
     async netquad(server) {
       const ROOM = 'NETQD';
@@ -37,7 +58,7 @@ export function netquadScenarios({ withPeers, assert, readyUp }) {
         for (const p of pages) await p.evaluate(() => window.__game.startLoop());
 
         // ---- A: four seats ----------------------------------------------------------------
-        await waitAll(pages, (n) => !!n && n.state === 'lobby' && n.party.length === 4);
+        await step('four peers seated in the lobby', pages, () => waitAll(pages, (n) => !!n && n.state === 'lobby' && n.party.length === 4));
         const seated = await Promise.all(pages.map(netState));
         // Three guests race for the room, so seats go in the order the host hears them, not in the
         // order the pages opened. Index by seat from here on.
@@ -63,12 +84,12 @@ export function netquadScenarios({ withPeers, assert, readyUp }) {
 
         // ---- B: a synchronised four-player match -------------------------------------------
         for (const p of pages) assert(await readyUp(p), 'the page registered its ready press');
-        await waitAll(pages, (n) => n.state === 'playing');
+        await step('all four reach the match', pages, () => waitAll(pages, (n) => n.state === 'playing'));
         assert(true, 'all four peers reached the playing state');
         const counts = await Promise.all(pages.map((p) => p.evaluate(() => (window.__game.world.players || []).filter(Boolean).length)));
         assert(counts.join() === '4,4,4,4', `every machine built all four heroes (got ${counts.join()})`);
 
-        await pages[0].waitForFunction(() => window.__game.netState().frame > 120, null, { timeout: 30000 });
+        await step('120 lockstep frames', pages, () => pages[0].waitForFunction(() => window.__game.netState().frame > 120, null, { timeout: 30000 }));
         const running = await Promise.all(pages.map(netState));
         assert(running.every((s) => s.desync === null), `no checksum desync in a four-way match (${JSON.stringify(running.map((s) => s.desync))})`);
         const spread = Math.max(...running.map((s) => s.frame)) - Math.min(...running.map((s) => s.frame));
@@ -79,7 +100,7 @@ export function netquadScenarios({ withPeers, assert, readyUp }) {
         const before = await Promise.all(pages.map((p) => posOf(p, relaySlot)));
         await relayPage.bringToFront();
         await relayPage.keyboard.down('KeyD');
-        await pages[0].waitForFunction((f) => window.__game.netState().frame > f, running[0].frame + 90, { timeout: 30000 });
+        await step('90 more frames with the relayed player walking', pages, () => pages[0].waitForFunction((f) => window.__game.netState().frame > f, running[0].frame + 90, { timeout: 30000 }));
         await relayPage.keyboard.up('KeyD');
         const after = await Promise.all(pages.map((p) => posOf(p, relaySlot)));
         assert(after.every((x, i) => x !== null && x > before[i]), `the relayed player's key press moved them on every machine (${before.join()} -> ${after.join()})`);
@@ -90,7 +111,7 @@ export function netquadScenarios({ withPeers, assert, readyUp }) {
         // ---- D: one player leaves, the other three play on ----------------------------------
         await relayPage.close();
         const rest = pages.filter((p) => p !== relayPage);
-        await Promise.all(rest.map((p) => p.waitForFunction((s2) => (window.__game.netState().dropped || []).includes(s2), relaySlot, { timeout: 30000 })));
+        await step('the party retires the seat that left', rest, () => Promise.all(rest.map((p) => p.waitForFunction((s2) => (window.__game.netState().dropped || []).includes(s2), relaySlot, { timeout: 30000 }))));
         const dropped = await Promise.all(rest.map(netState));
         assert(dropped.every((s) => s.state === 'playing'), `losing one of four does NOT end the match (${dropped.map((s) => s.state).join()})`);
         const dropFrames = await Promise.all(rest.map((p) => p.evaluate((s) => window.__game.game.net.ls.dropFrameOf(s), relaySlot)));
@@ -99,7 +120,7 @@ export function netquadScenarios({ withPeers, assert, readyUp }) {
         assert(bots.every(Boolean), 'the bot takes over the empty seat on every machine');
 
         const f0 = await frameOf(rest[0]);
-        await rest[0].waitForFunction((f) => window.__game.netState().frame > f + 120, f0, { timeout: 30000 });
+        await step('120 more frames with three left', rest, () => rest[0].waitForFunction((f) => window.__game.netState().frame > f + 120, f0, { timeout: 30000 }));
         const three = await Promise.all(rest.map(netState));
         assert(three.every((s) => s.desync === null), `the three that remain stay identical after the drop (${JSON.stringify(three.map((s) => s.desync))})`);
         assert(three.every((s) => s.state === 'playing'), 'and are all still playing');
@@ -111,10 +132,10 @@ export function netquadScenarios({ withPeers, assert, readyUp }) {
         const nextOut = rest[rest.length - 1], nextSlot = (await netState(nextOut)).slot;
         await nextOut.close();
         const pair = rest.filter((p) => p !== nextOut);
-        await Promise.all(pair.map((p) => p.waitForFunction((s) => (window.__game.netState().dropped || []).includes(s), nextSlot, { timeout: 30000 })));
+        await step('the party retires the second seat that left', pair, () => Promise.all(pair.map((p) => p.waitForFunction((s) => (window.__game.netState().dropped || []).includes(s), nextSlot, { timeout: 30000 }))));
         assert((await netState(pair[0])).state === 'playing', 'a party of four down to two is still a match');
         await pair[1].close();
-        await pages[0].waitForFunction(() => window.__game.netState().state === 'ended', null, { timeout: 30000 });
+        await step('the last player left ends the session', [pages[0]], () => pages[0].waitForFunction(() => window.__game.netState().state === 'ended', null, { timeout: 30000 }));
         const alone = await netState(pages[0]);
         assert(alone.state === 'ended', `the last player left ends the session (${alone.reason})`);
         const solo = await pages[0].evaluate(() => ({

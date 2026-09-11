@@ -6,10 +6,12 @@
 // sweep a board against more than one kind of player before anyone calls it tuned.
 import { ST, METER, THROW, TEAM } from '../constants.js';
 import { rng } from '../engine/rng.js';
-import { laneAroundHazards } from './hazards.js';
+import { laneAroundHazards, solidBetween } from './hazards.js';
 import { WEAPONS, nearestWeaponPickup, WEAPON_SEEK_DIST, WEAPON_SEEK_SAFE_X, WEAPON_SEEK_SAFE_Z } from './weapons.js';
 
 const Z_TOL = 14, RUN_DIST = 170, STOP_RUN_DIST = 110;
+/** Issue #31: how far ahead the autopilot looks for a solid obstacle, and how close it lets one get before jumping. */
+const SOLID_LOOKAHEAD = 120, SOLID_JUMP_AT = 44;
 
 /**
  * Autopilot styles. Each is a whole player archetype, not a difficulty knob:
@@ -89,6 +91,16 @@ export function botIntent(p, world, style) {
     if (Math.abs(mx) <= 44 && Math.abs(mz) <= 12 && f % 6 === 0) it.attack = true;
     return it;
   }
+  // issue #31: a barricade holding the wave lock open outranks everything — nothing else the autopilot could be
+  // doing will ever clear the section, so walk onto it, align z with the prop, and hit it down.
+  const bar = barricadeTarget(p, world);
+  if (bar && p.actionable) {
+    const bx = bar.x - p.x, bz = bar.z - p.z;
+    if (Math.abs(bx) > 26) it.x = Math.sign(bx); else if (Math.sign(bx) && Math.sign(bx) !== p.facing) it.x = Math.sign(bx);
+    if (Math.abs(bz) > 8) it.y = Math.sign(bz);
+    if (Math.abs(bx) <= 40 && Math.abs(bz) <= 14 && f % 8 === 0) it.attack = true;
+    return it;
+  }
   const e = pickTarget(p, world);
   // weapon pickups (game/weapons.js): walk over one nearby while unarmed and nothing is close enough to punish it
   if (!p.weaponId && p.pickUpWeapon && !p.airborne) {
@@ -107,6 +119,14 @@ export function botIntent(p, world, style) {
     const band = world.floorBand;
     const lane = laneAroundHazards(world, p.x, p.x + 120, p.z, band.z0, band.z1);
     if (Math.abs(lane - p.z) > 4) it.y = lane > p.z ? 1 : -1;
+    // issue #31: an obstacle with no lane round it has to be jumped, or the walk to the next wave grinds into it and
+    // the run never finishes (a soft-lock in the winrate sweep, not a loss). The lane step above already handles
+    // anything side-steppable; this only fires for an obstacle that takes the whole band.
+    if (jumpsSolid(p, world, lane)) { it.jump = true; it.run = true; return it; }
+    // issue #32: on a banking deck, lean into the slide rather than walking with it. Without this the autopilot
+    // strolls right while the tilt carries it right, and the two add up into the rail it was meant to avoid.
+    const tilt = world.platform;
+    if (tilt && tilt.kind === 'tilt' && tilt.phase === 'active' && tilt.tiltDir > 0) { it.x = -1; return it; }
     if (!world.camera.locked && f % 90 < 80) it.run = true;
     else if (p.running) it.x = 0;
     return it;
@@ -160,6 +180,36 @@ export function botIntent(p, world, style) {
   // a cautious player who is not going to dodge a grab still steps out of its reach
   else if (grabbing && s.spacing > 0 && f % 2 === 0) { it.x = -dir; it.attack = false; }
   return it;
+}
+
+/**
+ * A barricade (issue #31) still standing inside the camera lock, or null. This is a SOFT-LOCK GUARD, not a nicety:
+ * `StageRunner.barricadeHolding` refuses to clear the wave while one is up, and the autopilot is otherwise perfectly
+ * happy to walk into the lock bound and stand there for the rest of the run. So a standing barricade outranks every
+ * other goal below — the bot goes to the prop that holds it up, aligns z on it, and hits it down.
+ * @returns {object|null} the barricade Prop
+ */
+function barricadeTarget(p, world) {
+  if (!world.camera.locked) return null;
+  for (const e of world.entities) {
+    if (!e.isSolid || !e.breakable || e.removeMe || !e.blocking) continue;
+    if (e.x1 < world.camera.left || e.x0 > world.camera.right) continue;
+    return e.prop || null;
+  }
+  return null;
+}
+
+/**
+ * Is a solid obstacle close enough ahead of `p` that it has to be jumped (issue #31)? Only fires for an obstacle
+ * with no lane round it — the caller has already tried to side-step — and only while `p` is on the ground and
+ * actionable, since a jump pressed mid-air is thrown away. Barricades are excluded: those are handled by
+ * `barricadeTarget` above, because hopping one would leave the wave lock up forever.
+ * @param {object} p @param {object} world @param {number} lane the z the bot is steering toward
+ */
+function jumpsSolid(p, world, lane) {
+  if (p.airborne || !p.actionable) return false;
+  const s = solidBetween(world, p.x, p.x + SOLID_LOOKAHEAD, lane);
+  return !!s && !s.breakable && s.x0 - p.x <= SOLID_JUMP_AT;
 }
 
 /** A living teammate pinned under a net within 140px of `p` (the Wrangler's and the Riggerman's nets), or null. */

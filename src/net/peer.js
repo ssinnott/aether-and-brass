@@ -93,9 +93,11 @@ export function createPeer({ initiator, signal, iceServers = DEFAULT_ICE, onOpen
         return;
       }
       if (m.sdp) {
-        // Only the far end's half of the exchange is ever accepted, and only once: a second offer
-        // after the link is up would renegotiate a connection that is already carrying a match.
-        if (m.sdp.type === 'offer' && (initiator || pc.remoteDescription)) return;
+        // Only the far end's half of the exchange is ever accepted, and never once we are up: a
+        // second offer after the link is carrying a match would renegotiate it out from under the
+        // session. Before that it is taken: a peer that gave up on this pairing and started again
+        // (net/session.js sweepLinks) offers afresh, and refusing it would strand both of us.
+        if (m.sdp.type === 'offer' && (initiator || pc.connectionState === 'connected')) return;
         if (m.sdp.type === 'answer' && pc.signalingState !== 'have-local-offer') return;
         await pc.setRemoteDescription(m.sdp);
         while (pending.length) await pc.addIceCandidate(pending.shift()).catch(() => {});

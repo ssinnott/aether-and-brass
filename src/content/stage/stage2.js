@@ -53,17 +53,26 @@ export const stage2 = {
         { type: 'lightning', x: 700, z: 96, period: 220, active: 12, tell: 40 },
         { type: 'hook', x: 1180, z: 70, period: 120 },
         { type: 'lightning', x: 1620, z: 40, period: 220, active: 12, tell: 40, offset: 110 },
+        { type: 'crossbar', x: 972, z: 0, period: 300, active: 12, tell: 40, offset: 60 },
       ],
       /** No bulwark up here: the front and back 12px are open air. Anything thrown over goes into the cloud (+200) — and the
        *  cloud tears sideways: every 7s a gust (45f of gale first) drags everyone on their feet toward one edge or the other.
        *  `open: true` (issue #21): a thrown weapon / prop, or a dropped weapon pickup, that drifts past the same edge falls
        *  into the cloud too -- lost, not landed. */
-      zones: [{ type: 'rails', x0: 0, x1: 1900, open: true }, { type: 'gust', x0: 0, x1: 1900, dir: 0 }],
+      zones: [{ type: 'rails', x0: 0, x1: 1900, open: true }, { type: 'gust', x0: 0, x1: 1900, dir: 0 },
+        // issue #31: two mooring booms cross the spine at head height. The back one is paired with a `crossbar`
+        // hazard on the same lane (hazards list above) so it SWEEPS as well as blocks -- the timing half of a boom is
+        // the crossbar's job, the blocking half is the solid's, and neither needed to learn the other's trick.
+        { type: 'solid', x0: 960, x1: 984, z0: 0, z1: 46, height: 40 },
+        { type: 'solid', x0: 1520, x1: 1544, z0: 96, z1: 140, height: 40 },
+      ],
       waves: [
         // the pressed crew first: three Deckhands, no wing-packs, throwable - learn the rail
         { triggerX: 420, lock: true, spawns: hands(3, { z0: 40 }) },
+        // the first thing on this board that is actually flying: the Corsair comes in off the far parallax on its
+        // wing-pack (issue #30 `flyIn`), shadow first, and lands into 20f you can collect it on
         { triggerX: 880, lock: true, spawns: [...hands(2, { z0: 30, dz: 60 }), ...crimp(2, { z0: 60, delay0: 30 }),
-          { type: C, variant: 'corsair', side: 'left', z: 120, delay: 80 }] },
+          { type: C, variant: 'corsair', side: 'left', z: 120, delay: 80, entrance: { kind: 'flyIn', dx: -40 } }] },
         // "meet the holdout": the Bosun's keg is in the air, two Crimpers keep you honest, and a Tin Footman the Wing never
         // unbolted walks in off the gantry; two Deckhands only come up the lines once the wave is down
         { triggerX: 1320, lock: true, spawns: [{ type: C, variant: 'bosun', side: 'right', z: 70, delay: 0 }, ...crimp(2, { z0: 30, dz: 60, delay0: 30 }),
@@ -71,7 +80,8 @@ export const stage2 = {
           reinforcements: [{ whenRemaining: 0, spawns: hands(2, { z0: 40, dz: 60, delay0: 20 }) }] },
         { triggerX: 1720, lock: true, spawns: [
           { type: C, variant: 'bosun', side: 'right', z: 60, delay: 0 },
-          { type: C, variant: 'corsair', side: 'left', z: 20, delay: 40 }, { type: C, variant: 'corsair', side: 'right', z: 120, delay: 70 },
+          { type: C, variant: 'corsair', z: 20, delay: 40, entrance: { kind: 'flyIn', from: 'left', dx: -70 } },
+          { type: C, variant: 'corsair', z: 120, delay: 70, entrance: { kind: 'flyIn', from: 'right', dx: 70 } },
           ...crimp(2, { z0: 40, delay0: 60 }),
           holdout('footman', 'left', 100, 110),
         ] },
@@ -90,6 +100,10 @@ export const stage2 = {
         { type: 'ballast', x: 2760, z: 118, drops: 'meatPie' }, { type: 'powderTub', x: 2900, z: 112 },
         { type: 'bucket', x: 2980, z: 18, drops: 'roastBird' },
         { type: 'keg', x: 3120, z: 108, drops: KEGS }, { type: 'crate', x: 3320, z: 34, drops: COGS },
+        // issue #31: the Wing has stacked the hall shut with its own powder. `barricade: true` is what the paired
+        // `solid` zone below looks for -- the keg owns the health, the hit reaction and the drops, the zone owns the
+        // geometry, and the wave does not clear while it is standing. Breaking it also cooks off (keg `explode`).
+        { type: 'keg', x: 2660, z: 70, hp: 60, drops: KEGS, barricade: true },
       ],
       // two gas cells have split: their clouds drift along the catwalk (one left, one right) and stun whoever they roll
       // over - and any fire inside one (a Bosun's keg, a burning body) bursts it; the loading hook still swings over the middle
@@ -98,6 +112,10 @@ export const stage2 = {
         { type: 'hook', x: 2680, z: 66, period: 130 },
         { type: 'gasCell', x: 3060, z: 40, drift: -2, offset: 210 },
       ],
+      /** Issue #31: the powder barricade across the hall. It spans the whole band, so there is no walking round it —
+       *  and `StageRunner.barricadeHolding` keeps the wave it belongs to open until the keg is down, which is the
+       *  point: the Wing's own powder is the door, and the Bosuns keep coming from behind it while you work on it. */
+      zones: [{ type: 'solid', x0: 2640, x1: 2690, z0: 0, z1: 140, height: 46, breakable: true }],
       waves: [
         // the coil arrives: two Galewrights behind a pair of Deckhands
         { triggerX: 2260, lock: true, spawns: [{ type: C, variant: 'galewright', side: 'right', z: 40, delay: 0 },
@@ -124,17 +142,26 @@ export const stage2 = {
     /** The flagship comes about with the party aboard: the camera locks to the screen, the far sky slides past
      *  (`drift`, storm3.js), the deck banks every 7s (a 1.3 px/f gust, 52px either way) and both gun ports are live. */
     { id: 'm3', name: 'THE COLD SOVEREIGN', x0: 3600, x1: 4240, backdrop: 'storm3', floor: 'deck', mode: 'locked', drift: 0.6,
+      /** Issue #32: she BANKS. 45f of the deck leaning over (a gale you can hear coming), then 60f of everyone on
+       *  their feet sliding toward the low rail — which on this deck is a ring-out. `dir: 0` alternates, so she rolls
+       *  one way and then the other rather than always dumping the fight over the same side. */
+      platform: { kind: 'tilt', period: 480, tell: 45, active: 45, slide: 0.7, dir: 0 },
       // one powder tub at each gun port (they roll 50 and go off 30f after breaking), food and meter amidships
       props: [
         { type: 'powderTub', x: 3760, z: 26 }, { type: 'powderTub', x: 4080, z: 116 },
         { type: 'ballast', x: 3900, z: 118, drops: 'meatPie' }, { type: 'locker', x: 4010, z: 18, drops: 'aetherVial' },
         { type: 'bucket', x: 4170, z: 62, drops: 'roastBird' },
+        // issue #34: the brig hatch amidships. It lets a re-wound Footman up onto the deck every five seconds while
+        // the section is live, and STANDING ON IT HOLDS IT SHUT -- the lid rattles under you and the queued unit
+        // waits. That is the co-op job on this deck: one player holds the hatch while the other clears the gun crew.
+        { type: 'locker', x: 3940, z: 70, name: 'hatch', drops: null, cargoOn: 'timer', cargoEvery: 420,
+          cargo: [{ type: B, variant: 'footman' }, { type: B, variant: 'footman' }] },
       ],
       // the aft gun at the left edge fires up the back lane (z 4..40); the forward gun at the right edge fires down the front
       // lane (z 100..136) half a cycle later. 45f of the gun running out and the lane lighting, then the shot: 12 + knockdown.
       hazards: [
-        { type: 'cannon', x: 3604, z: 22, dir: 1, lane: 36, period: 360 },
-        { type: 'cannon', x: 4236, z: 118, dir: -1, lane: 36, period: 360, offset: 180 },
+        { type: 'cannon', name: 'aft', x: 3604, z: 22, dir: 1, lane: 36, period: 360 },
+        { type: 'cannon', name: 'forward', x: 4236, z: 118, dir: -1, lane: 36, period: 360, offset: 180 },
       ],
       /** Rails both sides (throw-overs ring out) and the bank: the gust alternates direction each cycle. */
       zones: [{ type: 'rails', x0: 3600, x1: 4240 }, { type: 'gust', x0: 3600, x1: 4240, dir: 0 }],
@@ -145,14 +172,36 @@ export const stage2 = {
           { type: B, variant: 'footman', side: 'left', z: 60, delay: 20 }, { type: B, variant: 'footman', side: 'right', z: 90, delay: 50 },
           { type: C, variant: 'deckhand', side: 'right', z: 120, delay: 80 }] },
         { at: 22, spawns: [{ type: B, variant: 'halberdier', side: 'right', z: 50, delay: 0 }, { type: B, variant: 'halberdier', side: 'left', z: 100, delay: 30 },
-          { type: C, variant: 'grapnel', side: 'right', z: 70, delay: 60 }, { type: C, variant: 'corsair', side: 'left', z: 20, delay: 90 }] },
+          { type: C, variant: 'grapnel', side: 'right', z: 70, delay: 60 },
+          { type: C, variant: 'corsair', z: 20, delay: 90, entrance: { kind: 'flyIn', from: 'left', dx: -60 } }] },
         // the brig below the gun deck opens: the Warden and the two Footmen the Wing kept bolted down there
         { at: 50, banner: 'THE BRIG OPENS', spawns: [{ type: B, variant: 'warden', side: 'right', z: 70, delay: 0 },
           holdout('footman', 'left', 40, 30), holdout('footman', 'left', 110, 60), ...crimp(2, { z0: 20, dz: 100, delay0: 90 })] },
         { at: 80, spawns: [{ type: C, variant: 'galewright', side: 'left', z: 60, delay: 0 }, { type: B, variant: 'warden', side: 'right', z: 80, delay: 30 },
           { type: B, variant: 'sapper', side: 'right', z: 20, delay: 70 }, ...crimp(2, { z0: 40, dz: 80, delay0: 100 })] },
       ],
-      events: [],
+      /**
+       * BROADSIDE (issue #33). A call comes off the bridge and the whole gun deck fires down one lane, then down
+       * the other ninety frames later -- which is the point: there is no lane that is safe for both, so it is a
+       * question about where you are standing rather than a thing to out-run. Each barrel's own 45f run-out tell
+       * still plays, and the `zoneFlash` over its lane goes up two seconds before the first of them.
+       */
+      events: [
+        { id: 'broadside', onWaveClear: 2, once: true, actions: [
+          { caption: 'BROADSIDE', sub: 'CLEAR THE LANES', life: 140 },
+          { sfx: 'crow_call' }, { camera: { shake: 4, frames: 16 } },
+          { zoneFlash: { x0: 3600, x1: 4240, z0: 4, z1: 40, frames: 180, color: '#9B7BFF' } },
+          { wait: 120 },
+          { hazardSet: { name: 'aft', force: 'active', frames: 60 } },
+          { camera: { shake: 8, frames: 20 } },
+          { wait: 90 },
+          { zoneFlash: { x0: 3600, x1: 4240, z0: 100, z1: 136, frames: 150, color: '#9B7BFF' } },
+          { wait: 120 },
+          { hazardSet: { name: 'forward', force: 'active', frames: 60 } },
+          { camera: { shake: 8, frames: 20 } },
+          { wait: 90 },
+        ] },
+      ],
       /** The ship steadies on her new heading; a companion ladder up to the bridge deck with two Meat Pies at its foot. */
       transition: { kind: 'dock', banner: 'THE SHIP COMES ABOUT', look: 'ladder', pies: 2 },
     },
@@ -175,9 +224,12 @@ export const stage2 = {
         { triggerX: 4600, lock: true, spawns: [{ type: C, variant: 'marine', side: 'right', z: 60, delay: 0 },
           { type: C, variant: 'corsair', side: 'left', z: 20, delay: 40 }, { type: C, variant: 'corsair', side: 'right', z: 120, delay: 70 },
           { type: B, variant: 'duelist', side: 'left', z: 80, delay: 100 }, ...crimp(1, { z0: 100, delay0: 130 })] },
-        // the elite pair, together for the only time on the board: the Galewright's arc over the Marine's plate
+        // the elite pair, together for the only time on the board: the Galewright's arc over the Marine's plate.
+        // Marines board the weather deck the way marines do (issue #30 `ropeDrop`): a line off the rigging, a 30f
+        // hang on it — cut the line with anything and the plate comes down in a knockdown — then 18f on the deck.
         { triggerX: 4740, lock: true, spawns: [{ type: C, variant: 'galewright', side: 'right', z: 40, delay: 0 },
-          { type: C, variant: 'marine', side: 'left', z: 90, delay: 40 }, { type: B, variant: 'sapper', side: 'right', z: 120, delay: 70 },
+          { type: C, variant: 'marine', z: 90, delay: 40, entrance: { kind: 'ropeDrop', dx: -50 } },
+          { type: B, variant: 'sapper', side: 'right', z: 120, delay: 70 },
           { type: B, variant: 'sapper', side: 'left', z: 20, delay: 100 }, { type: C, variant: 'bosun', side: 'right', z: 70, delay: 130 }] },
         // the last line before the dais
         { triggerX: 4860, lock: true, spawns: [

@@ -38,7 +38,15 @@
 // spoil   x0,x1,z0,z1         per-frame movement of grounded fighters inside is damped to 55%
 // netGive x0,x1 squares[{x,z,w 60,d 30}]   a knockdown / thrown landing in a square sags it 10f then opens it 60f: enemies standing
 //                             in it ring out (+200), players lose 8% max HP, are knocked down and set on the nearest edge
-import { FLOOR_TOP, TEAM, VIEW_W, ST, Z_MAX } from '../constants.js';
+// solid   x0,x1,z0,z1,height[,breakable]   the first thing in the game that BLOCKS movement (issue #31). A grounded fighter
+//                             cannot cross [x0,x1] while its z is inside [z0,z1]; one whose y clears `height` passes over.
+//                             Knockback into it wall-bounces (the camera-bound idiom: AIR_FALL_STATES + vx *= -0.5).
+//                             height 0 = a floor GAP: walk in and you fall (enemies ring out +200, players lose 8% max HP
+//                             and are set on the nearest edge, cargo is lost over the edge). `breakable` blocks only while
+//                             a `barricade`-flagged Prop inside the rectangle is still alive, and holds the wave lock until
+//                             it is down. Unlike every other zone this one answers dangerBox() PERMANENTLY (a wall does not
+//                             have a quiet phase), which is what makes enemy pathing route around it for free.
+import { FLOOR_TOP, TEAM, VIEW_W, ST, Z_MIN, Z_MAX } from '../constants.js';
 import { Entity } from './entity.js';
 import { Projectile } from './projectile.js';
 import { Prop, ringOut } from './items.js';
@@ -120,6 +128,40 @@ const WAGON_LOOKAHEAD = 120;
 const HAZARD_CLEARANCE = 10;   // z margin an enemy leaves around a hazard footprint
 
 /**
+ * Is (x, z) inside a blocking `solid` zone that a body at height `y` cannot clear (issue #31)? Same scan, flag and
+ * removeMe filter as laneAroundHazards above, and it lives here for the same reason: game/fighter.js, game/enemy.js
+ * and game/bot.js all already import from this module, so no new module and no world-level index to keep in sync.
+ * A `height` of 0 is a floor gap and blocks nothing — walking into it is the point (see Zone.updateSolid).
+ * @returns {Zone|null} the blocking zone, or null
+ */
+export function solidAt(world, x, z, y = 0) {
+  for (const e of world.entities) {
+    if (!e.isSolid || e.removeMe || e.height <= 0 || !e.blocking) continue;
+    if (y > e.height) continue;
+    if (x >= e.x0 && x <= e.x1 && z >= e.z0 && z <= e.z1) return e;
+  }
+  return null;
+}
+
+/**
+ * The nearest blocking solid a walk from `fromX` to `toX` along `z` would cross, or null (issue #31). Enemy pathing
+ * asks this when `laneAroundHazards` could not steer clear — a wall spanning the whole floor band has no lane to
+ * take, so the only way past it is over the top.
+ * @returns {Zone|null}
+ */
+export function solidBetween(world, fromX, toX, z) {
+  const lo = Math.min(fromX, toX), hi = Math.max(fromX, toX);
+  let best = null, bestD = Infinity;
+  for (const e of world.entities) {
+    if (!e.isSolid || e.removeMe || e.height <= 0 || !e.blocking) continue;
+    if (e.x1 < lo || e.x0 > hi || z < e.z0 || z > e.z1) continue;
+    const d = Math.min(Math.abs(e.x0 - fromX), Math.abs(e.x1 - fromX));
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  return best;
+}
+
+/**
  * Steer a lane clear of any hazard footprint a walk from `fromX` to `toX` would cross (game/enemy.js).
  * Mobs used to march straight through the cargo hook's arc on their way to the player and grind themselves
  * down on it; they now aim for the nearer edge of the footprint, clamped to the floor band [zLo, zHi].
@@ -130,7 +172,10 @@ export function laneAroundHazards(world, fromX, toX, z, zLo, zHi) {
   const x0 = Math.min(fromX, toX), x1 = Math.max(fromX, toX);
   let out = z;
   for (const e of world.entities) {
-    if (!e.isHazard || e.removeMe) continue;
+    // `isSolid` (issue #31) joins `isHazard` here: a wall or a gap is a footprint to route around exactly like a live
+    // vent. The two flags stay distinct because they answer dangerBox() differently — a hazard goes quiet between
+    // cycles, a solid never does.
+    if ((!e.isHazard && !e.isSolid) || e.removeMe) continue;
     const b = e.dangerBox();
     if (!b || x1 < b.x0 || x0 > b.x1 || out < b.z0 || out > b.z1) continue;
     const up = b.z0 - HAZARD_CLEARANCE, down = b.z1 + HAZARD_CLEARANCE;
@@ -186,6 +231,11 @@ export class Hazard extends Entity {
     this.halfW = spec.halfW || this.info.halfW || 0;
     this.drift = spec.drift != null ? spec.drift : (this.info.drift || 0);
     this.shadowW = 0;
+    /** Author key (issue #33): a `hazardSet` action addresses every hazard sharing this name. Optional and free-form;
+     *  Entity.id cannot be used because it differs between lockstep peers and is deliberately unhashed. */
+    this.name = spec.name || '';
+    /** Scripted phase override, or null: { phase: 'active'|'idle', period, offset, until } (issue #33 hazardSet). */
+    this.forcePhase = null;
     this.phase = 'idle'; this.t = 0; this.lastHit = -99;
     /** fighter id -> world frame this hazard may hit it again (see HAZARD_GRACE). */
     this.immune = new Map();
@@ -247,6 +297,14 @@ export class Hazard extends Entity {
     this.phase = this.t >= this.activeStart ? 'active' : this.t >= this.tellStart ? 'tell' : 'idle';
     // a gas cell that was lit stays empty (idle) until its cycle comes round again
     if (this.spent) { if (this.t < this.tellStart) this.spent = false; else this.phase = 'idle'; }
+    // A scripted override (issue #33 `hazardSet`) lands HERE, after the recompute, for the same reason `spent` does:
+    // `phase` is derived from (world.frame + offset) % period every single step, so assigning it anywhere else is
+    // overwritten the next frame. Forcing 'idle' also makes dangerBox() return null (it keys off phase), so enemies
+    // and the autopilot stop routing around a hazard the script has switched off -- for free.
+    if (this.forcePhase) {
+      if (this.forcePhase.until != null && world.frame >= this.forcePhase.until) this.forcePhase = null;
+      else if (this.forcePhase.phase) this.phase = this.forcePhase.phase;
+    }
     if (this.phase === 'idle') { this.wagonX = this.x; this.cloudX = this.x; }
     const visible = world.camera.isVisible(this.liveX, 120);
     if (!visible) return;
@@ -767,6 +825,10 @@ const SPOIL_DAMP = 0.55;
 /** Net decking: a heavy landing sags a square NET_SAG frames, then it is open NET_OPEN frames. Players who drop lose NET_DROP_FRAC
  *  of max HP and are set NET_CLEAR px outside the square - health, not a life (issue #27 "a ring-out variant that costs health"). */
 const NET_SAG = 10, NET_OPEN = 60, NET_DROP_FRAC = 0.08, NET_CLEAR = 10, NET_SQUARE = { w: 60, d: 30 };
+/** Solid obstacles (issue #31): the default wall height, low enough that a running jump clears it. A gap reuses the
+ *  Crop Loft's net-square ejectors wholesale, so it also costs NET_DROP_FRAC of max HP — the board 4 rule that a fall
+ *  through the floor costs health, not a life, applied everywhere. */
+const SOLID_HEIGHT = 44;
 
 /**
  * Open-rails edge loss (issue #21, GDD 7): a thrown weapon / prop still in flight is marked `lost` and made to
@@ -793,7 +855,10 @@ export class Zone extends Entity {
    */
   constructor(spec) {
     super('fx');
-    this.type = spec.type; this.x0 = spec.x0; this.x1 = spec.x1; this.z0 = spec.z0 != null ? spec.z0 : 100;
+    // `solid` (issue #31) is the one type whose z band defaults to the WHOLE floor: a wall or a gap that silently
+    // began at z 100 would be an obstacle the author never placed. Every other type keeps the back-edge default.
+    const backEdge = spec.type === 'solid' ? Z_MIN : 100;
+    this.type = spec.type; this.x0 = spec.x0; this.x1 = spec.x1; this.z0 = spec.z0 != null ? spec.z0 : backEdge;
     this.x = (spec.x0 + spec.x1) / 2; this.z = -5; this.shadowW = 0;
     this.forced = !!spec.active;
     /** issue #21 GDD 7: a `rails` zone with no bulwark at all (open air past the edge, not a railing) also
@@ -815,7 +880,28 @@ export class Zone extends Entity {
     // netGive: the marked squares and per-fighter "was falling" flags for landing detection
     this.squares = (spec.squares || []).map((s) => ({ x: s.x, z: s.z, w: s.w || NET_SQUARE.w, d: s.d || NET_SQUARE.d, sag: 0, open: 0 }));
     this.landing = new Map();
+    // solid (issue #31): `height` is the y a body must clear; 0 means a floor gap. `breakable` makes the block
+    // conditional on a `barricade` Prop inside the rectangle still standing — the Prop owns the hp, the hit
+    // reaction, the drops and the break FX, and (unlike a Zone, which is kind 'fx') its hp is hashed by the
+    // desync canary. `isSolid` is what fighter.js / enemy.js / bot.js scan for; `fell` de-dupes gap drops.
+    this.isSolid = this.type === 'solid';
+    this.height = spec.height != null ? spec.height : SOLID_HEIGHT;
+    this.breakable = !!spec.breakable;
+    this.prop = null; this.propChecked = false;
   }
+  /**
+   * A solid blocks unless it is a barricade whose Prop has been broken. Non-breakable solids always block.
+   * `prop.solid` rather than `prop.alive` is the test: Prop.break() clears `solid` on the frame the hit lands but
+   * leaves the body alive through its break animation, and a gate you have just smashed has to open now.
+   */
+  get blocking() { return !this.breakable || !!(this.prop && this.prop.solid && this.prop.alive && !this.prop.removeMe); }
+  /** Floor plan of a solid, for enemy pathing / the autopilot. Permanent while blocking — a wall has no quiet phase. */
+  dangerBox() {
+    if (!this.isSolid || !this.blocking) return null;
+    return { x0: this.x0, x1: this.x1, z0: this.z0, z1: this.z1 };
+  }
+  /** Is (x, z) inside this zone's rectangle? */
+  inBox(x, z) { return x >= this.x0 && x <= this.x1 && z >= this.z0 && z <= this.z1; }
   hurtbox() { return null; }
   inX(e) { return e.x >= this.x0 && e.x <= this.x1; }
   /** Enemy `f` just entered KNOCKDOWN / THROWN near a lethal edge (low = z of the back edge, high = z of the front edge, null = none):
@@ -850,9 +936,44 @@ export class Zone extends Entity {
       case 'gust': this.updateGust(world); break;
       case 'spoil': this.updateSpoil(world); break;
       case 'netGive': this.updateNetGive(world); break;
+      case 'solid': this.updateSolid(world); break;
       default: break;
     }
   }
+  /**
+   * A solid's per-frame work is only ever two things; the WALL case is resolved in Fighter.physics instead, because
+   * zones update before fighters and a hard collision applied from here would be corrected a frame late.
+   *   breakable  find the barricade Prop that holds the block up, once, and let the wave lock read it.
+   *   height 0   a hole in the deck: whoever is standing in it falls, and cargo that lands in it is gone. This is
+   *              the Crop Loft's netGive rule with the square replaced by the zone's own rectangle, so the three
+   *              existing ejectors (ringOut / dropPlayer / loseOverEdge) do all of the work.
+   */
+  updateSolid(world) {
+    if (this.breakable && !this.propChecked) {
+      this.propChecked = true;
+      for (const e of world.entities) { if (e.kind === 'prop' && e.barricade && this.inBox(e.x, e.z)) { this.prop = e; break; } }
+    }
+    if (this.height > 0) return;
+    const rect = this.asRect();
+    // No edgeShove here. Its band is one whose danger lies OUTSIDE it -- `rails` passes (RAIL, Z_MAX - RAIL) and
+    // `molten` passes (MOLTEN_Z, null) -- and it pushes bodies PAST those edges. A gap's danger is INSIDE
+    // [z0, z1], so feeding it the rectangle's own bounds shoves bodies away from the hole, not into it. Knocking
+    // an enemy in is reachable anyway: the x knockback of a hit carries a body across the rectangle, and a throw
+    // aimed along it lands the body inside, where the inBox test below rings it out.
+    for (const f of world.fighters) {
+      if (f.dead || f.y > 0 || f.grabbedBy || f.kind === 'boss' || !this.inBox(f.x, f.z)) continue;
+      // dropPlayer sets the body down OUTSIDE the rectangle, so there is no repeat next frame and no de-dupe to keep
+      if (f.kind === 'player') this.dropPlayer(world, f, rect);
+      else if (ringOut(world, f, 'rail', 0)) { f.vy = 2.5; f.vx = 0; f.vz = 0; }
+    }
+    for (const e of world.entities) {
+      if (e.removeMe || !this.inBox(e.x, e.z)) continue;
+      const cargo = (e.kind === 'projectile' && (e.thrownWeapon || e.thrownProp)) || (e.kind === 'item' && e.weaponId);
+      if (cargo) loseOverEdge(world, e);
+    }
+  }
+  /** The zone's rectangle in the {x, z, w, d} shape dropPlayer expects (it was written for a netGive square). */
+  asRect() { return { x: (this.x0 + this.x1) / 2, z: (this.z0 + this.z1) / 2, w: this.x1 - this.x0, d: this.z1 - this.z0 }; }
   updateMolten(world) {
     for (const f of world.fighters) {
       if (!this.inX(f) || f.z >= MOLTEN_Z || f.grabbedBy) continue;
@@ -1088,7 +1209,80 @@ export class Zone extends Entity {
         ctx.strokeStyle = sq.sag > 0 && (f & 4) ? '#ffffff' : ROSE; ctx.lineWidth = 1; ctx.strokeRect(sxx0 + 0.5, syy0 + 0.5, sq.w - 1, sq.d - 1);
         for (const [kx, ky] of [[sxx0, syy0], [sxx0 + sq.w, syy0], [sxx0, syy0 + sq.d], [sxx0 + sq.w, syy0 + sq.d]]) circle(ctx, kx, ky, 2, rope.hi, OL, 1);
       }
+    } else if (this.isSolid) {
+      this.drawSolid(ctx, cam, sy0, x0, x1, f);
     }
+  }
+  /**
+   * A gap is a hole in the deck: the floor simply is not there, so it is drawn as the dark underneath with a lit
+   * lip on the near side. A WALL is deliberately drawn flat and low here rather than as a standing object — like
+   * `rails`, the solid thing itself belongs to the backdrop art of whatever board placed it (a keg stack, a boom, a
+   * cargo gate), and this is the floor plan that tells the player where its footprint actually is. A broken
+   * barricade stops drawing entirely, matching `blocking`.
+   */
+  drawSolid(ctx, cam, sy0, x0, x1, f) {
+    if (!this.blocking) return;
+    const y = sy0 + this.z0, h = Math.max(2, this.z1 - this.z0), w = x1 - x0;
+    if (this.height <= 0) {
+      // the hole, and the broken lip the player reads as "the plank is gone"
+      ctx.fillStyle = '#0b0810'; ctx.fillRect(x0, y, w, h);
+      ctx.strokeStyle = OL; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.fillStyle = '#6b5a3a';
+      for (let x = x0 + 3; x < x1 - 3; x += 9) { ctx.fillRect(x, y - 1, 4, 2); ctx.fillRect(x + 2, y + h - 1, 4, 2); }
+      ctx.globalAlpha = 0.5; ctx.fillStyle = '#2a2030'; ctx.fillRect(x0 + 2, y + 2, w - 4, 2); ctx.globalAlpha = 1;
+      return;
+    }
+    // a wall's footprint: a hatched band with a brass lip along the top edge, kept low so it never hides a fighter
+    const t = tones('#4a4e58');
+    rrect(ctx, x0, y, w, h, 2, t.base, OL, 1);
+    ctx.fillStyle = t.sh; ctx.fillRect(x0 + 2, y + h - 3, w - 4, 2);
+    ctx.fillStyle = t.hi; ctx.fillRect(x0 + 2, y + 1, w - 4, 1);
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1; ctx.beginPath();
+    for (let x = x0 + 4; x < x1; x += 8) { ctx.moveTo(x, y + h); ctx.lineTo(x + 6, y); }
+    ctx.stroke();
+    // a barricade that can still be broken keeps a live brass edge so it reads as a target, not as scenery
+    if (this.breakable) { ctx.fillStyle = (f & 8) ? '#e2b34a' : '#8a5a1c'; ctx.fillRect(x0 + 1, y - 1, w - 2, 1); }
+  }
+}
+
+/**
+ * A scripted warning patch (issue #33 `zoneFlash`): the fair warning an event owes the player before it changes the
+ * room. It is an `fx` entity with a finite life that flags `isHazard` and answers `dangerBox()` for exactly that
+ * life, so `laneAroundHazards` steers mobs and the autopilot out of the patch while it flashes and stops the moment
+ * it expires. A PERMANENT box here would be a bug, not a nicety: enemies would refuse that lane for the rest of the
+ * board and a purely visual action would have become simulation.
+ */
+export class ZoneFlash extends Entity {
+  /** @param {{x0:number, x1:number, z0?:number, z1?:number, frames?:number, color?:string}} spec */
+  constructor(spec) {
+    super('fx');
+    this.x0 = spec.x0; this.x1 = spec.x1;
+    this.z0 = spec.z0 != null ? spec.z0 : Z_MIN;
+    this.z1 = spec.z1 != null ? spec.z1 : Z_MAX;
+    this.x = (this.x0 + this.x1) / 2; this.z = -4; this.shadowW = 0;
+    this.life = Math.max(1, spec.frames || 120); this.t = 0;
+    this.color = spec.color || TELL_RED;
+    this.isHazard = true;
+  }
+  hurtbox() { return null; }
+  dangerBox() { return { x0: this.x0, x1: this.x1, z0: this.z0, z1: this.z1 }; }
+  update() { if (++this.t >= this.life) { this.removeMe = true; this.alive = false; } }
+  draw(ctx, cam) {
+    const sy0 = FLOOR_TOP + cam.shakeY, x0 = Math.max(0, cam.toScreenX(this.x0)), x1 = Math.min(VIEW_W, cam.toScreenX(this.x1));
+    if (x1 <= x0) return;
+    const y = sy0 + this.z0, h = Math.max(2, this.z1 - this.z0);
+    // a hatched patch that beats faster as it runs out: the same read as a hazard's tell, at section scale
+    const k = this.t / this.life, beat = (this.t % Math.max(4, Math.round(14 - 10 * k))) < 3;
+    ctx.save();
+    ctx.globalAlpha = 0.16 + 0.14 * k;
+    ctx.fillStyle = this.color; ctx.fillRect(x0, y, x1 - x0, h);
+    ctx.globalAlpha = beat ? 0.9 : 0.45;
+    ctx.strokeStyle = beat ? '#ffffff' : this.color; ctx.lineWidth = 1;
+    ctx.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, h - 1);
+    ctx.globalAlpha = 0.3 + 0.2 * k; ctx.beginPath();
+    for (let x = x0 - h; x < x1; x += 12) { ctx.moveTo(x, y + h); ctx.lineTo(x + h, y); }
+    ctx.stroke();
+    ctx.restore();
   }
 }
 

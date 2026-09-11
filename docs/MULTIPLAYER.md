@@ -181,9 +181,24 @@ off, `pollRaw(player)` reads the pad bound to that slot plus every unbound pad, 
 local player whether it was pressed before or after the keyboard, and a pad pressed mid-match can
 never claim somebody else's slot.
 
+### The match boundary
+
+Three things are reset as the match starts, and each is there because skipping it desyncs peers
+that are otherwise identical: `Entity.resetIds()` (a host who played solo first would start the id
+counter higher), `rng.seed()` (the boot seed is `Date.now()`-derived), and `input.clearBuffers()`.
+
+The last one is the subtlest. The lobby reads the local player through binding set 0 whatever seat
+they hold, so the READY press that starts the match lands in **slot 0's** buffer on every machine —
+and on everyone but the host, slot 0 is somebody else's character. The buffer is `INPUT_BUFFER`
+frames deep, so whether that press survives into frame 0 depends on how many frames pass between
+the press and the start: on a loaded machine, few. The result is a match that dies on its first
+checksum for everyone, with no input mask having ever said attack. Clearing every seat's buffer at
+the boundary is the fix, and `nettest buffers` holds the line.
+
 ### What testing actually proved
 
-- `npm run nettest` — parties of two, three and four simulated peers consume byte-identical input
+- `npm run nettest` — the match boundary forgets every buffered menu press; parties of two, three
+  and four simulated peers consume byte-identical input
   across 3000 frames at up to 70% packet loss with jitter and reordering; a party that loses a
   player mid-match retires the seat on one agreed frame and the survivors stay identical for
   thousands of frames afterwards; the checksum catches string state, `vz`, hitstop and

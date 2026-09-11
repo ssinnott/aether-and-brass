@@ -52,6 +52,8 @@ const WAIT_SHOW_MS = 220, WAIT_HOLD_MS = 500;
 const RESEND_EVERY = 3;
 /** How often a peer publishes "I am here" on the rendezvous while the room is still filling. */
 const ANNOUNCE_MS = 800;
+/** How long a link may take to form before it is torn down and tried again from scratch. */
+const LINK_FORM_MS = 9000;
 /** How long the host waits for a guest's latency report before starting without it. */
 const RTT_REPORT_GRACE_MS = 3000;
 
@@ -177,7 +179,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
       setState('connecting');
     }
     announce();
-    announcer = setInterval(() => { announce(); maybeStart(); }, ANNOUNCE_MS);
+    announcer = setInterval(() => { announce(); sweepLinks(); maybeStart(); }, ANNOUNCE_MS);
     return true;
   };
 
@@ -234,10 +236,31 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     return link;
   }
 
+  /**
+   * Throw away a link that is taking too long to form and let the next announcement build a fresh
+   * one. WebRTC has no timeout of its own worth the name - a negotiation that lost a message, or
+   * whose far end restarted and is now talking to a connection we have already half-built, simply
+   * sits there - and a player watching CONNECTING forever is the worst way to fail. Only links that
+   * have NEVER opened are swept, and only before the match: during one, a link that will not form
+   * is already covered by the host's relay.
+   */
+  function sweepLinks() {
+    if (net.state === 'playing' || net.state === 'ended') return;
+    const now = Date.now();
+    for (const l of [...net.links.values()]) {
+      if (l.open || now - l.since < LINK_FORM_MS) continue;
+      l.retiring = true;                     // not a disconnect: it never connected in the first place
+      net.links.delete(l.pid);
+      try { l.peer.close(); } catch { /* already gone */ }
+    }
+  }
+
   function onLinkClosed(link, reason) {
     net.links.delete(link.pid);
     link.open = false;
     if (net.state === 'ended') return;
+    if (link.retiring) return;               // swept by us, and about to be built again
+
     const m = memberByPid(link.pid);
     if (link.isHost && !isHost) { net.end(reason || 'the host left'); return; }
     // A guest-to-guest link dying only moves that traffic onto the host's relay; the guest says
@@ -505,6 +528,13 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     // from couch co-op) must not silently ride along into the match. The nettest stub input has
     // neither method nor playerCount, so both are guarded.
     if (typeof input.resetClaims === 'function') { input.resetClaims(); input.setPadClaiming(false); }
+    // The READY press that started this match is still in the buffer, and it is in slot 0's buffer
+    // on EVERY machine - the lobby reads the local player through binding set 0 whatever seat they
+    // hold. Carried into the fight it makes somebody else's character swing on frame 0 on some
+    // machines and not others, which is a desync before a single input mask has been exchanged.
+    // It is load-dependent (the buffer is only INPUT_BUFFER frames deep), so it shows up as a
+    // match that dies instantly for everyone, now and then.
+    if (typeof input.clearBuffers === 'function') input.clearBuffers();
     for (let s = players; s < (input.playerCount || players); s++) input.setJoined(s, false);
     // No more arrivals: the party is fixed at the START packet, and the rendezvous has nothing left
     // to do until the session ends.

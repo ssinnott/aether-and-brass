@@ -1,13 +1,13 @@
 // Pure-Node tests for the online co-op layer (docs/MULTIPLAYER.md). No browser, no network.
 //
 //   node tools/nettest.js              run every suite
-//   node tools/nettest.js trig proto   run selected suites (trig mqtt proto lockstep checksum signal picks progress)
+//   node tools/nettest.js trig proto   run selected suites (trig mqtt proto lockstep checksum signal picks buffers progress)
 //
 // These cover the parts that must be provably correct before anything is on the wire: deterministic
 // trig, the MQTT signalling codec, the input/message wire format, and the lockstep frame scheduler
 // under packet loss. Exit code 1 on any failure.
 import { dsin, dcos, dhypot } from '../src/engine/trig.js';
-import { ACTIONS } from '../src/engine/input.js';
+import { ACTIONS, input } from '../src/engine/input.js';
 import * as M from '../src/net/mqtt-codec.js';
 import * as P from '../src/net/protocol.js';
 import * as S from '../src/net/signal.js';
@@ -250,6 +250,29 @@ const suites = {
     // One character registered: the rule cannot be honoured, and must not deadlock the lobby.
     const solo = seatParty(createNetSession({ game: { characters: [{ id: 'a' }], options: {} }, input: stubInput, isHost: true }), [0, 0]);
     ok(!solo.charTaken(0) && solo.setChar(0), 'with a single hero registered every player may share it');
+  },
+
+  // ---- engine/input.js: the match boundary must not let a menu press through as gameplay ----
+  buffers() {
+    // The lobby's READY press lands in slot 0's buffer on EVERY machine, because the lobby reads
+    // the local player through binding set 0 whatever seat they hold. Slot 0 is somebody else's
+    // character on everyone but the host, so a press that survives into frame 0 is a desync that
+    // no input mask ever asked for (net/session.js beginMatch).
+    input.setVirtual(0, { attack: true }); input.update();
+    input.setVirtual(0, { attack: false }); input.update();
+    ok(input.buffered(0, 'attack'), 'a press is still buffered a frame later, which is the whole point of the buffer');
+    ok(!input.pressed(0, 'attack'), '...without still reading as a fresh edge');
+    input.clearBuffers();
+    ok(!input.buffered(0, 'attack'), 'clearBuffers() forgets it, so the fight does not open on somebody else swinging');
+
+    input.setVirtual(1, { jump: true }); input.update();
+    input.setVirtual(2, { jump: true }); input.update();
+    ok(input.buffered(1, 'jump') && input.buffered(2, 'jump'), 'two seats each hold their own buffered press');
+    input.clearBuffers(2);
+    ok(input.buffered(1, 'jump') && !input.buffered(2, 'jump'), 'clearing one seat leaves the others alone');
+    input.clearBuffers();
+    ok(ACTIONS.every((a) => [0, 1, 2, 3].every((p) => !input.buffered(p, a))), 'and clearing everything leaves no action buffered on any seat');
+    for (let p = 0; p < 4; p++) input.clearVirtual(p);
   },
 
   // ---- game/progress.js: co-op progress belongs to the pairing, not to either player's solo save ----

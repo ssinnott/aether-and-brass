@@ -106,9 +106,11 @@ export const stage4 = {
           ...pick(1, { z0: 30, delay0: 60 }),
           one(S, 'hulk', 'right', 70, 100),
           one(S, 'wrangler', 'left', 40, 130),
+        // the bladder goes up and the crop comes down UNDER ITS OWN SILK (issue #30 `descend`) rather than dropping out
+        // of a bare sky: slow, hittable for the airborne 1.5x the whole way, and 30f on the spoil when it lands
         ], reinforcements: [{ whenRemaining: 1, spawns: [
-          { type: G, variant: 'chaff', side: 'sky', dx: -70, z: 50, delay: 0, shake: 6 },
-          { type: G, variant: 'chaff', side: 'sky', dx: 70, z: 100, delay: 30, shake: 6 },
+          { type: G, variant: 'chaff', z: 50, delay: 0, entrance: { kind: 'descend', dx: -70 } },
+          { type: G, variant: 'chaff', z: 100, delay: 30, entrance: { kind: 'descend', dx: 70 } },
         ] }] },
       ],
       events: [],
@@ -120,6 +122,9 @@ export const stage4 = {
     // press end. No bulwark anywhere on it, and the crop coming up onto it on lines drops ballast bags where the lines land.
     // The Wing comes down here: the whole Stormcrow roster, grounded, fighting for the guild's wages.
     { id: 'g2', name: 'THE LASH-UP', x0: 1800, x1: 2440, backdrop: 'glean2', floor: 'plank', mode: 'locked',
+      /** Issue #32: forty bladders and no keel. The float dips slower and further than a ship banks, and there is no
+       *  bulwark anywhere on it — so the slide and the plank gaps (issue #31) are the same problem twice. */
+      platform: { kind: 'tilt', period: 540, tell: 60, active: 80, slide: 0.6, dir: 0 },
       /** Auto-scroll of the far parallax (px per frame, glean2.js): the field a long way below slides past under the raft. */
       drift: 0.4,
       // two salvage lines (meter, either end), a gas bag (a pie, and a rose puff - never a fire source) and a ballast bag;
@@ -138,7 +143,13 @@ export const stage4 = {
       ],
       /** No bulwark on a raft of other people's hulls: the front and back 12px are open air over the field (+200). */
       // `open: true` (issue #21): a thrown weapon / prop, or a dropped weapon pickup, drifting past the same edge is lost too.
-      zones: [{ type: 'rails', x0: 1800, x1: 2440, open: true }],
+      zones: [{ type: 'rails', x0: 1800, x1: 2440, open: true },
+        // issue #31: two planks have gone out of the float, one in each lane and well apart, so there is always a way
+        // across but never a straight line. Nothing below but the field: an enemy that goes in is gone (+200), a
+        // player pays 8% of max HP and is set back on the lip.
+        { type: 'solid', x0: 1978, x1: 2010, z0: 14, z1: 60, height: 0 },
+        { type: 'solid', x0: 2232, x1: 2264, z0: 84, z1: 130, height: 0 },
+      ],
       waves: [],
       timedWaves: [
         // the first Thresher, with the ground crew and the first Stormcrow on the board, grounded and working
@@ -160,15 +171,35 @@ export const stage4 = {
           ...crimp(2, { z0: 20, dz: 100, delay0: 30 }),
           one(C, 'corsair', 'left', 70, 90),
         ] },
-        // the Marine comes down out of the bladders above the raft; a Thresher and a Winnow over him
+        // the Marine comes down out of the bladders above the raft on a line, the Thresher off a second one beside it
+        // (issue #30 `ropeDrop`: both hang 30f, and a hit on either cuts it); the Winnow lowers itself on its own silk
         { at: 80, spawns: [
-          one(G, 'thresher', 'left', 40, 0),
-          one(G, 'winnow', 'right', 100, 30),
-          { type: C, variant: 'marine', side: 'sky', z: 70, delay: 60, shake: 8 },
+          { type: G, variant: 'thresher', z: 40, delay: 0, entrance: { kind: 'ropeDrop', dx: -80 } },
+          { type: G, variant: 'winnow', z: 100, delay: 30, entrance: { kind: 'descend', dx: 90 } },
+          { type: C, variant: 'marine', z: 70, delay: 60, entrance: { kind: 'ropeDrop', dx: 0 } },
           ...chaff(1, { z0: 60, side: 'left', delay0: 100 }),
         ] },
       ],
-      events: [],
+      /**
+       * THE BLADDERS LET GO (issue #33). A salvage line parts overhead and an Iron Warden's stripped carcass comes
+       * down onto the float; a Winnow follows it down on her own silk to get a line back on it. Until she does, the
+       * carcass is the best weapon on the raft -- `chassis` rolls when it is struck -- so the beat is a question
+       * about whether you spend the time using it or the time stopping her taking it away.
+       */
+      events: [
+        { id: 'bladders', onWaveClear: 2, once: true, actions: [
+          { caption: 'THE BLADDERS LET GO', sub: 'SOMETHING IS COMING DOWN', life: 140 },
+          { sfx: 'crate_drop' },
+          { zoneFlash: { x0: 2040, x1: 2140, z0: 40, z1: 100, frames: 120, color: '#FF57B0' } },
+          { wait: 120 },
+          { prop: { type: 'chassis', x: 2090, z: 70, drops: COGS } },
+          { camera: { shake: 8, frames: 22 } }, { sfx: 'land_heavy' },
+          { wait: 60 },
+          { caption: 'SHE WANTS IT BACK', sub: '', life: 100 },
+          { spawn: [{ type: G, variant: 'winnow', z: 70, delay: 0, entrance: { kind: 'descend', dx: 60 } }] },
+          { wait: 240 },
+        ] },
+      ],
       /** The raft noses in against the press end; the hemp hoist platform is the landing, two pies on it. */
       transition: { kind: 'dock', banner: 'THE PRESS END', look: 'hoist', pies: 2 },
     },
@@ -243,6 +274,9 @@ export const stage4 = {
        */
       zones: [
         { type: 'netGive', x0: 3700, x1: 4800, squares: [{ x: 3900, z: 60 }, { x: 4300, z: 110 }, { x: 4600, z: 40 }] },
+        // issue #31: one square of decking is simply GONE rather than waiting to be opened by a heavy landing — the
+        // net squares above are a trap you spring, this is a hole you can see. Well short of the boss camera box.
+        { type: 'solid', x0: 4120, x1: 4156, z0: 34, z1: 84, height: 0 },
         { type: 'daisVents', x0: 4880, x1: 5300, color: ROSE },
       ],
       waves: [
