@@ -223,7 +223,7 @@ const corsairHooks = {
   },
 };
 const corsair = def({
-  variant: 'corsair', name: 'LINE CORSAIR', role: 'ranged', hp: 40, damage: 1, speed: 1.15, score: 200, drops: 'none',
+  variant: 'corsair', name: 'LINE CORSAIR', role: 'ranged', hp: 40, damage: 1, speed: 1.15, score: 200, drops: 'cutlass',
   build: { ...BASE.build, scale: 0.93, clan: WATCH.corsair,
     // teal at the same value, chroma only (L* 49.7 -> 47.9, s 44 -> 70); the trousers leave the neutral core and
     // the hair comes up off the outline (#33241F was 4.0 Oklab L* over it, so his own line died in his hair).

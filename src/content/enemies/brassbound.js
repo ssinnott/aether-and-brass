@@ -32,7 +32,7 @@ function drawClub(ctx, rig) {
   band(ctx, rig, 12, -4, 4, 8, IRON);
 }
 /** 56px halberd: long shaft, trapezoid axe blade, spike and back hook (light steel). */
-function drawHalberd(ctx, rig) {
+export function drawHalberd(ctx, rig) {
   celRect(ctx, rig, -16, -1.5, 64, 3, 1, '#5A3A22', 0.4, 0);
   celPoly(ctx, rig, [32, -4, 42, -14, 52, -12, 54, 3, 46, 6, 33, 4], LIGHT, 0.36, 0.3);
   celPoly(ctx, rig, [46, -2, 62, 0, 46, 2], LIGHT, 0.4, 0);
@@ -57,7 +57,7 @@ function drawMace(ctx, rig) {
   ctx.fillStyle = rig.col(rig.palette.accent); ctx.fillRect(-6, -2, 4, 4); // pommel: rivet-class detail, under hiMin
 }
 /** Chrome rapier: verdigris guard ball, thin 38px blade with a light edge. */
-function drawRapier(ctx, rig) {
+export function drawRapier(ctx, rig) {
   celRect(ctx, rig, -5, -1.5, 8, 3, 1, '#3A3F4B', 0.4, 0);
   celBall(ctx, rig, 3, 0, 3.5, rig.palette.accent, false);
   celRect(ctx, rig, 6, -1, 38, 2, 1, LIGHT, 0.4, 0);
@@ -251,7 +251,7 @@ const halbAnims = { ...makeBrassBase(C_HALB, { weaponFloor: 0 }), thrust: { loop
   RET(C_HALB, 12),
 ] } };
 const halberdier = variant({
-  variant: 'halberdier', name: 'BRASS HALBERDIER', role: 'bruiser', hp: 70, damage: 1, speed: 0.8, score: 300, drops: 'none',
+  variant: 'halberdier', name: 'BRASS HALBERDIER', role: 'bruiser', hp: 70, damage: 1, speed: 0.8, score: 300, drops: 'halberd',
   build: mkBuild({ scale: 1.1, stripe: '#8A1F1F', palette: { primary: '#C9A227', accent: '#7A5A16', skin: '#698698' },
     weapon: { attach: 'handR', length: 58, draw: drawHalberd, headAt: 44 }, accessories: [{ attach: 'head', draw: drawCrest }] }),
   anims: halbAnims, traits: { armorFrontOnly: true, armorHits: 1 },
@@ -353,7 +353,7 @@ const duelistAnims = { ...makeBrassBase(C_DUEL, { weaponFloor: -10 }), lunge: { 
   RET(C_DUEL, 6),
 ] } };
 const duelist = variant({
-  variant: 'duelist', name: 'CHROME DUELIST', role: 'elite', hp: 90, damage: 1, speed: 1.2, score: 500, drops: 'none',
+  variant: 'duelist', name: 'CHROME DUELIST', role: 'elite', hp: 90, damage: 1, speed: 1.2, score: 500, drops: 'sabre',
   build: mkBuild({ stripe: '#1F6B4C', palette: { primary: '#DDE6EE', accent: '#1F6B4C', skin: '#698698' }, proportions: { armR: 3.2, torsoW: 20, handR: 4 }, smear: '#E8F4FF',
     weapon: { attach: 'handR', length: 44, draw: drawRapier, headAt: 30 }, accessories: [{ attach: 'back', draw: drawCape }, { attach: 'head', draw: drawHalfMask }] }),
   anims: duelistAnims,

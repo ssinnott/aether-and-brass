@@ -8,7 +8,9 @@ import { mashNet } from './status.js';
 import { botIntent } from './bot.js';
 import { audio } from '../engine/audio.js';
 import { clamp, sign } from '../engine/math.js';
-import { floatText } from '../art/fx.js';
+import { floatText, burstBreak } from '../art/fx.js';
+import { WEAPONS, WEAPON_DROP_VX, WEAPON_DROP_GRACE } from './weapons.js';
+import { WeaponPickup } from './items.js';
 
 const DOUBLE_TAP_FRAMES = 12;
 const DODGE_FRAMES = 20, DODGE_DIST = 60, DODGE_COOLDOWN = 6, DODGE_BASE_RECOVERY = 8;
@@ -43,6 +45,9 @@ export class Player extends Fighter {
     this.kills = 0; this.damageTakenTotal = 0; this.continuesUsed = 0;
     this.comboStep = 0;
     this.comboLength = 0; for (let i = 1; i <= 6; i++) if (this.anim.has('attack' + i)) this.comboLength = i;
+    this.baseComboLength = this.comboLength;
+    /** Held pickup weapon id ('' = none) and its remaining hits (game/weapons.js); both hashed by net/checksum.js. */
+    this.weaponId = ''; this.weaponHits = 0;
     this.running = false; this.runDir = 0; this.tapDir = 0; this.tapFrame = -100; this.frameCount = 0;
     this.dodgeCooldown = 0; this.dodgeDx = 0; this.dodgeDz = 0; this.airDash = false; this.lastDodgeFrame = -100;
     this.jumpsLeft = 0; this.airDashesLeft = 0; this.airShotUsed = false;
@@ -345,6 +350,7 @@ export class Player extends Fighter {
   }
   onHitConfirmed(target, hit) {
     if (target.kind === 'prop') { this.hitConfirmed = true; return; }
+    if (this.weaponId && hit.weapon) this.spendWeapon();
     this.lastTarget = target;
     const type = hit.type || 'light';
     this.addMeter(type === 'light' || type === 'medium' ? METER.light : METER.heavy);
@@ -410,6 +416,7 @@ export class Player extends Fighter {
     initShield(this); // a new life drops in with a full shield
     this.combo = 0; this.comboTimer = 0; this.juggleCount = 0; this.juggleGravity = 0; this.juggleImmune = false; this.chainHits = 0;
     this.grabTarget = null; this.grabbedBy = null; this.heldBody = null; this.hitstop = 0; this.flashTimer = 0; this.status = {};
+    this.clearWeapon();
     const cam = world.camera;
     this.x = clamp(cam.x + VIEW_W / 2, cam.left + 20, cam.right - 20); this.z = 70; this.y = 160; this.vy = 0; this.vx = 0; this.facing = 1;
     this.invuln = FIGHTER_DEFAULTS.respawnInvuln;
@@ -427,4 +434,61 @@ export class Player extends Fighter {
       this.z += clamp(e.z - this.z, -8, 8);
     }
   }
+
+  // ---------- pickup weapons (issue #20, GDD 7) ----------
+  /** Wield a picked-up weapon: swap the held rig, swap the ground combo, restart comboLength. False if already armed. */
+  pickUpWeapon(pickup) {
+    const w = WEAPONS[pickup.weaponId];
+    if (!w || this.weaponId) return false;
+    this.weaponId = w.id;
+    this.weaponHits = pickup.weaponHits;
+    this.anim.setOverlay(w.anims);
+    this.rig.weapon = w.rig;
+    this.comboLength = w.swings.length;
+    floatText(this.x, this.y + this.h + 10, this.z, w.name, UI.brassLight, 1);
+    audio.play('pickup_score');
+    return true;
+  }
+  /** Drop the overlay / rig swap and go back to the hero's own weapon (or bare hands). */
+  clearWeapon() {
+    if (!this.weaponId) return;
+    this.weaponId = ''; this.weaponHits = 0;
+    this.anim.setOverlay(null);
+    this.rig.weapon = this.rig.build.weapon || null;
+    this.comboLength = this.baseComboLength;
+  }
+  /** Section entry (GDD 7): the weapon is not carried into the next section, with feedback (no pickup left behind). */
+  discardWeapon() {
+    if (!this.weaponId) return;
+    floatText(this.x, this.y + this.h + 10, this.z, 'LEFT BEHIND', UI.paper, 1);
+    if (this.world) this.world.addFx('dust', this.x, 0, this.z, { count: 4 });
+    this.clearWeapon();
+  }
+  /** Knockdown / throw (GDD 7): the weapon falls to the floor as a WeaponPickup, free after a short grace. */
+  dropWeapon() {
+    if (!this.weaponId || !this.world) return;
+    const wp = new WeaponPickup(this.weaponId, this.x, this.z, { hits: this.weaponHits, grace: WEAPON_DROP_GRACE });
+    wp.vx = -this.facing * WEAPON_DROP_VX;
+    this.world.add(wp);
+    this.clearWeapon();
+  }
+  /** The weapon shatters: burst debris, a heavy spark and BROKEN! (plays prop_break; `break` is only a legacy alias
+   *  of the same definition, sfx.js). Clearing here restores comboLength while the last swing's anim finishes; a
+   *  buffered chain then plays the hero's own attackN — harmless. */
+  breakWeapon() {
+    const w = WEAPONS[this.weaponId];
+    if (!w) return;
+    const hx = this.x + this.facing * 20, hy = this.y + this.h * 0.6;
+    burstBreak(hx, hy, this.z, w.color, 8);
+    if (this.world) this.world.addFx('spark', hx, hy, this.z, { type: 'heavy' });
+    floatText(this.x, this.y + this.h + 10, this.z, 'BROKEN!', UI.red, 1);
+    audio.play('prop_break');
+    this.clearWeapon();
+  }
+  /** Spend one point of durability on a connecting weapon swing; breaks the weapon at 0. */
+  spendWeapon() { if (--this.weaponHits <= 0) this.breakWeapon(); }
+  /** Drop the held weapon before going down (fighter.js:529); every hit/launch/juggle reaches this through knockDown. */
+  knockDown(vy, vx, animName = 'knockdown') { this.dropWeapon(); super.knockDown(vy, vx, animName); }
+  /** Drop the held weapon before becoming a thrown body (grabs.js:103, installed on Fighter.prototype). */
+  thrown(vx, vy, damage, thrower) { this.dropWeapon(); super.thrown(vx, vy, damage, thrower); }
 }

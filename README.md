@@ -48,6 +48,7 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
 - **Run**: double-tap left or right (or hold RT). **Dash attack**: attack while running.
 - **Grab**: attack next to an enemy that isn't reeling. **Throw**: direction + attack while holding.
   Thrown bodies are weapons: they hurt whatever they land on.
+- Enemies drop their weapons; pick one up for a handful of swings before it shatters.
 - **Special** costs one meter bar, or a slice of health when the meter is empty. **Super** needs all three bars.
 - **Dodge** rolls with invulnerability frames and cancels attack recovery.
 - Every hero carries a **shield**: a small regenerating buffer, drawn as the thin brass strip above the health
@@ -187,8 +188,9 @@ npm run winrate -- --stages 1 --styles all       # balance sweep: how often does
 
 The suite boots the game, walks the character select, drives every hero's whole moveset,
 runs an autopilot bot through all four boards to their results screens, plays co-op, spawns
-every enemy variant, exercises every autopilot archetype, and renders every sound effect and
-music track offline to check none are silent.
+every enemy variant, picks up, swings, breaks and drops every enemy weapon, exercises every
+autopilot archetype, and renders every sound effect and music track offline to check none are
+silent.
 
 `npm test` answers "does it work"; `npm run winrate` answers "is it fair". The latter plays real
 runs with no godmode and counts how often the ENGINE wins — a run lost is the continue stack

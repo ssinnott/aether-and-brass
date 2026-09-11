@@ -131,6 +131,7 @@ const suites = {
     ok(worldChecksum(world({ stateTimer: 4 }), rng) !== base, 'a stateTimer difference is caught');
     ok(worldChecksum(world({ vz: 0.5 }), rng) !== base, 'a vz difference is caught (drives ring-outs)');
     ok(worldChecksum(world({ hitstop: 3 }), rng) !== base, 'a hitstop difference is caught');
+    ok(worldChecksum(world({ weaponId: 'halberd', weaponHits: 12 }), rng) !== base, 'a held pickup weapon difference is caught (game/weapons.js)');
     ok(worldChecksum(world({ anim: { instance: 1, frameIndex: 0, frameTime: 0 } }), rng)
        !== worldChecksum(world({ anim: { instance: 2, frameIndex: 0, frameTime: 0 } }), rng), 'an animation cursor difference is caught');
     ok(worldChecksum(world({ state: 'AB' }), rng) !== worldChecksum(world({ state: 'BA' }), rng), 'string hashing is order sensitive');

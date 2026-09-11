@@ -88,6 +88,7 @@ export class StageRunner {
     const sec = this.sections[i];
     this.sectionIndex = i;
     this.world.sectionIndex = i;
+    if (!first) for (const p of this.world.players) if (p.discardWeapon) p.discardWeapon(); // GDD 7: a pickup weapon is not carried into the next section
     this.screen.setBackdrop(createBackdrop(sec, this.stage));
     const track = (this.stage.music && this.stage.music[sec.backdrop]) || sec.backdrop;
     this.playMusic(track);

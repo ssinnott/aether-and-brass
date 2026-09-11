@@ -59,6 +59,7 @@ types/content.d.ts         # Frame / Hit / Hitbox / Anim / AnimSet / Hooks — t
 tools/server.js            # zero-dependency static server (node), used by dev + tests
 tools/playtest.js          # Playwright headless playthrough harness (see section 13)
 tools/build.js             # esbuild single-file bundle -> dist/index.html
+tools/scenarios/           # playtest scenario modules merged into tools/playtest.js
 docs/GDD.md                # game design document (authoritative for design)
 docs/ARCHITECTURE.md       # this file
 src/
@@ -90,6 +91,7 @@ src/
       glean1.js ... glean3.js        # stage 4
     props.js               # breakable/static prop renderers (crates, barrels, lamps, pipes, gears...)
     portraits.js           # character-select portraits & HUD icons drawn from rigs
+    weapons.js             # corsair cutlass draw, on-floor weapon render, HUD icon + durability pips
   game/
     game.js                # Game: screen stack, players, options, transitions
     world.js               # World: entities list, spawn/despawn, depth-sorted draw, update, hit resolution
@@ -102,6 +104,7 @@ src/
     shield.js              # regenerating shields: traits.shield normalisation, absorb/refill, HUD strip + in-world ripple
     animation.js           # animation player utilities: play(name), tick(), current frame/pose, events
     items.js               # pickups (food/health, score, meter) and breakable props
+    weapons.js             # pickup weapon table (WEAPONS), swing anims, bot seek helpers
     hazards.js             # stage hazards (steam vents, pistons, conveyor floors, pits if any)
     stage.js               # StageRunner: sections, wave director, camera locks, GO arrow, boss trigger
     storage.js             # guarded localStorage probe: store(namespace), shared by progress.js + options.js
@@ -350,6 +353,8 @@ Hitbox coordinates are local (feet origin, `y` negative up, `x` positive toward
 facing) and mirrored by facing. The animation player (`AnimPlayer`) exposes
 `play(name, { restart=false })`, `tick()`, `pose` (interpolated), `frame`, `frameIndex`,
 `done` (non-looping finished), `events` consumed by the owner.
+`AnimPlayer.setOverlay(table)` makes `has()` / `play()` resolve names from the overlay first (held
+pickup weapons replace `attack1..N`; see `game/weapons.js`).
 
 ## 5. Entity & Fighter
 
@@ -392,6 +397,14 @@ Input → intent → state transitions (implements GDD section 7 combat rules):
 - `dodge` → `DODGE` (i-frames per GDD, short hop backward or roll through).
 - `taunt` → `TAUNT` (builds meter, interruptible).
 - Meter: `meter (0..METER.max = 300)`, three bars of 100 (`METER` in constants.js; special costs one bar, super the full meter, HP fallback per RECONCILIATION); gain on hit dealt (`+4` light, `+8` heavy), on taunt completion (`+25`), on damage taken (`+2`). Reset per life.
+- Held pickup weapon (`weaponId`, `weaponHits`; `game/weapons.js`): `pickUpWeapon / clearWeapon /
+  discardWeapon / dropWeapon / breakWeapon / spendWeapon`. While wielding, the ground combo comes from
+  `WEAPONS[id].anims` (via `AnimPlayer.setOverlay`, section 4) instead of the hero's own; a swing hitbox
+  carries `weapon: true` and spends one hit per connecting target (`onHitConfirmed`); reaching 0 hits
+  breaks it. `knockDown()` / `thrown()` drop it as a `WeaponPickup` (20-frame grace before either player
+  may retake it); entering the next section discards it (`LEFT BEHIND`, no pickup); respawn and continue
+  clear it silently; a hero already wielding never swaps for another pickup. `net/checksum.js` hashes
+  `weaponId`, `weaponHits` and the dropped pickup's `grace`.
 - Combo counter: increments on every hit dealt while the "combo timer" (60 frames since last hit) is alive; on drop, HUD shows grade per GDD.
 - Lives/continues per GDD; on death respawn after 90 frames with invuln 120 frames if lives remain; else show `CONTINUE?` (handled by gameplay screen).
 
@@ -418,6 +431,8 @@ export const stage1 = {
   sections: [
     { id: 's1', x0: 0, x1: 1100, backdrop: 'section1', floor: 'cobble',
       props: [ { type: 'crate', x: 320, z: 60, drops: 'food_small' }, { type: 'lamp', x: 500, z: 8 /* static, no collide */ } ],
+      // `drops:` on an enemy def (content/enemies/*.js) may also name a weapon id
+      // (halberd | cutlass | limerake | sabre, game/weapons.js) to spawn a WeaponPickup instead.
       hazards: [ { type: 'steamVent', x: 800, z: 100, period: 180, active: 60 } ],
       waves: [
         { triggerX: 240,   // when camera.x + VIEW_W/2 >= triggerX (i.e. players reached here)
@@ -512,6 +527,8 @@ Per player (P1 left, P2 right): portrait icon, name, shield strip (120x2, drawn 
 at < 30%), special meter bar, lives count, score. Center-top: current enemy targeted
 health bar (name + bar, last hit enemy, 2s), boss bar at bottom when a boss is active.
 Combo counter: near the player, big number + "HITS" + grade text when dropped.
+Held pickup weapon: 14x8 icon past the health-bar end with one 2x4 durability pip per remaining hit
+(`drawWeaponSlot`, `game/hud.js` / `art/weapons.js`).
 
 ## 11. Performance rules
 - No allocations in the per-frame draw of rigs beyond `ctx` calls; poses are reused
@@ -538,7 +555,7 @@ window.__game = {
   game, world (getter), input, rng,
   step(n),                           // run n fixed updates + 1 render (test mode)
   screen() -> string,                // current screen id
-  summary() -> { screen, sectionIndex, cameraX, locked, players: [{hp, lives, x, state, meter, score}], enemies: [{name, variant, hp, state, x, z}], boss: {...}|null, wavesCleared, errors: [] },
+  summary() -> { screen, sectionIndex, cameraX, locked, players: [{hp, lives, x, state, meter, score, weapon, weaponHits}], enemies: [{name, variant, hp, state, x, z}], boss: {...}|null, wavesCleared, errors: [] },
   setInput(p, actions) / clearInput(p),
   userOptions,                       // the game/options.js module object (load/apply/get/set/cycle/adjust/difficulty/saveBindings/reset/state)
   optionsState() -> object,          // userOptions.state(): { storage, saved, ...current values } for test assertions
@@ -570,6 +587,9 @@ debug mode) — tests fail on any error.
   3b. `shields`: for every hero, the shield starts full, absorbs a hit smaller than the pool with no HP
      loss, holds through its `delay`, refills to full when left alone, breaks under a bigger hit with only
      the overflow reaching HP, and stays down for the longer `breakDelay`.
+  3c. `weapons` (`tools/scenarios/weapons.js`): each of the four weapons drops, is picked up, swings and
+     spends durability, shatters, is dropped by a knockdown and picked up by the partner, and is
+     discarded on section entry.
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.
@@ -625,6 +645,7 @@ URL params (all only honored when `?autotest=1` or `?debug=1`):
 
 `window.__game` extra members: `ready` (true once the first screen entered),
 `spawnEnemy(type, variant, dx, dz)` (relative to P1), `killAllEnemies()`,
+`spawnWeapon(id, dx, dz)` (lays a settled pickup weapon at P1.x + dx, P1.z + dz, no pop, no grace),
 `enemyList() -> [{type, variant, name, role}]` (10 variants + `{type:'midboss'}` + `{type:'boss'}`),
 `characterList() -> [{id, name}]`, `fillMeter(p)`, `facePlayerToNearestEnemy(p)` (turns
 P1 toward and steps toward the nearest enemy — used by the enemy test), `summary().boss` =

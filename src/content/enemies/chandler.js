@@ -63,7 +63,7 @@ function drawStave(ctx, rig) {
   ctx.fillStyle = rig.col(CLAN.tallyman); ctx.fillRect(6, -2, 3, 4); ctx.fillRect(16, -2, 3, 4); ctx.fillRect(26, -2, 3, 4);
 }
 /** Limeburner: the wide lime shovel — the only Chandler tool that is a slab rather than a stick. */
-function drawShovel(ctx, rig) {
+export function drawShovel(ctx, rig) {
   celRect(ctx, rig, -8, -2.5, 28, 5, 2, CH.leather, 0.4, 0.2);
   celPoly(ctx, rig, [18, -13, 36, -15, 42, 0, 36, 15, 18, 13], CH.pewter, 0.36, 0.3);
   if (rig.override) return;
@@ -562,7 +562,7 @@ const limeburnerAnims = Object.assign(makeChandlerBase(LIM_CARRY, { stoop: 20, h
   ] },
 });
 const limeburner = def({
-  variant: 'limeburner', name: 'LIMEBURNER', role: 'bruiser', hp: 90, damage: 1, speed: 0.8, score: 400, drops: 'none',
+  variant: 'limeburner', name: 'LIMEBURNER', role: 'bruiser', hp: 90, damage: 1, speed: 0.8, score: 400, drops: 'limerake',
   build: mkBuild({ scale: 1.15, clan: CLAN.limeburner, chand: LIM_CHAND, weapon: { attach: 'handR', length: 44, draw: drawShovel, headAt: 32 },
     accessories: [{ attach: 'hip', draw: drawKiln }, { attach: 'torso', draw: drawHose }] }),
   anims: limeburnerAnims,

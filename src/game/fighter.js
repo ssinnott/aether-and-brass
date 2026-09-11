@@ -43,7 +43,7 @@
 //           stagger, status: { burn: {...} }, element: 'fire', groundedOnly, otg, unblockable, breaksArmor, onHit: 'rebound'|name, sfx,
 //           fromX (world x the hit came from: knockback pushes away from it instead of off the victim's facing — stage hazards),
 //           groundBounce: true|vy (an airborne / knocked-down target bounces off the floor once more: Brunhild slam, Rook hip toss),
-//           extinguish: true (removes fire puddles the box touches: Pip's Steam Vent) }
+//           extinguish: true (removes fire puddles the box touches: Pip's Steam Vent), weapon: true (held pickup weapon swing: spends durability, player.js) }
 //  hitboxes [..] | move { x, z, y|vy } | armor: true|N | invuln: true | fx [{ kind, x, y, ... }] | sfx | cancel | event | tell: true
 //  hurtboxScale 0..1   shrink the hurtbox height on this frame (Rook's slide passes under projectiles)
 //  spawn { projectile: name|spec, x, y, z, count, aimAt }   spawn a projectile (name -> def.projectiles[name]) on frame entry

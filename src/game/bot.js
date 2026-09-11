@@ -7,6 +7,7 @@
 import { ST, METER } from '../constants.js';
 import { rng } from '../engine/rng.js';
 import { laneAroundHazards } from './hazards.js';
+import { WEAPONS, nearestWeaponPickup, WEAPON_SEEK_DIST, WEAPON_SEEK_SAFE_X, WEAPON_SEEK_SAFE_Z } from './weapons.js';
 
 const Z_TOL = 14, RUN_DIST = 170, STOP_RUN_DIST = 110;
 
@@ -76,6 +77,16 @@ export function botIntent(p, world, style) {
   if (p.state === ST.GRAB) { if (f % 10 === 0) { it.attack = true; it.x = p.facing; } return it; }
   if (p.state === ST.GRABBED) { if (f % 3 === 0) it.attack = true; return it; }
   const e = pickTarget(p, world);
+  // weapon pickups (game/weapons.js): walk over one nearby while unarmed and nothing is close enough to punish it
+  if (!p.weaponId && p.pickUpWeapon && !p.airborne) {
+    const wp = nearestWeaponPickup(world, p.x, p.z, WEAPON_SEEK_DIST);
+    const threatened = !!e && Math.abs(e.x - p.x) < WEAPON_SEEK_SAFE_X && Math.abs(e.z - p.z) < WEAPON_SEEK_SAFE_Z;
+    if (wp && !threatened) {
+      it.x = wp.x > p.x + 4 ? 1 : wp.x < p.x - 4 ? -1 : 0;
+      it.y = wp.z > p.z + 4 ? 1 : wp.z < p.z - 4 ? -1 : 0;
+      if (it.x || it.y) return it;
+    }
+  }
   if (!e) {
     it.x = 1;
     // a human steps round a live hazard; the autopilot has to be told to (walking into the dock's cargo
@@ -89,7 +100,7 @@ export function botIntent(p, world, style) {
   }
   const dx = e.x - p.x, dz = e.z - p.z, adx = Math.abs(dx);
   const gap = adx - (e.w || 28) / 2;               // distance to the target's hurtbox edge
-  const reach = (p.def.reach || 40) + 8 + s.spacing;
+  const reach = (p.weaponId && WEAPONS[p.weaponId] ? WEAPONS[p.weaponId].reach : (p.def.reach || 40)) + 8 + s.spacing;
   const dir = dx > 0 ? 1 : -1;
   if (Math.abs(dz) > 10) it.y = dz > 0 ? 1 : -1;
   // hurt and cautious: give ground rather than trade, so the style actually reads as defensive. The retreat is

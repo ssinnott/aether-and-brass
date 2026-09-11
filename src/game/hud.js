@@ -12,6 +12,8 @@ import { drawHeadPortrait, drawLifeIcon, drawArmorIcon, idlePoseOf } from '../ar
 import { ease } from '../art/poses.js';
 import { clamp } from '../engine/math.js';
 import { drawShieldBar } from './shield.js';
+import { WEAPONS } from './weapons.js';
+import { drawWeaponIcon, drawDurabilityPips, WPN_ICON_W } from '../art/weapons.js';
 
 const STRIP_H = 40, BAR_W = 120, BAR_H = 8, METER_H = 5, PORTRAIT = 24;
 const GHOST_DELAY = 20, GHOST_SPEED = 0.8;
@@ -146,6 +148,7 @@ export class Hud {
     ctx.fillRect(fillX(hw), 14, hw, BAR_H);
     ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fillRect(fillX(hw), 14, hw, 2);
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; for (let s = 1; s < 10; s++) ctx.fillRect(bx + s * 12, 14, 1, BAR_H);
+    this.drawWeaponSlot(ctx, p, bx, right);
     // meter: three 100-point segments
     const segW = Math.floor((BAR_W - 4) / 3), full = p.meter >= METER.max;
     const costsHp = p.meter < METER.special && p.hp > p.maxHp * METER.hpCostMinFrac, pulse = (this.frame % 20) < 10;
@@ -164,6 +167,14 @@ export class Hud {
     for (let l = 0; l < n; l++) drawLifeIcon(ctx, p.def.id, right ? bx + BAR_W - 10 - l * 12 : bx + l * 12, 32);
     if (p.lives > 5) drawText(ctx, '+' + (p.lives - 5), right ? bx + BAR_W - n * 12 - 2 : bx + n * 12 + 2, 33, { size: 1, color: UI.paper, align: right ? 'right' : 'left' });
     drawText(ctx, String(Math.min(9999999, p.score)).padStart(7, '0'), right ? bx : bx + BAR_W, 32, { size: 1, color: UI.paper, align: right ? 'left' : 'right' });
+  }
+  /** Held pickup weapon: 14x8 icon past the end of the health bar with one 2x4 pip per remaining hit (game/weapons.js). */
+  drawWeaponSlot(ctx, p, bx, right) {
+    const w = WEAPONS[p.weaponId];
+    if (!w) return;
+    const ix = right ? bx - 4 - WPN_ICON_W : bx + BAR_W + 4;
+    drawWeaponIcon(ctx, p.weaponId, ix, 13);
+    drawDurabilityPips(ctx, right ? ix - 4 : ix + WPN_ICON_W + 3, 15, w.hits, p.weaponHits, right ? -1 : 1);
   }
   /** Stage timer, GO arrow and the targeted enemy's bar. */
   drawCenter(ctx) {

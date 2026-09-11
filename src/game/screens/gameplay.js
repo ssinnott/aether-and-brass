@@ -12,6 +12,7 @@ import { getEnemyDef } from '../../content/enemies/index.js';
 import { getStage } from '../../content/stage/index.js';
 import { drawTextOutlined } from '../../engine/text.js';
 import { clamp } from '../../engine/math.js';
+import { WeaponPickup } from '../items.js';
 
 const GAME_OVER_DELAY = 150;
 const START_X = 100;
@@ -131,6 +132,7 @@ export class GameplayScreen extends Screen {
       p.out = false; p.dead = false; p.alive = true; p.removeMe = false; p.lives = 3; p.continuesUsed++;
       p.hp = p.maxHp; p.meter = 0; p.state = ST.IDLE; p.stateTimer = 0; p.hitstop = 0; p.grabbedBy = null; p.grabTarget = null; p.heldBody = null;
       p.hurtTimer = 0; p.juggleCount = 0; p.juggleGravity = 0; p.juggleImmune = false; p.chainHits = 0; p.combo = 0; p.comboTimer = 0; p.running = false; p.comboStep = 0; p.busy = 0;
+      p.clearWeapon();
       p.x = clamp(cam.x + VIEW_W / 2 - 40 + i * 60, cam.left + 20, cam.right - 20); p.z = 70 + i * 24; p.y = 0; p.vy = 0; p.vx = 0;
       p.invuln = 120; p.play('idle');
       if (!this.world.entities.includes(p)) this.world.add(p);
@@ -179,7 +181,7 @@ export class GameplayScreen extends Screen {
     return {
       ...rs,
       sectionIndex: w.sectionIndex, cameraX: w.camera.x, locked: w.camera.locked, wavesCleared: w.wavesCleared,
-      players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, shield: p.shield, shieldMax: p.shieldMax, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out })),
+      players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, shield: p.shield, shieldMax: p.shieldMax, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out, weapon: p.weaponId, weaponHits: p.weaponHits })),
       enemies: w.enemies.filter((e) => e.kind !== 'boss').map((e) => ({ name: e.name, type: e.def.type || '', variant: e.def.variant || '', hp: e.hp, state: e.state, x: e.x, z: e.z, ai: e.aiState })),
       boss: b ? { kind: b.bossKind || 'boss', name: b.name, hp: b.hpTotal != null ? b.hpTotal : b.hp, maxHp: b.hpTotalMax || b.maxHp, phase: b.phase || 1, state: b.state, phaseName: b.phaseName } : null,
       enemiesDefeated: this.enemiesDefeated, time: this.time, continues: this.continues,
@@ -200,6 +202,13 @@ export class GameplayScreen extends Screen {
     if (d.dmgMult !== 1) e.damageMult = (e.damageMult || 1) * d.dmgMult;
     this.world.add(e);
     return e;
+  }
+  /** Test hook: lay a pickup weapon at P1.x + dx, P1.z + dz (settled, no pop, no grace). */
+  spawnWeapon(id = 'halberd', dx = 0, dz = 0) {
+    const p1 = this.players[0] || { x: this.world.camera.x + 200, z: 70 };
+    const wp = new WeaponPickup(id, p1.x + (Number(dx) || 0), clamp(p1.z + (Number(dz) || 0), 0, Z_MAX), { pop: false });
+    this.world.add(wp);
+    return wp.weaponId;
   }
   /** Remove every enemy (and boss) immediately. */
   killAllEnemies() {

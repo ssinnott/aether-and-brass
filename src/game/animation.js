@@ -31,7 +31,13 @@ export class AnimPlayer {
     this.instance = 0;
     this.events = [];
     this.pose = markFull(makePose());
+    /** Optional table consulted before `anims` (a held pickup weapon's attack1..N; game/weapons.js). */
+    this.overlay = null;
   }
+  /** Install (or clear with `null`/falsy) the overlay table; see `tableFor`. */
+  setOverlay(table) { this.overlay = table || null; }
+  /** The table `name` should resolve from: the overlay if it defines `name`, else the base `anims`. */
+  tableFor(name) { return this.overlay && this.overlay[name] ? this.overlay : this.anims; }
   /** Current frame object (or a static empty frame). */
   get frame() { return this.def ? this.def.frames[this.frameIndex] || EMPTY : EMPTY; }
   /** Convenience: current frame's hitbox / move / cancel fields. */
@@ -41,7 +47,7 @@ export class AnimPlayer {
   /** Total frames (steps) in the current animation. */
   get length() { if (!this.def) return 0; let n = 0; for (const f of this.def.frames) n += f.dur || 1; return n; }
   /** True if `name` exists in the table. */
-  has(name) { return !!(this.anims && this.anims[name] && this.anims[name].frames && this.anims[name].frames.length); }
+  has(name) { const t = this.tableFor(name); return !!(t && t[name] && t[name].frames && t[name].frames.length); }
   /**
    * Play an animation. Falls back to `fallback` (or idle) when missing. Restarting the same anim requires restart=true.
    * @returns {boolean} true if the animation is (now) playing
@@ -52,7 +58,7 @@ export class AnimPlayer {
     if (n === null) { this.name = null; this.def = null; this.done = true; return false; }
     if (n === this.name && !restart) return true;
     this.name = n;
-    this.def = this.anims[n];
+    this.def = this.tableFor(n)[n];
     this.frameIndex = 0;
     this.frameTime = 0;
     this.time = 0;

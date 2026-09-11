@@ -65,6 +65,8 @@ interface Hit {
   groundBounce?: boolean | number;
   /** Removes fire puddles the box touches (Pip's Steam Vent). */
   extinguish?: boolean;
+  /** A held pickup weapon's swing: connecting spends one point of its durability (game/player.js). */
+  weapon?: boolean;
 }
 
 interface Hitbox extends Hit {

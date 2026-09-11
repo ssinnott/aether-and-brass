@@ -24,6 +24,7 @@ import { progress } from './game/progress.js';
 import { options as userOptions } from './game/options.js';
 import { CHARACTERS } from './content/characters/index.js';
 import { ENEMY_LIST, ENEMY_GALLERY } from './content/enemies/index.js';
+import { weaponGalleryEntries } from './game/weapons.js';
 
 /** Parse URL params into game options. */
 export function parseOptions(search = window.location.search) {
@@ -102,7 +103,7 @@ function boot() {
   // Content registries: playable characters, enemy list (10 variants + midboss + boss) and the gallery (all rigs).
   game.characters = CHARACTERS;
   game.enemyList = ENEMY_LIST;
-  game.galleryRegistry = [...CHARACTERS.map((c) => ({ id: c.id, name: c.name, build: c.build, anims: c.anims })), ...ENEMY_GALLERY];
+  game.galleryRegistry = [...CHARACTERS.map((c) => ({ id: c.id, name: c.name, build: c.build, anims: c.anims })), ...ENEMY_GALLERY, ...weaponGalleryEntries(CHARACTERS)];
   game.registerScreen('title', (g) => new TitleScreen(g));
   game.registerScreen('boardselect', (g) => new BoardSelectScreen(g));
   game.registerScreen('select', (g) => new SelectScreen(g));
@@ -190,6 +191,7 @@ function boot() {
     setInput(p, actions) { input.setVirtual(p, actions); },
     clearInput(p) { input.clearVirtual(p); },
     spawnEnemy: delegate('spawnEnemy', null),
+    spawnWeapon: delegate('spawnWeapon', null),
     killAllEnemies: delegate('killAllEnemies', undefined),
     enemyList: () => (game.enemyList || []).map((e) => ({ type: e.type, variant: e.variant, name: e.name, role: e.role })),
     characterList: () => (game.characters || []).map((c) => ({ id: c.id, name: c.name })),
