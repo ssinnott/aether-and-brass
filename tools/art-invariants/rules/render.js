@@ -349,6 +349,12 @@ async function silhouetteDistinctness(subjects, page, findings) {
   const groups = new Map();
   for (const s of subjects) {
     if (s.class === 'boss' || s.kind === 'boss-phase') continue;
+    // A spawn modifier re-dresses a variant it is not a sibling of: it repaints a body and pins an accessory to it
+    // WITHOUT changing the outline, so every modded rig scores IoU 1.000 against the rig it came from and buries the
+    // authored pairs this rule exists to compare. §0.8 is about five variants sharing one shape, not one variant
+    // wearing a badge. (An accessory that does change the silhouette, like the winged bladder, is still measured on
+    // the base rig it hangs off; nothing here is left unmeasured that the rule was written for.)
+    if (s.kind === 'enemy-mod') continue;
     const k = factionOf(s);
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(s);

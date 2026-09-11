@@ -1,6 +1,6 @@
 > **Binding overrides:** see `docs/RECONCILIATION.md` for the final controls, floor band, rig scale, physics constants and the MUST/SHOULD/CUT scope tiers. Where it conflicts with this document, RECONCILIATION wins.
 >
-> **Scope of this document:** the world, the four heroes, the combat system, the HUD and **stage 1, The Ascent of Calderwick**. The second board — *The Storm Above Calderwick*, its Stormcrow faction and its two bosses — is designed in `docs/STAGE2.md`, which is the authority for that board and inherits every system rule from here unchanged.
+> **Scope of this document:** the world, the four heroes, the combat system, the HUD and **stage 1, The Ascent of Calderwick**. The second board — *The Storm Above Calderwick*, its Stormcrow faction and its two bosses — is designed in `docs/STAGE2.md`; the third and fourth — *The Reckoning of Calderwick* and *The Gleaning of Calderwick* — in `docs/STAGE3.md` and `docs/STAGE4.md`. Each is the authority for its own board and inherits every system rule from here unchanged, exceptions included: where a rule above carries one, it carries it there too.
 
 # 1. World & Tone
 
@@ -97,9 +97,9 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
 
 **Type identity:** clockwork infantry, precise, telegraphed, the *walls* of the game; fewer, worth more, never flee. Take **1.5× damage from throws and grabs** (including thrown Sootborn).
 
-**Base rig:** 50px, rigid upright. Head 12×12 rounded rect with one 6px lens (`#4DF0E0`, red `#FF5C5C` during tells). Torso 16×20 with a round aether-core window; gear pauldrons; 6px limbs with ball-joint circles; plate feet. Palette: `#7F8C99` steel, `#4A5563` dark steel, `#C89B3C` brass joints, `#4DF0E0` lens/core, plus a **regiment stripe** on the chest per variant. **Every Brassbound has a wind-up key on the back (rect + circle) that rotates while it acts and stops when staggered or stunned, the universal "it's open" read.** Death: 6 parts fly out, cyan core pop.
+**Base rig:** 50px, rigid upright. Head 12×12 rounded rect with one 6px lens (`#4DF0E0`, red `#FF5C5C` during tells). Torso 16×20 with a round aether-core window; gear pauldrons; 6px limbs with ball-joint circles; plate feet. Palette: `#7F8C99` steel, `#4A5563` dark steel, `#C89B3C` brass joints, `#4DF0E0` lens/core, plus a **regiment stripe** on the chest per variant. **Every Brassbound has a wind-up key on the back (rect + circle) that rotates while it acts and stops when staggered or stunned, the universal "it's open" read** — except a **holdout**, which has no key at all. The holdout spawn modifier (`game/traits.js` `SPAWN_MODS`, board 2) is an automaton nobody has wound in years: it sets `build.noKey`, and the shoulder gear pauldrons, which tick off the same drive, sit still with it. Its lens and core burn dead grey `#5A6068` instead of aether cyan, and the red `#FF5C5C` tell still fires — so the wind-up is gone but the "it's open" read is not. Death: 6 parts fly out, cyan core pop.
 
-**Shared behaviors:** walk straight at the player, no flanking. Every 4th hit in one combo causes a "gear slip" stagger (30f) regardless of armor. All variants except the shielded Iron Warden launch normally.
+**Shared behaviors:** walk straight at the player, no flanking. Every 4th hit it takes while grounded causes a "gear slip" stagger (30f) regardless of armor — every **3rd** hit on a **salvaged** Brassbound, the spawn modifier (board 4) that re-plates one in Gleaning guild colours: the scrap plate buys a plum coat, a riveted hemp plate and a Brass Cog where the base dropped nothing, at the price of a frame that slips a hit sooner. All variants except the shielded Iron Warden launch normally.
 
 | Variant | HP | Dmg | Speed |
 |---|---|---|---|

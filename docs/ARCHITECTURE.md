@@ -130,11 +130,11 @@ src/
       brassbound.js        # stage 1 type A: base rig/anims + 5 variant overrides
       sootborn.js          # stage 1 type B
       stormcrowRig.js      # stage 2 faction rig (parts, palette, base animation set)
-      stormcrow.js         # stage 2 type C: 5 variant overrides
+      stormcrow.js         # stage 2 type C: 7 variant overrides
       gleaningRig.js       # stage 4 faction rig (parts, palette, bladder, gleanStrike)
-      gleaning.js          # stage 4 type D: 5 variant overrides
+      gleaning.js          # stage 4 type D: 7 variant overrides
       chandlerRig.js       # stage 3 faction rig (parts, palette, lamp/rite plumbing, chandStrike)
-      chandler.js          # stage 3 type E: 5 variant overrides + the four rites
+      chandler.js          # stage 3 type E: 7 variant overrides + the four rites
       midboss.js, boss.js          # stage 1 bosses
       midboss2.js, boss2.js        # stage 2 bosses (reuse the Stormcrow rig)
       midboss3.js, boss3.js        # stage 3 bosses (reuse the Chandlery rig and its rites)
@@ -497,14 +497,20 @@ flight over the edge (`loseOverEdge`) instead of letting it land — only The Mo
 bulwark anywhere"). The Brass Funicular's `rails` (stage1 `s3`) are railings, not an open edge, so it omits `open` and thrown items land on the roof as normal.
 
 Hazard and zone types, their spec fields, timings, hits and `dangerBox` footprints are tabulated in the header of
-`game/hazards.js` (HAZARD TABLE / ZONE TABLE). Boards 2-4 declare `cannon`, `gasCell`, `limePit`, `wagon`,
-`tallowVat`, `kilnMouth`, `ledgerDrop` / `ballastDrop` and `gasSeep` hazards and `gust`, `spoil` and `netGive`
-zones from that table next to stage 1's six; every hazard follows the same tell / active / grace contract, so the enemy
+`game/hazards.js` (HAZARD TABLE / ZONE TABLE). Boards 2-4 declare `lightning`, `cannon`, `gasCell`, `limePit`,
+`wagon`, `tallowVat`, `kilnMouth`, `ledgerDrop` / `ballastDrop` and `gasSeep` hazards and `gust`, `spoil` and
+`netGive` zones from that table next to stage 1's five hazards (`steamVent`, `aetherVent`, `piston`, `hook`,
+`crossbar`) and four zones (`molten`, `conveyor`, `rails`, `daisVents`), which boards 2-4 also draw on; every
+hazard follows the same tell / active / grace contract, so the enemy
 pathing (`laneAroundHazards`) and the autopilot read them without knowing the type.
 
 A spawn entry may carry `mods: ['holdout'|'crusted'|'scrip'|'winged'|'salvaged']` (issue #28): the Enemy is built from a
 derived def (`game/traits.js` `SPAWN_MODS` / `applyMods`) at spawn time, so a modifier is part of the def the rig comes
-from and lockstep netplay never sees a late coin flip. A prop entry forwards every extra field to the `Prop` constructor:
+from and lockstep netplay never sees a late coin flip. A `SPAWN_MODS` entry is `{ label, factions?, skip?(def), apply(d,
+base), hooks? }`; the optional `skip(def)` drops that modifier **whole** — `applyMods` leaves it out of `def.mods`, so no
+hooks chain, no label joins the display name and nothing downstream reads it as applied, instead of letting `apply` no-op
+and ship a half-modded body (`winged` skips every def that already hangs under a bladder of its own). A prop entry
+forwards every extra field to the `Prop` constructor:
 `hp`, `drops`, `solid`, `rider`, `release: { type, variant, mods? } | null` (a live enemy tips out on break), `dump:
 'chassis'` (an overhead net drops a rolling prop when a jump attack hits it) and `fire` (a breaking fire source lights gas
 seeps through `world.addFire`). `art/props.js` `PROP_FAMILIES` names which prop types belong to which board's palette.
@@ -672,8 +678,12 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   4b. `playthrough2`: the same run with `&stage=2` — every registered board must be completable
      by the bot with zero runtime errors.
   5. `coop`: two players, same as 4 for 3000 frames.
-  6. `enemies`: spawn every one of the 10 variants + midboss + boss via
-     `?skipTo=gameplay&spawn=typeA:grunt`, screenshot each for a visual review sheet (`tools/screens/enemies.png` contact sheet).
+  6. `gallery`: `?skipTo=gallery` screenshots the idle / walk / attack pages, then asserts the registry
+     against a named list (the seven long-standing variants plus the six issue #28 added — `stormcrow:deckhand`,
+     `stormcrow:grapnel`, `chandler:runner`, `chandler:drayman`, `gleaning:picker`, `gleaning:riggerman`) and a
+     floor of 39 entries (31 variants + 8 bosses), so a deleted variant cannot shrink the test with it. Then every
+     one of those 39 entries is spawned on its own in a free-roam arena (`nowaves=1&godmode=1`), asserted alive
+     after 400 frames and asserted to lose hp to player attacks, and screenshot as `40-enemy-<type>-<variant>`.
   7. `botstyles`: every `BOT_STYLES` archetype fights and makes progress, and `?botstyle=a,b`
      puts a different archetype in each co-op slot.
   8. `options` (lives in its own `tools/playtest-options.js`, imported and registered here as
@@ -718,7 +728,8 @@ Runs that never reach the results plaque are reported as unfinished — a soft-l
 ## 15. Additional debug hooks required by `tools/playtest.js`
 URL params (all only honored when `?autotest=1` or `?debug=1`):
 - `skipTo=gameplay|gallery|results|title|training` — `gallery` is a debug screen that draws every
-  playable character, every enemy variant and both bosses in a labelled grid, cycling
+  playable character, every enemy variant and every boss rig — `ENEMY_GALLERY`, 49 entries: the 31 variants plus
+  each board's mid-boss and boss base rig and every phase rig that ships its own `build` — in a labelled grid, cycling
   animations (`right` = next anim: idle → walk → attack1 → hurt …, `left` = previous). `training`
   (issue #22, `game/screens/training.js`) opens the training room directly for the chosen `chars`
   hero: one STAND dummy on the Funicular roof, no waves, no props, ready for `__game.setTraining()`.
@@ -741,7 +752,9 @@ URL params (all only honored when `?autotest=1` or `?debug=1`):
 `window.__game` extra members: `ready` (true once the first screen entered),
 `spawnEnemy(type, variant, dx, dz)` (relative to P1), `killAllEnemies()`,
 `spawnWeapon(id, dx, dz)` (lays a settled pickup weapon at P1.x + dx, P1.z + dz, no pop, no grace),
-`enemyList() -> [{type, variant, name, role}]` (10 variants + `{type:'midboss'}` + `{type:'boss'}`),
+`enemyList() -> [{type, variant, name, role}]` (`ENEMY_LIST`, 39 entries: the 31 non-boss variants — 5 Brassbound,
+5 Sootborn, 7 Stormcrow, 7 Gleaning, 7 Chandlery — then the 8 boss entries `midboss`/`boss`, `midboss2`/`boss2`,
+`midboss3`/`boss3`, `midboss4`/`boss4`, each with `role: 'boss'` and its own `variant` slug),
 `characterList() -> [{id, name}]`, `fillMeter(p)`, `facePlayerToNearestEnemy(p)` (turns
 P1 toward and steps toward the nearest enemy — used by the enemy test), `summary().boss` =
 `{ kind:'midboss'|'boss', name, hp, maxHp, phase, state }` or `null`.

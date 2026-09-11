@@ -98,7 +98,7 @@ range (7, medium, real knockback). *First:* Section 1, Wave 1 — the fodder-onl
 teaches is the rail.
 
 **C1. Deck Crimper** — *the fodder with a hook.* Base coat, one ash-rust armband and nothing else (a dirty canvas rag
-for a bandana — the lowest rate wears no rank above the collar), a 46px ash boat hook. Jabs at 50px (18f tell), a low
+for a bandana — the lowest rate wears no rank above the collar), a 50px ash boat hook. Jabs at 50px (18f tell), a low
 **sweep** that hooks both feet out (knockdown), and a **lunge** from mid range with the wing-pack popping for the
 step. Flanks on both lanes. *First:* Section 1, Wave 2.
 
@@ -112,16 +112,20 @@ is otherwise free damage. Butt-strokes anything that gets inside the gun. *First
 in his fist; scale 1.05, the longest arms on the deck. Quartermaster Skree's trick in miniature: 28f whirling the
 iron up behind him (the lenses light), then the **grapnel line** goes out flat down the lane for 240px (8, medium)
 and whoever it bites is **reeled back along it** into his hands. Three squeezes (6 each), then the throw goes
-**BACKWARD** over his shoulder (18) — on a railed deck that is at the edge behind him, which is what the trick is
-for. Not reflectable; the counterplay is the 30 frames he spends paying out line after a cast, when a hit on him
-drops the line slack. Comes straight down your lane (no flanking), flinches every second hit, drops meter.
-*First:* Section 2, Wave 3; he is at his best on the railed gun deck of Section 3.
+**BACKWARD** over his shoulder (18). It is a **repositioning** move, not a ring-out: `hazards.js` rings out enemies
+only — a player over a rail is clamped back onto the deck — and no throw in the game imparts vz, so nothing he does
+can put you over the side. What it costs you is ground: it drags you off the line you chose and back down the deck
+you just fought up. Not reflectable; the counterplay is the 30 frames he spends paying out line after a cast, when a
+hit on him drops the line slack. Comes straight down your lane (no flanking), flinches every second hit, drops meter.
+*First:* Section 2, Wave 3; he works hardest on the locked gun deck of Section 3, where the screen will not scroll
+and every foot he drags you back is a foot you have to take again.
 
 **C3. Powder Bosun** — *the crowd control.* Grey-violet coat, ember-orange brow band, smock collar and waist sash
-(the widest rank field on the deck; nothing on his bare arms), scale 1.08, a four-link **chain shot**.
-The chain goes round in a full circle: 58px, **hits behind as well as in front**, 14 and a knockdown. From range he
-lobs a **powder keg** at where you stood 20 frames ago; it bounces once and goes off for 14 on *everyone*, his own
-side included. He only flinches on every second hit. *First:* Section 1, Wave 3.
+(the widest rank field on the deck; nothing on his bare arms), scale 1.15, a four-link **chain shot**.
+The chain goes round in a full circle: 58px, **hits behind as well as in front**, 14 — a heavy flinch, not a
+knockdown: it stops you where you stand rather than putting you down. From range he lobs a **powder keg** at where
+you stood 20 frames ago; it bounces once and goes off for 14 on *everyone*, his own side included. He only flinches
+on every second hit. *First:* Section 1, Wave 3.
 
 **C4. Galewright** — *the tell you have to respect.* Violet coat, sealed keel visor, amber rank, a copper-wound
 **storm coil**. The coil charges for 36 frames — the bulb brightens, and **the sighting lens grows and ramps violet
@@ -131,7 +135,7 @@ standing-on-end hair under a sealed helm) — and then throws an arc **130px dow
 what the **repel** (a short pressure wave, no real damage, big knockback) is for: it puts you back in the lane.
 Ignores attack tokens, circles, dodges. *First:* Section 2, Wave 1.
 
-**C5. Ironwing Marine** — *the wall.* Deep navy, scale 1.28, boarding axe, and a three-vane **wing-plate** strapped to
+**C5. Ironwing Marine** — *the wall.* Deep navy, scale 1.31, boarding axe, and a three-vane **wing-plate** strapped to
 the off hand. The top of both ladders: sealed iron muzzle with a small hot-white sighting lens, and signal gold on
 six carriers, more rank than the other four together. He is a big head with a small eye where the Galewright is a
 small head with a big eye — that inversion, her long keel beak against his short grilled muzzle, and his crest
@@ -144,10 +148,13 @@ puts you on the deck. *First:* Section 2, Wave 2 — he comes through the gas-ce
 ## The second faction: the clockwork marines
 
 The Concordat's blockade ships carried Brassbound the way any warship carries marines, and the Wing still has them.
-**THE HIGHER YOU BOARD, THE MORE CLOCKWORK:** the Spine has two, the freighter five, the flagship's gun deck eleven
-in one screen, and the bridge is the Admiral's own people with her Duelists over them. Every Brassbound variant
-(`docs/GDD.md` section 4: Tin Footman, Copper Sapper, Brass Halberdier, Iron Warden, Chrome Duelist) keeps its Stage 1
-behaviour and its red-lens tell; what changes is the wind-up.
+**THE HIGHER YOU BOARD, THE MORE CLOCKWORK:** two machines in the Spine's twenty bodies, five in the freighter's
+twenty, eleven in the gun deck's nineteen, and ten in the bridge's fifteen. The rule is the share and not the head
+count — 10%, 25%, 58%, 67% — so the bridge still tops the ladder on one machine fewer than the gun deck: it is the
+Admiral's own clockwork closed around her, her Duelists and the Wardens on the tower door, with her rated Stormcrows
+over them and no pressed crew at all. Every Brassbound variant (`docs/GDD.md` section 4: Tin Footman, Copper Sapper,
+Brass Halberdier, Iron Warden, Chrome Duelist) keeps its Stage 1 behaviour and its red-lens tell; what changes is the
+wind-up.
 
 - **Holdouts** (`mods: ['holdout']`, `game/traits.js SPAWN_MODS`): the machines the Wing never bothered to unbolt,
   still walking their old posts on the Spine and in the freighter's hold and brig. Dead-grey lens and core (the red
@@ -155,19 +162,24 @@ behaviour and its red-lens tell; what changes is the wind-up.
   board: a Footman in each of Section 1's last two waves, two Sappers and a Halberdier in the Gas-Halls, and the two
   Footmen the brig gives up in Section 3. They are the only modifier this board uses.
 - **Re-wound** (no modifier): the Brassbound the Wing wound back up for its boarding parties — the un-modded Stage 1
-  machines, first seen as the two Footmen guarding the winch bay (Section 2, Wave 4), then the gun crews, the
-  Wardens and the Duelists of the flagship.
-- **Elite pairs** fight together only in the last section: Galewright + Marine share a wave once (Section 4, Wave 2);
-  Warden + Duelist never do on this board (the Wardens hold the gun deck, the Duelists the bridge).
+  machines, first seen as the two Footmen guarding the winch bay (Section 2, Wave 4), then the flagship's two gun
+  crews, and finally the tower guard on her bridge — the Footmen, the Halberdier, the Sappers, and the Admiral's own
+  Wardens and Duelists.
+- **Elite pairs** fight together only in the last section, and there every wave has one: Marine + Duelist (Wave 1),
+  Galewright + Marine + Warden (Wave 2), Duelist + Warden (Wave 3). The Galewright and the Marine share a wave exactly
+  once on the board, and so do the Warden and the Duelist. **No Iron Warden stands on the gun deck**: both of them are
+  the Admiral's tower-door guard on the bridge. The gun deck's elites are the Wing's own — the Ironwing Marine who
+  walks the brig's holdouts up onto his deck, and the Galewright over the second gun crew — which is Brassbound line
+  troops under Stormcrow officers, the way round issue #28 asked for.
 
 Board census (`node tools/stage-census.js`): 74 enemies over 15 waves, **15 distinct variants** (a holdout counts as
-its own), Stormcrows 51 (7 variants) / Brassbound 23 (8), top share Deck Crimper 20%.
+its own), Stormcrows 46 (7 variants) / Brassbound 28 (8), top share Deck Crimper 18%.
 
 # 3. Mid-boss: Quartermaster Skree & the Grapnel Winch
 
 - **Concept:** the Wing's quartermaster, strapped into the freighter's own cargo winch — a drum of chain on a harness
-  with a grapnel on the end. She is a Stormcrow at 1.45x, so the fight reads as "one of them, but the machinery is
-  hers".
+  with a grapnel on the end. She is a Stormcrow at 1.5x in the harness and 1.3x once it comes off, so the fight
+  reads as "one of them, but the machinery is hers".
 - **HP:** the Winch 320 (armoured, unlaunchable), then Skree on foot 160.
 - **Phase 1 attacks:**
   1. *Chain Sweep* — 28f wind-up over the head, then the whole length in a circle. 96px, **both sides**, 20 + knockdown.
@@ -239,7 +251,7 @@ before it did not do.
   boarding party; Coal Scrip), **ballast bags** (Meat Pie), a **signal locker** (Golden Sprocket).
 - **Hazards:** **lightning conductors** at x 700 (z 96) and x 1620 (z 40, half a cycle behind): a 40f violet ring,
   then 12 + knockdown + 10f stunned; the loading hook still swinging at x 1180 (z 70).
-- **Zones:** `rails` over the whole section — there is no bulwark up here, **anything thrown over the edge is gone**
+- **Zones:** `rails` over the whole section — there is no bulwark up here, **any enemy thrown over the edge is gone**
   (+200), the cheapest damage on the board and by far the most satisfying — and a **`gust`** over the whole section:
   every 7s (420f) a 45f gale, then 40f in which everyone on their feet drifts 1.3 px/f toward one rail or the other
   (the direction alternates each cycle, ~52px a gust). The gust never rings anyone out by itself; with the rails live
@@ -291,13 +303,17 @@ before it did not do.
   behind it. Every 360f: 45f of the carriage running the barrel out while its lane lights on the deck, then the shot
   crosses the whole screen in 10f — 12 + knockdown, the body thrown downrange. The middle of the deck is never in a
   lane; the gust is what puts you in one.
-- **Zones:** `rails` (throw-overs ring out — the Grapnel Mate's back throw lives here) and the **bank**: a `gust`
-  every 7s (420f), 45f of gale then 40f at **1.3 px/f** — 52px toward one rail or the other, alternating.
+- **Zones:** `rails` both sides — an **enemy** thrown over the edge rings out (+200), and a player cannot go over at
+  all: `hazards.js` rings out enemies only and clamps everyone else back onto the planking. The Grapnel Mate at 22s is
+  here to drag you back down a deck you cannot leave, not to put you over the side. And the **bank**: a `gust` every
+  7s (420f), 45f of gale then 40f at **1.3 px/f** — 52px toward one rail or the other, alternating.
 - **Timed waves (19)** — each fires at its time or the moment the one before it is cleared, whichever is first:
   - **0s:** the gun crew — 2x Copper Sapper + 2x Tin Footman + 1x Deckhand.
   - **22s:** 2x Brass Halberdier + 1x Grapnel Mate + 1x Corsair.
-  - **50s, banner THE BRIG OPENS:** 1x Iron Warden + **2x Tin Footman (holdout)** the Wing kept bolted below + 2x Crimper.
-  - **80s:** 1x Galewright + 1x Iron Warden + 1x Copper Sapper + 2x Crimper.
+  - **50s, banner THE BRIG OPENS:** **1x Ironwing Marine** walking **2x Tin Footman (holdout)** the Wing kept bolted
+    below up onto his deck + 2x Crimper.
+  - **80s:** the second gun crew closing up under the coil — 1x Galewright + 2x Copper Sapper + 1x Tin Footman +
+    1x Crimper.
 - **Transition:** `dock` — banner **THE SHIP COMES ABOUT**, and the party arrives at the foot of a ship's companion
   ladder on the bridge deck with 2 Meat Pies.
 
@@ -309,10 +325,12 @@ before it did not do.
 - **Hazards:** two masts, no hook — **lightning conductors** at x 4420 (z 100, the front lane) and x 4640 (z 36, the
   back lane, 105f behind): the storm earths itself on both lanes of the bridge deck, never on both at once.
 - **Zone:** `daisVents` over the bridge dais (4760–5200): the band shrinks per boss phase and the edges vent.
-- **Waves (15):** (1) 1x Marine + 2x Corsair + **1x Chrome Duelist** (the Admiral's second — the last new face on the
-  board) + 1x Crimper. (2) **1x Galewright + 1x Marine** (the Wing's elite pair, together for the only time on the
-  board) + 2x Copper Sapper + 1x Bosun. (3) the last line: 2x Chrome Duelist + 1x Galewright + 1x Grapnel Mate +
-  1x Deckhand.
+- **Waves (15):** ten of the fifteen bodies up here are machines, and no pressed crew gets this far — not one
+  Deckhand, not one Crimper. (1) the head of the companion ladder: 1x Marine + **1x Chrome Duelist** (the Admiral's
+  second) + 2x Tin Footman + 1x Brass Halberdier. (2) **1x Galewright + 1x Marine** (the Wing's elite pair, together
+  for the only time on the board) + 2x Copper Sapper + **1x Iron Warden** off the tower door. (3) the last line:
+  2x Chrome Duelist + 1x Iron Warden + 1x Grapnel Mate + 1x Bosun. The Duelist and the Warden are the last two new
+  faces on the board, and both of them are hers.
 - **Final boss** (x 5100, arena 4760–5200, camera 4560–5200): Admiral Odaline Kestrel.
 
 # 6. Audio
@@ -350,9 +368,9 @@ best rank. Unlocks persist in `localStorage` via `src/game/progress.js`.
 
 `?stage=2` still jumps straight to the board and opens it for that page load, so a direct link works on a fresh
 save, and it works with the usual debug params (`?skipTo=gameplay&stage=2&bot=1&godmode=1`); `?unlockall=1` opens
-every board for one page load. The stage registry is `src/content/stage/index.js`; adding a third board is a stage
-file (with a `preview` block for its plaque), a backdrop module and one line in `STAGES` — it then appears on BOARD
-SELECT, locked behind Stage 2, with no other changes.
+every board for one page load. The stage registry is `src/content/stage/index.js`; it already carries four boards,
+and adding another is a stage file (with a `preview` block for its plaque), a backdrop module and one line in
+`STAGES` — it then appears on BOARD SELECT, locked behind the board in front of it, with no other changes.
 
 `npm test` runs the Stage 2 bot playthrough as the `playthrough2` scenario, with the same assertions as Stage 1
 (both bosses seen, results screen reached, zero runtime errors) and screenshots under `tools/screens/5x-stage2-*`.

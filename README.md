@@ -107,16 +107,19 @@ Cinder Hulk, Gutter Wrangler. Fast, fragile, cowardly alone, and they burn easil
 **The Stormcrows** — the Concordat's Ninth Aeronaut Wing, flying black over the re-opened sky
 (board 2): Deck Crimper, Line Corsair, Powder Bosun, Galewright, Ironwing Marine, plus the pressed
 Deckhand (no wing-pack, the one you throw off the Spine) and the Grapnel Mate (a line that reels you
-in and a throw aimed at the rail). Beaked flight masks with one hot white sighting lens, wing-packs
-that flare when they move, and a habit of hopping backwards out of anything you whiff. Jump attacks
-hurt them 1.5x. On board 2 they fight alongside the Brassbound the Concordat left aboard.
+into his hands, then three squeezes and a throw *backwards* — a repositioning move that puts you behind
+him and out of the fight, not a ring-out: only enemies ever go over a rail). Beaked flight masks with
+one hot white sighting lens, wing-packs that flare when they move, and a habit of hopping backwards out
+of anything you whiff. Jump attacks hurt them 1.5x. On board 2 they fight alongside the Brassbound the
+Concordat left aboard; all seven come back on board 4 — 19 enemies, a quarter of that board, split
+between the Lash-Up and the Press — flying for whoever is buying.
 
 **The Gleaning** — the salvage guild that follows the fighting on tailings-gas bladders and strips
 whatever falls out of it, and the faction of board 4: Chaff, Winnow, Thresher, Sickle, Harvestman, the
 grounded Picker (no bladder, the only guild member you can grab freely) and the Riggerman (drops a net
 from the hang line and grabs whoever it pinned). Everything here fights from the air and everything here
-has to land: a Gleaner hit while airborne takes
-1.5x and juggles, the bladder over its head is a 1.6x weak point, and every hover ends in a long
+has to land: a Gleaner hit while airborne takes 1.5x and juggles, its hurt boxes tile the whole rig so
+that the bag it hangs from is the upper band of the body and takes 1.6x, and every hover ends in a long
 punishable recovery on the deck — which is the only place you can grab one.
 
 **The Chandlery of Calderwick** — the chartered supply company that kept both sides in the war
@@ -133,12 +136,20 @@ Reeve Tansy Culm & the Baler and Harvestlord Briar Oke of the Gleaning on board 
 Every one of them is stripped down phase by phase until the person inside is exposed.
 
 **Spawn modifiers** re-dress a variant for the board it appears on without a new rig: `holdout`
-Brassbound (dead-grey lens, no wind-up key, slower, tougher: the machines the Wing never unbolted),
-`crusted` anything (the Limeburner's lime crust pre-applied, one hit of frame armour), `scrip` Sootborn
-(a company badge, and they never flee), `winged` anything grounded (a salvage bladder strapped on, so it
-drops in from the sky and takes the Gleaning's air damage) and `salvaged` Brassbound (re-plated in guild
-colours, drops scrap, gear-slips on the third hit). Stage data asks for one with `mods: ['holdout']` on
-a spawn.
+Brassbound (dead-grey lens and core, no wind-up key — and the shoulder gears stop with it, since they
+ran off the same key — 0.8x speed, 1.3x health: the machines the Wing never unbolted),
+`crusted` anything (the Limeburner's lime crust pre-applied: one hit of frame armour, drawn as a
+quicklime rim round the body that bursts into quicklime debris when the hit lands), `scrip` Sootborn
+(a lime-ringed company badge, and they never flee — the Slinger's panic-flee goes with the rest),
+`winged` anything that isn't already hanging under a bladder (a salvage bladder strapped on: the body
+drops out of the sky, **hangs** on the Gleaning's hang line for about 48 frames, then the bag vents and
+it settles and fights on the deck like anything else. While it is up it takes the Gleaning's shot-down
+rule, and its hurt boxes tile the rig the way a Gleaner's do — the bag is the upper band *of* the body,
+a 1.6x weak point, and holing it while the bag still carries drops the body as a knockdown. Anything
+that already hangs under a bladder is skipped whole; the bagless Gleaning Picker is the one guild member
+that can take it) and `salvaged` Brassbound (re-plated in guild colours — plum coat, hemp stripe and a
+riveted hemp plate — drops a Brass Cog where the base dropped nothing, gear-slips on the third hit).
+Stage data asks for one with `mods: ['holdout']` on a spawn.
 
 ## Board 1: The Ascent of Calderwick
 
@@ -174,7 +185,7 @@ locked screen: a conveyor feeding carts, crates and bodies into the kiln head) �
 (vats that boil over, draw-kilns, handcarts that tip out a crusted Brassbound, and the yardmaster at
 the kiln head) → The Ledger House (falling ledger stacks over the counting floor, where the man who
 signed for all of it is waiting). The Chandlery works on Sootborn who took its scrip, then on the
-Brassbound it re-crews: the closer to the ledger, the more machines.
+Brassbound it re-crews: the closer to the ledger, the more machines and the fewer people.
 
 The plainest-looking board in the game and the one about money: no furnace glow and no storm, just
 lime dust and one saturated colour — the lime in the company's own lamps, which always means something
@@ -188,7 +199,8 @@ the tailings since before the guild had a name, and they have been out under eve
 taking the pieces up as they fell. The Tailings (a rose dusk over the spoil heaps, gas seeping out of
 them that is harmless until something lights it, sinking spoil, salvage lines going up into a sky
 full of bladders) → The Lash-Up (one locked screen on the guild's float, a raft of other people's
-wrecks drifting over the field on forty bladders, ballast falling from them and no bulwark anywhere)
+wrecks drifting over the field on forty bladders, ballast falling from them and no bulwark anywhere —
+and the whole Ninth Wing riding it, twelve of the twenty bodies on that screen)
 → The Press (the decked-in end of the float, where the Reeve bales the crop and the guild first flies
 and re-plates the Concordat's own machines) → The Crop Loft (inside the biggest bag they own, net
 decking that gives way under a heavy landing, four boards' worth of stripped war hanging overhead in
@@ -202,7 +214,8 @@ doc: `docs/STAGE4.md`.
 ## Board select
 
 START on the title screen opens **BOARD SELECT**: one brass plaque per board with its vignette, name,
-section count and the factions you will be fighting. Left/right chooses, attack or start confirms, dodge
+section count and the two factions the board leads with — BRASSBOUND & SOOTBORN, STORMCROWS & BRASSBOUND,
+CHANDLERY & BRASSBOUND, GLEANING & STORMCROWS. Left/right chooses, attack or start confirms, dodge
 goes back. A board you have not opened yet shows a padlock plate and the board you have to clear to open
 it; confirming it buzzes instead of starting a run.
 

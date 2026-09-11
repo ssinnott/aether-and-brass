@@ -5,7 +5,7 @@ several of its rules and was only caught when a human put contact sheets side by
 that guide as can honestly be measured into a test.
 
 ```sh
-npm run art-check                                             # data + geometry tiers, ~2.5 s, no browser
+npm run art-check                                             # data + geometry tiers, ~9 s, no browser
 node tools/art-check.js --render                              # + the pixel tier (needs headless Chromium)
 NODE_PATH=/opt/node22/lib/node_modules node tools/art-check.js --render
 node tools/art-check.js --only=palette --subject=sootborn     # narrow it
@@ -16,21 +16,26 @@ node tools/art-invariants/selftest.js                         # prove every rule
 Exit code 1 on any non-exempt error, 0 otherwise. Warnings never fail the run. Info notes (the measured tables the
 rules print pass or fail) are hidden by default — `--notes` prints them, `--json` always carries them.
 
-**Today's numbers.** 28 subjects, 37 rules. The 18 stage-1 reference subjects report **0 errors, 0 warnings**
-(5 exempt findings, all one rule — see [The exemption ledger](#the-exemption-ledger)). The 10 known-bad control
-subjects report **43 errors and 81 warnings**, and every single finding in a full run lands on one of them.
+**Today's numbers.** 61 subjects, 41 rules — 37 of them asserted by `npm run art-check`, the four render rules
+listed under SKIPPED until `--render`. That run reports **0 errors and 47 warnings**, with 12 exempt findings (see
+[The exemption ledger](#the-exemption-ledger)), and **exits 0**. The 47 warnings split 1 / 32 / 14 and the 12
+exemptions 3 / 1 / 8 across the 18 stage-1 reference subjects, the 13 control subjects, and the other 30 — the
+Gleaning, the Chandlery, the stage-3 and stage-4 boss rigs and the seven spawn-modifier rigs.
 
-So **a full run exits 1 today**, on purpose: the Stormcrow faction ships in the tree and is the control this suite
-was written to catch. A CI job that must be green right now should run
-`node tools/art-check.js --subject=brunhild,sael,rook,pip,brassbound,sootborn,midboss:grubbik,boss:vane`
-(the reference cast, exit 0) plus `node tools/art-invariants/selftest.js`, and treat the full run as the report on
-the Stormcrows until that art is fixed. Do not narrow a full run with `--only` — some rules are pairwise (§3).
+The three defects this suite was written to catch (§2) have since been fixed in the Stormcrow art, and the data and
+geometry tiers are now silent on them. **`node tools/art-check.js --render` reports 0 errors and 47 warnings and
+exits 0** as well. `render/silhouette-distinctness` skips spawn-modifier subjects: a modifier repaints a body and
+pins an accessory to it without changing its outline, so a modded rig scores IoU 1.000 against the rig it re-dresses
+and would bury the authored pairs the rule exists to compare — §0.8 is about five variants sharing one shape, not
+one variant wearing a badge. No two authored siblings breach the bound; the worst real pair in the game is
+`stormcrow:bosun` vs `stormcrow:grapnel` at 0.757 against a bound of 0.79. CI should run `npm run art-check` plus
+`node tools/art-invariants/selftest.js`. Do not narrow a full run with `--only` — some rules are pairwise (§3).
 
 ---
 
 ## 1. Subjects
 
-`tools/art-invariants/subjects.js` turns the content registries into a flat list of 28 rigs:
+`tools/art-invariants/subjects.js` turns the content registries into a flat list of 61 rigs:
 
 | group | subjects | role |
 |---|---|---|
@@ -38,12 +43,26 @@ the Stormcrows until that art is fixed. Do not narrow a full run with `--only` �
 | Brassbound | `brassbound:footman` `…:halberdier` `…:sapper` `…:warden` `…:duelist` | **reference** |
 | Sootborn | `sootborn:cutthroat` `…:slinger` `…:firebrand` `…:hulk` `…:wrangler` | **reference** |
 | stage-1 bosses | `midboss:grubbik` `midboss:grubbik#2` `boss:vane` `boss:vane#2` | **reference** |
-| Stormcrows | `stormcrow:crimper` `…:corsair` `…:bosun` `…:galewright` `…:marine` | **control** |
+| Stormcrows | `stormcrow:crimper` `…:corsair` `…:bosun` `…:galewright` `…:marine` `…:deckhand` `…:grapnel` | **control** |
 | stage-2 bosses | `midboss2:skree` `…#1` `boss2:kestrel` `…#1` `…#2` | **control** |
+| Gleaning | `gleaning:chaff` `…:winnow` `…:thresher` `…:sickle` `…:harvestman` `…:picker` `…:riggerman` | — |
+| Chandlery | `chandler:wickboy` `…:tallyman` `…:limeburner` `…:purser` `…:resurrectionist` `…:runner` `…:drayman` | — |
+| stage-3 bosses | `midboss3:marl` `…#1` `boss3:hasp` `…#1` `…#2` | — |
+| stage-4 bosses | `midboss4:culm` `…#1` `boss4:oke` `…#1` `…#2` | — |
+| spawn modifiers | `brassbound:footman+holdout` `…+crusted` `…+salvaged` `…+winged` `sootborn:cutthroat+scrip` `…+winged` `stormcrow:deckhand+winged` | — |
 
 A boss **phase** that ships its own `build` is a separate subject (`boss2:kestrel#2`), because each phase is a
 distinct rig with its own animation table. `boss.phases[1]` ("REGENT ENGINE — BODY") has anims but no build, so it
 is not a rig and is not a subject; nothing measures that table today.
+
+The spawn modifiers of issue #28 are drawn at spawn by `game/traits.js`, so the rigs they produce — the strapped-on
+bladder, the scrip badge, the salvage plate and its rivets, the holdout's dead lens — were painted by nothing the
+suite could see. `MOD_SUBJECTS` builds one subject per modifier on a def the stages really put it on (`kind:
+'enemy-mod'`), plus the two foreign rigs the bladder has to sit on. A modded rig is **never reference content**,
+even on a reference faction: a modifier re-dresses a variant, it does not define the faction's art, and making the
+"the Brassbound may never error" contract depend on the mod table would be backwards. `isControl` still keys off
+the base type, so `stormcrow:deckhand+winged` counts as control. A modifier that `SPAWN_MODS` skips for a def
+(`winged` on anything that already hangs under a bladder) produces no derived def and therefore no subject.
 
 ### The calibration principle
 
@@ -91,7 +110,7 @@ the control pass. The Stormcrows are the control: **a suite that does not flag t
 ### Geometry tier — `rules/geometry.js` (drives `computeJoints` + a recording 2D context; still no DOM)
 
 One shared pass per subject drives **every keyframe of every anim** through the joint solver and three recorded
-draws (normal, a determinism re-draw, and a `rig.override` flash pass): 2233 keyframes, ~2.2 s for the whole tier.
+draws (normal, a determinism re-draw, and a `rig.override` flash pass): 4611 keyframes, ~8.5 s for the whole tier.
 
 | rule | sev | guide |
 |---|---|---|
@@ -120,18 +139,25 @@ The runner owns the browser: it serves the repo on an ephemeral port, opens one 
 Without `--render` all four rules are listed under **SKIPPED** with the reason — never a silent pass. If Playwright
 cannot be resolved, `--render` fails with `render/tier` and exit 1, with the `NODE_PATH` hint.
 
-### The three Stormcrow defects, and what catches them
+### The three Stormcrow defects, what caught them, and where they stand
+
+All three have since been repaired in the art, and each rule now measures the fix rather than the defect. The
+history is kept because it is the calibration: these are the three cases the bounds were cut against.
 
 1. **`palette.sleeve === palette.primary`** (§0.1, "the single biggest de-blobbing win") →
-   `palette/sleeve-vs-primary`, 10 errors. Reference measures a 0.21-0.73 rec-601 relative difference; all five
-   Stormcrows and all five stage-2 boss rigs measure exactly 0.000 against a 0.18 bound.
-2. **Attacks with no ease, no smear, no anticipation** (§8) → `anim/attack-ease-coverage`, 10 errors: eased-key
-   coverage over attack anims is 0.957-1.000 on every reference def and exactly **0.000** on all ten control
-   subjects. `anim/attack-beats` adds the per-beat detail as warnings.
-3. **Five variants, one silhouette** (§0.8) → `render/silhouette-distinctness`, 6 errors. It is discriminating
-   rather than blanket: crimper/corsair/galewright are one shape (IoU 0.885-0.938 against a 0.79 bound) while
-   `bosun` (0.66-0.69, the powder keg) and `marine` (0.37-0.49, scale + wing-shield) are legitimately distinct and
-   correctly do not fire.
+   `palette/sleeve-vs-primary`. Reference measures a 0.264-0.729 rec-601 relative difference; every Stormcrow and
+   every stage-2 boss rig measured exactly 0.000 against a 0.18 bound. Today 12 of the 13 control subjects measure
+   0.598-0.774 — the thirteenth is the Powder Bosun, whose sleeve *is* his skin, the bare-arms case §0.1 exempts —
+   and the rule is silent on the whole cast.
+2. **Attacks with no ease, no smear, no anticipation** (§8) → `anim/attack-ease-coverage`: eased-key coverage over
+   attack anims is 0.957-1.000 on every reference def and was exactly **0.000** on the control. Today every
+   control subject measures 1.000. `anim/attack-beats` adds the per-beat detail as warnings, and still fires —
+   though on `gleaning:winnow` and `gleaning:thresher`, not on the Stormcrows.
+3. **Five variants, one silhouette** (§0.8) → `render/silhouette-distinctness`. It is discriminating rather than
+   blanket: it fired on crimper/corsair/galewright as one shape while `bosun` and `marine` were legitimately
+   distinct and correctly did not. The faction now runs seven variants whose worst sibling pair is
+   `bosun` vs `grapnel` at IoU 0.757 against the 0.79 bound, so no authored pair fires and the rule is silent on
+   the whole cast. Spawn-modifier subjects are skipped by it (§1): a re-dress does not change an outline.
 
 ---
 
@@ -206,20 +232,21 @@ the point of use. The suite ships the corrected form.
 
 ## 4. How the thresholds were derived
 
-Every numeric bound in the suite was measured over all 28 subjects *before* it was chosen, and sits just outside
-the reference range — never fitted, never trimmed to make the control fail. Three shapes recur:
+Every numeric bound in the suite was measured over every subject in the cast *before* it was chosen, and sits just
+outside the reference range — never fitted, never trimmed to make the control fail. Three shapes recur:
 
 1. **Exact contracts** — no tolerance, because reference measures one value with no exceptions: `rig.ow === 1`
-   (28/28), `snap` puts 17 joints on the **device** pixel grid — `Number.isInteger(j * rig.pxScale)` — at every rig
-   scale (38/38; before the device-grid pass this was `Number.isInteger(j)`, which is the same contract only for the
-   four rigs at scale 1), zero gradients or patterns (28/28), zero non-white fills in the
-   flash pass (~74k fills), `paletteFar === farPalette(palette, farShade, farDesat)`, the 18 part-hook names.
+   (61/61), `snap` puts 17 joints on the **device** pixel grid — `Number.isInteger(j * rig.pxScale)` — at every rig
+   scale (61/61; before the device-grid pass this was `Number.isInteger(j)`, which is the same contract only for the
+   four rigs at scale 1), zero gradients or patterns (61/61), zero non-white fills in the flash pass over every
+   keyframe of every rig, `paletteFar === farPalette(palette, farShade, farDesat)`, the 18 part-hook names.
 2. **Bands with slack outside the reference range** — e.g. sleeve/primary `d >= 0.18` against a reference floor of
-   0.208 (rook) and a control measurement of 0.000; idle loop 50-56f (the guide's own band, and reference measures
-   52 or 54); walk root bob amplitude `>= 1` (reference floor exactly 1); attack-ease coverage `>= 0.85` against a
-   reference floor of 0.957 and a control value of 0.000. Where a bound had to move to admit reference art it moved
-   **outward** and the move is recorded (chain `rotGain` ceiling 0.8, because `boss:vane#2`'s queue sits on 0.70;
-   dodge key count [4,5], because the reference `midboss:grubbik#2` ships a 4-key dodge).
+   0.264 (`boss:vane#2`) and the 0.000 the control measured when the bound was cut; idle loop 50-56f (the guide's
+   own band, and reference measures 52 or 54); walk root bob amplitude `>= 1` (reference floor exactly 1);
+   attack-ease coverage `>= 0.85` against a reference floor of 0.957 and the control's 0.000 of the same vintage.
+   Where a bound had to move to admit reference art it moved **outward** and the move is recorded (chain `rotGain`
+   ceiling 0.8, because `boss:vane#2`'s queue sits on 0.70; dodge key count [4,5], because the reference
+   `midboss:grubbik#2` ships a 4-key dodge).
 3. **Per-class non-regression baselines** — for the two clauses where no universal bound exists (§0.1's value
    ladder and §0.7's detail floor). The baseline is the *stage-1 minimum for that class and that pair*, minus a
    small rounding slack, snapshotted in the module. These do not encode a quality standard; they encode "no worse
@@ -254,12 +281,13 @@ number a rule is asserting on, pass or fail. Render rules omit `check` and are d
 `helpers.only` carries the runner's `--only` selection and `helpers.skip(what, reason)` announces a part of the
 tier that did not run.
 
-3. **Measure before you bound.** Run the candidate over all 28 subjects, print the range for reference and for
+3. **Measure before you bound.** Run the candidate over all 61 subjects, print the range for reference and for
    control, and put the bound in the gap. If there is no gap, you have not found a measurable rule — report it as
    a note or drop it. If the rule fires on reference, the rule is wrong until proven otherwise.
 4. **Add a case to `tools/art-invariants/selftest.js` in the same commit.** It clones a reference subject, injects
    exactly one defect and asserts the rule is quiet before and loud after. The selftest fails if any data or
-   geometry rule has no case, so a rule is not finished until it has one. Today: 36 cases, 33/33 rules covered.
+   geometry rule has no case, so a rule is not finished until it has one. Today: 40 cases, 37/37 data + geometry
+   rules covered (the render tier needs a browser and is not covered there).
 5. Note the calibration in the module (a `THRESHOLDS` constant, or a `DOC_BUGS` entry if the guide's literal text
    had to be corrected) and update this file.
 
@@ -276,42 +304,51 @@ tier that did not run.
 An entry without a non-empty `reason` is itself reported as an error, and so is a duplicate. An exempted finding is
 still **printed in full**, marked `exempt` with its reason — it drops out of the error count but never out of the
 report. That is the whole point: calibration is recorded visibly, per case, instead of by quietly weakening a
-threshold. `subject: '*'` exists but should be expected to justify itself in review. The control faction
-(`stormcrow:*`, `midboss2:*`, `boss2:*`) gets no exemptions, ever.
+threshold. `subject: '*'` exists but should be expected to justify itself in review. The file's own policy header
+says the control faction (`stormcrow:*`, `midboss2:*`, `boss2:*`) gets no exemptions; one entry now breaks it —
+`stormcrow:bosun` — and it is argued in the ledger as a measurement that is right rather than a defect that is
+forgiven. Read that entry sceptically (§7).
 
-**The ledger today is a to-do list for the art, not a softened rule.** All four entries are the same §0.3 defect —
-a module constant painted on a far part at near brightness — in three shared hooks, and each names its one-line
-fix:
+**Eight entries over three rules, and only two of them are art to-dos.** The other six argue that what the rule
+measured is not a defect: a palette pair the art never draws next to itself, or a prop the rule scored as a band:
 
-| subject | hook | leak |
+| rule | subject | why |
 |---|---|---|
-| `sootborn:firebrand` | `common.js` `gobCuffArm` | `build.clan` + its `sh` tone on both sides (2 colours × 66 keys) |
-| `midboss:grubbik#2` | `common.js` `gobCuffArm` | the same defect with Grubbik's band colour (× 91 keys) |
-| `sootborn:hulk` | `common.js` `gobHand` | `GOB.iron` wrist chains from the module constant (3 colours × 79 keys) |
-| `boss:vane#2` | `boss.js` `vaneHand` | the 3×3 `BLADE` knuckle glint on the far fist (× 88 keys) |
+| `geom/far-palette-leak` | `sootborn:hulk` | dated to-do: `common.js` `gobHand` paints the `GOB.iron` wrist chains from the module constant on both sides (3 colours × 79 keyframes) |
+| `geom/far-palette-leak` | `boss:vane#2` | dated to-do: `boss.js` `vaneHand` paints the 3×3 `BLADE` knuckle glint on the far fist (× 88 keyframes) |
+| `geom/limb-crossings` | `midboss:grubbik` | the Hoister has no far forearm — `drawChainHook` replaces it with the 5-link hoist chain, whose five steel links merge into one bbox 18.8 px from the elbow and score as a band on a bone the art never draws |
+| `palette/value-ladder-adjacent` | `stormcrow:bosun` | no sleeve: `crow.bareArm` makes this rate's sleeve his skin, so `armLower/armUpper` is one material and 0.000 is the right reading. His beard rung was fixed, not exempted |
+| `palette/value-ladder-adjacent` | `midboss3:marl`, `midboss3:marl#1`, `boss3:hasp`, `boss3:hasp#1` | the Chandlery ladder on a boss rig: no Chandler paints `palette.skin` below the jaw, and `torso/hips` is the faction's own coat-over-apron step at Oklab dE 22.8. `boss3:hasp#2` clears both unexempted — the coat comes off |
 
-One fix in `common.js` clears the first three. They were left in place deliberately: changing a rig's colours is an
-art change and belongs in a commit where a human reviews the contact sheets, which is the very thing this suite
-exists to support. The idiom to use is the one `sael.js` (`GLOVE_FAR`), `brunhild.js` (`tones(rig, LEATHER).sh`)
-and `boss.js` (`GUN_F` / `DARK_F`) already use. (§0.3 names a `farTone()` helper that does not exist in the
-codebase — `farShade()` in `src/art/palettes.js` is the real one.)
+The two `far-palette-leak` entries are the last of the §0.3 leaks; the `gobCuffArm` pair the ledger used to carry
+(`sootborn:firebrand` and `midboss:grubbik#2`) was deleted by fixing the art, as were the five Gleaning head/hair
+entries. The two that remain were left in place deliberately: changing a rig's colours is an art change and belongs
+in a commit where a human reviews the contact sheets, which is the very thing this suite exists to support. The
+idiom to use is the one `sael.js` (`GLOVE_FAR`), `brunhild.js` (`tones(rig, LEATHER).sh`) and `boss.js` (`GUN_F` /
+`DARK_F`) already use. (§0.3 names a `farTone()` helper that does not exist in the codebase — `farShade()` in
+`src/art/palettes.js` is the real one.)
 
 ---
 
 ## 7. What a reviewer should look at sceptically
 
-- **The four reference exemptions.** They are real defects, but four entries on one rule is exactly the shape a
-  wrong rule makes. The counter-evidence is that the same rule catches all ten control subjects on the identical
-  measure, and that each entry names a specific hook and a specific fix.
+- **The five ledger entries that argue a rule measured the wrong thing** (`stormcrow:bosun` and the four Stage 3
+  boss rigs, all on `palette/value-ladder-adjacent`). Four entries on one rule from one faction is exactly the
+  shape a wrong rule makes, and the Chandlery four are the same two pairs each time because all four rigs use
+  `CH_PAL` unchanged. The counter-evidence is that the rule still fires unexempted on the four stage-4 boss rigs
+  and that each entry names the hook that paints the part.
+- **The one exemption on the control faction.** `stormcrow:bosun` holds an exemption the ledger's own policy
+  header says the control may never have. The argument — a bare arm is one material, so `armLower/armUpper` at
+  0.000 is the correct measurement — is sound, but it is the precedent to watch.
 - **The per-class non-regression baselines** (`palette/value-ladder-adjacent`, `geom/detail-floor`). They are
-  snapshots, not standards. `stormcrow:bosun`'s torso/hips ladder finding sits 3 thousandths under its baseline,
-  and pip sits 4 % under the mook command budget — both will move if the class assignment in `helpers.classOf` or
-  the art changes.
+  snapshots, not standards. `geom/detail-floor` puts all seven Stormcrows one sub-2 px non-tone rect per keyframe
+  over a `human-machine` baseline of 0.45, and the winged rigs 1.45 and 5 over the same figure — all of it will
+  move if the class assignment in `helpers.classOf` or the art changes.
 - **`geom/pose-audit`'s GRIP half rests on one rig.** Brunhild is the only two-handed rig in the cast, so the
   reach tolerance (`+3` px over a worst measured `+2.3`) is calibrated on a single subject.
 - **`render/bench-budget` must be re-baselined per host** and should be its own CI job.
 - **The `--only` and `--subject` filters can hide pairwise findings** (see §3). CI should run the suite unfiltered.
-- **`anim/attack-face-aggressive` is currently silent on the whole cast** — 16 subjects skip it as expressionless
+- **`anim/attack-face-aggressive` is currently silent on the whole cast** — 10 subjects skip it as expressionless
   and the rest pass. It has teeth (the selftest proves it), but it is doing less work than its name suggests.
 
 ## Known gaps (mutation testing, 24 injected defects, 12 caught)
