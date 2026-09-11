@@ -77,6 +77,15 @@ export function botIntent(p, world, style) {
   if (p.state === ST.GRABBED) { if (f % 3 === 0) it.attack = true; return it; }
   // netted (Gutter Wrangler, Riggerman): a human mashes attack to tear out of it (player.js -> status.mashNet)
   if (p.status && p.status.netted) { if (f % 3 === 0) it.attack = true; return it; }
+  // a netted partner within reach: a teammate's swing cuts them free (fighter.js takeHit), so walk over and cut
+  const mate = nettedMate(p, world);
+  if (mate) {
+    const mx = mate.x - p.x, mz = mate.z - p.z;
+    if (Math.abs(mx) > 34) it.x = Math.sign(mx); else if (Math.sign(mx) && Math.sign(mx) !== p.facing) it.x = Math.sign(mx);
+    if (Math.abs(mz) > 8) it.y = Math.sign(mz);
+    if (Math.abs(mx) <= 44 && Math.abs(mz) <= 12 && f % 6 === 0) it.attack = true;
+    return it;
+  }
   const e = pickTarget(p, world);
   if (!e) {
     it.x = 1;
@@ -121,6 +130,15 @@ export function botIntent(p, world, style) {
   // a cautious player who is not going to dodge a grab still steps out of its reach
   else if (grabbing && s.spacing > 0 && f % 2 === 0) { it.x = -dir; it.attack = false; }
   return it;
+}
+
+/** A living teammate pinned under a net within 140px of `p` (the Wrangler's and the Riggerman's nets), or null. */
+function nettedMate(p, world) {
+  for (const q of world.players) {
+    if (!q || q === p || !q.alive || q.dead || q.out || !q.status || !q.status.netted) continue;
+    if (Math.abs(q.x - p.x) <= 140 && Math.abs(q.z - p.z) <= 40) return q;
+  }
+  return null;
 }
 
 /**
