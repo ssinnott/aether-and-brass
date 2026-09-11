@@ -5,7 +5,7 @@ import { Camera } from '../engine/camera.js';
 import { particles } from '../engine/particles.js';
 import { resolveHits } from './combat.js';
 import { Projectile, projectileOptsFromSpec } from './projectile.js';
-import { spawnDrops } from './items.js';
+import { spawnDrops, Prop } from './items.js';
 import { drawHitSpark, drawRing, drawSlash, drawMuzzleFlash, burstDust, burstSteam } from '../art/fx.js';
 import { audio } from '../engine/audio.js';
 
@@ -229,6 +229,13 @@ export class World {
     }
     return this.add(p);
   }
+  /**
+   * Spawn a breakable prop from the art/props.js catalogue at world (x, z) — the content-side way to put a prop down
+   * (the Drayman shoves a handcart, a Hoister drops a crate): content never imports game/items.js, it asks the world.
+   * @param {string} type PROP_TYPES key  @param {object} [opts] Prop constructor opts ({ drops, hp, release, dump, fire, solid, rider })
+   * @returns {Prop}
+   */
+  spawnProp(type, x, z, opts = {}) { return this.add(new Prop(type, x, z, opts)); }
   /** Legacy alias of areaHit(x, z, r, hit, owner, { exclude, y }). */
   spawnAreaHit(owner, x, z, r, hit, exclude = null, y = 0) { return this.areaHit(x, z, r, hit, owner, { exclude, y, silent: true }); }
   /** Nearest living enemy fighter to (x, z). */

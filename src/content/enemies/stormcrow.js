@@ -1,19 +1,21 @@
 // Stage 2 enemy faction: THE STORMCROWS (docs/STAGE2.md section 2) — the Concordat's Ninth Aeronaut Wing, flying
 // black over the re-opened sky. Rig, palette and base animation set come from ./stormcrowRig.js, the per-aeronaut
-// gear from ./stormcrowKit.js; this file is the five variants, their hand-keyed attacks, projectiles and AI tables.
+// gear from ./stormcrowKit.js; this file is the seven variants, their hand-keyed attacks, projectiles and AI tables.
 //
 // Type identity: SKY PRIVATEERS. Not a regiment — a press-ganged crew of freebooters in their own weather-beaten
-// kit, and the art says so: five silhouettes, five headgears, five back pieces, five sleeve colours, five stances.
-// What holds them together is the kit language (the Wing armband, the brass badge, goggles or a lens on every head,
-// violet static as the only energy colour) and the way they fight: they give ground, they hop back out of a
-// whiffed swing, they keep their feet.
-// Two ladders run up the five, and both point the same way — at the Marine:
+// kit, and the art says so: seven silhouettes, seven headgears, seven back pieces, seven sleeve colours, seven
+// stances. What holds them together is the kit language (the Wing armband, the brass badge, goggles or a lens on
+// every head, violet static as the only energy colour) and the way they fight: they give ground, they hop back out
+// of a whiffed swing, they keep their feet.
+// Two ladders run up the rates, and both point the same way — at the Marine:
 //  - RANK COLOUR heats one step per rate (WATCH below) and the marks that carry it multiply and climb the body:
-//    1 carrier on the Crimper (armband) -> 2 on the Corsair (+ hatband) -> 3 on the Bosun (brow band, smock
-//    collar, waist sash) -> 4 on the Galewright (brow band, gorget, armband, lace) -> 6 on the Marine (crest
-//    edge, cuirass band, armband, cuff, lace, wing-plate boss).
-//  - THE HIGHER THE RATE, THE MORE SEALED THE MASK: bandana with the goggles up, goggles under the brim, one eye
-//    behind a brass loupe, then a sealed keel visor and a sealed iron muzzle with a hot-white sighting lens.
+//    0 carriers on the Deckhand (a pressed hand: a plain strap where the brassard goes) -> 1 on the Crimper
+//    (armband) -> 2 on the Corsair (+ hatband) -> 2 on the Grapnel Mate (+ cap band, one rung hotter) -> 3 on the
+//    Bosun (brow band, smock collar, waist sash) -> 4 on the Galewright (brow band, gorget, armband, lace) -> 6 on
+//    the Marine (crest edge, cuirass band, armband, cuff, lace, wing-plate boss).
+//  - THE HIGHER THE RATE, THE MORE SEALED THE MASK: goggles up on a watch cap, bandana with the goggles up, goggles
+//    under the brim, goggles DOWN over the eyes, one eye behind a brass loupe, then a sealed keel visor and a sealed
+//    iron muzzle with a hot-white sighting lens.
 // Rank colour is the ONLY high-chroma warm left on a rig: every scarf and the Crimper's bandana are neutral, so
 // nothing on the deck competes with the mark that says who is in charge.
 // Faction rules:
@@ -23,18 +25,23 @@
 //
 // | Variant          | HP  | Dmg | Speed | Read                                                          |
 // |------------------|-----|-----|-------|----------------------------------------------------------------|
+// | Deckhand         |  35 |   7 | 1.10x | watch cap, bedroll, belaying pin, NO wing-pack; the pressed crew|
+// |                  |     |     |       | you throw off the Spine: a two-hit club, a shoulder barge      |
 // | Deck Crimper     |  45 |   6 | 1.20x | bandana + boat hook; jab, low sweep that trips; the fodder      |
 // | Line Corsair     |  40 |   9 | 1.15x | slouch hat, line drum; ANY attack bats the harpoon back         |
+// | Grapnel Mate     | 120 |   8 | 0.90x | peaked cap, goggles down, grapnel drum; the LINE reels you in   |
+// |                  |     |     |       | to a grab and the throw goes BACKWARD, toward the rail          |
 // | Powder Bosun     |  85 |  14 | 0.85x | bald, bearded, keg on his back; chain shot, lobbed powder       |
 // | Galewright       |  90 |  12 | 1.00x | lens visor, lightning rods; a long charge, then a stunning arc  |
 // | Ironwing Marine  | 190 |  16 | 0.70x | crested helm, wing-plate: super armour until a launcher strips  |
 import { frontBox, areaBox, makeEnemyDef } from './common.js';
 import { CROW, CROW_PAL, CROW_PROPS, crowScarf, crowTails, crowWings, makeCrowBase, crowStrike } from './stormcrowRig.js';
 import {
-  CROW_PARTS, crowLines, crowReel, crowKeg, crowBandolier, crowRods,
-  drawBoatHook, drawLineGun, drawChainShot, drawCoilRod, drawBoardingAxe, drawWingShield,
+  CROW_PARTS, crowLines, crowReel, crowKeg, crowBandolier, crowRods, crowBedroll, crowDrum,
+  drawBoatHook, drawLineGun, drawChainShot, drawCoilRod, drawBoardingAxe, drawWingShield, drawBelayingPin, drawGrapnelIron,
 } from './stormcrowKit.js';
 import { pathPoly, paint, line } from '../../art/shapes.js';
+import { jointScreen } from '../../art/rig.js';
 import { particles } from '../../engine/particles.js';
 import { audio } from '../../engine/audio.js';
 import { ST } from '../../constants.js';
@@ -47,8 +54,11 @@ const BEARDED = { noMouth: true };
  * gold. It survives a squint, a 0.5x downscale and colourblindness because it is a brightness ramp, not five
  * arbitrary hues, and every rung is a hue-family jump from its own coat (rust vs slate-blue, ember vs teal, flame
  * vs grey-plum, amber vs violet, gold vs navy).
- * Relative luminance 17.3 / 21.2 / 29.6 / 40.2 / 64.8 and hue 13 / 20 / 28 / 34 / 44 degrees: BOTH climb at every
- * rung, so no two rates collapse into one step. Three of the five numbers are load-bearing:
+ * Relative luminance 17.3 / 21.2 / 24.9 / 29.6 / 40.2 / 64.8 and hue 13 / 20 / 25 / 28 / 34 / 44 degrees: BOTH climb
+ * at every rung, so no two rates collapse into one step. The Grapnel Mate's rung (24.9 / 25) was slotted between the
+ * Corsair and the Bosun on both axes at once: a petty officer one step over the line Corsair and one under the
+ * gunner, and the rung is halfway between its neighbours on each scale. The Deckhand has NO rung: rate 0 is
+ * CROW.strap, plain leather, and `crow.noRank` keeps the armband stud off him. Three of the numbers are load-bearing:
  *  - rung 1 was 13.0, which on a 61.5 canvas sleeve read as a plain leather strap and left the ladder starting at
  *    nothing on the 0.5x squint. It is lifted, not recoloured: the Crimper still carries ONE mark, on the armband.
  *  - rungs 2 and 3 were 11% and 9 degrees apart, i.e. one orange twice; they are now 28% and 8 degrees apart.
@@ -58,7 +68,7 @@ const BEARDED = { noMouth: true };
  * Each variant carries it in BOTH `build.clan` and `palette.rank` — same literal; `palette.rank` is what the limb
  * hooks read, because farPalette shades it once at buildRig so the far arm's band darkens for free.
  */
-export const WATCH = { crimper: '#B8563C', corsair: '#C9612C', bosun: '#DE7A22', galewright: '#E89A34', marine: '#F8CE58' };
+export const WATCH = { crimper: '#B8563C', corsair: '#C9612C', grapnel: '#D36D26', bosun: '#DE7A22', galewright: '#E89A34', marine: '#F8CE58' };
 
 // ---------------------------------------------------------------- projectiles
 /** Harpoon on a reel line: a pewter dart trailing rope back the way it came (pale once batted back). */
@@ -108,6 +118,8 @@ const BASE = {
  * `rig.down` says the aeronaut is dead so the two sealed helms can put their lens out and keep it out. fighter.js
  * stops calling onUpdate once `dead` is set, so the flag latches on death and clears itself when the rig is reused
  * — which is why every variant hook must call BASE_HOOKS.onUpdate first (galeHooks and corsairHooks do).
+ * `rig.wings` is only ever read by the crowWings accessory: a rig that does not carry the pack (the Deckhand, and
+ * every line rate but the Marine) sets the flag and nothing looks at it, so these hooks need no packless branch.
  * @type {Hooks}
  */
 const BASE_HOOKS = {
@@ -118,11 +130,13 @@ const BASE_HOOKS = {
   },
   onDeath(f) { f.rig.down = true; },
 };
-/** Assemble a Stormcrow variant: faction traits + hooks on top of makeEnemyDef. */
+/** Assemble a Stormcrow variant: faction traits + hooks on top of makeEnemyDef (which carries neither, nor the grab fields). */
 function def(v, hooks) {
   const d = makeEnemyDef(BASE, v);
   d.traits = { jumpAttackTakenMult: 1.5, ...(v.traits || {}) };
   d.hooks = { ...BASE_HOOKS, ...(hooks || {}) };
+  if (v.grabOffset) d.grabOffset = v.grabOffset;
+  if (v.grabHoldFrames) d.grabHoldFrames = v.grabHoldFrames;
   return d;
 }
 /** Base set (stance + carry) + the variant's hand-keyed attacks. */
@@ -132,6 +146,60 @@ function crowAnims(carry, stance, attacks) {
   anims.flee = anims.run;
   return anims;
 }
+/** The planted half of a stance, for crowStrike's `rest` (its return key then sets its own legs: anim/legs-explicit). */
+const rest = (st) => ({ legR: st.legR, legL: st.legL, head: st.head });
+
+// ---------------------------------------------------------------- C0 Deckhand: watch cap, canvas slop, belaying pin
+// The Wing's pressed crew: no wing-pack, no rank, no scarf, a bedroll for a back piece and a pin off the fife rail.
+// Short, stooped and cowed (lean 13, head down, knees bent, scale 0.9), the one Stormcrow who does not keep his
+// feet — weight 0.8, flinches on every hit, throwable: he is what you throw off the Spine.
+const DECK_CARRY = { armR: [22, 34], weapon: -34, armL: [-18, -12] };
+const DECK_STANCE = { lean: 13, head: -9, legR: [12, 8], legL: [-12, 10], noWings: true };
+const deckhandAnims = crowAnims(DECK_CARRY, DECK_STANCE, {
+  // club: 14f of the pin cocked back over the shoulder -> a forehand across the chest -> the return stroke whips
+  // back up (crowStrike `h2`): two light hits, both cheap, both keyed separately so combat.js lands them both
+  club: crowStrike({
+    tell: 14, active: 6, recovery: 18, carry: DECK_CARRY, lean: 13, rest: rest(DECK_STANCE), tellSfx: 'crow_call', sfx: 'whiff',
+    hitbox: frontBox(42, hit(5, 'light', 3, 0, 14, { id: 'club1' })), fx: [{ kind: 'spark', x: 40, y: 40, count: 2 }],
+    w1: { armR: [-34, 84], weapon: -44, armL: [28, 22], torso: 6, head: -12, root: [-2, 0], legR: [12, 8], legL: [-16, 12], face: 'angry' },
+    w2: { armR: [-50, 96], weapon: -56, armL: [40, 26], torso: -2, head: -10, root: [-5, 1], legR: [10, 8], legL: [-18, 14], squash: 0.97, stretch: 1.03, face: 'angry' },
+    h: { armR: [62, -8], weapon: 2, armL: [-38, 20], torso: 28, head: 2, root: [5, 1], legR: [40, 10], legL: [-30, 30], face: 'shout', squash: 1.04, stretch: 0.97 },
+    smear: { from: 54, to: -8, a: 0.35, r: 40 },
+    hold: { armR: [66, -6], weapon: 8, armL: [-40, 20], torso: 30, head: 3, root: [6, 1], legR: [40, 10], legL: [-30, 30], face: 'shout' },
+    w3: { armR: [52, 34], weapon: 46, armL: [-30, 16], torso: 22, head: 0, root: [3, 1], legR: [36, 10], legL: [-28, 28], face: 'grit' }, tell2: 5,
+    h2: { armR: [-6, 54], weapon: -66, armL: [-46, 24], torso: 8, head: -6, root: [4, 0], legR: [38, 10], legL: [-30, 28], face: 'shout', squash: 0.98, stretch: 1.03 },
+    smear2: { from: 30, to: -74, a: 0.35, r: 40 }, hitbox2: frontBox(42, hit(5, 'light', 4, 1, 16, { id: 'club2' })), fx2: [{ kind: 'spark', x: 36, y: 50, count: 2 }],
+    hold2: { armR: [-12, 58], weapon: -72, armL: [-48, 24], torso: 6, head: -7, root: [4, 0], legR: [38, 10], legL: [-30, 28], face: 'shout' },
+    r: { armR: [-4, 50], weapon: -58, armL: [-36, 18], torso: 14, head: -4, root: [3, 1], legR: [34, 10], legL: [-26, 26], face: 'grit' },
+  }),
+  // barge: 18f folding down behind the shoulder -> a shoving lunge with the whole body (medium, real knockback).
+  // No smear: nothing in the hand does the hitting, so the read is the squash, the stretch and the dust (ART_STYLE 8)
+  barge: crowStrike({
+    tell: 18, active: 8, recovery: 22, carry: DECK_CARRY, lean: 13, rest: rest(DECK_STANCE), tellSfx: 'crow_call', sfx: 'whiff',
+    hitbox: frontBox(38, hit(7, 'medium', 8, 1, 18)), move: { x: 5 }, fx: [{ kind: 'dust', x: -8, y: 0, count: 3 }],
+    w1: { armR: [12, 62], weapon: -30, armL: [-42, -20], torso: 24, head: -14, root: [-3, 2], legR: [26, 24], legL: [-14, 20], squash: 1.06, stretch: 0.95, face: 'angry' },
+    w2: { armR: [16, 70], weapon: -34, armL: [-52, -18], torso: 32, head: -16, root: [-6, 3], legR: [30, 30], legL: [-18, 26], squash: 1.1, stretch: 0.91, face: 'angry' },
+    h: { armR: [-28, 34], weapon: -20, armL: [-72, 12], torso: 46, head: -14, root: [8, 2], legR: [60, 6], legL: [-50, 50], face: 'shout', squash: 0.95, stretch: 1.05 },
+    hold: { armR: [-24, 34], weapon: -20, armL: [-68, 12], torso: 44, head: -12, root: [8, 2], legR: [52, 12], legL: [-44, 46], face: 'shout' },
+    r: { armR: [-10, 40], weapon: -26, armL: [-44, 10], torso: 30, head: -8, root: [4, 2], legR: [38, 12], legL: [-30, 32], face: 'grit' },
+  }),
+});
+const deckhand = def({
+  variant: 'deckhand', name: 'DECKHAND', role: 'fodder', hp: 35, damage: 1, speed: 1.1, score: 100, drops: 'none',
+  // rate 0: `clan` and `palette.rank` are plain strap leather, so every rank hook on him paints a neutral (and
+  // `crow.noRank` keeps the armband's wing stud off). The slop is a cool grey-blue under the 40% ceiling - undyed
+  // issue canvas, not the Wing's storm navy - and the trousers are a paler duck for the same reason.
+  build: { ...BASE.build, scale: 0.9, clan: CROW.strap,
+    palette: { ...CROW_PAL, primary: '#4E5C7A', sleeve: '#ECE3CA', secondary: '#7A8CB8', hair: '#5A4634', rank: CROW.strap },
+    proportions: { ...CROW_PROPS, torsoW: 21, torsoH: 25, hip: 17, upperLeg: 15, lowerLeg: 14, upperArm: 13, lowerArm: 12, armR: 3.8, legR: 4.8 },
+    crow: { head: 'watchcap', coat: 'slop', hair: 'crop', noRank: true },
+    weapon: { attach: 'handR', length: 26, draw: drawBelayingPin, headAt: 20 },
+    accessories: [{ attach: 'back', draw: crowBedroll }] },
+  anims: deckhandAnims,
+  traits: { weight: 0.8 },
+  ai: { attackRange: 40, attacks: [{ anim: 'club', range: 46, weight: 4 }, { anim: 'barge', range: 96, minRange: 44, weight: 2 }],
+    attackCooldown: [36, 76], retreatChance: 0.35 },
+});
 
 // ---------------------------------------------------------------- C1 Deck Crimper: bandana, cut-down jerkin, boat hook
 // The youngest hand on the deck: bare-armed, eager, leaning into everything. Back piece: a coil of boarding line.
@@ -239,6 +307,108 @@ const corsair = def({
     ranged: { anim: 'harpoon', minRange: 110, maxRange: 330, cooldown: 160, zAlign: true, keep: 150 },
     retreatBudget: 140, retreatChance: 0.2, evadeChance: 0.25, evadeCooldown: 120 },
 }, corsairHooks);
+
+// ---------------------------------------------------------------- C2b Grapnel Mate: peaked cap, goggles down, pea coat, grapnel
+// A petty officer one rung over the Corsair: broad, long-armed, planted wide like a man who hauls line for a living.
+// Quartermaster Skree's trick in miniature (midboss2.js): THE GRAPNEL LINE goes out flat down the lane, and whoever
+// it bites is REELED back along it into his hands - the engine's grapple reel (projectile.js onHit 'reel' ->
+// startGrab), the same path Pip's Grapple Shot uses. Three squeezes, then the throw goes BACKWARD over his shoulder
+// (grabs.js dir -1): on a railed deck the hero is thrown at the edge behind him, which is what the trick is for.
+/** The grapnel head on its line: the iron as drawGrapnelIron draws it in the fist, plus the line back to that fist. */
+const LINE_J = { x: 0, y: 0 };
+function drawGrapnelLine(ctx, p, sx, sy) {
+  const y = sy - p.r, d = p.facing, o = p.owner;
+  // a chained projectile with a custom draw owns its own line (projectile.js only draws the default chain): rope
+  // over a dark stroke, from the Mate's near hand to the iron - and while it reels, the iron rides the hero
+  if (o && o.rig) { const j = jointScreen(o.rig, 'handN', LINE_J); line(ctx, j.x, j.y, sx, y, CROW.outline, 3.5); line(ctx, j.x, j.y, sx, y, CROW.rope, 2); }
+  ctx.save(); ctx.translate(sx, y); ctx.scale(d, 1);
+  pathPoly(ctx, [-12, -2, 4, -2, 6, 0, 4, 2, -12, 2]); paint(ctx, CROW.pewterDark, CROW.outline, 1);
+  pathPoly(ctx, [4, -1, 11, -6, 8, -13, 2, -10, 5, -4]); paint(ctx, CROW.pewter, CROW.outline, 1);
+  pathPoly(ctx, [4, 1, 11, 6, 8, 13, 2, 10, 5, 4]); paint(ctx, CROW.pewter, CROW.outline, 1);
+  pathPoly(ctx, [4, -3, 15, 0, 4, 3]); paint(ctx, CROW.pewter, CROW.outline, 1);
+  ctx.restore();
+}
+/**
+ * The line. `onHit: 'reel'` is the whole mechanic: the contact hit lands (8, medium, and kbX -6 starts the hero
+ * moving toward him), then projectile.js drags the hero to his grab offset over `reelFrames` and hands them to
+ * startGrab - or drops the line if he is hit first (updateReel bails on o.inHitstun), which is the counterplay.
+ * Not reflectable: a hook on a rope has no "bat it back" the way the Corsair's harpoon does; you duck it or you
+ * hit the man holding it. `pierce: 0` and `chained`: a miss retracts to the hand.
+ */
+const GRAPLINE = {
+  style: 'bolt', chained: true, speed: 6.5, damage: 8, type: 'medium', kbX: -6, kbY: 0, hitstun: 20, maxDist: 240, life: 80,
+  offsetX: 22, offsetY: 46, r: 6, pierce: 0, muzzle: false, color: CROW.pewter, draw: drawGrapnelLine, onHit: 'reel', reelFrames: 14, hitSfx: 'hook_yank',
+};
+/** Frames the iron stays off the fist after a shot: maxDist / speed (37) plus the retract of a miss. */
+const LINE_FRAMES = 44;
+const MATE_CARRY = { armR: [28, 22], weapon: -18, armL: [-24, -16] };
+const MATE_STANCE = { lean: 4, head: -2, legR: [14, 4], legL: [-14, 8], grab: true };
+/** drawFace options for the goggled head: the brow bars go brass, so a glare reads as the rims tilting. */
+const GOGGLED = { brow: CROW.brass };
+const grapnelAnims = crowAnims(MATE_CARRY, MATE_STANCE, {
+  // grapnel: 28f whirling the iron up behind him (the lenses light) -> the cast, flat down the lane -> 30f paying
+  // out line, punishable: hit him now and the line goes slack under the hero
+  grapnel: crowStrike({
+    tell: 28, active: 6, recovery: 30, carry: MATE_CARRY, lean: 4, rest: rest(MATE_STANCE), tellSfx: 'crow_call', sfx: 'hook_yank',
+    event: 'spawnProjectile', projectile: GRAPLINE, fx: [{ kind: 'spark', x: 38, y: 46, count: 3 }],
+    w1: { armR: [-64, -34], weapon: -60, armL: [34, 22], torso: -4, head: -4, root: [-2, 0], legR: [16, 6], legL: [-18, 10], face: 'angry' },
+    w2: { armR: [-126, -18], weapon: -96, armL: [46, 26], torso: -12, head: -8, root: [-5, 1], legR: [14, 6], legL: [-20, 12], squash: 0.97, stretch: 1.03, face: 'angry' },
+    h: { armR: [82, -12], weapon: 4, armL: [-40, 20], torso: 24, head: 6, root: [6, 1], legR: [42, 10], legL: [-32, 32], face: 'shout', squash: 1.04, stretch: 0.97 },
+    smear: { from: -104, to: 8, a: 0.4, r: 54 },
+    hold: { armR: [86, -10], weapon: 10, armL: [-42, 20], torso: 26, head: 7, root: [7, 1], legR: [42, 10], legL: [-32, 32], face: 'shout' },
+    r: { armR: [66, 6], weapon: -2, armL: [-30, 14], torso: 16, head: 2, root: [3, 1], legR: [34, 10], legL: [-26, 26], face: 'grit' },
+  }),
+});
+/**
+ * Line and throw bookkeeping. `lineOut` counts the frames the iron is on the wire (the fist shows a rope end and
+ * the drum spins: rig.fired), set from the cast's own spawnProjectile event and cleared the moment a grab starts.
+ * THE BACK THROW: grabs.js only ever throws forward on its own (grabHit -> throwTarget(1) after moves.grabHit.hits),
+ * so the def's `hits` is set one squeeze past `ai.grabHoldHits` as a fallback the hook pre-empts: once the third
+ * squeeze has played out and the hold loop is back, the hook calls throwTarget(-1) itself. fighter.update runs
+ * updateGrab, then this hook, then think (the squeeze timer), so the hook always sees the hold before the next
+ * squeeze can fire. onThrow closes the attack the reel interrupted: the grab was entered from inside the grapnel's
+ * ST.ATTACK, so finishAttack never ran and neither the cooldown nor the token was released.
+ * @type {Hooks}
+ */
+const grapnelHooks = {
+  onSpawn(f) { f.lineOut = 0; },
+  onUpdate(f, world) {
+    BASE_HOOKS.onUpdate(f, world);
+    if (f.lineOut > 0) f.lineOut--;
+    f.rig.fired = f.lineOut > 0;
+    if (f.state === ST.GRAB && f.grabTarget && !f.throwPending && f.grabHits >= f.ai.grabHoldHits && f.anim.name === 'grabHold') f.throwTarget(-1);
+  },
+  onAnimEvent(f, name) { if (name === 'spawnProjectile') f.lineOut = LINE_FRAMES; return false; },
+  onGrab(f) { f.lineOut = 0; },
+  onThrow(f) { f.attackCooldown = Math.max(f.attackCooldown, 70); f.currentAttack = null; f.releaseToken(); },
+};
+const grapnel = def({
+  variant: 'grapnel', name: 'GRAPNEL MATE', role: 'grabber', hp: 120, damage: 1, speed: 0.9, score: 550, drops: 'meter',
+  // 120 frames of hold before the engine's own forward auto-throw: the three squeezes and the back throw take ~90
+  grabHoldFrames: 120,
+  build: { ...BASE.build, scale: 1.05, clan: WATCH.grapnel,
+    // pea-coat navy a step darker and greyer than the Wing coat (the lapels carry the light: CROW.lapel); the duck
+    // sits between the Crimper's and the Marine's so torso / hips keep their value step
+    palette: { ...CROW_PAL, primary: '#243356', sleeve: '#EADFC4', secondary: '#6280C2', hair: '#4A3226', rank: WATCH.grapnel },
+    // rangy, not barrel-chested: the Bosun is the faction's barrel (27 x 25 at 1.15) and the Mate at 23 x 26 measured
+    // an idle IoU of 0.761 against him (bound 0.79); a taller, narrower trunk with the longest arms on the deck is
+    // what a line hauler is, and it is what keeps the two broad rates apart at squint scale
+    proportions: { ...CROW_PROPS, torsoW: 22, torsoH: 28, hip: 18, upperArm: 17, lowerArm: 16, armR: 4.4, handR: 5, upperLeg: 15, lowerLeg: 14, legR: 5.4, bulge: 0.5 },
+    // petty officer: armband + cap band, two carriers like the Corsair, one rung hotter. No rank cuff (that starts
+    // at the Marine) and the scarf stays neutral strap like every other scarf on the deck.
+    crow: { head: 'peaked', coat: 'peacoat', hair: 'crop', goggled: true, faceOpts: GOGGLED, scarf: CROW.strap, scarfLen: 2 },
+    weapon: { attach: 'handR', length: 30, draw: drawGrapnelIron, headAt: 24 },
+    accessories: [{ attach: 'back', draw: crowDrum }, { attach: 'torso', draw: crowScarf }] },
+  anims: grapnelAnims,
+  traits: { flinchEvery: 2, weight: 1.2 },
+  moves: { grabHit: { damage: 6, hits: 5 }, throwFwd: { damage: 16, vx: 8, vy: 5 }, throwBack: { damage: 18, vx: 11, vy: 4, releaseAt: 6 } },
+  // a line rate, not an elite: he takes a stormcrow token like the rest (ROLE_DEFAULTS.grabber would ignore them).
+  // flank: false, unlike the faction BASE - a flanker walks in on an offset z lane until it is 70 px out, and the
+  // attack gate (adz <= zTolerance) never opened at 80-240, so the line was only ever cast by accident. He comes
+  // straight down your lane, casts the moment the cooldown clears, and closes to the grab if it misses.
+  ai: { attackRange: 46, zTolerance: 14, attackCooldown: [56, 100], grabHoldHits: 3, grabHitEvery: 18, ignoresTokens: false, tellWarnFrames: 12, flank: false,
+    attacks: [{ anim: 'grab', tell: 'grabTell', range: 46, weight: 3 }, { anim: 'grapnel', range: 240, minRange: 80, weight: 3 }] },
+}, grapnelHooks);
 
 // ---------------------------------------------------------------- C3 Powder Bosun: bald, bearded, powder smock + keg
 // Barrel-chested and short-legged, planted wide; the only one with bare arms to the shoulder and a beard.
@@ -414,5 +584,5 @@ const marine = def({
     backstepAfterWhiffs: null },
 }, marineHooks);
 
-/** The Ninth Wing, in the order the stage introduces them. */
-export const STORMCROWS = [crimper, corsair, bosun, galewright, marine];
+/** The Ninth Wing, in the order the stage introduces them; the issue #28 pair (pressed crew, petty officer) appended. */
+export const STORMCROWS = [crimper, corsair, bosun, galewright, marine, deckhand, grapnel];
