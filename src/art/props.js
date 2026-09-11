@@ -596,7 +596,9 @@ export const PROP_TYPES = {
    *  Always shatters on landing (Prop.break), whether or not it hit anything on the way (no durability to spend). */
   bottle: { w: 10, h: 18, hp: 4, drops: null, draw: bottle, color: BOTTLE_GLASS,
     throw: { speed: 8, vy: 1, gravity: 0.22, damage: 8, type: 'light', kbX: 2, kbY: 0, hitstun: 14, pierce: 0, maxDist: 220, spin: 0.6 } },
-  lamp: { w: 16, h: 26, hp: 6, drops: null, draw: lamp, color: BRASS,
+  /** A lit oil lamp, so breaking or throwing one is a fire source like `lantern` above: on a board with gas
+   *  (the Tailings' seeps, the Gas-Halls' cells) a thrown lamp lights it. */
+  lamp: { w: 16, h: 26, hp: 6, drops: null, draw: lamp, color: BRASS, fire: true,
     throw: { speed: 7, vy: 1.2, gravity: 0.25, damage: 12, type: 'medium', kbX: 3, kbY: 2, hitstun: 18, pierce: 0, maxDist: 200, spin: 0.4 } },
   // ---- boards 2-4 (issue #27). Behaviour fields items.js reads besides roll / rollHit / explode / fall / valve / jumpOnly:
   //      release { type, variant, mods? }  a live enemy tips out on break (a stage entry overrides it or sets release: null)

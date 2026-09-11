@@ -79,7 +79,7 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
   still plays, it just falls back to defaults every session and nothing throws.
 - **Training**: TRAINING on the title menu, then pick a hero, opens the Funicular roof with a standing
   dummy. Its pause plate (same Escape/Start as a real run) sets the dummy to STAND, BLOCK-STAGGER or
-  CPU, picks any of the 25 enemy variants, locks its facing so you can practice hits from behind, locks
+  CPU, picks any of the 31 enemy variants, locks its facing so you can practice hits from behind, locks
   your meter full or empty, and toggles a hitbox overlay and a frame-data readout under the HUD. MOVES
   (from either pause plate) lists every move with its bound key and a short description, animating the
   rig beside each row. TRIALS gives each hero a handful of scripted combos and setups to land — a combo,

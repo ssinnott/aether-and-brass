@@ -569,7 +569,7 @@ Training (issue #22): `title → select(next:'training') → training ⇄ trainp
 section through a derived arena stage (every section stripped of props/hazards/zones/waves, so nothing
 but the floor and one or two dummies exist in the room); its `pauseScreenId` is `'trainpause'` instead of
 `'pause'`. `trainpause.js` is a sibling of `pause.js` (shares its extracted `drawPlate` / `drawMenuRows` /
-`consumeMenuBuffers` helpers) with rows for DUMMY (STAND/BLOCK-STAGGER/CPU), VARIANT (any of the 25
+`consumeMenuBuffers` helpers) with rows for DUMMY (STAND/BLOCK-STAGGER/CPU), VARIANT (every non-boss entry of `game.enemyList`, 31 today
 non-boss enemies), FACING lock, REFILL HEALTH, METER lock, HITBOXES overlay, FRAME DATA readout, RESET
 POSITIONS, MOVES and TRIALS. `moves.js` (pushed from either pause plate; hidden from the normal plate
 while `game.net.active`) lists a hero's `moveList` with an animated rig preview beside each row and its

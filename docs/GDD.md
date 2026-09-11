@@ -319,7 +319,7 @@ Global: Escape pauses/unpauses, M mutes, F1 debug overlay. Any free slot joins b
 - **Training room:** TRAINING on the title menu opens character select into the Brass Funicular roof
   stripped of its props, hazards, waves and the rails ring-out, holding one standing practice dummy. Its
   own pause plate swaps the dummy between standing still, blocking with an armored stagger, or fighting
-  back as any of the 25 rank-and-file variants; locks its facing so a hero can drill a move that only
+  back as any of the rank-and-file variants; locks its facing so a hero can drill a move that only
   connects from behind; tops up health,
   locks the meter full or empty, and overlays hitboxes and a live startup/active/recovery frame-data
   readout under the HUD. MOVES lists every move with its bound key and a one-line description, the rig
