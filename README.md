@@ -156,10 +156,14 @@ behind you is being repaired. Board 3 is **locked until you clear board 2**. Ful
 Three organisations are down and the field west of the city is full of them. The Gleaning have worked
 the tailings since before the guild had a name, and they have been out under every fight you have had,
 taking the pieces up as they fell. The Tailings (a rose dusk over the spoil heaps, gas seeping out of
-them, salvage lines going up into a sky full of bladders) → The Lash-Up (the guild's float, a raft of
-other people's wrecks hung over the field on forty bladders, with no bulwark anywhere) → The Crop Loft
-(inside the biggest bag they own, net decking over a drop, four boards' worth of stripped war hanging
-overhead in cargo nets).
+them that is harmless until something lights it, sinking spoil, salvage lines going up into a sky
+full of bladders) → The Lash-Up (one locked screen on the guild's float, a raft of other people's
+wrecks drifting over the field on forty bladders, ballast falling from them and no bulwark anywhere)
+→ The Press (the decked-in end of the float, where the Reeve bales the crop and the guild first flies
+and re-plates the Concordat's own machines) → The Crop Loft (inside the biggest bag they own, net
+decking that gives way under a heavy landing, four boards' worth of stripped war hanging overhead in
+cargo nets that dump it on you). Sootborn work the field, the grounded Ninth Wing flies for whoever is
+buying, and the sky fills up as you go.
 
 The board where the fight is mostly above you: anti-air is not a tactic here, it is the tactic, and every
 landing is the opening. Board 4 is **locked until you clear board 3**, and it is the last one. Full design
