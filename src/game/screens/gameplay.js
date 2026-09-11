@@ -53,7 +53,9 @@ export class GameplayScreen extends Screen {
     // since the runner only locks when !nowaves); every other caller keeps reading game.options as before.
     const nowaves = params.nowaves != null ? !!params.nowaves : !!opt.nowaves;
     const section = params.section != null ? params.section | 0 : (opt.section || 0);
-    this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves, startSection: section });
+    // ?event=<id> (issue #33): the runner resolves the id to its section and arms it once the party is in place
+    const event = params.event != null ? params.event : (opt.event || '');
+    this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves, startSection: section, startEvent: event });
     this.runner.start();
     for (const s of opt.spawn || []) this.spawnEnemy(s.type, s.variant, s.dx, s.dz);
     if (!params.resume && !(section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);

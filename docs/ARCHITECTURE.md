@@ -471,7 +471,8 @@ export const stage1 = {
           reinforcements: [ { whenRemaining: 1, spawns: [ ... ] } ]   // optional
         },
       ],
-      events: [ { atX: 1050, kind: 'midboss' | 'bossIntro' | 'text', ... } ]
+      events: [ { id: 'overfire', onWaveClear: 2, once: true, actions: [ { caption: '...' }, { wait: 120 }, ... ] },
+                { atX: 1050, kind: 'text', text: '...' } ]   // `kind: 'text'` is the old one-banner shorthand
     }, ...
   ],
   midboss: { atX: ..., def: 'midboss' },
@@ -536,6 +537,29 @@ from and lockstep netplay never sees a late coin flip. A prop entry forwards eve
 `hp`, `drops`, `solid`, `rider`, `release: { type, variant, mods? } | null` (a live enemy tips out on break), `dump:
 'chassis'` (an overhead net drops a rolling prop when a jump attack hits it) and `fire` (a breaking fire source lights gas
 seeps through `world.addFire`). `art/props.js` `PROP_FAMILIES` names which prop types belong to which board's palette.
+
+`events` (issue #33, `game/events.js`) is a frame-stepped action script per section, armed when the trigger position
+passes `atX` (the same `reach` wave triggers use) or when the section's Nth wave clears (`onWaveClear: n`, counted
+**per section**, not stage-wide). The actions and what each one blocks for are tabulated in the ACTION TABLE at the
+head of that module: `caption`, `wait` (the only action that spends time — `wait: N` is exactly N frames), `camera`,
+`sfx`, `music`, `hazardSet`, `zoneFlash`, `spawn` and `prop`. A run of instant actions all lands on one frame, so
+`{caption}, {sfx}, {zoneFlash}` reads as a single beat.
+
+`hazardSet: { name, force?, period?, frames? }` addresses hazards by an optional author key (`name` on the hazard
+spec) because `Entity.id` differs between lockstep peers and is deliberately unhashed. It only ever touches
+per-instance fields — writing through `h.info` would retime that hazard TYPE on every board for the rest of the page
+load, since `HAZARD_TYPES` is a shared live table — and it lands in the same place the gas cell's `spent` flag does,
+because `phase` is recomputed from `(world.frame + offset) % period` every step and assigning it anywhere else is
+overwritten next frame. Retiming re-solves `offset` so the hazard keeps its place in its own cycle; setting `period`
+alone can drop a hazard straight into `active` with no tell, which GDD 6 forbids. Every override is handed back when
+its `frames` run out, when the script ends, and when the section is left.
+
+Content rules a script can break where a hazard cannot: never inside a boss arena, never during a transition, and
+every event warns before it hurts (a caption plus a `zoneFlash` or a tell SFX, with enough `wait` for a bot to walk
+out). One is a soft-lock rather than a fairness problem: **a `spawn` action must never introduce a summoner**. The
+wave lock clears on `world.waveEnemies.length === 0`, and the Chandlery's Resurrection Man tips a fresh Tin Footman
+out of his cart on a timer — in an authored wave you stop that by killing him, but dropped in from a script he is
+simply a section that cannot end.
 
 A section may declare `platform: { kind, ... }` (issue #32, `game/platforms.js`), which makes the floor band itself a
 vehicle rather than only its backdrop. Kinds and their fields are tabulated in the PLATFORM TABLE at the head of that
@@ -664,7 +688,10 @@ Layout: slots 0-1 only keeps the mirrored two-column strip (P1 left, P2 right); 
 URL params: `?debug=1` (hitboxes, hurtboxes, AI state labels, FPS), `?autotest=1`
 (test mode: no audio context, no rAF loop, seeded rng, `window.__game` fully populated),
 `?seed=123`, `?skipTo=gameplay&chars=0,2&section=3` (jump straight into gameplay with
-chosen characters and section), `?stage=2` (which board to play; honoured outside dev mode
+chosen characters and section), `?event=<id>` (issue #33: start in the section that owns that scripted event, just
+short of its trigger, so an author can iterate on one without replaying the board; dev-only and inert in netplay, for
+the same reason `?enemythrow=1` is — the START packet does not carry it, so a peer without the flag would simulate a
+different world), `?stage=2` (which board to play; honoured outside dev mode
 too, and it opens that board on BOARD SELECT for the page load), `?unlockall=1` (open every board for
 this page load, save untouched), `?resetprogress=1` (wipe the saved unlocks and, issue #22, the saved
 trial ticks under `aetherAndBrass.trials.v1`), `?godmode=1`, `?bot=1`
@@ -705,7 +732,12 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   followed by this.
 - `npm run build` → `node tools/build.js` → esbuild bundles `src/main.js` (IIFE, minified
   off) and inlines it + CSS into `dist/index.html` (single file, no external refs).
-- `npm test` → `node tools/playtest.js`: starts the server, launches headless Chromium
+- `npm test` → `node tools/simtest.js && node tools/playtest.js`. The first is a PURE-NODE suite (issue #33, the
+  same shape as `tools/nettest.js`: no browser, no canvas, no audio context) covering the sim modules whose
+  correctness is ORDERING rather than rendering — event action sequencing, entrance frame budgets, platform
+  defaults. It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
+  after six minutes of playthroughs. `npm run simtest` runs it alone. The second:
+  starts the server, launches headless Chromium
   via the globally installed Playwright (`NODE_PATH=/opt/node22/lib/node_modules` or
   local dep), runs scenarios and writes screenshots to `tools/screens/`:
   1. `boot`: title screen renders, START reaches BOARD SELECT and then character select, zero errors.
@@ -742,6 +774,11 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      airborne one does not), the Sootfoot Docks cargo pallet (a body on it is carried, one off it is left behind) and
      the Tallow Works hoist (a climbing hoist pulls an airborne body down faster than gravity alone, and leaves a
      grounded one alone) — plus the regression that the Brass Funicular declares no platform.
+  3h. `events` (`tools/scenarios/events.js`, issue #33): the browser half of the event system — `?event=<id>` starts
+     in the section that owns it, board 1's over-fire script warns with a `zoneFlash` BEFORE it forces all three dais
+     vents open together and hands every override back afterwards, board 2's broadside forces its two guns one after
+     the other rather than together, and an unknown id is inert rather than a crash. Action sequencing itself is in
+     `tools/simtest.js`.
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.

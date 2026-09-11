@@ -56,6 +56,10 @@ export function parseOptions(search = window.location.search) {
     botStyle: devOnly ? (q.get('botstyle') || '').split(',').map((s) => s.trim()).filter(Boolean) : [],
     godmode: devOnly && flag('godmode'),
     section: devOnly ? (parseInt(q.get('section') || '0', 10) || 0) : 0,
+    // ?event=<id> (issue #33): start just before that scripted event and arm it, for iterating on one without
+    // replaying the board. Dev-only and inert in netplay for the same reason `enemythrow` is -- the START packet
+    // does not carry it, so a peer without the flag would simulate a different world.
+    event: devOnly ? (q.get('event') || '') : '',
     // which board to play: 1-based stage number (see content/stage/index.js). Honoured outside dev mode too so a
     // link can point straight at a board, and it opens that board on BOARD SELECT for this page load (game/progress.js).
     stage: q.has('stage') ? (parseInt(q.get('stage'), 10) || 1) : 1,

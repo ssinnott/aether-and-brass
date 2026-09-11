@@ -219,8 +219,8 @@ export const stage3 = {
       // the house drops its ledgers off the galleries (a growing shadow, then the book lands), and one lime lamp on the
       // counting floor is a pit: the lamp is the tell
       hazards: [
-        { type: 'ledgerDrop', x: 3980, z: 100, period: 240, tell: 36, active: 8 },
-        { type: 'ledgerDrop', x: 4320, z: 40, period: 240, tell: 36, active: 8, offset: 120 },
+        { type: 'ledgerDrop', name: 'galleries', x: 3980, z: 100, period: 240, tell: 36, active: 8 },
+        { type: 'ledgerDrop', name: 'galleries', x: 4320, z: 40, period: 240, tell: 36, active: 8, offset: 120 },
         { type: 'limePit', x: 4560, z: 110, period: 180, tell: 30, active: 40 },
       ],
       /** The counting floor: the desk edge vents lime as the Factor's harness eats the room (4 damage every 30f inside). */
@@ -255,7 +255,32 @@ export const stage3 = {
           one(B, 'duelist', 'left', 60, 150),
         ], reinforcements: [{ whenRemaining: 2, spawns: [...wick(2, { z0: 30, dz: 80 }), one(C, 'runner', 'left', 70, 60)] }] },
       ],
-      events: [],
+      /**
+       * THE LAMPS GO GREEN (issue #33). The company's lime lamps come up all down the counting floor and the house
+       * answers: the galleries start dropping ledgers twice as fast, and the Chandlery sends down everyone it has
+       * left -- a Resurrection Man and two Tallymen, all at once, all marking the floor. The board's whole thesis in
+       * one moment: you cannot cancel every rite, so you pick. The lamps themselves are the two-second warning, and
+       * the gallery retiming reverts with the event.
+       */
+      events: [
+        { id: 'lampsgreen', onWaveClear: 2, once: true, actions: [
+          { caption: 'THE LAMPS GO GREEN', sub: 'THE HOUSE IS COUNTING', life: 150 },
+          { sfx: 'chime' }, { music: 'midboss3' },
+          { zoneFlash: { x0: 3700, x1: 4800, z0: 0, z1: 140, frames: 240, color: '#D8FF6E' } },
+          { wait: 120 },
+          { hazardSet: { name: 'galleries', period: 120 } },
+          { camera: { shake: 5, frames: 18 } },
+          // Tallymen and a Limeburner, deliberately NOT the Resurrection Man: his RECREW tips a fresh Tin Footman out
+          // of the cart on a timer, so an event that spawns him hands the wave lock an enemy source that never runs
+          // dry and the section can never clear. See the SPAWN rule in game/events.js.
+          { spawn: [
+            { type: 'chandler', variant: 'tallyman', z: 30, delay: 0, entrance: { kind: 'teleport', dx: -110 } },
+            { type: 'chandler', variant: 'limeburner', z: 70, delay: 40, entrance: { kind: 'teleport', dx: 0 } },
+            { type: 'chandler', variant: 'tallyman', z: 116, delay: 80, entrance: { kind: 'teleport', dx: 110 } },
+          ] },
+          { wait: 600 },
+        ] },
+      ],
     },
   ],
   /** Yardmaster Marl holds the kiln head at the far end of the works. */

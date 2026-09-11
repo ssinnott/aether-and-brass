@@ -231,6 +231,11 @@ export class Hazard extends Entity {
     this.halfW = spec.halfW || this.info.halfW || 0;
     this.drift = spec.drift != null ? spec.drift : (this.info.drift || 0);
     this.shadowW = 0;
+    /** Author key (issue #33): a `hazardSet` action addresses every hazard sharing this name. Optional and free-form;
+     *  Entity.id cannot be used because it differs between lockstep peers and is deliberately unhashed. */
+    this.name = spec.name || '';
+    /** Scripted phase override, or null: { phase: 'active'|'idle', period, offset, until } (issue #33 hazardSet). */
+    this.forcePhase = null;
     this.phase = 'idle'; this.t = 0; this.lastHit = -99;
     /** fighter id -> world frame this hazard may hit it again (see HAZARD_GRACE). */
     this.immune = new Map();
@@ -292,6 +297,14 @@ export class Hazard extends Entity {
     this.phase = this.t >= this.activeStart ? 'active' : this.t >= this.tellStart ? 'tell' : 'idle';
     // a gas cell that was lit stays empty (idle) until its cycle comes round again
     if (this.spent) { if (this.t < this.tellStart) this.spent = false; else this.phase = 'idle'; }
+    // A scripted override (issue #33 `hazardSet`) lands HERE, after the recompute, for the same reason `spent` does:
+    // `phase` is derived from (world.frame + offset) % period every single step, so assigning it anywhere else is
+    // overwritten the next frame. Forcing 'idle' also makes dangerBox() return null (it keys off phase), so enemies
+    // and the autopilot stop routing around a hazard the script has switched off -- for free.
+    if (this.forcePhase) {
+      if (this.forcePhase.until != null && world.frame >= this.forcePhase.until) this.forcePhase = null;
+      else if (this.forcePhase.phase) this.phase = this.forcePhase.phase;
+    }
     if (this.phase === 'idle') { this.wagonX = this.x; this.cloudX = this.x; }
     const visible = world.camera.isVisible(this.liveX, 120);
     if (!visible) return;
@@ -1225,6 +1238,47 @@ export class Zone extends Entity {
     ctx.stroke();
     // a barricade that can still be broken keeps a live brass edge so it reads as a target, not as scenery
     if (this.breakable) { ctx.fillStyle = (f & 8) ? '#e2b34a' : '#8a5a1c'; ctx.fillRect(x0 + 1, y - 1, w - 2, 1); }
+  }
+}
+
+/**
+ * A scripted warning patch (issue #33 `zoneFlash`): the fair warning an event owes the player before it changes the
+ * room. It is an `fx` entity with a finite life that flags `isHazard` and answers `dangerBox()` for exactly that
+ * life, so `laneAroundHazards` steers mobs and the autopilot out of the patch while it flashes and stops the moment
+ * it expires. A PERMANENT box here would be a bug, not a nicety: enemies would refuse that lane for the rest of the
+ * board and a purely visual action would have become simulation.
+ */
+export class ZoneFlash extends Entity {
+  /** @param {{x0:number, x1:number, z0?:number, z1?:number, frames?:number, color?:string}} spec */
+  constructor(spec) {
+    super('fx');
+    this.x0 = spec.x0; this.x1 = spec.x1;
+    this.z0 = spec.z0 != null ? spec.z0 : Z_MIN;
+    this.z1 = spec.z1 != null ? spec.z1 : Z_MAX;
+    this.x = (this.x0 + this.x1) / 2; this.z = -4; this.shadowW = 0;
+    this.life = Math.max(1, spec.frames || 120); this.t = 0;
+    this.color = spec.color || TELL_RED;
+    this.isHazard = true;
+  }
+  hurtbox() { return null; }
+  dangerBox() { return { x0: this.x0, x1: this.x1, z0: this.z0, z1: this.z1 }; }
+  update() { if (++this.t >= this.life) { this.removeMe = true; this.alive = false; } }
+  draw(ctx, cam) {
+    const sy0 = FLOOR_TOP + cam.shakeY, x0 = Math.max(0, cam.toScreenX(this.x0)), x1 = Math.min(VIEW_W, cam.toScreenX(this.x1));
+    if (x1 <= x0) return;
+    const y = sy0 + this.z0, h = Math.max(2, this.z1 - this.z0);
+    // a hatched patch that beats faster as it runs out: the same read as a hazard's tell, at section scale
+    const k = this.t / this.life, beat = (this.t % Math.max(4, Math.round(14 - 10 * k))) < 3;
+    ctx.save();
+    ctx.globalAlpha = 0.16 + 0.14 * k;
+    ctx.fillStyle = this.color; ctx.fillRect(x0, y, x1 - x0, h);
+    ctx.globalAlpha = beat ? 0.9 : 0.45;
+    ctx.strokeStyle = beat ? '#ffffff' : this.color; ctx.lineWidth = 1;
+    ctx.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, h - 1);
+    ctx.globalAlpha = 0.3 + 0.2 * k; ctx.beginPath();
+    for (let x = x0 - h; x < x1; x += 12) { ctx.moveTo(x, y + h); ctx.lineTo(x + h, y); }
+    ctx.stroke();
+    ctx.restore();
   }
 }
 

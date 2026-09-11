@@ -155,8 +155,8 @@ export const stage2 = {
       // the aft gun at the left edge fires up the back lane (z 4..40); the forward gun at the right edge fires down the front
       // lane (z 100..136) half a cycle later. 45f of the gun running out and the lane lighting, then the shot: 12 + knockdown.
       hazards: [
-        { type: 'cannon', x: 3604, z: 22, dir: 1, lane: 36, period: 360 },
-        { type: 'cannon', x: 4236, z: 118, dir: -1, lane: 36, period: 360, offset: 180 },
+        { type: 'cannon', name: 'aft', x: 3604, z: 22, dir: 1, lane: 36, period: 360 },
+        { type: 'cannon', name: 'forward', x: 4236, z: 118, dir: -1, lane: 36, period: 360, offset: 180 },
       ],
       /** Rails both sides (throw-overs ring out) and the bank: the gust alternates direction each cycle. */
       zones: [{ type: 'rails', x0: 3600, x1: 4240 }, { type: 'gust', x0: 3600, x1: 4240, dir: 0 }],
@@ -175,7 +175,28 @@ export const stage2 = {
         { at: 80, spawns: [{ type: C, variant: 'galewright', side: 'left', z: 60, delay: 0 }, { type: B, variant: 'warden', side: 'right', z: 80, delay: 30 },
           { type: B, variant: 'sapper', side: 'right', z: 20, delay: 70 }, ...crimp(2, { z0: 40, dz: 80, delay0: 100 })] },
       ],
-      events: [],
+      /**
+       * BROADSIDE (issue #33). A call comes off the bridge and the whole gun deck fires down one lane, then down
+       * the other ninety frames later -- which is the point: there is no lane that is safe for both, so it is a
+       * question about where you are standing rather than a thing to out-run. Each barrel's own 45f run-out tell
+       * still plays, and the `zoneFlash` over its lane goes up two seconds before the first of them.
+       */
+      events: [
+        { id: 'broadside', onWaveClear: 2, once: true, actions: [
+          { caption: 'BROADSIDE', sub: 'CLEAR THE LANES', life: 140 },
+          { sfx: 'crow_call' }, { camera: { shake: 4, frames: 16 } },
+          { zoneFlash: { x0: 3600, x1: 4240, z0: 4, z1: 40, frames: 180, color: '#9B7BFF' } },
+          { wait: 120 },
+          { hazardSet: { name: 'aft', force: 'active', frames: 60 } },
+          { camera: { shake: 8, frames: 20 } },
+          { wait: 90 },
+          { zoneFlash: { x0: 3600, x1: 4240, z0: 100, z1: 136, frames: 150, color: '#9B7BFF' } },
+          { wait: 120 },
+          { hazardSet: { name: 'forward', force: 'active', frames: 60 } },
+          { camera: { shake: 8, frames: 20 } },
+          { wait: 90 },
+        ] },
+      ],
       /** The ship steadies on her new heading; a companion ladder up to the bridge deck with two Meat Pies at its foot. */
       transition: { kind: 'dock', banner: 'THE SHIP COMES ABOUT', look: 'ladder', pies: 2 },
     },

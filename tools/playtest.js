@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles platforms playthrough playthrough2 playthrough3 playthrough4 coop coop4 audio gallery botstyles options training weapons)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles platforms events playthrough playthrough2 playthrough3 playthrough4 coop coop4 audio gallery botstyles options training weapons)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 // This file is already close to its ~700-line budget: further scenarios belong in their own sibling
@@ -18,6 +18,7 @@ import { training as trainingScenario } from './scenarios/training.js';
 import { entrances } from './scenarios/entrances.js';
 import { obstacles } from './scenarios/obstacles.js';
 import { platforms } from './scenarios/platforms.js';
+import { events as eventScenario } from './scenarios/events.js';
 
 const { chromium } = loadPlaywright();
 
@@ -484,6 +485,10 @@ const scenarios = {
   // 3g. Moving platforms: tilt / pallet / hoist against the real authored sections, plus the regression that the
   // Brass Funicular declares none (issue #32, tools/scenarios/platforms.js).
   platforms: (server) => platforms(server, { withPage, assert }),
+
+  // 3h. Scripted mid-board events: the ?event= jump, a real script reaching the world, and hazard overrides being
+  // handed back afterwards (issue #33, tools/scenarios/events.js). Action SEQUENCING is in tools/simtest.js.
+  events: (server) => eventScenario(server, { withPage, assert }),
 
   // 4. Full bot playthrough to the results screen.
   async playthrough(server) {

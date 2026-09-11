@@ -180,7 +180,26 @@ export const stage4 = {
           ...chaff(1, { z0: 60, side: 'left', delay0: 100 }),
         ] },
       ],
-      events: [],
+      /**
+       * THE BLADDERS LET GO (issue #33). A salvage line parts overhead and an Iron Warden's stripped carcass comes
+       * down onto the float; a Winnow follows it down on her own silk to get a line back on it. Until she does, the
+       * carcass is the best weapon on the raft -- `chassis` rolls when it is struck -- so the beat is a question
+       * about whether you spend the time using it or the time stopping her taking it away.
+       */
+      events: [
+        { id: 'bladders', onWaveClear: 2, once: true, actions: [
+          { caption: 'THE BLADDERS LET GO', sub: 'SOMETHING IS COMING DOWN', life: 140 },
+          { sfx: 'crate_drop' },
+          { zoneFlash: { x0: 2040, x1: 2140, z0: 40, z1: 100, frames: 120, color: '#FF57B0' } },
+          { wait: 120 },
+          { prop: { type: 'chassis', x: 2090, z: 70, drops: COGS } },
+          { camera: { shake: 8, frames: 22 } }, { sfx: 'land_heavy' },
+          { wait: 60 },
+          { caption: 'SHE WANTS IT BACK', sub: '', life: 100 },
+          { spawn: [{ type: G, variant: 'winnow', z: 70, delay: 0, entrance: { kind: 'descend', dx: 60 } }] },
+          { wait: 240 },
+        ] },
+      ],
       /** The raft noses in against the press end; the hemp hoist platform is the landing, two pies on it. */
       transition: { kind: 'dock', banner: 'THE PRESS END', look: 'hoist', pies: 2 },
     },

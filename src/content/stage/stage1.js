@@ -143,9 +143,9 @@ export const stage1 = {
       ],
       // aether floor vents fire together on the music's downbeat (2s bars at 120 BPM)
       hazards: [
-        { type: 'aetherVent', x: 4900, z: 110, period: 120, active: 30, tell: 30, offset: 80 },
-        { type: 'aetherVent', x: 5260, z: 40, period: 120, active: 30, tell: 30, offset: 80 },
-        { type: 'aetherVent', x: 5480, z: 100, period: 120, active: 30, tell: 30, offset: 80 },
+        { type: 'aetherVent', name: 'daisVents', x: 4900, z: 110, period: 120, active: 30, tell: 30, offset: 80 },
+        { type: 'aetherVent', name: 'daisVents', x: 5260, z: 40, period: 120, active: 30, tell: 30, offset: 80 },
+        { type: 'aetherVent', name: 'daisVents', x: 5480, z: 100, period: 120, active: 30, tell: 30, offset: 80 },
       ],
       /** the dais: the band shrinks 20px per boss phase as steam vents open along its edges (4 dmg every 30f inside) */
       zones: [{ type: 'daisVents', x0: 5560, x1: 6000 }],
@@ -164,7 +164,25 @@ export const stage1 = {
           { type: B, variant: 'duelist', side: 'left', z: 30, delay: 110 },
           { type: S, variant: 'wrangler', side: 'left', z: 120, delay: 140 }, ...cut(3, { z0: 20, delay0: 160 })] },
       ],
-      events: [],
+      /**
+       * THE REGENT ENGINE OVER-FIRES (issue #33). After the second wave of the section a klaxon goes and the warning
+       * lamps come up red across the whole floor; ten seconds later every vent on it opens AT ONCE for eight
+       * seconds and the only safe ground is the dais. It is the exam for everything the board taught about vents:
+       * the warning is a caption, a klaxon and a `zoneFlash` you can stand outside of, and it lasts long enough to
+       * walk out of, because the vents do not open until 600 frames after the first word of it.
+       */
+      events: [
+        { id: 'overfire', onWaveClear: 2, once: true, actions: [
+          { caption: 'THE ENGINE IS OVER-FIRING', sub: 'GET TO THE DAIS', life: 150 },
+          { sfx: 'coil_charge' }, { camera: { shake: 5, frames: 20 } },
+          { zoneFlash: { x0: 4440, x1: 5540, z0: 0, z1: 140, frames: 600, color: '#4DF0E0' } },
+          { wait: 600 },
+          { caption: 'OVER-FIRE', sub: '', life: 90 },
+          { sfx: 'steam' }, { camera: { shake: 9, frames: 24 } },
+          { hazardSet: { name: 'daisVents', force: 'active', frames: 480 } },
+          { wait: 480 },
+        ] },
+      ],
     },
   ],
   /** Foreman Grubbik & the Hoister: cargo bay at the end of Foundry Row (conveyor + molten back edge, see section 2 zones). */

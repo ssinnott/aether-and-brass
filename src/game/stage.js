@@ -5,10 +5,11 @@
 import { VIEW_W, ST, UI, WAVE_EXTRA_BY_PARTY, PARTY_EXTRA_DELAY } from '../constants.js';
 import { createBackdrop, backdropsReady } from '../art/backgrounds/index.js';
 import { Prop } from './items.js';
-import { Hazard, Zone } from './hazards.js';
+import { Hazard, Zone, ZoneFlash } from './hazards.js';
 import { Transition, drawSpotlight, VictorySpectacle } from './transitions.js';
 import { entranceFor, entranceLanding, EntranceTell, teleportShove } from './entrances.js';
 import { createPlatform } from './platforms.js';
+import { EventRunner } from './events.js';
 import { clamp } from '../engine/math.js';
 import { audio } from '../engine/audio.js';
 import { particles } from '../engine/particles.js';
@@ -26,9 +27,9 @@ export class StageRunner {
   /**
    * @param {import('./world.js').World} world
    * @param {object} stage stage data (content/stage/stage1.js)
-   * @param {{ game: object, hud: object, screen: object, nowaves?: boolean, startSection?: number }} o
+   * @param {{ game: object, hud: object, screen: object, nowaves?: boolean, startSection?: number, startEvent?: string }} o
    */
-  constructor(world, stage, { game, hud, screen, nowaves = false, startSection = 0 }) {
+  constructor(world, stage, { game, hud, screen, nowaves = false, startSection = 0, startEvent = '' }) {
     this.world = world; this.stage = stage; this.game = game; this.hud = hud; this.screen = screen;
     this.nowaves = nowaves;
     this.sections = stage.sections;
@@ -44,10 +45,59 @@ export class StageRunner {
     this.transition = null; this.plate = null; this.pendingPlate = null; this.spotlightT = -1;
     this.music = '';
     this.startSection = clamp(startSection | 0, 0, this.sections.length - 1);
+    /** `?event=<id>` (issue #33): jump to this scripted event instead of the section start. */
+    this.startEventId = startEvent || '';
+    this.forceEvents = false;
     world.stage = this;
     world.spawnEnemy = (type, variant, x, z, opts) => this.screen.spawnEnemyAt(type, variant, x, z, opts);
     world.announce = (text, sub, life) => this.hud.showBanner(text, sub, life);
     world.onBossSpawn = (b) => this.onBossSpawn(b);
+    /**
+     * Scripted mid-board events (issue #33). The runner itself imports nothing from the engine — every effect it can
+     * have is in this bag — which is what lets tools/simtest.js step a whole script in pure Node with no canvas.
+     */
+    this.events = new EventRunner({
+      caption: (text, sub, life) => this.hud.showBanner(text, sub, life),
+      camera: (shake, frames) => this.world.camera.shake(shake, frames),
+      sfx: (name) => audio.play(name),
+      music: (track) => this.playMusic(track),
+      hazardSet: (spec) => this.hazardSet(spec),
+      hazardRevert: (token) => this.hazardRevert(token),
+      zoneFlash: (spec) => this.world.add(new ZoneFlash(spec)),
+      spawn: (specs) => this.queueSpawns(specs),
+      prop: (spec) => this.world.spawnProp(spec.type, spec.x, spec.z, spec),
+    });
+  }
+  /**
+   * `hazardSet` action: force every hazard tagged `name` into a phase and/or retime it, and hand back a token that
+   * restores exactly what was there. Writing through `h.info` would retime that hazard TYPE on every board for the
+   * rest of the page load (HAZARD_TYPES is a shared live table), so only per-instance fields are ever touched.
+   * @returns {{ hazards: Array<{h: object, forcePhase: object|null, period: number, offset: number}> }|null}
+   */
+  hazardSet(spec) {
+    const name = spec && spec.name;
+    if (!name) return null;
+    const token = { hazards: [] };
+    for (const e of this.world.entities) {
+      if (!e.isHazard || e.removeMe || e.name !== name) continue;
+      token.hazards.push({ h: e, forcePhase: e.forcePhase, period: e.period, offset: e.offset });
+      if (spec.force !== undefined) {
+        e.forcePhase = spec.force ? { phase: spec.force, until: spec.frames ? this.world.frame + spec.frames : null } : null;
+      }
+      // Retiming re-solves `offset` so the hazard stays at the same fraction of its cycle. Setting `period` alone
+      // makes (world.frame + offset) % period jump, which can drop a hazard straight into 'active' with no tell --
+      // the one thing GDD 6 says a hazard may never do.
+      if (spec.period) {
+        const frac = e.period ? (((this.world.frame + e.offset) % e.period) / e.period) : 0;
+        e.period = spec.period;
+        e.offset = Math.round(frac * spec.period) - (this.world.frame % spec.period);
+      }
+    }
+    return token.hazards.length ? token : null;
+  }
+  /** Undo a `hazardSet` (its own `frames` timer, or the event ending). */
+  hazardRevert(token) {
+    for (const t of (token && token.hazards) || []) { t.h.forcePhase = t.forcePhase; t.h.period = t.period; t.h.offset = t.offset; }
   }
 
   /** Place every prop / hazard / zone, position the camera, enter the first section. */
@@ -61,12 +111,22 @@ export class StageRunner {
       if (sec.transition) sec.transition._done = false;
       for (const ev of sec.events || []) ev._done = false;
     }
+    // `?event=<id>`: resolve the id to the section that owns it and start there, just short of its trigger, so an
+    // author can iterate on one event without replaying the board. `forceEvents` lets it run under ?nowaves=1 too.
+    let jumpTo = null;
+    if (this.startEventId) {
+      for (let i = 0; i < this.sections.length && !jumpTo; i++) {
+        for (const ev of this.sections[i].events || []) if (ev.id === this.startEventId) { jumpTo = { i, ev }; break; }
+      }
+      if (jumpTo) { this.startSection = jumpTo.i; this.forceEvents = true; }
+    }
     const sec = this.sections[this.startSection];
     // debug section skips start past earlier bosses
     if (this.stage.midboss && sec.x0 > this.stage.midboss.atX) this.midbossState = 'done';
     if (this.stage.boss && sec.x0 > this.stage.boss.atX) this.bossState = 'done';
-    if (this.startSection > 0) {
-      const x = sec.x0 + 40;
+    if (this.startSection > 0 || jumpTo) {
+      // land just short of an `atX` event so the walk into it is the thing being iterated on
+      const x = jumpTo && jumpTo.ev.atX != null ? Math.max(sec.x0 + 40, jumpTo.ev.atX - VIEW_W / 2 - 60) : sec.x0 + 40;
       this.world.camera.snapTo(x);
       this.world.camera.minX = Math.max(0, x);
       for (const p of this.world.players) p.x = x + 100 + (p.index || 0) * 40;
@@ -96,11 +156,16 @@ export class StageRunner {
     const track = (this.stage.music && this.stage.music[sec.backdrop]) || sec.backdrop;
     this.playMusic(track);
     this.sectionTimer = 0; this.timedIndex = 0; this.timedDone = !(sec.timedWaves && sec.timedWaves.length);
+    // waves cleared IN THIS SECTION. `wavesCleared` is a stage-wide running total, which would make an author write
+    // `onWaveClear: 14` to mean "after the second wave of the last section"; this is the number they actually mean.
+    this.sectionWaves = 0;
     // issue #32: the section's moving floor, if it has one. Built here (the only place a section is entered from --
     // update() and Transition.switchSection both come through here) and thrown away with the section, keyed to the
     // world frame we arrived on so its whole phase is derivable rather than stored.
     this.platform = createPlatform(sec, this.world.frame);
     this.world.platform = this.platform;
+    // a script belongs to the section that authored it: leaving mid-event reverts every hazard override it made
+    if (this.events) this.events.cancel();
     if (!first || this.startSection > 0) this.hud.showBanner(sec.name || sec.id.toUpperCase(), sec.sub || '', 90);
     if (sec.mode === 'locked' && !this.nowaves) this.world.camera.lock(sec.x0, sec.x1);
   }
@@ -124,6 +189,10 @@ export class StageRunner {
       this.enterSection(next);
     }
     if (this.goTimer > 0) this.goTimer--;
+    // The event script is stepped HERE, above the victory / boss / nowaves returns, because checkTriggers is not
+    // frame-stepped at all -- it does not run while a wave is active, and a script driven from there would stall
+    // for the whole of its own wave. Arming still happens down there, where `reach` already exists.
+    if (this.events.running) this.events.update();
     if (this.victoryTimer >= 0) {
       if (this.spectacle) this.spectacle.update();
       if (++this.victoryTimer >= VICTORY_FRAMES && !this.finished) { this.finished = true; this.screen.onVictory(); }
@@ -283,6 +352,14 @@ export class StageRunner {
     this.activeWave = null;
     this.wavesCleared++;
     this.world.wavesCleared = this.wavesCleared;
+    this.sectionWaves++;
+    // issue #33: `onWaveClear: n` fires after the section's Nth wave, before the lock / unlock branch below, so a
+    // caption or a spawn cannot race the dock transition a locked section ends with.
+    for (const ev of sec.events || []) {
+      if (ev._done || ev.onWaveClear == null || ev.onWaveClear !== this.sectionWaves) continue;
+      ev._done = true;
+      this.startEvent(ev);
+    }
     const lockedSection = sec.mode === 'locked' && !this.timedDone;
     if (!lockedSection) { this.world.camera.unlock(); this.goTimer = GO_FRAMES; audio.play('go_arrow'); }
     else if (this.timedIndex >= (sec.timedWaves || []).length) {
@@ -291,6 +368,15 @@ export class StageRunner {
       this.timedDone = true;
       this.startTransition(sec.transition || { kind: 'dock' });
     } else this.updateTimed(); // next timed wave fires on clear
+  }
+  /**
+   * Begin one scripted event (issue #33). `kind: 'text'` is the shorthand board 1 already shipped and stays working:
+   * it is a one-action script with a single caption, so no existing stage data changes.
+   */
+  startEvent(ev) {
+    if (this.nowaves && !this.forceEvents) return;
+    if (ev.kind === 'text') { this.hud.showBanner(ev.text || '', ev.sub || '', ev.life || 90); return; }
+    this.events.arm(ev);
   }
   checkTriggers(center) {
     const sec = this.section, stage = this.stage;
@@ -304,9 +390,9 @@ export class StageRunner {
       return;
     }
     for (const ev of sec.events || []) {
-      if (ev._done || center < ev.atX) continue;
+      if (ev._done || ev.atX == null || center < ev.atX) continue;
       ev._done = true;
-      if (ev.kind === 'text') this.hud.showBanner(ev.text || '', ev.sub || '', ev.life || 90);
+      this.startEvent(ev);
     }
     const tr = sec.transition;
     if (tr && !tr._done && tr.atX != null && center >= tr.atX) this.startTransition(tr);
@@ -420,6 +506,7 @@ export class StageRunner {
   summary() {
     const pf = this.platform;
     return { sectionIndex: this.sectionIndex, wavesCleared: this.wavesCleared, transition: this.transition ? this.transition.kind : null,
-      platform: pf ? { kind: pf.kind, phase: pf.phase, progress: pf.progress(this.world), offset: Math.round(pf.offset || 0) } : null };
+      platform: pf ? { kind: pf.kind, phase: pf.phase, progress: pf.progress(this.world), offset: Math.round(pf.offset || 0) } : null,
+      event: this.events.running ? { id: this.events.event.id || '', step: this.events.step, t: this.events.t } : null };
   }
 }
