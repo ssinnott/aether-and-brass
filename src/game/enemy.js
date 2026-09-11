@@ -278,7 +278,11 @@ export class Enemy extends Fighter {
     if (!this.entered) {
       if (++this.enterTimer > OFFSCREEN_FRAMES) {
         const lo = cam.locked ? cam.left : cam.x, hi = cam.locked ? cam.right : cam.x + VIEW_W;
-        this.x = this.x < (lo + hi) / 2 ? lo + 16 : hi - 16; this.y = 0; this.vy = 0; this.vx = 0;
+        // `plant`, not `y = 0; vy = 0`: the rescue was written for a unit WALKING in, but a wave enemy can be
+        // knocked down before it ever reaches the arena -- the timer keeps running because `entered` is still false --
+        // and planting a KNOCKDOWN body flat strands it out of the air with no landing, alive and inert, forever.
+        this.x = this.x < (lo + hi) / 2 ? lo + 16 : hi - 16; this.vx = 0;
+        this.plant(world);
         this.entered = true; this.enterTimer = 0; this.offscreenTimer = 0;
         if (this.aiState === 'ENTER') this.aiState = 'APPROACH';
       }

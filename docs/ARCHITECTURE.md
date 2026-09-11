@@ -384,6 +384,16 @@ Required fields: `hp, maxHp, team (TEAM.PLAYER|TEAM.ENEMY), def (content definit
 Rules implemented ONCE in `Fighter` (players and enemies both inherit):
 - `takeHit(hit, attacker)` applies damage, hitstop to both (`HITSTOP` in constants.js: `light:3, medium:5, heavy:8, launch:8, knockdown:8, grab:6, throw:6, superFinisher:14`, per RECONCILIATION), flash, knockback (`vx = kbX * attacker.facing`, `vy = kbY`), state → `HURT` (ground, `hitstun` frames), `HURT_AIR` if airborne, `KNOCKDOWN` if `type` is `launch`/`knockdown` or if `juggleCount >= 3` or if hp <= 0. Spawns hit spark + damage text. Returns false if invulnerable / already dead / friendly (no friendly fire between players; enemies never hurt enemies unless `hit.friendly`).
 - `KNOCKDOWN` flight: gravity applies; on landing → `LYING` for `def.lyingFrames` (default 40; dead → stay & fade out), then `GETUP` (invuln 20 frames), then `IDLE`. Juggle: a `KNOCKDOWN` fighter still in the air with `y > 0` can be hit again (juggle), which resets `vy` to `hit.kbY * 0.8`; `juggleCount++`; after 4 juggles the target becomes hit-immune until it lands (anti-infinite).
+- **`plant(world)` is the only way to put a body on the floor from outside `physics()`.** `get airborne` is
+  `y > 0 || vy > 0`, so writing `y = 0; vy = 0` directly takes a body OUT of the air without ever landing it, and
+  `physics()` only reaches `onLand` on the way down. Every exit from an air state lives inside `onLand` —
+  `KNOCKDOWN`/`THROWN` → `LYING` → `GETUP`, `JUMP` → `IDLE`, and hp 0 → `ST.DEAD` — so a body planted the naive way
+  is frozen in its air state for good. Above 0 hp it also never leaves `world.waveEnemies`, and a wave that cannot
+  clear is a **soft-lock**, which `tools/winrate.js` scores as a failure rather than a loss. `Enemy.checkOffscreen`'s
+  stuck-wave rescue is the live caller: it teleports a unit that has not reached the arena to the camera lock edge,
+  and a unit can be knocked down *before* it ever gets there. Anything that repositions a fighter — a rescue, a
+  cutscene, an authored arrival — goes through `plant`, or forces a definite `setState` of its own the way the
+  `game/boss.js` phase-change and defeat paths do.
 - **Shields** (`game/shield.js`, GDD 7): a fighter with `traits.shield` carries `shield` HP in front of `hp`. Every
   damage path — `takeHit` and `takeHitRaw` — spends the shield first and applies only the overflow to `hp`; the
   reaction (hitstun, knockback, launch, armor, death) is computed from the hit exactly as before, so absorbing

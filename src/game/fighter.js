@@ -332,6 +332,21 @@ export class Fighter extends Entity {
     } else if ((fromLeft && this.vx > 0) || (!fromLeft && this.vx < 0)) this.vx = 0;
   }
 
+  /**
+   * Put the body on the floor from OUTSIDE physics(). Anything that teleports or repositions a fighter must come
+   * through here rather than writing `y = 0; vy = 0` itself. `airborne` is (y > 0 || vy > 0), so zeroing both takes a
+   * body out of the air without ever landing it, and physics() only reaches onLand on the way DOWN. Every exit from
+   * an air state lives inside onLand -- KNOCKDOWN/THROWN -> LYING -> GETUP, ST.JUMP -> IDLE, and hp 0 -> ST.DEAD --
+   * so a body planted the naive way is frozen in its air state for good. Above 0 hp it also never leaves
+   * world.waveEnemies, and a wave that cannot clear is a SOFT-LOCK: worse than a loss, and tools/winrate.js scores
+   * an unfinished run as a failure.
+   */
+  plant(world) {
+    const air = this.airborne, w = world || this.world;
+    this.y = 0; this.vy = 0;
+    if (air && w) this.onLand(w);
+  }
+
   onLand(world) {
     const s = this.state;
     // ground bounce (GDD 2.1 / 2.3): a knocked-down body armed by hit.groundBounce pops up once more instead of lying down

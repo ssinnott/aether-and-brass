@@ -44,7 +44,7 @@ export async function entrances(server, { withPage, assert }) {
     const mobs = () => g.eval(() => window.__game.world.entities
       .filter((e) => e.kind === 'enemy' && !e.removeMe)
       .map((e) => ({ ai: e.aiState, entered: e.entered, y: Math.round(e.y), x: Math.round(e.x), state: e.state,
-        punishable: !!e.punishable, arriveT: e.arriveT, cooldown: e.attackCooldown, hp: e.hp })));
+        punishable: !!e.punishable, arriveT: e.arriveT, cooldown: e.attackCooldown, hp: e.hp, air: e.airborne })));
     const fire = (type, variant, kind, opts) => g.eval(([t, v, k, o]) => !!window.__game.spawnEntrance(t, v, k, o), [type, variant, kind, opts]);
     /** Step until `pred` holds over the enemy list, up to `max` frames; returns the frames spent, or -1. */
     const until = async (pred, max = 400) => {
@@ -144,5 +144,30 @@ export async function entrances(server, { withPage, assert }) {
     const hangY = await hangAndHit('stormcrow', 'marine');
     const fell = await until((m) => !!m[0] && m[0].y === 0, 40);
     assert(fell >= 0, `ropeDrop: the cut line drops even a shielded body, whose armor swallows the hit (hung at ${hangY})`);
+
+    // (e) The other way into a wave: WALKING in from offscreen. `Enemy.checkOffscreen` rescues a unit that has not
+    // reached the arena after 300 frames by teleporting it to the camera's lock edge -- and that rescue used to plant
+    // the body with `y = 0; vy = 0`, which is fine for the WALKING unit it was written for and fatal for a knocked
+    // down one. `airborne` is (y > 0 || vy > 0), so a KNOCKDOWN body zeroed that way is out of the air without ever
+    // having landed, and KNOCKDOWN -> LYING -> GETUP lives entirely inside onLand, which only physics() reaches, and
+    // only on the way down. The body froze mid-knockdown at full hp, and a live enemy that can never be killed holds
+    // world.waveEnemies above zero for good: the wave never clears. That is a soft-lock, not a loss.
+    await clear();
+    await g.step(2);
+    await g.eval(() => {
+      const w = window.__game.world;
+      // far enough right to stay outside OFFSCREEN_MARGIN for the whole rescue timer, and never `entered`
+      const e = w.spawnEnemy('brassbound', 'warden', w.camera.x + 1200, 70, { entered: false, facing: -1 });
+      e.aiState = 'ENTER';
+      // The rescue must land ON the knockdown arc, which is the whole defect: a body knocked down 300 frames earlier
+      // has long since got up by itself. OFFSCREEN_FRAMES is 300, so wind the timer to the brink and THEN knock it
+      // down -- the teleport now happens while the body is still in the air, exactly as it did on stage 1 seed 1049.
+      e.enterTimer = 298;
+      e.knockDown(6, 0);
+    });
+    const down = (await mobs())[0];
+    assert(!!down && down.state === 'KNOCKDOWN' && down.air, `walk-in: the subject is airborne in a knockdown (state=${down && down.state}, air=${down && down.air})`);
+    const up = await until((m) => !!m[0] && (m[0].state === 'IDLE' || m[0].state === 'WALK' || m[0].state === 'RUN'), 240);
+    assert(up >= 0, `walk-in: a unit knocked down before it reaches the arena still gets back up (state=${((await mobs())[0] || {}).state})`);
   });
 }

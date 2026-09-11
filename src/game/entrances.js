@@ -271,8 +271,11 @@ export function finishArrival(e, world) {
   // engine ever leaves ST.JUMP. Enemy.think early-returns on ST.JUMP, so the unit would stand in its falling pose
   // for the rest of the wave: alive, hittable, and completely inert. Only `onLand` normally does this, and the whole
   // point of a scripted arrival is that it never falls the last pixel.
+  // `plant` covers the body that still has upward vy here (a watchdog cut, a hit late in the path): it lands properly
+  // instead of being stranded out of the air. The ST.JUMP reset is the case plant CANNOT see -- an air entrance's
+  // path ends at exactly y = 0 with vy = 0, so the unit is already not `airborne` and no landing will ever fire.
   if (e.y <= 0) {
-    e.y = 0; e.vy = 0;
+    e.plant(world);
     if (e.state === ST.JUMP) e.setState(ST.IDLE, 'idle');
   }
   if (!ent || !world) return;
