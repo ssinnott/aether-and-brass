@@ -396,7 +396,7 @@ export const stage1 = {
         { triggerX: 240,   // when camera.x + VIEW_W/2 >= triggerX (i.e. players reached here)
           lock: true,      // camera locks to [triggerX - VIEW_W/2, triggerX + VIEW_W/2]
           spawns: [ { type: 'typeA', variant: 'grunt', side: 'right', z: 40, delay: 0 },
-                    { type: 'typeA', variant: 'grunt', side: 'left',  z: 100, delay: 45 } ],
+                    { type: 'typeA', variant: 'grunt', side: 'left',  z: 100, delay: 45, mods: ['holdout'] } ],
           reinforcements: [ { whenRemaining: 1, spawns: [ ... ] } ]   // optional
         },
       ],
@@ -421,6 +421,24 @@ their ids added to `art/backgrounds/index.js`), a `preview` block for its select
 `banners` is optional: a board that does not supply it keeps stage 1's wording ("FOREMAN DEFEATED" on the mid-boss,
 "THE SKY OPENS" under STAGE CLEAR). A `zones` entry may also carry `color` — the `daisVents` edge glow defaults to
 aether cyan, which is Concordat machinery, so a board with no Concordat on it passes its own energy colour instead.
+
+Hazard and zone types, their spec fields, timings, hits and `dangerBox` footprints are tabulated in the header of
+`game/hazards.js` (HAZARD TABLE / ZONE TABLE). Boards 2-4 declare `cannon`, `gasCell`, `limePit`, `wagon`,
+`tallowVat`, `kilnMouth`, `ledgerDrop` / `ballastDrop` and `gasSeep` hazards and `gust`, `spoil` and `netGive`
+zones from that table next to stage 1's six; every hazard follows the same tell / active / grace contract, so the enemy
+pathing (`laneAroundHazards`) and the autopilot read them without knowing the type.
+
+A spawn entry may carry `mods: ['holdout'|'crusted'|'scrip'|'winged'|'salvaged']` (issue #28): the Enemy is built from a
+derived def (`game/traits.js` `SPAWN_MODS` / `applyMods`) at spawn time, so a modifier is part of the def the rig comes
+from and lockstep netplay never sees a late coin flip. A prop entry forwards every extra field to the `Prop` constructor:
+`hp`, `drops`, `solid`, `rider`, `release: { type, variant, mods? } | null` (a live enemy tips out on break), `dump:
+'chassis'` (an overhead net drops a rolling prop when a jump attack hits it) and `fire` (a breaking fire source lights gas
+seeps through `world.addFire`). `art/props.js` `PROP_FAMILIES` names which prop types belong to which board's palette.
+
+`transition` is `{ kind: 'lift'|'board'|'dock'|'descent', atX?, gateX?, banner?, look?, pies?, up? }`: a `mode: 'locked'`
+section ends in a `dock` when its last timed wave clears, showing `banner` (default the funicular's) and arriving on
+`look` ('stairs' default, 'ladder', 'door', 'hoist', 'none') with `pies` Meat Pies (default 2); `{ kind: 'lift', up: true }`
+rides the shaft upward. Locked sections are exactly one screen (640px) wide and must not contain a boss trigger.
 
 ### Board unlocks (`game/progress.js`)
 Board 1 is always selectable; board N opens once board N-1 has been cleared. `ResultsScreen` calls

@@ -2,13 +2,13 @@
 
 A steampunk high-fantasy side-scrolling beat-em-up in the spirit of *Golden Axe*, the *TMNT*
 arcade games and *TMNT: Shredder's Revenge*. **Four complete boards** end to end, four playable
-heroes, five enemy factions with five variants each, four mid-bosses and four multi-phase final
-bosses. Local two-player co-op on one keyboard or with gamepads.
+heroes, five enemy factions (thirty-one variants, plus five spawn modifiers that re-dress them per
+board), four mid-bosses and four multi-phase final bosses. Local two-player co-op on one keyboard or with gamepads.
 
 Everything is drawn and synthesized in code: vanilla JavaScript, HTML5 Canvas 2D and WebAudio.
 No engine, no framework, and not a single image or audio file. Characters are procedural
 paper-doll rigs built from canvas primitives and animated by keyframed joint angles;
-backdrops are pre-rendered parallax layers; all 94 sound effects and 25 music tracks are
+backdrops are pre-rendered parallax layers; all 94 sound effects and 27 music tracks are
 synthesized from oscillators and noise at runtime.
 
 ## Play
@@ -76,19 +76,24 @@ take extra damage from throws, and gear-slip into a stagger on every fourth hit.
 Cinder Hulk, Gutter Wrangler. Fast, fragile, cowardly alone, and they burn easily.
 
 **The Stormcrows** — the Concordat's Ninth Aeronaut Wing, flying black over the re-opened sky
-(board 2): Deck Crimper, Line Corsair, Powder Bosun, Galewright, Ironwing Marine. Beaked flight
-masks with one hot white sighting lens, wing-packs that flare when they move, and a habit of
-hopping backwards out of anything you whiff. Jump attacks hurt them 1.5x.
+(board 2): Deck Crimper, Line Corsair, Powder Bosun, Galewright, Ironwing Marine, plus the pressed
+Deckhand (no wing-pack, the one you throw off the Spine) and the Grapnel Mate (a line that reels you
+in and a throw aimed at the rail). Beaked flight masks with one hot white sighting lens, wing-packs
+that flare when they move, and a habit of hopping backwards out of anything you whiff. Jump attacks
+hurt them 1.5x. On board 2 they fight alongside the Brassbound the Concordat left aboard.
 
 **The Gleaning** — the salvage guild that follows the fighting on tailings-gas bladders and strips
-whatever falls out of it, and the faction of board 4: Chaff, Winnow, Thresher, Sickle, Harvestman.
-Everything here fights from the air and everything here has to land: a Gleaner hit while airborne takes
+whatever falls out of it, and the faction of board 4: Chaff, Winnow, Thresher, Sickle, Harvestman, the
+grounded Picker (no bladder, the only guild member you can grab freely) and the Riggerman (drops a net
+from the hang line and grabs whoever it pinned). Everything here fights from the air and everything here
+has to land: a Gleaner hit while airborne takes
 1.5x and juggles, the bladder over its head is a 1.6x weak point, and every hover ends in a long
 punishable recovery on the deck — which is the only place you can grab one.
 
 **The Chandlery of Calderwick** — the chartered supply company that kept both sides in the war
-standing, and the faction of board 3: Wickboy, Tallyman, Limeburner, Purser, Resurrection Man.
-Nothing here kills you; everything here keeps the thing that kills you standing up — they heal it,
+standing, and the faction of board 3: Wickboy, Tallyman, Limeburner, Purser, Resurrection Man, the
+Runner (a boy with a taper who sprints in to finish a rite you were about to break) and the Drayman
+(the man under the handcart yoke, who shoves the cart at you). Nothing here kills you; everything here keeps the thing that kills you standing up — they heal it,
 crust it, dose it, mark you for the whole room and tip fresh Brassbound out of a handcart. One touch
 during a rite's wind-up cancels it, and every rite dies with the Chandler holding it.
 
@@ -97,6 +102,14 @@ board 1; Quartermaster Skree & the Grapnel Winch and Admiral Odaline Kestrel of 
 on board 2; Yardmaster Marl & the Lime Kiln and Factor Oriel Hasp of the Chandlery on board 3;
 Reeve Tansy Culm & the Baler and Harvestlord Briar Oke of the Gleaning on board 4.
 Every one of them is stripped down phase by phase until the person inside is exposed.
+
+**Spawn modifiers** re-dress a variant for the board it appears on without a new rig: `holdout`
+Brassbound (dead-grey lens, no wind-up key, slower, tougher: the machines the Wing never unbolted),
+`crusted` anything (the Limeburner's lime crust pre-applied, one hit of frame armour), `scrip` Sootborn
+(a company badge, and they never flee), `winged` anything grounded (a salvage bladder strapped on, so it
+drops in from the sky and takes the Gleaning's air damage) and `salvaged` Brassbound (re-plated in guild
+colours, drops scrap, gear-slips on the third hit). Stage data asks for one with `mods: ['holdout']` on
+a spawn.
 
 ## Board 1: The Ascent of Calderwick
 
@@ -111,10 +124,13 @@ ring-outs, a combo grading system, ranks, lives and continues.
 ## Board 2: The Storm Above Calderwick
 
 The morning after Vane falls, the Ninth Aeronaut Wing blockades the sky nobody told them was
-free. The Mooring Spine (dawn storm above a cloud sea; no bulwark, so throw them off the edge)
-→ The Gas-Halls (the soft green interior of a captured freighter, and the quartermaster's
-grapnel winch at the end of it) → The Cold Sovereign (the flagship's weather deck, gun ports
-and lightning, up to the bridge where the Admiral is waiting).
+free. The Mooring Spine (dawn storm above a cloud sea; no bulwark, so throw them off the edge, and
+a gust that drags everyone toward it) → The Gas-Halls (the soft green interior of a captured
+freighter, gas cells that burst into drifting clouds, and the quartermaster's grapnel winch at the
+end of it) → The Cold Sovereign (one locked screen on the flagship's gun deck while she banks:
+run-out cannon, powder tubs, the deck listing under you) → The Bridge (two masts, the Admiral's
+second, and the Admiral). The Stormcrows fight beside the Brassbound the Concordat left aboard:
+the higher you board, the more clockwork.
 
 Board 2 is **locked until you clear board 1**. Full design doc: `docs/STAGE2.md`.
 
@@ -123,9 +139,12 @@ Board 2 is **locked until you clear board 1**. Full design doc: `docs/STAGE2.md`
 Two organisations are beaten and the war is still being invoiced. The Chandlery of Calderwick supplied
 both sides under charter, and with the Chancellor's estate unsettled it is **re-crewing the war** —
 tipping Brassbound back onto their feet out of handcarts and writing every one of them into a ledger.
-The Lime Road (a chalk-white morning, wagon trains, the works' chimneys ahead) → The Tallow Works
-(vats, draw-kilns, cart lanes, and the yardmaster at the kiln head) → The Ledger House (the counting
-floor, where the man who signed for all of it is waiting).
+The Lime Road (a chalk-white morning, lime pits that blind, a runaway wagon) → The Cart Lane (one
+locked screen: a conveyor feeding carts, crates and bodies into the kiln head) → The Tallow Works
+(vats that boil over, draw-kilns, handcarts that tip out a crusted Brassbound, and the yardmaster at
+the kiln head) → The Ledger House (falling ledger stacks over the counting floor, where the man who
+signed for all of it is waiting). The Chandlery works on Sootborn who took its scrip, then on the
+Brassbound it re-crews: the closer to the ledger, the more machines.
 
 The plainest-looking board in the game and the one about money: no furnace glow and no storm, just
 lime dust and one saturated colour — the lime in the company's own lamps, which always means something
@@ -137,10 +156,14 @@ behind you is being repaired. Board 3 is **locked until you clear board 2**. Ful
 Three organisations are down and the field west of the city is full of them. The Gleaning have worked
 the tailings since before the guild had a name, and they have been out under every fight you have had,
 taking the pieces up as they fell. The Tailings (a rose dusk over the spoil heaps, gas seeping out of
-them, salvage lines going up into a sky full of bladders) → The Lash-Up (the guild's float, a raft of
-other people's wrecks hung over the field on forty bladders, with no bulwark anywhere) → The Crop Loft
-(inside the biggest bag they own, net decking over a drop, four boards' worth of stripped war hanging
-overhead in cargo nets).
+them that is harmless until something lights it, sinking spoil, salvage lines going up into a sky
+full of bladders) → The Lash-Up (one locked screen on the guild's float, a raft of other people's
+wrecks drifting over the field on forty bladders, ballast falling from them and no bulwark anywhere)
+→ The Press (the decked-in end of the float, where the Reeve bales the crop and the guild first flies
+and re-plates the Concordat's own machines) → The Crop Loft (inside the biggest bag they own, net
+decking that gives way under a heavy landing, four boards' worth of stripped war hanging overhead in
+cargo nets that dump it on you). Sootborn work the field, the grounded Ninth Wing flies for whoever is
+buying, and the sky fills up as you go.
 
 The board where the fight is mostly above you: anti-air is not a tactic here, it is the tactic, and every
 landing is the opening. Board 4 is **locked until you clear board 3**, and it is the last one. Full design

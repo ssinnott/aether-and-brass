@@ -427,6 +427,7 @@ export function brassHipsB(ctx, rig, pose, inf) {
  * (`rig.keyAngle`, advanced by the AI while the automaton walks / attacks, frozen while staggered: the universal "it's open" read).
  */
 export function brassKeyB(ctx, rig) {
+  if (rig.build.noKey) return; // holdout mod (game/traits.js): an automaton nobody winds has no key to read the tell from
   const p = rig.p, pal = rig.palette, x = -RB(p.torsoW / 2) - 1, y = -RB(p.torsoH * 0.6);
   const bh = Math.max(2.5, Math.abs(Math.cos(rig.keyAngle || 0)) * 8);
   celCapsule(ctx, rig, x - 8, y, x, y, 2, pal.accent, 0);

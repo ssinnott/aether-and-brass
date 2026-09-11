@@ -13,6 +13,9 @@ import { circle, line } from '../art/shapes.js';
  *  netted      { frames: 90, mashOut: 6 }                      stuck in place; mash attack `mashOut` times or a teammate's hit frees
  *  stunned     { frames: 40 }                                  cannot act (stagger anim), stars overhead, ignores armor
  *  timeStopped { frames: 60 }                                  frozen solid (still hittable), cyan tint
+ *  blinded     { frames: 30 }                                  quicklime in the eyes (hazards.js limePit): cannot ATTACK - players' attack /
+ *                                                              special / super presses are dropped (player.js), enemies stagger like `stunned`;
+ *                                                              walking, jumping and dodging still work. Quicklime-white tint.
  * Custom statuses: applyStatus('myStatus', { frames, onTick(f, s, world), onEnd(f, s, world), draw(ctx, f, sx, sy, s), tint })
  */
 export const STATUS_DEFAULTS = Object.freeze({
@@ -20,7 +23,10 @@ export const STATUS_DEFAULTS = Object.freeze({
   netted: { frames: 90, mashOut: 6 },
   stunned: { frames: 40 },
   timeStopped: { frames: 60, tint: '#4DF0E0', tintAlpha: 0.35 },
+  blinded: { frames: 30, tint: '#E6ECDC', tintAlpha: 0.35 },
 });
+/** Radius of the fire a burning body registers with the world each tick (hazards.js gas seeps / cells ignite off it). */
+const BURN_FIRE_R = 16;
 
 /** Apply (or refresh) a status. Returns the status record. */
 export function applyStatus(f, name, opts = {}, source = null) {
@@ -44,6 +50,17 @@ export function applyStatus(f, name, opts = {}, source = null) {
     f.flashTimer = 2;
   } else if (name === 'burn') {
     if (!prev) audio.play('burn');
+  } else if (name === 'blinded') {
+    // a blinded ENEMY is handled like a stunned one (enemy.js gates every attack on inHitstun): the stagger holds it
+    // for the duration. A player keeps control of their feet - only the attack buttons go dead (player.js).
+    if (f.kind !== 'player') {
+      f.hurtTimer = Math.max(f.hurtTimer || 0, s.timer);
+      if (f.grabTarget && f.releaseGrab) f.releaseGrab(false);
+      f.pendingAttack = null; f.vx = 0;
+      if (!f.airborne && f.state !== ST.GRABBED) f.setState(ST.HURT, 'stagger', { fallback: 'hurt' });
+      if (f.releaseToken) f.releaseToken();
+    }
+    if (!prev) audio.play('steam', { volume: 0.5 });
   }
   if (f.callHook) f.callHook('onStatus', name, s, 'apply');
   return s;
@@ -68,6 +85,10 @@ export function tickStatuses(f, world) {
     if (name === 'burn') tickBurn(f, s, world);
     else if (name === 'netted') { f.vx = 0; f.vz = 0; if (!f.inHitstun && !f.airborne && f.state !== ST.IDLE && f.state !== ST.HURT) f.setState(ST.IDLE, 'hurt', { fallback: 'idle' }); }
     else if (name === 'stunned') { if (f.state !== ST.HURT && !f.airborne && f.state !== ST.GRABBED) f.setState(ST.HURT, 'stagger', { fallback: 'hurt' }); }
+    else if (name === 'blinded') {
+      if (s.age % 4 === 0) particles.burst('dust', f.x + (s.age % 3 - 1) * 5, f.y + f.h * 0.9, f.z, 1, { speed: 0.5, up: 0.5, color: s.tint });
+      if (f.kind !== 'player' && f.state !== ST.HURT && !f.airborne && f.state !== ST.GRABBED) f.setState(ST.HURT, 'stagger', { fallback: 'hurt' });
+    }
     if (typeof s.onTick === 'function') s.onTick(f, s, world);
     if (f.callHook) f.callHook('onStatus', name, s, 'tick');
     if (--s.timer <= 0 || f.dead) clearStatus(f, name, world);
@@ -75,6 +96,7 @@ export function tickStatuses(f, world) {
 }
 
 function tickBurn(f, s, world) {
+  if (world && world.addFire) world.addFire(f.x, f.z, BURN_FIRE_R);   // a burning body is a fire source: it lights gas it walks into
   if (s.age % 3 === 0) particles.burst('ember', f.x + (s.age % 5 - 2) * 3, f.y + f.h * 0.5, f.z, 1, { speed: 1, up: 1.8, color: s.color });
   if (s.age % (s.every || 20) === 0) {
     const dmg = Math.round((s.damage || 2) * (f.traits ? f.traits.fireDamageMult || 1 : 1));
@@ -131,6 +153,14 @@ export function drawStatuses(ctx, f, sx, sy) {
       const x = sx + Math.cos(a) * 14, y = top - 6 + Math.sin(a) * 4;
       circle(ctx, x, y, 2.5, '#ffe45a', '#2B2B30', 1);
       line(ctx, x - 3, y, x + 3, y, '#fff8b0', 1); line(ctx, x, y - 3, x, y + 3, '#fff8b0', 1);
+    }
+  }
+  if (st.blinded) {
+    // a swirl of quicklime dust round the head: three motes orbiting the eye line, no ramp (a glow-class mark)
+    for (let i = 0; i < 3; i++) {
+      const a = frame * 0.2 + i * (Math.PI * 2 / 3);
+      const x = sx + Math.cos(a) * 11, y = top + 6 + Math.sin(a) * 3;
+      circle(ctx, x, y, 2, '#E6ECDC', '#2B2B30', 1);
     }
   }
   if (st.timeStopped && (frame % 6) < 3) {

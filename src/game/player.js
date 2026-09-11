@@ -91,6 +91,12 @@ export class Player extends Fighter {
     if (this.dodgeCooldown > 0) this.dodgeCooldown--;
     if (this.state !== ST.GRABBED) this.mashCount = 0;
     if (this.status.netted) { this.running = false; if (it.attack) { this.consume('attack'); mashNet(this); } return; }
+    // blinded (hazards.js limePit): the attack buttons go dead for the duration, the feet still work (status.js). A held
+    // grab still mashes out - being blind is no reason to stop struggling.
+    if (this.status.blinded && this.state !== ST.GRABBED) {
+      if (it.attack) this.consume('attack'); if (it.special) this.consume('special'); if (it.super) this.consume('super');
+      it.attack = it.special = it.super = false;
+    }
     if (it.run && it.x) { this.running = true; this.runDir = it.x; }
     if (this.running && it.x !== this.runDir) this.running = false;
     switch (this.state) {

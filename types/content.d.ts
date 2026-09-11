@@ -170,3 +170,24 @@ interface Hooks {
   drawBefore?(ctx: CanvasRenderingContext2D, f: any, sx: number, sy: number, cam?: any): void;
   drawAfter?(ctx: CanvasRenderingContext2D, f: any, sx: number, sy: number, cam?: any): void;
 }
+
+/**
+ * Spawn modifiers (issue #28 part 3; game/traits.js SPAWN_MODS). A stage spawn entry carries `mods: ['holdout']` and the
+ * Enemy is built from the derived def (`applyMods`): spawn-time only, so lockstep netplay never sees a late coin flip.
+ *  holdout   Brassbound: dead-grey lens, no wind-up key, walk/run x0.8, hp x1.3, score x1.2
+ *  crusted   any: one hit of frame armour pre-applied (status 'crusted'), quicklime puff when it breaks
+ *  scrip     Sootborn: lime-ringed company badge, never flees (flee / fleeLast / panic zeroed)
+ *  winged    any grounded variant: salvage bladder, spawns from the sky, sinks slowly, x1.25 airborne, bag weak point x1.6
+ *  salvaged  Brassbound: plum plating + hemp stripe and plate, drops a Brass Cog, gear-slip on the 3rd hit, score x1.1
+ */
+type SpawnModName = 'holdout' | 'crusted' | 'scrip' | 'winged' | 'salvaged';
+
+/** One entry of SPAWN_MODS. `apply` patches the fresh derived copy `d` in place; `hooks` chain AFTER the def's own. */
+interface SpawnMod {
+  /** Display suffix: `TIN FOOTMAN (HOLDOUT)`. */
+  label: string;
+  /** Advisory: the factions the mod was drawn for. Never enforced. */
+  factions?: string[];
+  apply(d: any, base: any): void;
+  hooks?: Hooks;
+}

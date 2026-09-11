@@ -1,7 +1,10 @@
 // Pickups (food, score, meter, 1-UP) and breakable props (GDD section 6 props, section 7 pickups; ARCHITECTURE section 6).
 // Props take hits from any team, roll (barrels, coal carts), explode after breaking (oil drums), fall on a jump attack
-// (chandelier) and stun the Regent Engine (pressure valves); every break plays a split-pieces animation + debris.
+// (chandelier), stun the Regent Engine (pressure valves), tip out a live enemy (`release`: the Chandlery's handcarts), dump a
+// rolling load from overhead (`dump`: the Gleaning's cargo nets) and light gas (`fire`: lanterns, every explosion — world.addFire);
+// every break plays a split-pieces animation + debris unless the type brings its own `pieces` drawing (a cut salvage line).
 import { FLOOR_TOP, GRAVITY, TEAM, HITSTOP, METER, UI, ST } from '../constants.js';
+import { clamp } from '../engine/math.js';
 import { Entity } from './entity.js';
 import { Projectile } from './projectile.js';
 import { audio } from '../engine/audio.js';
@@ -26,6 +29,10 @@ const DROP_ALIASES = { none: null, meter: 'aetherVial', food_small: 'meatPie', f
 const PICKUP_LIFE = 600, PICKUP_BLINK = 120;
 const OL = '#2B2B30';
 const BREAK_FRAMES = 16, ROLL_FRAMES = 20, PROP_SCORE = 50, RING_OUT_SCORE = 200;
+/** Fire radius a breaking `fire` prop (a lantern's spilt oil) reports to world.addFire; explosions report their own radius. */
+const FIRE_R = 40;
+/** Rite lime (docs/STAGE3.md): the ring a released enemy climbs out of — the Chandlery's carts are how the Brassbound come back. */
+const RELEASE_COLOR = '#D8FF6E';
 
 /** Walk-over pickup. `life` in frames (GDD: vanish at 10s). */
 export class Pickup extends Entity {
@@ -100,10 +107,14 @@ export class Pickup extends Entity {
 /** Breakable (or static) stage prop from the art/props.js catalogue. Takes hits from any team, drops items. */
 export class Prop extends Entity {
   /**
+   * Stage entries forward every extra field of a prop entry here, so these names are the stage-data contract.
    * @param {string} type PROP_TYPES key
-   * @param {{ drops?: string|string[]|null, hp?: number, solid?: boolean, rider?: boolean }} o rider = travels on the cargo-bay conveyor
+   * @param {{ drops?: string|string[]|null, hp?: number, solid?: boolean, rider?: boolean,
+   *   release?: { type: string, variant?: string, mods?: string[] }|null, dump?: string|null, fire?: boolean }} o
+   *   rider = travels on the cargo-bay conveyor; release / dump / fire override the type's catalogue defaults
+   *   (leave them out to keep the type's own, pass null / false to switch the behaviour off on one entry)
    */
-  constructor(type, x, z, { drops = null, hp = 0, solid = true, rider = false } = {}) {
+  constructor(type, x, z, { drops = null, hp = 0, solid = true, rider = false, release, dump, fire } = {}) {
     super('prop');
     this.type = PROP_TYPES[type] ? type : 'crate';
     this.info = getPropType(this.type);
@@ -119,7 +130,15 @@ export class Prop extends Entity {
     this.flashTimer = 0; this.wobble = 0; this.hitstop = 0;
     this.state = 'idle'; this.t = 0; this.angle = 0;
     this.vx = 0; this.rollLeft = 0; this.breaker = null; this.rider = rider;
+    /** A dumped cargo net: still hanging (drawn empty), never solid again. */
     this.spent = false;
+    /** Live enemy that tips out on break ({ type, variant, mods? }); the handcart's default is a Tin Footman. */
+    this.release = release !== undefined ? release : (this.info.release || null);
+    /** Prop type an overhead net dumps on the floor, rolling, when a jump attack opens it (the cargo net's 'chassis'). */
+    this.dump = dump !== undefined ? dump : (this.info.dump || null);
+    /** Fire source on break (lanterns): world.addFire gets the spill; explosions are fire sources regardless of this flag. */
+    this.fire = fire !== undefined ? !!fire : !!this.info.fire;
+    this.fireR = 0;                          // radius re-reported to world.addFire while the pieces fly (0 = not burning)
   }
   update(world) {
     this.world = world;
@@ -128,7 +147,12 @@ export class Prop extends Entity {
     this.t++;
     switch (this.state) {
       case 'rolling': this.updateRoll(world); break;
-      case 'breaking': if (this.t >= BREAK_FRAMES) this.removeMe = true; break;
+      case 'breaking':
+        // world.fires is a per-update list, so a fire source re-reports itself every frame the pieces fly: a one-shot entry
+        // made during hit resolution would be cleared before a hazard earlier in the entity order ever read it
+        if (this.fireR && world.addFire) world.addFire(this.x, this.z, this.fireR);
+        if (this.t >= BREAK_FRAMES) this.removeMe = true;
+        break;
       case 'fuse': {
         const ex = this.info.explode;
         if (this.t % 4 === 0) particles.burst('smoke', this.x, this.h * 0.8, this.z, 1, { speed: 0.5, up: 1.2 });
@@ -205,8 +229,13 @@ export class Prop extends Entity {
     this.breaker = attacker || this.breaker;
     const world = this.world;
     if (world) spawnDrops(world, this.x, this.z, this.drops);
+    const puff = this.info.puff;   // quicklime / rose gas: a coloured cloud instead of just splinters
+    if (puff) particles.burst('steam', this.x, this.h * 0.5, this.z, puff.count, { speed: 1.6, up: 1.2, spread: 1.2, sizeJitter: 1.5, color: puff.color });
+    if (this.release && world && world.spawnEnemy) this.releaseEnemy(world);
+    if (this.fire) { this.lightFire(world, FIRE_R); particles.burst('ember', this.x, this.yOff + 8, this.z, 8, { speed: 2.5, up: 2.5 }); }
     if (this.info.fall) { this.state = 'falling'; this.t = 0; audio.play('hydraulic'); return; }
     if (this.info.explode) { this.state = 'fuse'; this.t = 0; audio.play('bomb_fuse'); return; }
+    if (this.dump && world) { this.dumpLoad(world, attacker); return; }
     if (this.info.valve && world) this.blowValve(world);
     this.finish();
   }
@@ -218,7 +247,48 @@ export class Prop extends Entity {
     particles.burst('ember', this.x, 10, this.z, 14, { speed: 4, up: 3 }); particles.burst('smoke', this.x, 10, this.z, 8, { speed: 1.5, up: 1.5 });
     if (world.camera) world.camera.shake(8, 12);
     audio.play('explosion');
+    this.lightFire(world, ex.radius);   // a keg / tub / drum going off lights any gas seep under its blast
     this.finish();
+  }
+  /** Become a fire source of radius r: tell the world now (guarded — the hook is optional) and keep telling it while breaking. */
+  lightFire(world, r) {
+    this.fireR = r;
+    if (world && world.addFire) world.addFire(this.x, this.z, r);
+  }
+  /**
+   * `release`: a live enemy tips out of the broken prop — spawned at the prop, already entered, facing the nearest player and
+   * knocked down so it climbs to its feet out of the wreck (the player gets the same beat a spawn gives). Spawn modifiers ride
+   * through as opts.mods (traits.js SPAWN_MODS). A rite-lime ring + chime mark it: on board 3 this is a rite, not a spawn.
+   */
+  releaseEnemy(world) {
+    const r = this.release;
+    let near = null;
+    for (const p of world.players) if (p.alive && !p.dead && !p.removeMe && (!near || Math.abs(p.x - this.x) < Math.abs(near.x - this.x))) near = p;
+    const facing = near ? (Math.sign(near.x - this.x) || -1) : -1;
+    const z = clamp(this.z, world.floorBand.z0, world.floorBand.z1);
+    const e = world.spawnEnemy(r.type, r.variant, this.x, z, { entered: true, facing, mods: r.mods || null });
+    if (e && e.knockDown) e.knockDown(3, facing * 1.2);
+    world.addFx('ring', this.x, 8, this.z, { r0: 6, r1: 48, color: RELEASE_COLOR });
+    world.addFx('dust', this.x, 0, this.z, { count: 10 });
+    audio.play('chime');
+    return e;
+  }
+  /**
+   * `dump`: an overhead net opened by a jump attack drops its load as a new prop on the floor under it, rolling away from the
+   * striker at once so it is a live hazard the moment it lands (credited to the striker like any shoved barrel). The emptied
+   * net stays hanging, non-solid and `spent`, and drops nothing itself — the score and the pickups are on the load.
+   */
+  dumpLoad(world, striker) {
+    const load = new Prop(this.dump, this.x, clamp(this.z, world.floorBand.z0, world.floorBand.z1));
+    world.add(load);
+    if (striker && load.info.roll) load.startRoll(striker);
+    particles.burst('debris', this.x, this.yOff, this.z, 10, { speed: 3, up: 1, color: this.info.color || '#8a6a40', sizeJitter: 1.5 });
+    particles.burst('gear', this.x, this.yOff, this.z, 4, { speed: 2.5, up: 1 });
+    world.addFx('ring', this.x, 0, this.z, { r1: 50, flat: true, color: '#ffd080' });
+    world.addFx('dust', this.x, 0, this.z, { count: 12 });
+    if (world.camera) world.camera.shake(6, 10);
+    audio.play('crate_drop');
+    this.spent = true; this.drops = null; this.shadowW = 0;
   }
   /** Chandelier hits the floor: 30 knockdown to enemies within 90px (credited to the jumper), once. */
   land(world) {
@@ -250,7 +320,7 @@ export class Prop extends Entity {
   draw(ctx, cam) {
     const sx = cam.toScreenX(this.x), sy = Math.round(FLOOR_TOP + this.z - this.y + cam.shakeY);
     const frame = this.world ? this.world.frame : 0;
-    if (this.state === 'breaking') { drawPieces(ctx, sx, sy - this.yOff, this, this.t / BREAK_FRAMES); return; }
+    if (this.state === 'breaking') { (this.info.pieces || drawPieces)(ctx, sx, sy - this.yOff, this, this.t / BREAK_FRAMES); return; }
     ctx.save();
     if (this.wobble > 0 && this.state === 'idle') { ctx.translate(sx, sy); ctx.rotate(Math.sin(this.wobble * 1.2) * 0.06); ctx.translate(-sx, -sy); }
     drawProp(ctx, sx, sy, this, frame);

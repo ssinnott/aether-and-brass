@@ -37,6 +37,7 @@ import { drawText } from '../engine/text.js';
 import { floatText } from '../art/fx.js';
 import { Prop } from './items.js';
 import { laneAroundHazards } from './hazards.js';
+import { applyMods } from './traits.js';
 
 /** Defaults for `def.ai` (content overrides per type / variant). */
 export const AI_DEFAULTS = Object.freeze({
@@ -77,11 +78,17 @@ export function normalizeAi(def) {
 export class Enemy extends Fighter {
   /**
    * @param {object} def enemy definition
-   * @param {{ x?: number, z?: number, facing?: number, entered?: boolean, kind?: string, fromSky?: boolean }} o
+   * @param {{ x?: number, z?: number, facing?: number, entered?: boolean, kind?: string, fromSky?: boolean, mods?: string[] }} o
+   *   mods = spawn modifiers (traits.js SPAWN_MODS: holdout / crusted / scrip / winged / salvaged) applied to the def before the rig is built
    */
-  constructor(def, { x = 0, z = 70, facing = -1, entered = true, kind = 'enemy', fromSky = false } = {}) {
-    super(def, { team: TEAM.ENEMY, kind, x, z, facing });
-    this.ai = normalizeAi(def);
+  constructor(def, { x = 0, z = 70, facing = -1, entered = true, kind = 'enemy', fromSky = false, mods = null } = {}) {
+    // the derived def is computed BEFORE super() (no `this` needed): the rig, traits and stats all come from the patched def
+    const d = mods && mods.length ? applyMods(def, mods) : def;
+    super(d, { team: TEAM.ENEMY, kind, x, z, facing });
+    /** Spawn modifiers this enemy carries (names), [] when plain. */
+    this.mods = d.mods || [];
+    if (this.mods.includes('winged')) fromSky = true;  // a bladder-borne body arrives from above
+    this.ai = normalizeAi(d);
     this.applyAiTraits();
     this.entered = entered;
     this.aiState = entered ? 'APPROACH' : 'ENTER';

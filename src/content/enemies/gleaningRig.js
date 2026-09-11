@@ -20,6 +20,12 @@
 // out of the colour over 12 draws (rig.gasOut), keyed on BASE_HOOKS' rig.gasDead — never on the pose face, which
 // `stagger` also sets to `dazed`.
 //
+// THE ONE GLEANER WITHOUT A BAG (issue #28 part 2, the Picker): `build.bagShape: 'none'` and no bladder accessory.
+// Every bag reader tolerates that — drawBladder returns before it paints, gleanCoat drops the regulator whose feed
+// would have come down from the silk, and the two-channel tell collapses to the lens + breather going rose. His head
+// IS the highest point of his silhouette, which is the faction's own law inverted on purpose: he is the pressed man
+// on the ground, and the squint pass reads him as "not hanging from anything" before it reads anything else.
+//
 // Sheet note: the Harvestman draws ~135px tall at scale 1.3 (the canopy rises ~30px above the skull) against a 108px
 // default cell, so tools/sheet.js clips its bag off every cell. Capture it with `&ch=190&cw=130`.
 import { P, FK } from './common.js';
@@ -120,7 +126,10 @@ export const GLEAN = {
  * Chalk crop-marks (guild tallies, not clan dye): dry marks on rubberised silk. Spaced against GLEAN.silk (L* 79.7),
  * NOT against white — chaff 42.2 / winnow ochre (hue) / thresher 53.2 / sickle 39.5 / harvestman green (hue).
  */
-export const CHALK = { chaff: '#6E6252', winnow: '#D2A44E', thresher: '#C4634E', sickle: '#4A5E7E', harvestman: '#7E9E6A' };
+// picker: a RUST mark — he has no silk to chalk, so his tally rides the hemp yoke and the sack, and rust on hemp
+// (hue 24 on 48) is the one family that separates there. riggerman: verdigris, a hue apart from the Sickle's slate
+// (220) and the Harvestman's leaf (100), because those two are the pale-silk marks his stands beside on a board.
+export const CHALK = { chaff: '#6E6252', winnow: '#D2A44E', thresher: '#C4634E', sickle: '#4A5E7E', harvestman: '#7E9E6A', picker: '#8A5A3A', riggerman: '#3A8A84' };
 /**
  * The ladder, and every ADJACENT pair of it (ART_STYLE 0.1 wants >= 25 pts of value OR a hue-family change per
  * boundary). Read it as the body reads, bottom to top:
@@ -261,7 +270,9 @@ function gasState(rig, pose) {
  * rig.strobe (last tell frames), rig.bags (Winnow's remaining ballast) and build.bagShape / build.chalk.
  */
 export function drawBladder(ctx, rig, pose) {
-  const p = rig.p, b = rig.build, s = BAG[b.bagShape] || BAG.taut;
+  const p = rig.p, b = rig.build;
+  if (b.bagShape === 'none') return;   // the Picker: a bagless rig that happens to carry the accessory paints nothing
+  const s = BAG[b.bagShape] || BAG.taut;
   // The fade used to advance a `rig.gasOut` counter from inside this draw, so two draws of the same (pose, tick)
   // produced different command streams and every variant's `stagger` and `dead` keys measured non-deterministic.
   // `rig.tick` counts draws (rig.js), so gasState is the same 12-draw ramp, read instead of written.
@@ -390,6 +401,14 @@ const HOOD = {
   // HARVESTLORD (boss4) — the tallest crown in the game, folded forward at the peak. It is the only head that has
   // to read against the guild's own canopy, so its profile is the one that leaves the silk on both sides of it.
   lord: [...HOOD_FRONT, -0.84, 1.06, -1.38, 0.44, -1.44, -0.64, -1.02, -1.42, -0.30, -1.86, 0.52, -1.50, 0.98, -0.94],
+  // PICKER (issue #28) — a KERCHIEF, not a hood: the lowest crown in the guild (-0.96 against the rag's -1.08), bound
+  // tight to the skull, with the knot's two tails sticking straight back at ear height. No gas to seal out on the
+  // ground, so no drape onto the shoulders either: the neck shows, which no hanging Gleaner's does.
+  kerchief: [...HOOD_FRONT, -0.72, 0.96, -1.04, 0.40, -1.46, 0.22, -1.38, -0.14, -1.00, -0.40, -0.52, -0.80, 0.14, -0.96, 0.84, -0.80],
+  // RIGGERMAN (issue #28) — the rigger's WATCH CAP: a squared crown with a rolled brim standing proud all the way round,
+  // sitting between the Thresher's width and the officer's height. The roll is what reads at squint: a flat-topped
+  // head under a tall bag, where every other hood in the guild comes to a point or a peak.
+  rigger: [...HOOD_FRONT, -0.96, 1.08, -1.52, 0.50, -1.56, -0.34, -1.48, -0.92, -1.10, -1.22, 0.18, -1.30, 0.98, -1.04],
 };
 /** Shared scratch point list: celPoly reads pts.length, so scaled() sets the length and refills in place (§9, no per-frame allocation). */
 const HPT = [];
@@ -503,6 +522,9 @@ export function gleanCoat(ctx, rig, pose, inf) {
   // It rides the BACK half of the chest, where the yoke strap ends and the bag's feed actually comes down, because
   // that is the one part of this torso the carry arm never crosses: at the front it was under a bicep in every idle
   // and walk key, which is a mark the player cannot see.
+  // ...and NOT on the Picker: no bladder, no feed, no regulator. A pilot lamp burning rose on a man with nothing above
+  // his head would be the faction's gas colour with no gas behind it, which is the one lie this rig must never tell.
+  if (rig.build.bagShape === 'none') { yokeTick(ctx, rig, hw, H); return; }
   const gx = R(-hw * 0.8), gy = R(-H * 0.58);
   band(ctx, rig, gx, gy, 7, 6, pal.metal, 2);
   ctx.fillStyle = tones(rig, pal.metal).deep; ctx.fillRect(gx + 1, gy + 4, 5, 1);
@@ -516,8 +538,12 @@ export function gleanCoat(ctx, rig, pose, inf) {
   const lamp = gasState(rig, pose).gas;
   ctx.fillStyle = lamp <= 0 ? tones(rig, pal.metal).deep : rig.col(lamp > 0.6 ? GLEAN.hot : GLEAN.rose);
   ctx.fillRect(gx + 2, gy + 1, 3, 3);
+  yokeTick(ctx, rig, hw, H);
+}
+/** The chalk tally tick on the yoke collar: the one mark every Gleaner carries on the body, bladder or no bladder. */
+function yokeTick(ctx, rig, hw, H) {
   ctx.fillStyle = rig.col(rig.build.chalk || CHALK.chaff);
-  ctx.fillRect(R(hw * 0.1), -H + 2, 2, 4); ctx.fillRect(R(hw * 0.1) - 3, -H + 3, 2, 2);                // chalk tick on the yoke
+  ctx.fillRect(R(hw * 0.1), -H + 2, 2, 4); ctx.fillRect(R(hw * 0.1) - 3, -H + 3, 2, 2);
 }
 /** Hip block on a rope belt with a zinc ring (hip space): `night`, the value that touches the floor. */
 export function gleanHips(ctx, rig, pose, inf) {
@@ -572,7 +598,13 @@ function lineChain(rig) {
 }
 /**
  * Whatever a Gleaner carries hangs BELOW the hand on a wrist loop, never levelled out front: build.tool selects
- * 'gaff' (Chaff), 'hook' (Sickle) or 'horn' (Harvestman, the one strapped tool).
+ * 'gaff' (Chaff), 'hook' (Sickle), 'pick' (Picker, the short field pick) or 'horn' (Harvestman, the one strapped tool).
+ *
+ * GEAR IN THE HANDS (issue #28): `pose.grip > 0.5` is free on this faction — the rig has no weapon, so rig.js never
+ * reads it for IK — and it is the pose's own way of saying "the hip gear is in the hands now". The Picker's sack swing
+ * and the Riggerman's net release set it on their wind-up / hit / hold keys; drawHipGear hides the gear at the hip on
+ * exactly those keys and this hook draws it hanging from the near hand instead. Pose-driven rather than hook-driven
+ * so the contact sheet and the gallery (no fighter behind the rig) show the swing with the thing being swung.
  */
 export function drawWristTool(ctx, rig, pose) {
   const tool = rig.build.tool;
@@ -584,23 +616,72 @@ export function drawWristTool(ctx, rig, pose) {
   const ch = lineChain(rig);
   ctx.save(); hangSpace(ctx, rig, false); ctx.translate(0, 4);
   ctx.rotate(rad(ch.ang[0]));
+  if (pose && pose.grip > 0.5 && HAND_GEAR[rig.build.hipGear]) {   // the hip gear, swung: it hangs off the fist on its own tie
+    ctx.strokeStyle = rig.col(GLEAN.rope); ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 4); ctx.stroke();
+    ctx.translate(0, 4); HAND_GEAR[rig.build.hipGear](ctx, rig);
+    ctx.restore();
+    return;
+  }
   ctx.strokeStyle = rig.col(GLEAN.rope); ctx.lineWidth = 2; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 6); ctx.stroke();
   ctx.translate(0, 6); ctx.rotate(rad(ch.ang[1]));
   if (tool === 'hook') {
     celCapsule(ctx, rig, 0, 0, 0, 7, 2, GLEAN.zinc, 0.3);
     if (!rig.override) { ctx.strokeStyle = rig.col(GLEAN.zinc); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(-3, 7, 4, -0.6, 2.6); ctx.stroke(); }
+  } else if (tool === 'pick') {
+    // the field pick: a stubby rope-bound haft with a zinc spike hooked FORWARD and down — shorter than the gaff by
+    // half, and the only tool in the guild whose business end points where the man is looking (at the ground)
+    celCapsule(ctx, rig, 0, 0, 0, 6, 2, GLEAN.rope, 0.3);
+    celPoly(ctx, rig, [-2, 5, 3, 3, 9, 7, 10, 11, 7, 10, 2, 8, -2, 9], GLEAN.zinc, 0.36, 0.3);
+    if (!rig.override) { ctx.fillStyle = tones(rig, GLEAN.zinc).deep; ctx.fillRect(3, 7, 3, 2); }
   } else {
     celCapsule(ctx, rig, 0, 0, 0, 12, 2, GLEAN.zinc, 0.3);
     if (!rig.override) { ctx.strokeStyle = rig.col(GLEAN.zinc); ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(-4, 12, 4.5, -0.5, 2.2); ctx.stroke(); }
   }
   ctx.restore();
 }
-/** Hip gear on the same line: 'drum' (Winnow's hand-crank winch), 'apron' (Thresher's kettle ballast), 'tags' (claim tags). */
-export function drawHipGear(ctx, rig) {
+/**
+ * The Picker's field sack: undyed hemp, lumpy with what he has pulled out of the ground, tied at the neck with rope.
+ * Drawn in whatever local space the caller sets up (hip space at rest, hand space mid-swing) with the tie at (0, 0).
+ */
+function gleanSack(ctx, rig) {
+  celPoly(ctx, rig, [-3, 0, 3, 0, 7, 4, 8, 12, 5, 16, -4, 16, -8, 12, -7, 5], GLEAN.sack, 0.36, 0.3);
+  if (rig.override) return;
+  band(ctx, rig, -4, 1, 8, 4, GLEAN.rope, 1);                                       // the tie: rope over hemp, a material, so ink
+  ctx.fillStyle = tones(rig, GLEAN.sack).deep; ctx.fillRect(-5, 11, 9, 2);          // one fold where the load settles
+}
+/**
+ * The Riggerman's net, coiled: a rope ring with the mesh gathered inside it and three zinc weights hanging off the
+ * bottom edge. Same two-space contract as gleanSack — the coil's hang point is (0, 0).
+ */
+function gleanNetCoil(ctx, rig) {
+  celBall(ctx, rig, 0, 8, 8, GLEAN.rope, false);
+  for (let i = -1; i <= 1; i++) celRect(ctx, rig, i * 5 - 2, 14, 4, 4, 1, GLEAN.zinc, 0.4, 0);   // weights: silhouette, so before the flash return
+  if (rig.override) return;
+  const t = tones(rig, GLEAN.rope);
+  ctx.fillStyle = t.sh;
+  ctx.fillRect(-5, 5, 10, 2); ctx.fillRect(-5, 10, 10, 2); ctx.fillRect(-1, 2, 2, 12);           // the gathered mesh: tone, no ink (one object)
+}
+/** Hip gear that the pose may lift into the hands (`pose.grip`): the Picker's sack and the Riggerman's net coil. */
+const HAND_GEAR = { sack: gleanSack, netcoil: gleanNetCoil };
+/**
+ * Hip gear on the same line: 'drum' (Winnow's hand-crank winch), 'apron' (Thresher's kettle ballast), 'tags' (claim
+ * tags), 'sack' (Picker) and 'netcoil' (Riggerman). The last two leave the hip while `pose.grip > 0.5` — see drawWristTool.
+ */
+export function drawHipGear(ctx, rig, pose) {
   const kind = rig.build.hipGear;
   if (!kind) return;
+  if (HAND_GEAR[kind] && pose && pose.grip > 0.5) return;
   const hw = R(rig.p.hip / 2);
+  if (HAND_GEAR[kind]) {
+    // hung off the belt ring on the BACK hip, on the line chain like the apron: it is a load, and it swings
+    const ch = lineChain(rig);
+    ctx.save(); ctx.translate(-hw + 2, 2); ctx.rotate(rad(ch.ang[0] * 0.6));
+    HAND_GEAR[kind](ctx, rig);
+    ctx.restore();
+    return;
+  }
   if (kind === 'drum') {
     celRect(ctx, rig, hw - 3, -6, 11, 12, 3, GLEAN.zinc, 0.36, 0.3);
     celRect(ctx, rig, hw + 4, -15, 4, 4, 1, GLEAN.zinc, 0.4, 0);   // the crank HANDLE (silhouette, so before the flash return)
@@ -648,8 +729,20 @@ export function makeGleanBase(c, o = {}) {
   // rusher, a stooped winch hand, a planted bruiser, a prowling thief and an officer at attention alike. Every base
   // animation inherits the stance because K() is where the base set takes its defaults, and the walk and run below
   // are authored as OFFSETS from it (T0/H0) so a variant's lean carries through the cycle instead of snapping back.
-  const st = { torso: -3, head: 6, legR: [14, 6], legL: [-16, 8], footR: -18, footL: -15, root: [0, 0], ...(o.stance || {}) };
-  const K = (s) => ({ ...st, ...c, ...s });
+  const { root: stRoot, ...stPose } = o.stance || {};
+  const st = { torso: -3, head: 6, legR: [14, 6], legL: [-16, 8], footR: -18, footL: -15, root: [0, 0], ...stPose };
+  // THE FLOOR OFFSET (`stance.root[1]`, the Riggerman's +3): a stance whose legs splay wide stands shorter by the
+  // cosine, and its soles hung 3-4 px off the deck on every key that inherits the stance legs (idle, the grab set,
+  // hurt #2 ...). It is ADDED to those keys' root y, never a replacement — every base key authors its own root for a
+  // weight shift, so a replacement was overwritten on the first one — and it is applied ONLY to keys that take the
+  // stance legs: walk / run / flee author their legs absolute and already sit on the floor, and +3 there would sink
+  // the walk's down key through it (geom/pose-audit FLOOR, bound 3.5).
+  const RY = stRoot ? stRoot[1] || 0 : 0;
+  const K = (s) => {
+    const k = { ...st, ...c, ...s };
+    if (RY && s.legR === undefined && s.legL === undefined) { const r = k.root || [0, 0]; k.root = r.length > 2 ? [r[0], r[1] + RY, r[2]] : [r[0], r[1] + RY]; }
+    return k;
+  };
   const aR = c.armR, aL = c.armL, T0 = st.torso, H0 = st.head;
   // per-variant gait: `stride` scales the leg and arm swing, `bob` the weight drop. A heavy bruiser and a light rusher
   // do not walk at the same amplitude. Both mirror halves take the same scalar, so §8's walk mirror contract is exact.
@@ -760,6 +853,42 @@ export function makeGleanBase(c, o = {}) {
       FK(4, K({ torso: -3, root: [0, 0] }), { ease: 'out' }),
     ] },
   };
+  if (o.grab) {
+    // THE ENGINE GRAB PATH (grabs.js: grabTell -> grab [type 'grab' hitbox] -> grabHold loop -> grabHit x N -> throw), the
+    // Cinder Hulk's shape on the Gleaning's skeleton, for the Riggerman (issue #28). No weapon channel on this faction,
+    // so both arms pose on the victim. LEGS: these five names are on geometry.js's GROUND_ANIMS allowlist, so a sole
+    // through the deck here is an error, not a note — every key takes either the stance (idle, audited) or GL, the
+    // walk's contact key (audited), and root.y stays 0 / 1 like the keys they were lifted from.
+    const G = { armR: [84, 30], armL: [84, 30] };
+    const GL = { legR: [30, 4], legL: [-24, 18], footR: -4, footL: -30 };
+    Object.assign(anims, {
+      grabTell: { loop: false, frames: [
+        FK(10, K({ armR: [-64, -26], armL: [-72, -26], torso: T0 + 4, head: H0 - 14, root: [-2, 0], face: 'shout' }), { tell: true, sfx: 'grapple', ease: 'out' }),
+        FK(10, K({ armR: [-92, -16], armL: [-98, -20], torso: T0 - 4, head: H0 - 16, root: [-4, 0], face: 'shout', squash: 0.97, stretch: 1.04 }), { tell: true, ease: 'inout' }),
+      ] },
+      grab: { loop: false, frames: [
+        FK(4, K({ ...G, ...GL, armR: [92, 8], armL: [92, 8], torso: T0 + 16, head: H0 + 4, root: [4, 1], face: 'shout', squash: 1.04, stretch: 0.97 }),
+          { hitbox: { x: 4, y: -84, w: 46, h: 80, z: 22, type: 'grab', once: true, damage: 0 }, move: { x: 2 }, sfx: 'whiff', ease: 'overshoot' }),
+        FK(6, K({ ...G, ...GL, torso: T0 + 12, head: H0 + 2, root: [3, 1], face: 'angry' }), { ease: 'out' }),
+        FK(10, K({ ...G, armR: [62, 28], armL: [62, 28], torso: T0 + 8, root: [2, 0], face: 'angry' }), { punish: true, ease: 'inout' }),
+      ] },
+      grabHold: { loop: true, frames: [
+        FK(14, K({ ...G, torso: T0 + 2, root: [0, 0], face: 'angry' }), { ease: 'inout' }),
+        FK(14, K({ ...G, armR: [88, 34], armL: [88, 34], torso: T0 + 5, head: H0 + 2, root: [0, 1], face: 'angry' }), { ease: 'inout' }),
+      ] },
+      grabHit: { loop: false, frames: [
+        FK(4, K({ ...G, armR: [72, 40], armL: [72, 40], torso: T0 - 8, head: H0 - 12, root: [-2, 0], face: 'angry' }), { ease: 'in' }),
+        FK(4, K({ ...G, ...GL, armR: [98, 44], armL: [98, 44], torso: T0 + 16, head: H0 + 6, root: [4, 1], face: 'shout', squash: 1.06, stretch: 0.95 }), { sfx: 'hit_medium', ease: 'overshoot' }),
+        FK(6, K({ ...G, torso: T0 + 2, root: [0, 0], face: 'angry' }), { ease: 'out' }),
+      ] },
+      throw: { loop: false, frames: [
+        FK(5, K({ ...G, armR: [60, 30], armL: [60, 30], torso: T0 - 18, head: H0 - 10, root: [-3, 0], face: 'angry', squash: 1.04, stretch: 0.96 }), { ease: 'in' }),
+        FK(6, K({ ...G, ...GL, armR: [140, -10], armL: [140, -10], torso: T0 + 24, head: H0 + 6, root: [6, 1], face: 'shout', squash: 0.96, stretch: 1.04 }), { sfx: 'throw', ease: 'overshoot' }),
+        FK(10, K({ ...G, ...GL, armR: [130, 0], armL: [130, 0], torso: T0 + 18, head: H0 + 4, root: [6, 1], face: 'grit' }), { punish: true, ease: 'inout' }),
+        FK(6, K({ torso: T0, root: [0, 0] }), { ease: 'out' }),
+      ] },
+    });
+  }
   if (o.extra) Object.assign(anims, o.extra);
   return anims;
 }

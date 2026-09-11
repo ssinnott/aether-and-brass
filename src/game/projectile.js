@@ -71,6 +71,10 @@ export class Projectile extends Entity {
     this.drawFn = typeof o.draw === 'function' ? o.draw : null;
     this.retract = false; this.returning = false;
     this.spin = 0; this.lastTick = -99;
+    // Fire: a puddle (style 'fire') or anything whose hit is fire (`element: 'fire'` / `fire: true` - the Firebrand's tank
+    // blast, a fire bomb's explosion, the tallow vat's splash). It registers with world.fires every step so the gas hazards
+    // (hazards.js gasSeep / gasCell) can ignite off it; the fire is a fact about the projectile, not about who it hits.
+    this.isFire = this.style === 'fire' || !!(this.hit && (this.hit.element === 'fire' || this.hit.fire));
   }
   /** World-space AABB of the projectile body (y positive up). */
   box() { return { x0: this.x - this.r, x1: this.x + this.r, y0: Math.max(0, this.y - this.r), y1: this.y + this.r }; }
@@ -83,6 +87,7 @@ export class Projectile extends Entity {
   }
   update(world) {
     this.world = world;
+    if (this.isFire && world.addFire) world.addFire(this.x, this.z, this.r);
     if (this.reelTarget) { this.updateReel(world); return; }
     if (this.retract) {
       const o = this.owner, tx = o ? o.x + o.facing * 10 : this.x, ty = o ? o.y + 30 : 0;

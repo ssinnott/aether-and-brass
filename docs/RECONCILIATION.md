@@ -16,6 +16,7 @@ rules from ARCHITECTURE.
 | Camera | Follows the midpoint of living players, never scrolls left once advanced, locks on 640px arenas during waves (GDD and ARCHITECTURE agree). |
 | Section 3 | Camera locked for the whole section; waves are timer-triggered (`at` seconds since section start, or earlier on clear); backdrop auto-scrolls. Stage format gains `mode: 'locked'` + `timedWaves`. |
 | Section 4 boss | Boss trigger at x 5900, arena x 5560..6000 (400px band as GDD, clamp to stage end). |
+| Boards 2-4 (issues #27/#28) | Every board has four sections, one of them `mode: 'locked'` with `timedWaves` (board 2 the Cold Sovereign's gun deck, board 3 the Cart Lane, board 4 the Lash-Up), exactly 640px wide and never containing a boss trigger; it exits through `transition: { kind: 'dock', banner, look, pies }`. Hazards and zones come from the table in `game/hazards.js`; no two sections in the game share a hazard layout (`tools/stage-census.js` checks). Spawn entries may carry `mods` (`game/traits.js` SPAWN_MODS); a modifier counts as its own variant. Each board fields two factions with at least four variants each, 60-75 enemies, no variant over 30% of its spawns, at least two mixed-faction waves per section, one reinforcement wave, and its own mid-boss track (`midboss`, `midboss2`, `midboss3`, `midboss4`). The balance reference is board 1: the engine's win rate on every board stays within a few points of board 1's (`npm run winrate`). |
 
 ## Final controls (replaces GDD §8 and ARCHITECTURE §16 tables)
 Two people share one keyboard, so each player owns one half of it — but **one player alone uses the arcade
@@ -114,7 +115,7 @@ Unknown names must silently no-op (console.warn once when `?debug=1`).
 - World: `prop_break explosion explosion_big fire burn steam vent_tell piston_crush crate_drop bomb_fuse bomb_bat net whip sling bolt chime hydraulic saw_whine time_stop_tick aether_step valve_blow hook_yank cannon`
 - Pickups: `pickup_food pickup_score pickup_meter pickup_life`
 - Bosses: `boss_intro boss_phase boss_defeat roar`
-- Music tracks (`audio.music.play(name)`): `title section1 section2 midboss section3 section4 boss results gameover`
+- Music tracks (`audio.music.play(name)`): `title section1 section2 midboss section3 section4 boss results gameover`, plus per board `storm1-3 midboss2 stormboss`, `works1-3 midboss3 ledgerboss`, `glean1-3 midboss4 cropboss`
 
 ## File ownership for parallel work (no two agents edit the same file)
 - Game core (fighter/player/enemy/boss/combat/world/stage/items/hazards/projectile/hud/screens/bot, main.js, input.js bindings): game-core workflow.
