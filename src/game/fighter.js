@@ -309,6 +309,19 @@ export class Fighter extends Entity {
     const reach = this.vy > 0 ? this.y + (this.vy * this.vy) / (2 * GRAVITY) : this.y;
     const s = solidAt(world, this.x, this.z, reach);
     if (!s) return;
+    // WHICH AXIS did the body cross? A solid is a rectangle, not a line, and a fighter walks in z as freely as in x:
+    // stepping up or down into a wall's z band while already inside its x range is ordinary play. Resolving that in x
+    // would pick a face by `prevX` -- which was already between x0 and x1 -- and eject the body out of the FAR side,
+    // teleporting it through the wall it just touched. So push back along the axis that was actually crossed.
+    const wasInX = this.prevX > s.x0 && this.prevX < s.x1;
+    const wasInZ = this.prevZ > s.z0 && this.prevZ < s.z1;
+    if (wasInX && !wasInZ) {
+      // came in along z: put it back on the z face it came from, and kill only the inward z velocity
+      const fromBack = this.prevZ <= s.z0;
+      this.z = fromBack ? s.z0 - 1 : s.z1 + 1;
+      if ((fromBack && this.vz > 0) || (!fromBack && this.vz < 0)) this.vz = 0;
+      return;
+    }
     const fromLeft = this.prevX <= s.x0;
     this.x = fromLeft ? s.x0 - 1 : s.x1 + 1;
     if (AIR_FALL_STATES.has(this.state) && Math.abs(this.vx) > 4) {

@@ -105,6 +105,23 @@ export async function obstacles(server, { withPage, assert }) {
     }
     assert(jumped, 'an enemy walled off from its target leaves the ground to get over');
     assert(crossed, 'and it actually reaches the far side rather than grinding against the wall');
+
+    // (e) A solid is a RECTANGLE, and a fighter walks in z as freely as in x. Stepping into a wall's z band while
+    // already inside its x range must stop the body on the z face -- resolving that in x would pick a face from a
+    // prevX that is itself between x0 and x1 and eject the body out of the FAR side, through the wall it touched.
+    await g.eval(() => { for (const e of window.__game.world.entities) if (e.kind === 'enemy') e.removeMe = true; });
+    const wall = await g.eval(() => {
+      const w = window.__game.world, Zone = w.entities.find((e) => e.isSolid).constructor;
+      const z = new Zone({ type: 'solid', x0: 4240, x1: 4290, z0: 70, z1: 140, height: 40 });
+      w.add(z);
+      return { x0: z.x0, x1: z.x1, z0: z.z0, z1: z.z1 };
+    });
+    assert(await park((wall.x0 + wall.x1) / 2, wall.z0 - 20), 'the hero is on its feet inside the wall\'s x range, clear of its z band');
+    const zBefore = await p1();
+    for (let i = 0; i < 40; i++) await g.press(0, { down: true }, 1, 0);
+    const zAfter = await p1();
+    assert(Math.abs(zAfter.x - zBefore.x) < 20, `walking into a wall along z does not eject the body in x (${zBefore.x} -> ${zAfter.x})`);
+    assert(!(zAfter.z > wall.z0 && zAfter.z < wall.z1), `and it stops on the z face rather than inside the wall (z=${zAfter.z})`);
   });
 
   // ---------------------------------------------------------------- barricades (board 2, the Gas-Halls)
