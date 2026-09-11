@@ -154,11 +154,17 @@ export class StageRunner {
     // spec.mods (spawn modifiers, traits.js SPAWN_MODS) ride the pending spec and reach the Enemy constructor through spawnEnemyAt
     const e = this.screen.spawnEnemyAt(s.spec.type, s.spec.variant, s.x, s.z, { entered: false, facing: s.facing, fromSky: s.spec.side === 'sky', mods: s.spec.mods });
     if (s.spec.side === 'sky') {
-      // crashes through the roof: shake, roof debris and a shower of gears
-      this.world.camera.shake(s.spec.shake || 8, 14); audio.play('land_heavy'); audio.play('prop_break');
-      particles.burst('debris', s.x, 150, s.z, 14, { speed: 4, up: 1, color: '#8C6825', sizeJitter: 2 });
-      particles.burst('gear', s.x, 150, s.z, 4, { speed: 3, up: 1 });
-      particles.burst('dust', s.x, 140, s.z, 8, { speed: 2, up: 0.5 });
+      if (e && e.mods && e.mods.includes('winged')) {
+        // lowered in on a bladder (traits.js winged): a line-release hiss and rose gas, no roof to come through
+        this.world.camera.shake(Math.min(s.spec.shake || 3, 3), 8); audio.play('steam_vent');
+        particles.burst('steam', s.x, 160, s.z, 6, { speed: 1.2, up: 1.4, color: '#FF57B0', sizeJitter: 1.2 });
+      } else {
+        // crashes through the roof: shake, roof debris and a shower of gears
+        this.world.camera.shake(s.spec.shake || 8, 14); audio.play('land_heavy'); audio.play('prop_break');
+        particles.burst('debris', s.x, 150, s.z, 14, { speed: 4, up: 1, color: '#8C6825', sizeJitter: 2 });
+        particles.burst('gear', s.x, 150, s.z, 4, { speed: 3, up: 1 });
+        particles.burst('dust', s.x, 140, s.z, 8, { speed: 2, up: 0.5 });
+      }
     }
     return e;
   }
