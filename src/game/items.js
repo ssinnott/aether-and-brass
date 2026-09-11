@@ -322,9 +322,12 @@ export class Prop extends Entity {
       const facing = near ? (Math.sign(near.x - this.x) || -1) : -1;
       world.spawnEnemy(spec.type, spec.variant, this.x + (out % 2 ? 10 : -10), z, {
         entered: false, facing, mods: spec.mods || null,
-        // resolved here rather than inline so a cargo entry may override the climb-out's own fields the same way a
-        // wave spec can (`entrance: { arrive: 40 }` on a heavy unit that takes longer to get out of the box)
-        entrance: entranceFor({ entrance: { kind: 'climbOut', ...(spec.entrance || {}) } }),
+        // Resolved here rather than inline so a cargo entry may override the climb-out's own fields the same way a
+        // wave spec can (`entrance: { arrive: 40 }` on a heavy unit that takes longer to get out of the box).
+        // `kind` goes AFTER the spread deliberately: a wave-addressed spec carries `{ kind: 'cargo', prop }`, and
+        // letting that through would have the unit resolve as a `cargo` entrance -- which startArrival does not
+        // treat as grounded, so it would drop out of the SKY instead of climbing out of the box it is standing in.
+        entrance: entranceFor({ entrance: { ...(spec.entrance || {}), kind: 'climbOut' } }),
       });
       out++;
     }

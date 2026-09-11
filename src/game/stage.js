@@ -114,9 +114,22 @@ export class StageRunner {
     }
     return token.hazards.length ? token : null;
   }
-  /** Undo a `hazardSet` (its own `frames` timer, or the event ending). */
+  /**
+   * Undo a `hazardSet` (its own `frames` timer, or the event ending). Restoring `period` re-solves `offset` for the
+   * SAME reason setting it does: `(world.frame + offset) % period` has moved on while the override was in force, so
+   * putting the old pair back raw can drop the hazard straight into 'active' with no tell — which GDD 6 forbids, and
+   * which is nastier on the way back than on the way out because nobody is expecting the room to change again.
+   */
   hazardRevert(token) {
-    for (const t of (token && token.hazards) || []) { t.h.forcePhase = t.forcePhase; t.h.period = t.period; t.h.offset = t.offset; }
+    for (const t of (token && token.hazards) || []) {
+      t.h.forcePhase = t.forcePhase;
+      if (t.h.period !== t.period) {
+        const frac = t.h.period ? (((this.world.frame + t.h.offset) % t.h.period) / t.h.period) : 0;
+        const raw = Math.round(frac * t.period) - (this.world.frame % t.period);
+        t.h.period = t.period;
+        t.h.offset = ((raw % t.period) + t.period) % t.period;
+      } else t.h.offset = t.offset;
+    }
   }
 
   /** Place every prop / hazard / zone, position the camera, enter the first section. */

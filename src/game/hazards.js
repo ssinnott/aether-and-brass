@@ -955,8 +955,14 @@ export class Zone extends Entity {
     }
     if (this.height > 0) return;
     const rect = this.asRect();
+    // How far either side of the hole a body still counts as being knocked TOWARD it.
+    const reach = (this.x1 - this.x0) / 2 + EDGE_LANE;
     for (const f of world.fighters) {
-      if (f.kind === 'enemy') this.edgeShove(f, this.z0, this.z1);   // hits carry no z knockback: this is what makes "knock them in" reachable
+      // Hits carry no z knockback, so edgeShove is the only thing that makes "knock them in" reachable -- but it MUST
+      // be gated on being near the hole. Unlike a `rails` zone, which spans its whole section, a gap is a few dozen
+      // pixels wide; ungated, this shoved every knocked-down enemy on the board in z toward the z band of a hole they
+      // were nowhere near. `updateRails` gates on inX for the same reason.
+      if (f.kind === 'enemy' && Math.abs(f.x - this.x) <= reach) this.edgeShove(f, this.z0, this.z1);
       if (f.dead || f.y > 0 || f.grabbedBy || f.kind === 'boss' || !this.inBox(f.x, f.z)) continue;
       // dropPlayer sets the body down OUTSIDE the rectangle, so there is no repeat next frame and no de-dupe to keep
       if (f.kind === 'player') this.dropPlayer(world, f, rect);

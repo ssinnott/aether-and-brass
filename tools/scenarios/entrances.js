@@ -19,6 +19,8 @@ const KINDS = [
   { kind: 'flyIn', type: 'stormcrow', variant: 'corsair', tell: 30, arrive: 20, air: true },
   { kind: 'descend', type: 'gleaning', variant: 'chaff', tell: 0, arrive: 30, air: true },
   { kind: 'ropeDrop', type: 'stormcrow', variant: 'marine', tell: 20, arrive: 18, air: true },
+  // how every #34 cargo unit arrives: no tell of its own (the container is the tell), straight into the recovery
+  { kind: 'climbOut', type: 'brassbound', variant: 'footman', tell: 0, arrive: 26, air: false },
 ];
 
 /**
@@ -98,6 +100,19 @@ export async function entrances(server, { withPage, assert }) {
       assert(!!after && after.arriveT === 0, `${k.kind}: the arrival counter is cleared (it is hashed by net/checksum.js)`);
       // the flight must not have burned the first-attack grace: a unit that lands swinging is not punishable at all
       assert(!!after && after.cooldown > 0, `${k.kind}: firstAttackDelay is re-armed against the landing (got ${after && after.cooldown})`);
+
+      // AND IT ACTUALLY FIGHTS. An air entrance starts in ST.JUMP and its path ends at exactly y = 0 with vy = 0, so
+      // the unit is not `airborne`, onLand never fires, and nothing else leaves ST.JUMP -- Enemy.think early-returns
+      // on it, leaving an alive, hittable, completely inert body. Asserting the arrival ENDED is not enough; the
+      // whole point of an entrance is the enemy it delivers, so assert it moves under its own power afterwards.
+      let acted = false;
+      for (let i = 0; i < 180 && !acted; i++) {
+        const m = (await mobs())[0];
+        if (!m) break;
+        if (m.state === 'WALK' || m.state === 'RUN' || m.state === 'ATTACK') acted = true;
+        else await g.step(1);
+      }
+      assert(acted, `${k.kind}: the arrived unit joins the fight rather than standing in its falling pose`);
     }
 
     // (d) ropeDrop, the entrance's own rule: ANY hit on a unit still hanging on its line cuts it.

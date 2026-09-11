@@ -50,6 +50,8 @@ const SKY_Y = 170, HANG_Y = 96;
 const FLY_DX = 220, FLY_ARC = 74;
 /** Slack over an entrance's own length before the watchdog in `stepArrival` ends it regardless (see there). */
 const ARRIVE_WATCHDOG = 180;
+/** Kinds that start ON THE FLOOR. Anything not listed here starts in the air, so a new grounded kind must join it. */
+const GROUNDED = new Set(['teleport', 'climbOut', 'cargo']);
 
 /**
  * Per-kind frame budgets and look. `tell` frames run BEFORE the unit exists (EntranceTell); `approach` is the
@@ -168,7 +170,7 @@ export function startArrival(e, ent) {
   e.arriveLand = 0;
   e.cutLine = false;
   // grounded arrivals: already standing where they came out, straight into the recovery
-  if (ent.kind === 'teleport' || ent.kind === 'climbOut') { e.y = 0; e.vy = 0; e.setState(ST.IDLE, 'idle'); return; }
+  if (GROUNDED.has(ent.kind)) { e.y = 0; e.vy = 0; e.setState(ST.IDLE, 'idle'); return; }
   if (ent.kind === 'flyIn') {
     const dir = ent.from === 'left' ? 1 : -1;   // the side it crosses FROM, so it faces the way it is travelling
     e.x = e.arriveX - dir * FLY_DX; e.facing = dir; e.y = FLY_ARC;
@@ -264,7 +266,15 @@ export function finishArrival(e, world) {
   // it lands — the exact opposite of an arrival you get to punish. Re-arm the grace against the landing, not
   // the spawn, the way every other non-acting state hands back a fresh cooldown.
   if (e.ai) e.attackCooldown = Math.max(e.attackCooldown || 0, e.ai.firstAttackDelay);
-  if (e.y <= 0) { e.y = 0; e.vy = 0; }
+  // Hand the body back in a GROUND state. An air entrance starts in ST.JUMP, and its scripted path ends at exactly
+  // y = 0 with vy = 0 -- so the unit is not `airborne` (y > 0 || vy > 0), onLand never fires, and nothing else in the
+  // engine ever leaves ST.JUMP. Enemy.think early-returns on ST.JUMP, so the unit would stand in its falling pose
+  // for the rest of the wave: alive, hittable, and completely inert. Only `onLand` normally does this, and the whole
+  // point of a scripted arrival is that it never falls the last pixel.
+  if (e.y <= 0) {
+    e.y = 0; e.vy = 0;
+    if (e.state === ST.JUMP) e.setState(ST.IDLE, 'idle');
+  }
   if (!ent || !world) return;
   if (ent.sfx) audio.play(ent.sfx);
   if (ent.kind === 'teleport') {

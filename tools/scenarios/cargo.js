@@ -91,7 +91,7 @@ export async function cargo(server, { withPage, assert }) {
   await withPage(server, SOVEREIGN, async (g) => {
     await g.step(30);
     const h = await prop(g, 'hatch');
-    assert(!!h && h.on === 'timer' && h.left === 3, 'the brig hatch is carrying three');
+    assert(!!h && h.on === 'timer' && h.left === 2, 'the brig hatch is carrying two');
     const before = await items(g);
     await smash(g, 'hatch');
     await g.step(4);
@@ -114,6 +114,10 @@ export async function cargo(server, { withPage, assert }) {
     assert(out.length === 1, 'the wave entry spawns through the cart');
     assert(Math.abs(out[0].x - cart.x) < 40, `and it comes out AT THE CART rather than at the lock edge (${out[0].x} vs ${cart.x})`);
     assert(out[0].ai === 'ARRIVING', 'through the climb-out entrance');
+    // ON ITS FEET. A wave-addressed spec carries `{ kind: 'cargo' }`, and letting that reach entranceFor resolves a
+    // `cargo` entrance -- which is not in startArrival's grounded set, so the unit DROPS OUT OF THE SKY instead of
+    // climbing out of the box it is standing in. The point of the whole feature is that it comes out of the cart.
+    assert(out[0].y === 0, `a cargo unit climbs out of the container, it does not fall from the sky (y=${out[0].y})`);
 
     // Break the cart first and the same wave entry still delivers. A wave-supplied load is not in the cart until the
     // wave fires, so breaking it early cannot turn those units into loot the way a pre-loaded crate's cargo does --
