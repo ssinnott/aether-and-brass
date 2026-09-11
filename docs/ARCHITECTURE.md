@@ -59,6 +59,7 @@ types/content.d.ts         # Frame / Hit / Hitbox / Anim / AnimSet / Hooks — t
 tools/server.js            # zero-dependency static server (node), used by dev + tests
 tools/playtest.js          # Playwright headless playthrough harness (see section 13)
 tools/build.js             # esbuild single-file bundle -> dist/index.html
+tools/scenarios/           # playtest scenario modules merged into tools/playtest.js
 docs/GDD.md                # game design document (authoritative for design)
 docs/ARCHITECTURE.md       # this file
 src/
@@ -67,6 +68,7 @@ src/
   engine/
     loop.js                # fixed-timestep loop; test mode step(n)
     input.js               # keyboard + gamepad -> per-player action state with edge detection & buffer
+    bindings.js            # default binding table + pure helpers: clone/sanitise/rebind/legend/join-hint
     rng.js                 # seedable RNG: rng.seed(n), rng.next(), rng.range(a,b), rng.int(a,b), rng.pick(arr), rng.chance(p)
     camera.js              # camera x, lock/unlock, shake
     canvas.js              # create internal canvas, display canvas, resize/scaling, present()
@@ -89,6 +91,7 @@ src/
       glean1.js ... glean3.js        # stage 4
     props.js               # breakable/static prop renderers (crates, barrels, lamps, pipes, gears...)
     portraits.js           # character-select portraits & HUD icons drawn from rigs
+    weapons.js             # corsair cutlass draw, on-floor weapon render, HUD icon + durability pips
   game/
     game.js                # Game: screen stack, players, options, transitions
     world.js               # World: entities list, spawn/despawn, depth-sorted draw, update, hit resolution
@@ -101,16 +104,26 @@ src/
     shield.js              # regenerating shields: traits.shield normalisation, absorb/refill, HUD strip + in-world ripple
     animation.js           # animation player utilities: play(name), tick(), current frame/pose, events
     items.js               # pickups (food/health, score, meter) and breakable props
+    weapons.js             # pickup weapon table (WEAPONS), swing anims, bot seek helpers
+    throwables.js          # issue #21: weapon + prop throw/land/shatter, held prop, lime patch, edge-loss helper
     hazards.js             # stage hazards (steam vents, pistons, conveyor floors, pits if any)
     stage.js               # StageRunner: sections, wave director, camera locks, GO arrow, boss trigger
+    storage.js             # guarded localStorage probe: store(namespace), shared by progress.js + options.js
+    options.js             # persisted options (difficulty, music/sfx volume, screen shake, bindings)
+    trials.js              # issue #22: TrialRunner (matches world.log against a Trial's steps) + trialProgress (guarded save)
     hud.js                 # in-game HUD
     screens/
       title.js, boardselect.js, select.js, intro.js, gameplay.js, pause.js, gameover.js, results.js
       gallery.js, lobby.js       # rig gallery; online co-op lobby (net/)
       charcards.js, boardcards.js  # hero cards / board plaques, shared by select+lobby and boardselect+lobby
+      options.js, controls.js     # OPTIONS overlay (main plate) and its CONTROLS sub-plate
+      training.js, trainpause.js  # issue #22: TrainingScreen (extends gameplay.js) + its own pause plate
+      trialsScreen.js, moves.js   # issue #22: per-hero trial list with ticks; move list with animated rig previews
   content/
     characters/            # one file per playable character (rig build, palette, anims, moves)
       index.js, brass.js, ... (names from GDD)
+      <hero>Moves.js         # issue #22: sibling per hero — MoveEntry[] moveList + Trial[] trials, imported and
+                             # attached by the hero file (kept separate so pip.js stays close to the 700-line cap)
     enemies/
       index.js             # registry: getEnemyDef(type, variant), ENEMY_LIST, ENEMY_GALLERY
       common.js            # shared rig parts / animation + def builders for every faction
@@ -185,12 +198,33 @@ export const input = {
   globalPressed('pause'|'mute'|'debug') -> bool,
   setVirtual(player, actionsObject),  // test hook: { left:true, attack:true ... } overrides devices until cleared
   clearVirtual(player),
-  bindings,                           // exported default keyboard maps (from GDD section 8)
+  setPadVirtual(index, buttons),      // test hook: number[] of pressed button indices (or null to remove the fake pad); fakes navigator.getGamepads()[index] for pollGamepads()
+  bindings,                           // mutable clone of engine/bindings.js DEFAULT_BINDINGS; edited in place by rebind/importBindings/resetBindings
+  bindingsVersion,                    // bumps on every bindings change; screens diff it to know when to rebuild cached hint strings
+  rebind(layout, action, code) -> { ok: true, swapped?: string } | { ok: false, reason: string },  // layout: 'solo'|'p1'|'p2'|'pad'; code is a KeyboardEvent.code for solo/p1/p2, a gamepad button index for pad
+  importBindings(raw) / exportBindings() / resetBindings(),  // round-trip through engine/bindings.js sanitiseBindings()
+  legend(layout) -> string,           // e.g. "WASD MOVE  F ATTACK  G JUMP  ..." style legend line for a layout, built from current bindings
+  joinHint(slot) -> string,           // "P2: PRESS J TO JOIN" style hint (single primary key), built from the slot's own (non-shared) keys
+  joinKeysHint(slot) -> string,       // long form, same "P2: PRESS ..." prefix but every joinable key: "P2: PRESS J/K/U/L/O/I OR BACKSPACE TO JOIN"
+  keyText(layout, action) -> string,  // first bound key/button label for one action
+  cellText(layout, action) -> string, // every bound label for a grid cell joined ' / ', e.g. "G / SPACE"
+  hasKey(layout, action, code) -> bool,
+  swallowKey(code),                   // drops a just-captured keydown from keysDown/keysPressedPending before the next update(), so it fires no action and doesn't toggle mute/debug
+  beginPadCapture() / capturePadButton() -> number / endPadCapture(),  // gamepad rebind capture (no player/index arg: any connected pad), polled from a screen's update(); capturePadButton() returns -1 when nothing new is pressed
+  padOf(player) -> number, hasKeyboard(player) -> bool, freeSlots() -> number[], unboundPads,  // pad claimed / has a keyboard half (false for slots 2/3) / free slots (allocates) / unclaimed connected pads
+  joinState() -> number,              // joined bitmask | unbound-pad bit; no allocation, for cache invalidation
+  resetClaims(), setPadClaiming(bool),  // reset every pad claim/kbSeen (title entry) / claiming off (netplay) => any pad drives the local player, never claims a new slot
 }
 ```
-Players are `0` and `1`. Gamepad `i` maps to player `i` and is OR-merged with that
-player's keyboard bindings. Use the standard gamepad mapping (d-pad + left stick
-for movement, buttons per GDD).
+Players are `0..3` (`MAX_PLAYERS`); keyboard halves exist for slots 0/1 only, so slots 2/3 need a claimed gamepad or a test virtual. Gamepads are not index-bound: an unbound pad's first BUTTON edge (axes ignored) claims the lowest slot with no pad whose keyboard half is unused (`kbSeen`) and that isn't a netplay virtual slot — that press also counts as the slot's join. Claims (and `kbSeen`) reset on title entry (`resetClaims()`). Netplay turns claiming off (`setPadClaiming(false)`, `lobby.js`/`session.js`); while off, `pollRaw(player)` reads the pad bound to that slot plus every unbound pad, so a pad drives the local player whether pressed before or after the keyboard and can never claim the peer's slot mid-match. Use the standard gamepad mapping (d-pad + left stick, buttons per GDD).
+The four binding layouts are `solo` (1P arcade aliases), `p1`, `p2`
+(both keyboard) and `pad` (shared gamepad map); `engine/bindings.js` owns `DEFAULT_BINDINGS`, `LAYOUTS`
+and the pure `cloneBindings` / `sanitiseBindings` / `rebindKey` / `rebindPad` / `keyLabel` / `padLabel` /
+`legendFor` / `joinLabels` / `joinCodesFor` helpers that `input.js`'s wrappers above delegate to; the six
+rebind conflict invariants (same-layout swap, same-side sibling strip with refusal if it would unbind
+something, other-side / global / RT refusal, and the same-code exemption that lets P1 and P2 rearrange
+the shared arrow keys) live there and are re-checked by `sanitiseBindings` on every load, so no path —
+UI, a hand-edited save, or a future import — can put one key on two actions or a P1 key into P2's join set.
 
 ### `engine/camera.js`
 ```js
@@ -199,6 +233,7 @@ export class Camera {
   x = 0; left = 0; right = STAGE_LENGTH; locked = false; shakeX; shakeY; minX;
   follow(players)             // target = mean x of alive players - VIEW_W/2, clamped to [max(left, minX), right - VIEW_W]; eased (approach 0.12)
   lock(x0, x1) / unlock()     // lock also sets left/right (right >= x0 + VIEW_W); unlock sets left = floor(x) (never scrolls back)
+  static shakeScale = 1       // visual-only multiplier applied inside shake(); OPTIONS' SCREEN SHAKE setting (1 / 0.5 / 0) scales it; never hashed in net/checksum.js
   shake(intensity, frames)
   update()
   toScreenX(x)                // Math.round(x - this.x + shakeX)
@@ -237,6 +272,9 @@ export const audio = {
   play(name, { volume=1, pitch=1 } = {}),   // named synthesized SFX (list in GDD section 10); no-op if not unlocked
   music: { play(trackName), stop(), setVolume(v) },   // pattern sequencer, loops; tracks per GDD
   muted, toggleMute(),
+  setMuted(m),               // primitive mute setter; toggleMute() delegates to it
+  setSfxVolume(v),            // 0..1, seeds the sfx gain node
+  sfxVolume, musicVolume,     // getters mirroring the current gain values
 }
 ```
 Test mode (`?autotest=1`) must never create an AudioContext (all calls no-op).
@@ -323,6 +361,8 @@ Hitbox coordinates are local (feet origin, `y` negative up, `x` positive toward
 facing) and mirrored by facing. The animation player (`AnimPlayer`) exposes
 `play(name, { restart=false })`, `tick()`, `pose` (interpolated), `frame`, `frameIndex`,
 `done` (non-looping finished), `events` consumed by the owner.
+`AnimPlayer.setOverlay(table)` makes `has()` / `play()` resolve names from the overlay first (held
+pickup weapons replace `attack1..N`; see `game/weapons.js`).
 
 ## 5. Entity & Fighter
 
@@ -351,6 +391,13 @@ Rules implemented ONCE in `Fighter` (players and enemies both inherit):
   damage (`breakDelay` after the pool empties), and never while dead, frozen or in hit-stop (the update returns
   first). `initShield` on spawn and respawn, `syncShield` after a def swap (boss phases). Absorbed damage is not
   counted in the results screen's Damage Taken, which stays HP lost.
+- **Training dummy** (`traits.dummy`, issue #22): a def spread with `traits.dummy: true` (passed through
+  `spawnEnemyAt`'s optional `opts.def`, never on a normal spawn) makes `Enemy.think` short-circuit into
+  `thinkDummy` — face the nearest player (unless `e.dummyFaceLock`) and stand, no attacks, no tokens, no
+  riposte/flee — unless `e.dummyMode === 'cpu'`, in which case the variant's own AI fights back at the
+  current difficulty. `traits.weight` (already read by `Fighter.takeHit` as a knockback divisor) is set to
+  1000 per instance to pin a STAND/BLOCK dummy in place so combos keep it inside a bot's attack band;
+  hitstun, launch height and throws are unaffected. See `game/screens/training.js`.
 - `hitstop`: while `> 0` the fighter's own update is frozen (anim and physics) but it still draws; camera shake on heavy hits.
 - Wall/edge bounce: when a knocked-down fighter hits the camera lock edge with `|vx| > 4`, it bounces back (`vx *= -0.5`) — feels great, cheap.
 - Grabs: `grab` hitbox type → if target is grabbable (`def.grabbable !== false`, not a boss unless allowed) attacker → `GRAB`, target → `GRABBED` (positioned in front of attacker each frame). From `GRAB`: attack = grab hit (up to 3, then auto-throw), direction + attack = throw in that direction (`THROWN` = knockdown with strong velocity; thrown bodies hit other enemies for damage `hit.friendly = true`). Grab breaks after `def.grabHoldFrames` (90).
@@ -365,6 +412,24 @@ Input → intent → state transitions (implements GDD section 7 combat rules):
 - `dodge` → `DODGE` (i-frames per GDD, short hop backward or roll through).
 - `taunt` → `TAUNT` (builds meter, interruptible).
 - Meter: `meter (0..METER.max = 300)`, three bars of 100 (`METER` in constants.js; special costs one bar, super the full meter, HP fallback per RECONCILIATION); gain on hit dealt (`+4` light, `+8` heavy), on taunt completion (`+25`), on damage taken (`+2`). Reset per life.
+- Held pickup weapon (`weaponId`, `weaponHits`; `game/weapons.js`): `pickUpWeapon / clearWeapon /
+  discardWeapon / dropWeapon / breakWeapon / spendWeapon`. While wielding, the ground combo comes from
+  `WEAPONS[id].anims` (via `AnimPlayer.setOverlay`, section 4) instead of the hero's own; a swing hitbox
+  carries `weapon: true` and spends one hit per connecting target (`onHitConfirmed`); reaching 0 hits
+  breaks it. `knockDown()` / `thrown()` drop it as a `WeaponPickup` (20-frame grace before either player
+  may retake it); entering the next section discards it (`LEFT BEHIND`, no pickup); respawn and continue
+  clear it silently; a hero already wielding never swaps for another pickup. `net/checksum.js` hashes
+  `weaponId`, `weaponHits` and the dropped pickup's `grace`.
+- **Throwing** (`game/throwables.js`, issue #21, GDD 7): direction + Attack while wielding a weapon (`startWeaponThrow`, checked between grab and swing in the attack order) turns the hero into
+  `ST.GRAB` playing its own forward `throw` anim; release spawns a plain `Projectile` (`spawnThrownWeapon`) carrying the weapon's own `WEAPONS[id].throw` spec (`speed, vy, gravity, damage, type, kbX,
+  kbY, hitstun, pierce, maxDist, spin`, plus an optional lime-patch `patch` on the Lime Rake) and every hit sets `hit.body = true` (`fighter.js` `takeHit`: `throwDamageTakenMult` applies,
+  `lastHitWasThrow` is set for the kill-credit bonus). It lands as the same `WeaponPickup` with `hits - 1` (`landWeapon`), or shatters at 0 either way — durability always drops on a throw, hit or
+  miss, and a weapon lost over an `open` rails edge gives nothing back. Left/right + Attack turns to face and throws forward; up/down adds `THROW.vz` px/f of z drift instead. A small stage prop
+  flagged `throwable: true` (bottle, lamp — `PROP_TYPES[type].throw`) can be lifted empty-handed (`findLiftProp` / `liftProp`) and only thrown, never swung (`thinkHeld`, walk-only at `THROW.holdWalk`,
+  no run/jump/dodge); it is a live `Prop` in state `'held'`, positioned every frame from the holder (`fighter.heldProp`, `updateHeldProp` — no one-frame lag) and always shatters on landing
+  (`landProp`, a fresh `Prop.break()`). Grab beats weapon-throw beats prop-lift beats swing; a held prop drops on any hit taken (`onHurt`); a wielded weapon still drops only on a knockdown / being
+  thrown (`Player.knockDown` / `thrown`, issue #20). `net/checksum.js` also hashes `heldProp`,
+  `holder`, `lost`, `throwable`, `throwPending.kind`, `thrownWeapon`, `thrownProp` and `lastHitWasThrow` per entity.
 - Combo counter: increments on every hit dealt while the "combo timer" (60 frames since last hit) is alive; on drop, HUD shows grade per GDD.
 - Lives/continues per GDD; on death respawn after 90 frames with invuln 120 frames if lives remain; else show `CONTINUE?` (handled by gameplay screen).
 
@@ -390,7 +455,12 @@ export const stage1 = {
   music: { section1: 'track1', ... },
   sections: [
     { id: 's1', x0: 0, x1: 1100, backdrop: 'section1', floor: 'cobble',
-      props: [ { type: 'crate', x: 320, z: 60, drops: 'food_small' }, { type: 'lamp', x: 500, z: 8 /* static, no collide */ } ],
+      props: [ { type: 'crate', x: 320, z: 60, drops: 'food_small' }, { type: 'lamp', x: 1000, z: 110, throwable: true } ],
+      // `drops:` on an enemy def (content/enemies/*.js) may also name a weapon id
+      // (halberd | cutlass | limerake | sabre, game/weapons.js) to spawn a WeaponPickup instead.
+      // `throwable: true` on a prop row (issue #21, GDD 7) makes that instance liftable empty-handed
+      // when its PROP_TYPES entry also carries a `throw` spec (game/throwables.js findLiftProp) — only
+      // bottle and lamp today; barrels/kegs/carts have no `throw` spec, so `startRoll` is unaffected.
       hazards: [ { type: 'steamVent', x: 800, z: 100, period: 180, active: 60 } ],
       waves: [
         { triggerX: 240,   // when camera.x + VIEW_W/2 >= triggerX (i.e. players reached here)
@@ -421,6 +491,10 @@ their ids added to `art/backgrounds/index.js`), a `preview` block for its select
 `banners` is optional: a board that does not supply it keeps stage 1's wording ("FOREMAN DEFEATED" on the mid-boss,
 "THE SKY OPENS" under STAGE CLEAR). A `zones` entry may also carry `color` — the `daisVents` edge glow defaults to
 aether cyan, which is Concordat machinery, so a board with no Concordat on it passes its own energy colour instead.
+
+A `rails` hazard zone (`game/hazards.js` `Zone`) may also carry `open: true` (issue #21, GDD 7): outside `[RAIL, Z_MAX - RAIL]` z it discards a thrown weapon, thrown prop or weapon pickup still in
+flight over the edge (`loseOverEdge`) instead of letting it land — only The Mooring Spine (stage2 `m1`) and The Lash-Up (stage4 `g2`) set it, because both boards say so explicitly ("no bulwark", "no
+bulwark anywhere"). The Brass Funicular's `rails` (stage1 `s3`) are railings, not an open edge, so it omits `open` and thrown items land on the roof as normal.
 
 Hazard and zone types, their spec fields, timings, hits and `dangerBox` footprints are tabulated in the header of
 `game/hazards.js` (HAZARD TABLE / ZONE TABLE). Boards 2-4 declare `cannon`, `gasCell`, `limePit`, `wagon`,
@@ -476,27 +550,48 @@ An `EnemyDef` (in `content/enemies/*.js`):
 }
 ```
 Base AI state machine (in `Enemy`), tuned by `def.ai`:
-`ENTER` (walk on-screen) → `APPROACH` (align `z` within `zTolerance`, close to `attackRange` on the target's facing-agnostic side; picks the nearest player, re-targets every 90 frames or when hit) → `ATTACK` (needs an **attack token**: `World.attackTokens` limits simultaneous attackers to 2 (3 in co-op) — enemies without a token `HOVER`: shuffle at distance `attackRange + 30..60`, occasionally step in `z`) → `RECOVER` (short back-off after attacking, `retreatChance`) → loop. Ranged variants use `KEEP_DISTANCE`. Elites/bosses ignore tokens. Enemies never overlap each other perfectly: apply a soft separation force between enemies within 18px in `x` and 10px in `z`. Enemies react to being hit exactly like players (shared `Fighter`).
+`ENTER` (walk on-screen) → `APPROACH` (align `z` within `zTolerance`, close to `attackRange` on the target's facing-agnostic side; picks the nearest player, re-targets every 90 frames or when hit) → `ATTACK` (needs an **attack token**: `World.attackTokens.max` comes from `ATTACK_TOKENS_BY_PARTY = [2, 2, 3, 4, 4]`, indexed by the number of living players (`World.alivePlayers.length`; `World.partySize` — players not yet out — drives the `WAVE_EXTRA_BY_PARTY` clones below instead) — 1 and 2 players keep today's 2, 3 players get 3, 4 players get 4 — enemies without a token `HOVER`: shuffle at distance `attackRange + 30..60`, occasionally step in `z`) → `RECOVER` (short back-off after attacking, `retreatChance`) → loop. Ranged variants use `KEEP_DISTANCE`. Elites/bosses ignore tokens. Enemies never overlap each other perfectly: apply a soft separation force between enemies within 18px in `x` and 10px in `z`. Enemies react to being hit exactly like players (shared `Fighter`).
 Off-screen rule: an enemy that is > 200px outside the camera for 300 frames teleports to
 the nearest lock edge (prevents stuck waves).
+`StageRunner.queueSpawns(list, extraDelay)` appends `WAVE_EXTRA_BY_PARTY = [0, 0, 0, 1, 2]` non-sky clones (delay + `PARTY_EXTRA_DELAY`, side flipped) to every spawn list for parties of 3-4; bosses excluded, 1-2 unchanged.
 
 ## 9. Screens (`game/screens/`)
 `Game` holds a stack `screens[]`; top screen gets `update()`, all screens draw bottom
 to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
 `update()`, `draw(ctx)`. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`.
-Title: animated backdrop, logo, "PRESS ATTACK", blinking. Select: 4 portraits, both
-players can join (P2 presses start), stats bars, confirm/back. The online co-op lobby
+Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `OPTIONS`, "PRESS ATTACK", blinking; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
 (`boardcards.js`, compact) on one screen, with the peer driving the P2 cursor and no two
 players allowed on one hero (docs/MULTIPLAYER.md). Intro: stage card 2.5s
 (skip on attack). Results: score, max combo, grade, time, "PRESS START".
+Training (issue #22): `title → select(next:'training') → training ⇄ trainpause → moves | trials`.
+`TrainingScreen` (`screens/training.js`) extends `GameplayScreen` and runs stage 1's THE BRASS FUNICULAR
+section through a derived arena stage (every section stripped of props/hazards/zones/waves, so nothing
+but the floor and one or two dummies exist in the room); its `pauseScreenId` is `'trainpause'` instead of
+`'pause'`. `trainpause.js` is a sibling of `pause.js` (shares its extracted `drawPlate` / `drawMenuRows` /
+`consumeMenuBuffers` helpers) with rows for DUMMY (STAND/BLOCK-STAGGER/CPU), VARIANT (every non-boss entry of `game.enemyList`, 31 today
+non-boss enemies), FACING lock, REFILL HEALTH, METER lock, HITBOXES overlay, FRAME DATA readout, RESET
+POSITIONS, MOVES and TRIALS. `moves.js` (pushed from either pause plate; hidden from the normal plate
+while `game.net.active`) lists a hero's `moveList` with an animated rig preview beside each row and its
+bound key via `inputLabel()`. `trialsScreen.js` lists a hero's `trials` with a `[X]`/`[ ]` tick
+(`game/trials.js` `trialProgress`) and hands the picked id to `TrainingScreen.setTrial()`.
+`gameplay ⇄ pause → moves` too (hidden online, same guard) so the move list is reachable from a real run.
+`title | pause → options`: `OptionsScreen` (`screens/options.js`) is a transparent overlay pushed on top
+of either opener and popped on back (both openers freeze underneath exactly like `pause` freezes
+`gameplay`, since `Game.update()` only ticks the top of the stack); it is hidden from the pause plate
+under netplay. Its `CONTROLS` row pushes an in-screen sub-plate (`screens/controls.js`, not a stack push)
+for the key/gamepad remap grid. Neither screen touches sim state, so nothing here enters
+`src/net/checksum.js`.
 
 ## 10. HUD (`game/hud.js`)
-Per player (P1 left, P2 right): portrait icon, name, shield strip (120x2, drawn by
+Per player: portrait icon, name, shield strip (120x2, drawn by
 `game/shield.js`), health bar (segmented, colors shift
 at < 30%), special meter bar, lives count, score. Center-top: current enemy targeted
 health bar (name + bar, last hit enemy, 2s), boss bar at bottom when a boss is active.
 Combo counter: near the player, big number + "HITS" + grade text when dropped.
+Held pickup weapon: 14x8 icon past the health-bar end with one 2x4 durability pip per remaining hit
+(`drawWeaponSlot`, `game/hud.js` / `art/weapons.js`).
+Layout: slots 0-1 only keeps the mirrored two-column strip (P1 left, P2 right); a player in slot 2/3 switches it to four 158px columns in slot order (`PLAYER_COLORS`), name above the bar, center-top timer/`GO`/target dropped 40px, `CONTINUE` boxes below the wave-banner block. Join hints are cached, rebuilt only on `input.joinState()` change.
 
 ## 11. Performance rules
 - No allocations in the per-frame draw of rigs beyond `ctx` calls; poses are reused
@@ -512,21 +607,36 @@ URL params: `?debug=1` (hitboxes, hurtboxes, AI state labels, FPS), `?autotest=1
 `?seed=123`, `?skipTo=gameplay&chars=0,2&section=3` (jump straight into gameplay with
 chosen characters and section), `?stage=2` (which board to play; honoured outside dev mode
 too, and it opens that board on BOARD SELECT for the page load), `?unlockall=1` (open every board for
-this page load, save untouched), `?resetprogress=1` (wipe the saved unlocks), `?godmode=1`, `?bot=1`
-(built-in autopilot that walks right and attacks the nearest enemy — used for headless playthroughs).
+this page load, save untouched), `?resetprogress=1` (wipe the saved unlocks and, issue #22, the saved
+trial ticks under `aetherAndBrass.trials.v1`), `?godmode=1`, `?bot=1`
+(built-in autopilot that walks right and attacks the nearest enemy — used for headless playthroughs),
+`?difficulty=easy|normal|hard` (session-only override of the saved difficulty: sets
+`game.options.difficulty` for this page load via `userOptions.setSessionDifficulty()`, never written
+back to `aetherAndBrass.options.v1`).
 
 ```js
 window.__game = {
   game, world (getter), input, rng,
   step(n),                           // run n fixed updates + 1 render (test mode)
   screen() -> string,                // current screen id
-  summary() -> { screen, sectionIndex, cameraX, locked, players: [{hp, lives, x, state, meter, score}], enemies: [{name, variant, hp, state, x, z}], boss: {...}|null, wavesCleared, errors: [] },
+  summary() -> { screen, sectionIndex, cameraX, locked, players: [{hp, lives, x, state, meter, score, weapon, weaponHits, index, id}], enemies: [{name, variant, hp, state, x, z}], boss: {...}|null, wavesCleared, errors: [] },
   setInput(p, actions) / clearInput(p),
+  userOptions,                       // the game/options.js module object (load/apply/get/set/cycle/adjust/difficulty/saveBindings/reset/state)
+  optionsState() -> object,          // userOptions.state(): { storage, saved, ...current values } for test assertions
+  setTraining(partial) -> object,    // issue #22: delegates to the top screen's setTraining(); null off training
+  trialState() -> object,            // issue #22: { saved (raw aetherAndBrass.trials.v1 string, or null), heroes: { [heroId]: string[] } }
+  moveAnims,                         // issue #22: MOVE_ANIMS.slice() — the anim names every hero's moveList must cover
   errors: []                         // window.onerror + unhandledrejection push here
 }
 ```
-Every uncaught error must be pushed to `__game.errors` (and rendered in a red box in
-debug mode) — tests fail on any error.
+Every uncaught error must be pushed to `__game.errors` (and rendered in a red box in debug mode) — tests fail on any error. `players[].index` is the input slot (0-3); `players[].id` is `def.id` — both let a test find an entry in a slot-sparse party without relying on array position.
+`__game.world` reads only the TOP screen (`net.afterStep` depends on that for the desync checksum), so it
+is `null` whenever an overlay (`pause`, `trainpause`, `options`, `moves`, `trials`) sits on top of
+`gameplay`/`training` — a test must read `world` only while the screen it wants is on top.
+`World.log` (`world.logEvent(kind, attacker, target, opts)`, issue #22, capped at 64 entries) is a combat
+log of player-dealt hits/grabs/throws/parries/dodges read by the training room's frame-data readout and
+`game/trials.js`'s `TrialRunner`; like `world.fx` it is derived state, deliberately **not** hashed by
+`src/net/checksum.js` (`node tools/nettest.js` proves this stays true).
 
 ## 13. Tooling & tests
 - `npm run dev` → `node tools/server.js` (serves repo root on http://localhost:8080 with correct
@@ -550,6 +660,12 @@ debug mode) — tests fail on any error.
   3b. `shields`: for every hero, the shield starts full, absorbs a hit smaller than the pool with no HP
      loss, holds through its `delay`, refills to full when left alone, breaks under a bigger hit with only
      the overflow reaching HP, and stays down for the longer `breakDelay`.
+  3c. `weapons` (`tools/scenarios/weapons.js`): each of the four weapons drops, is picked up, swings and
+     spends durability, shatters, is dropped by a knockdown and picked up by the partner, and is
+     discarded on section entry.
+  3d. `thrown` (`tools/scenarios/thrown.js`, issue #21, blocks A-F): weapon throw direction/z-drift/durability/no-accidental-throw, open-rails re-pickup and edge loss on stage 2, a lime patch
+     slowing and restoring a staggered footman, bottle/lamp lift-hold-throw-and-always-shatter, defensive-vs-aggressive bot `throwChance`, and the optional Scrap Slinger / Soot Cutthroat
+     prop-throw stretch behind dev-only `?enemythrow=1` (never in netplay).
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.
@@ -560,12 +676,33 @@ debug mode) — tests fail on any error.
      `?skipTo=gameplay&spawn=typeA:grunt`, screenshot each for a visual review sheet (`tools/screens/enemies.png` contact sheet).
   7. `botstyles`: every `BOT_STYLES` archetype fights and makes progress, and `?botstyle=a,b`
      puts a different archetype in each co-op slot.
+  8. `options` (lives in its own `tools/playtest-options.js`, imported and registered here as
+     `optionsScenario`): drives the OPTIONS overlay from both title and pause (hidden from pause under
+     netplay), every row (difficulty, music/sfx sliders, screen shake incl. a live `Camera.shakeScale`
+     check), the CONTROLS grid's key and gamepad capture and every conflict-refusal path, persistence
+     across a reload, that a remapped key drives gameplay damage while the old key does nothing, and
+     RESET TO DEFAULTS. Further scenarios that don't fit in `playtest.js` follow this sibling-module
+     pattern: a small file exporting one function of the form `(server, { withPage, assert }) => {...}`,
+     imported and added to the `scenarios` map here.
+  9. `coop4` (`tools/scenarios/coop4.js`, issue #23): a four-bot run to results (`attackTokens.max===4`, 4 stats rows); pad-only drop-in mid-run/pause; title pad-claim assignment (arrows-then-pad stays P2, `resetClaims()` releases on title entry); a four-cursor select into gameplay; the netplay guard (own room) — `beginMatch` un-joins local slots above `NET_PLAYERS`, no pad claims the peer's slot, no desync.
+  10. `training` (`tools/scenarios/training.js`, issue #22 — same sibling-module pattern as `options`/`coop4`,
+     registered from here as `training: (server) => trainingScenario(server, { withPage, assert, CHARACTER_COUNT })`):
+     Part A, per hero, `?skipTo=training`: lands on `training` with one STAND Tin Footman dummy and no props/
+     rails in the arena; every move-list animation is covered and each hero has 5-8 trials; walks in and
+     lands attack1, asserting the frame-data readout's startup/active/recovery against the hand-checked
+     table; BLOCK/VARIANT/METER-LOCK plate settings and dummy respawn-after-death; hero 0 also screenshots
+     the hitbox overlay, the training pause plate, the trial list and the MOVES screen reached from it.
+     Part B (`?seed=3&chars=0&bot=1&resetprogress=1`): the built-in bot completes Brunhild's 4-hit combo
+     trial against the pinned dummy within a frame budget, the tick is readable via `trialState()` and
+     persists under `aetherAndBrass.trials.v1`, a two-body trial keeps two dummies standing, and a trial's
+     `dummyMode` override (and its release) is asserted. Part C: the title's TRAINING row reaches `select`
+     then `training`; the normal gameplay pause plate's MOVES row opens `moves` and returns.
   Exit code non-zero on any assertion failure or `__game.errors.length > 0`.
 
 `tools/winrate.js` (`npm run winrate`) is the balance counterpart: it plays runs with NO godmode
 and reports how often the engine wins, sweeping `--stages`, `--difficulty`, `--chars`, `--party`
-(1 or 2, both slots on autopilot) and `--styles`. Every playtest bot run is in godmode, so the
-suite can prove the game works but never that it is fair; this answers the second question.
+(1-4, every slot beyond the first on autopilot) and `--styles`. Every playtest bot run is in godmode, so
+the suite can prove the game works but never that it is fair; this answers the second question.
 Runs that never reach the results plaque are reported as unfinished — a soft-lock, not a loss.
 
 ## 14. Code conventions
@@ -580,28 +717,57 @@ Runs that never reach the results plaque are reported as unfinished — a soft-l
 
 ## 15. Additional debug hooks required by `tools/playtest.js`
 URL params (all only honored when `?autotest=1` or `?debug=1`):
-- `skipTo=gameplay|gallery|results|title` — `gallery` is a debug screen that draws every
+- `skipTo=gameplay|gallery|results|title|training` — `gallery` is a debug screen that draws every
   playable character, every enemy variant and both bosses in a labelled grid, cycling
-  animations (`right` = next anim: idle → walk → attack1 → hurt …, `left` = previous).
-- `chars=0,2` — character indices for P1 (and P2 if two given).
+  animations (`right` = next anim: idle → walk → attack1 → hurt …, `left` = previous). `training`
+  (issue #22, `game/screens/training.js`) opens the training room directly for the chosen `chars`
+  hero: one STAND dummy on the Funicular roof, no waves, no props, ready for `__game.setTraining()`.
+- `chars=0,2` — character indices by slot, up to four (`MAX_PLAYERS`): `chars=0,1,2,3` fills slots 0-3.
 - `nowaves=1` — the stage runner never triggers waves/bosses (free-roam test arena).
 - `spawn=typeA:grunt@80,typeB:brute@-90` — spawn enemies at `player.x + dx` on load.
 - `bot=1` — autopilot for every player: walk toward the nearest enemy (align z), attack when
   in range, occasionally jump-attack/special, walk right when no enemies; skip intro/results prompts.
-- `botstyle=NAME[,NAME]` — which `BOT_STYLES` archetype each slot's autopilot plays as
+- `botstyle=NAME[,NAME,...]` — which `BOT_STYLES` archetype each slot's autopilot plays as
   (`src/game/bot.js`): `balanced` (default, the behaviour the playtest scenarios are written
-  against), `aggressive`, `defensive`, `masher`. One name applies to both slots; two give each
-  slot its own. A style is a whole player archetype (button speed, dodge rate, spacing, when it
-  retreats), not a difficulty setting — difficulty stays a title-screen choice.
+  against), `aggressive`, `defensive`, `masher`. One name applies to every slot; one name per joined
+  slot gives each its own. A style is a whole player archetype (button speed, dodge rate, spacing, when it
+  retreats), not a difficulty setting — difficulty is an OPTIONS choice persisted by
+  `game/options.js`, with `?difficulty=` as a session override. Each style also carries a
+  `throwChance` (issue #21: balanced 0.4, aggressive 0, defensive 0.9, masher 0.2) — the only intentional bot throw path, rolled at most once every 20 frames while armed and in range.
+- `enemythrow=1` — optional stretch (issue #21 step 21.6): a Scrap Slinger or Soot Cutthroat may lift and throw a nearby throwable prop at its target (`game/throwables.js` `tryEnemyPropThrow` /
+  `thinkEnemyHeld`), spending an attack token like any other attack. Off by default and forced off whenever `world.game.net.active` (the START packet does not carry the flag, so a peer without it
+  would desync).
 
 `window.__game` extra members: `ready` (true once the first screen entered),
 `spawnEnemy(type, variant, dx, dz)` (relative to P1), `killAllEnemies()`,
+`spawnWeapon(id, dx, dz)` (lays a settled pickup weapon at P1.x + dx, P1.z + dz, no pop, no grace),
 `enemyList() -> [{type, variant, name, role}]` (10 variants + `{type:'midboss'}` + `{type:'boss'}`),
 `characterList() -> [{id, name}]`, `fillMeter(p)`, `facePlayerToNearestEnemy(p)` (turns
 P1 toward and steps toward the nearest enemy — used by the enemy test), `summary().boss` =
 `{ kind:'midboss'|'boss', name, hp, maxHp, phase, state }` or `null`.
 `summary().sectionIndex` = index of the section containing the camera center.
+`summary().players[]` has no held-prop or thrown-projectile fields (issue #21); the `thrown` scenario reaches those directly off `world.entities` (`heldProp`, `thrownWeapon`, `thrownProp`,
+`lost`), the same convention the `weapons` scenario already uses for dropped `WeaponPickup`s.
+`__game.setTraining(partial)` (issue #22) delegates to the current screen's `setTraining` (`null` off
+`training`) and returns its `summary().training` — `{ mode, userMode, variant, faceLock, meterLock,
+hitboxes, frameData, dummies, trial, readout, done }` — the same object `summary().training` exposes
+directly while `training` is the top screen; `partial` may set any of `mode`, `variant`, `faceLock`,
+`meterLock`, `hitboxes`, `frameData`, `refill: true`, `reset: true`, or `trial: id | null`.
+`__game.trialState()` returns the raw `aetherAndBrass.trials.v1` string and each hero's completed trial
+ids, independent of which screen is on top. `__game.moveAnims` is `MOVE_ANIMS.slice()` (`content/characters/common.js`) — the animation names a hero's `moveList` must cover (move-list coverage assertion, scenario `training`).
 
 ## 16. Input bindings
-The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Y T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V N B until P2 joins; Space jumps on both P1 sets; gamepads 0/1 → P1/P2). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
-`engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.soloAliases`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). P2 drop-in: poll `input.joinPressed(1)` and call `input.setJoined(1, true)`; the title screen resets it.
+The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Y T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V N B until P2 joins; Space jumps on both P1 sets; gamepads are not index-bound — an unbound pad's first button press claims the lowest free slot; P3/P4 are gamepad-only, no keyboard half). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
+`engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.soloAliases`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). Drop-in for any slot 1-3: poll `input.joinPressed(slot)` and call `input.setJoined(slot, true)`; the title screen resets every claim (`input.resetClaims()`).
+The table above is only the shipped default: `game/options.js` persists any remapping under
+`aetherAndBrass.options.v1` (same guarded-`localStorage` pattern as `game/progress.js`, via
+`game/storage.js`'s `store()`), loading it once at boot and re-sanitising it against the defaults. The
+six binding conflict invariants (one key per action per layout; a same-layout collision swaps; a
+same-side sibling strip refuses if it would leave an action unbound; the other player's key, the
+sibling layout's key for a different action, and the three global keys are always refused; a code the
+edited layout already owns under the same action is exempt, so P1 and P2 can rearrange the shared arrow
+keys between themselves) live entirely in `engine/bindings.js` (`rebindKey` / `rebindPad` /
+`sanitiseBindings`) and are enforced identically for a live rebind (`screens/controls.js` via
+`input.rebind`) and a loaded save. Screens must never hard-code a key name or gamepad label: every
+legend, join hint and grid cell reads through `input.legend()` / `input.joinHint()` / `input.joinKeysHint()` /
+`input.keyText()` / `input.cellText()` / `input.hasKey()`, cached and invalidated by `input.bindingsVersion`.

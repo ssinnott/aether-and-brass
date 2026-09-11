@@ -5,9 +5,10 @@
 // Clearing a board records it in game/progress.js, which is what opens the next board on BOARD SELECT; when this run
 // opened one, a plate announces it under the totals and dismissing the plaque hands off to BOARD SELECT so the
 // unlock plays out on the newly opened board's own plaque instead of dropping straight back to the title.
-import { VIEW_W, VIEW_H, UI } from '../../constants.js';
+import { VIEW_W, VIEW_H, UI, MAX_PLAYERS, PLAYER_COLORS } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
+import { Camera } from '../../engine/camera.js';
 import { rrect, rivetLine, gear } from '../../art/shapes.js';
 import { particles } from '../../engine/particles.js';
 import { buildRig, drawRig } from '../../art/rig.js';
@@ -20,8 +21,12 @@ const ROWS = [['ENEMIES DEFEATED', 'kills'], ['MAX COMBO', 'maxCombo'], ['DAMAGE
 const ROW_FRAMES = 20, ROLL_FRAMES = 16;
 const RANKS = [[120000, 'S', '#ffffff'], [90000, 'A', '#4DF0E0'], [60000, 'B', '#ffe45a'], [30000, 'C', '#ff9a30'], [0, 'D', '#c8c8c8']];
 const AUTO_RETURN = 600, BOT_HOLD = 900;
+const RANK_STAMP_SHAKE = 3;
 const LABEL_X = 64, COL_X = 250, COL_W = 120, ROW_Y = 104;
-const HERO_X = [470, 560], HERO_Y = 322;
+// Three or four players: narrower columns (4 x 80 ends at 496, clear of the rank stamp box 508..572)
+// and a four-rig hero row (last rig's right edge ~585, inside the plaque's inner edge 594).
+const COL_X_QUAD = 176, COL_W_QUAD = 80;
+const HERO_X = [470, 560], HERO_X_QUAD = [400, 456, 512, 568], HERO_Y = 322;
 
 /** Rank letter for a total score. */
 export function rankFor(score) { for (const r of RANKS) if (score >= r[0]) return { letter: r[1], color: r[2] }; return { letter: 'D', color: '#c8c8c8' }; }
@@ -32,7 +37,7 @@ export class ResultsScreen extends Screen {
   constructor(game) { super(game, 'results'); }
   enter(params) {
     super.enter(params);
-    this.stats = (params.stats && params.stats.length ? params.stats : [{ name: 'P1', kills: 0, maxCombo: 0, damageTaken: 0, continues: 0, score: 0 }]).slice(0, 2);
+    this.stats = (params.stats && params.stats.length ? params.stats : [{ name: 'P1', kills: 0, maxCombo: 0, damageTaken: 0, continues: 0, score: 0 }]).slice(0, MAX_PLAYERS);
     this.time = params.time || 0;
     /** True when the run ended on an expired continue countdown (GDD 9): no time bonus, rank capped at D. */
     this.defeat = !!params.defeat;
@@ -49,7 +54,7 @@ export class ResultsScreen extends Screen {
     // victory poses: the players' rigs playing their win anims (defeat: lying)
     const chars = this.game.characters || [], picks = this.game.options.chars || [];
     this.heroes = this.stats.map((s, i) => {
-      const def = chars.find((c) => c.name === s.name) || chars[picks[i]] || chars[i] || null;
+      const def = chars.find((c) => c.name === s.name) || chars[picks[s.index != null ? s.index : i]] || chars[i] || null;
       if (!def) return null;
       const anim = new AnimPlayer(def.anims || {});
       anim.play(this.defeat ? 'lying' : 'win', { fallback: 'idle' });
@@ -74,7 +79,7 @@ export class ResultsScreen extends Screen {
     if (this.stamp === 6) { for (let i = 0; i < 24; i++) particles.spawn('spark', 520 + (i * 37) % 60, 150 + (i * 23) % 50, 0, { screen: true, vx: (i % 5 - 2) * 1.8, vy: -2 - (i % 3), life: 30 }); }
     particles.update();
     let go = false;
-    for (let p = 0; p < 2; p++) if (inp.joined(p) && (inp.pressed(p, 'start') || inp.pressed(p, 'attack'))) go = true;
+    for (let p = 0; p < inp.playerCount; p++) if (inp.joined(p) && (inp.pressed(p, 'start') || inp.pressed(p, 'attack'))) go = true;
     if (this.game.options.bot) go = this.frame > BOT_HOLD;
     else if (this.stamp > AUTO_RETURN) go = true;
     if (go && this.frame > 30) {
@@ -113,30 +118,36 @@ export class ResultsScreen extends Screen {
     if (this.defeat) drawTextOutlined(ctx, 'THE ENGINE WINS.', VIEW_W / 2, 40, { size: 3, color: UI.red, outline: '#2a1010', thickness: 1, align: 'center' });
     else drawTextOutlined(ctx, 'STAGE CLEAR', VIEW_W / 2, 40, { size: 3, color: UI.brassLight, outline: '#3a2010', thickness: 1, align: 'center' });
     drawText(ctx, this.stage ? this.stage.name : '', VIEW_W / 2, 70, { size: 1, color: UI.paper, align: 'center' });
-    // columns
-    const n = this.stats.length;
-    this.stats.forEach((s, i) => drawText(ctx, `P${i + 1} ${s.name}`, COL_X + i * COL_W + COL_W / 2, 84, { size: 1, color: i === 0 ? UI.p1 : UI.p2, align: 'center' }));
-    if (n < 2) drawText(ctx, 'SOLO RUN', COL_X + COL_W + COL_W / 2, 84, { size: 1, color: UI.brassDark, align: 'center' });
+    // columns: two wide 120px columns for one or two players, four narrow 80px columns for three or four
+    const n = this.stats.length, colX = n > 2 ? COL_X_QUAD : COL_X, colW = n > 2 ? COL_W_QUAD : COL_W;
+    this.stats.forEach((s, i) => {
+      const idx = s.index != null ? s.index : i;
+      drawText(ctx, `P${idx + 1} ${s.name}`, colX + i * colW + colW / 2, 84, { size: 1, color: PLAYER_COLORS[idx], align: 'center' });
+    });
+    if (n < 2) drawText(ctx, 'SOLO RUN', colX + colW + colW / 2, 84, { size: 1, color: UI.brassDark, align: 'center' });
     ROWS.forEach(([label, key], r) => {
       if (r >= this.rowsShown) return;
       const y = ROW_Y + r * 18, rolling = r === this.rowsShown - 1 && this.rowTimer < ROLL_FRAMES;
       drawText(ctx, label, LABEL_X, y, { size: 1, color: UI.steel });
-      this.stats.forEach((s, i) => drawText(ctx, this.rowValue(s, key, r), COL_X + i * COL_W + COL_W / 2, y, { size: 1, color: rolling ? UI.brassLight : UI.paper, align: 'center' }));
+      this.stats.forEach((s, i) => drawText(ctx, this.rowValue(s, key, r), colX + i * colW + colW / 2, y, { size: 1, color: rolling ? UI.brassLight : UI.paper, align: 'center' }));
     });
     if (this.rowsShown > ROWS.length) {
       drawText(ctx, this.defeat ? 'TIME BONUS   NONE' : `TIME BONUS   +${this.timeBonus}`, LABEL_X, 226, { size: 1, color: UI.brass });
       drawTextOutlined(ctx, `TOTAL  ${String(this.total).padStart(7, '0')}`, LABEL_X, 240, { size: 2, color: UI.brassLight, outline: '#3a2010', align: 'left' });
     }
     // victory poses
+    const heroX = n > 2 ? HERO_X_QUAD : HERO_X;
     this.heroes.forEach((h, i) => {
       if (!h) return;
-      drawShadowScreen(ctx, HERO_X[i], HERO_Y, 34 * h.rig.scale, 0.45);
-      drawRig(ctx, h.rig, h.anim.pose, { x: HERO_X[i], y: HERO_Y, facing: i === 0 ? 1 : -1 });
+      const facing = n > 2 ? (i < 2 ? 1 : -1) : (i === 0 ? 1 : -1);
+      drawShadowScreen(ctx, heroX[i], HERO_Y, 34 * h.rig.scale, 0.45);
+      drawRig(ctx, h.rig, h.anim.pose, { x: heroX[i], y: HERO_Y, facing });
     });
-    // rank stamp: 6f slam from big to final size, then a 6f shake
+    // rank stamp: 6f slam from big to final size, then a 6f shake (scaled by the SCREEN SHAKE option)
     if (this.stamp >= 0) {
       const t = Math.min(1, this.stamp / 6), sc = 5 + Math.round((1 - t) * 6);
-      const shake = this.stamp >= 6 && this.stamp < 12 ? ((this.stamp % 2) ? 3 : -3) : 0;
+      const amp = Math.round(RANK_STAMP_SHAKE * Camera.shakeScale);
+      const shake = this.stamp >= 6 && this.stamp < 12 ? ((this.stamp % 2) ? amp : -amp) : 0;
       const rx = 540 + shake, ry = 128;
       drawText(ctx, 'RANK', rx, ry - 14, { size: 1, color: UI.steel, align: 'center' });
       if (t >= 1) { rrect(ctx, rx - 32, ry - 6, 64, 56, 4, null, this.rank.color, 2); ctx.globalAlpha = 0.15; ctx.fillStyle = this.rank.color; ctx.fillRect(rx - 32, ry - 6, 64, 56); ctx.globalAlpha = 1; }

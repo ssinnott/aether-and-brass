@@ -2,6 +2,7 @@
 // GDD section 7 and the traits grabbable / grabAll / grabReach / grabDamageMult / throwDamageMult / throwDamageTakenMult).
 import { ST, FIGHTER_DEFAULTS, KNOCKDOWN_POP_VY } from '../constants.js';
 import { audio } from '../engine/audio.js';
+import { throwHeldItem, updateHeldProp, dropHeldProp } from './throwables.js';
 
 /** Pop velocity of a ground bounce (hit.groundBounce / moves.throwBack.bounce). */
 export const BOUNCE_VY = 5;
@@ -28,6 +29,11 @@ export const grabMethods = {
     this.grabTarget = target; this.grabHits = 0; this.grabTimer = 0; this.throwPending = null;
     target.grabbedBy = this; target.vx = target.vy = target.vz = 0;
     target.setState(ST.GRABBED, 'hurt');
+    // A target holding a lifted weapon/prop never went through onHurt on the way into GRABBED (ST.GRAB is not a
+    // HITSTUN_STATES entry, so grabbableBy allowed this): drop it here or it dangles in state 'held' forever and
+    // hijacks the holder's next own grab into thinkHeld (issue #21 review findings 1/7).
+    if (target.heldProp) dropHeldProp(target);
+    target.throwPending = null;
     target.anim.setStaticPose(target.anim.pose);
     this.setState(ST.GRAB, 'grab');
     this.invuln = Math.max(this.invuln, 8);
@@ -40,10 +46,17 @@ export const grabMethods = {
       const off = (this.def.grabOffset || 24) * this.scale;
       t.x = this.x + this.facing * off; t.z = this.z; t.y = this.def.grabLift || 0; t.facing = -this.facing;
     }
+    // A held prop (issue #21, GDD 7): positioned every frame from here (throwables.js updateHeldProp), and stays
+    // in ST.GRAB the whole hold -- player.js's thinkGrab routes movement + the throw through thinkHeld while it
+    // is set, so this must return BEFORE the no-target fallback below (which would otherwise bounce back to IDLE
+    // the instant it sees grabTarget is still null). This update() call runs before think(), so this positions the
+    // prop from LAST frame's x/z; thinkHeld calls updateHeldProp again after moving so the drawn prop never lags.
+    if (this.heldProp) updateHeldProp(this);
     if (this.throwPending) {
       if (this.stateTimer >= this.throwPending.at) { const tp = this.throwPending; this.throwPending = null; this.doThrow(tp); }
       return;
     }
+    if (this.heldProp) return;
     if (!t || !t.alive || t.dead || t.grabbedBy !== this) {
       this.grabTarget = null;
       const a = this.anim, throwing = a.name === 'throw' || a.name === 'throwBack';
@@ -64,6 +77,7 @@ export const grabMethods = {
     t.takeHitRaw(Math.round(mv.damage * this.traits.grabDamageMult * t.traits.throwDamageTakenMult), 'medium', this);
     if (this.world) this.world.addFx('spark', t.x, t.y + t.h * 0.6, t.z, { type: 'heavy' });
     this.onHitConfirmed(t, { type: 'heavy', damage: mv.damage });
+    if (this.world) this.world.logEvent('grabHit', this, t, { hit: { type: 'heavy', damage: mv.damage } });
     if (t.dead) { t.knockDown(KNOCKDOWN_POP_VY, this.facing * 3); this.grabTarget = null; this.setState(ST.IDLE, 'idle'); return true; }
     if (this.grabHits >= (mv.hits || 3)) this.throwTarget(1);
     return true;
@@ -76,7 +90,10 @@ export const grabMethods = {
     this.stateTimer = 0;
     this.throwPending = { dir, at: mv.releaseAt != null ? mv.releaseAt : 5, mv };
   },
-  doThrow({ dir, mv }) {
+  /** `tp` is `throwPending`: `{ dir, mv }` for a held enemy, or `{ kind: 'weapon'|'prop', vzDir }` for a held item. */
+  doThrow(tp) {
+    if (tp.kind) { throwHeldItem(this, tp); return; }
+    const { dir, mv } = tp;
     const t = this.grabTarget;
     if (!t) { this.setState(ST.IDLE, 'idle'); return; }
     this.grabTarget = null;
@@ -89,6 +106,7 @@ export const grabMethods = {
     }
     audio.play('throw');
     this.onHitConfirmed(t, { type: 'throw', damage: dmg });
+    if (this.world) this.world.logEvent('throw', this, t, { hit: { type: 'throw', damage: dmg } });
     if (mv.selfVy) { this.vy = mv.selfVy; this.y = 0.01; }
     this.callHook('onThrow', t, dir);
   },

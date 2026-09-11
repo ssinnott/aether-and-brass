@@ -31,7 +31,13 @@ export class AnimPlayer {
     this.instance = 0;
     this.events = [];
     this.pose = markFull(makePose());
+    /** Optional table consulted before `anims` (a held pickup weapon's attack1..N; game/weapons.js). */
+    this.overlay = null;
   }
+  /** Install (or clear with `null`/falsy) the overlay table; see `tableFor`. */
+  setOverlay(table) { this.overlay = table || null; }
+  /** The table `name` should resolve from: the overlay if it defines `name`, else the base `anims`. */
+  tableFor(name) { return this.overlay && this.overlay[name] ? this.overlay : this.anims; }
   /** Current frame object (or a static empty frame). */
   get frame() { return this.def ? this.def.frames[this.frameIndex] || EMPTY : EMPTY; }
   /** Convenience: current frame's hitbox / move / cancel fields. */
@@ -41,7 +47,7 @@ export class AnimPlayer {
   /** Total frames (steps) in the current animation. */
   get length() { if (!this.def) return 0; let n = 0; for (const f of this.def.frames) n += f.dur || 1; return n; }
   /** True if `name` exists in the table. */
-  has(name) { return !!(this.anims && this.anims[name] && this.anims[name].frames && this.anims[name].frames.length); }
+  has(name) { const t = this.tableFor(name); return !!(t && t[name] && t[name].frames && t[name].frames.length); }
   /**
    * Play an animation. Falls back to `fallback` (or idle) when missing. Restarting the same anim requires restart=true.
    * @returns {boolean} true if the animation is (now) playing
@@ -52,7 +58,7 @@ export class AnimPlayer {
     if (n === null) { this.name = null; this.def = null; this.done = true; return false; }
     if (n === this.name && !restart) return true;
     this.name = n;
-    this.def = this.anims[n];
+    this.def = this.tableFor(n)[n];
     this.frameIndex = 0;
     this.frameTime = 0;
     this.time = 0;
@@ -114,4 +120,35 @@ export class AnimPlayer {
 /** Helper for authoring: build a frame list from [dur, pose, extra] tuples. */
 export function frames(list) {
   return list.map(([dur, pose, extra]) => ({ dur, pose, ...(extra || {}) }));
+}
+
+// ---------- frame data (training room: screens/training.js frame-data readout) ----------
+const ACTIVE_EVENTS = new Set(['spawnProjectile', 'shockwave', 'area', 'grapple']);
+const EMPTY_TIMING = Object.freeze({ startup: 0, active: 0, recovery: 0, total: 0 });
+const TIMING = new WeakMap();
+/** True for a frame that can connect: a hitbox, an area, a spawn, or an event that spawns one. */
+export function isActiveFrame(f) { return !!(f.hitbox || f.hitboxes || f.area || f.spawn || f.projectile || f.hit || ACTIVE_EVENTS.has(f.event)); }
+/** Startup / active / recovery frame counts of one anim def (cached per def; a frame with no dur counts 1, like tick()). */
+export function animTiming(def) {
+  if (!def || !def.frames || !def.frames.length) return EMPTY_TIMING;
+  const cached = TIMING.get(def);
+  if (cached) return cached;
+  let first = -1, last = -1, total = 0;
+  for (let i = 0; i < def.frames.length; i++) {
+    const f = def.frames[i], dur = f.dur || 1;
+    total += dur;
+    if (isActiveFrame(f)) { if (first < 0) first = i; last = i; }
+  }
+  let out;
+  if (first < 0) out = Object.freeze({ startup: total, active: 0, recovery: 0, total });
+  else {
+    let startup = 0, active = 0, recovery = 0;
+    for (let i = 0; i < def.frames.length; i++) {
+      const dur = def.frames[i].dur || 1;
+      if (i < first) startup += dur; else if (i <= last) active += dur; else recovery += dur;
+    }
+    out = Object.freeze({ startup, active, recovery, total });
+  }
+  TIMING.set(def, out);
+  return out;
 }

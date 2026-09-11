@@ -1,7 +1,7 @@
 // Stage intro card (GDD 6 + 9): black card with a brass frame, tiered-city silhouette with rising steam, the stage's
 // text lines fading in one after another, STAGE N / stage name, both hero portraits with "P1 / P2 READY". Skippable.
 // The lines and the number come from the stage data (`introLines`, `number`), so every board gets its own card.
-import { VIEW_W, VIEW_H, UI } from '../../constants.js';
+import { VIEW_W, VIEW_H, UI, MAX_PLAYERS, PLAYER_COLORS } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
 import { rrect, rivetLine } from '../../art/shapes.js';
@@ -14,6 +14,8 @@ const INTRO_FRAMES = 300;
 /** Stage 1's card text (GDD section 6); other boards carry their own `introLines`. */
 const LINES = ['CALDERWICK, CITY OF THE HEART-ENGINE.', 'THE CHANCELLOR HAS SEALED THE SKY.', 'FOUR UNLIKELY DELIVERIES ARE ABOUT TO BE MADE, UPWARD.'];
 const LINE_AT = [12, 48, 84], STAGE_AT = 126, FADE = 24;
+// Portrait slots: P1/P2 stay at the outer edges, P3/P4 sit inboard of them (issue #23).
+const PORTRAIT_X = [44, VIEW_W - 44 - 48, 124, VIEW_W - 124 - 48];
 const FAR = [[0, 214, 50], [56, 196, 36], [98, 224, 70], [176, 184, 30], [212, 204, 56], [276, 190, 40], [322, 214, 34], [362, 176, 60], [428, 206, 44], [478, 190, 36], [520, 216, 60], [586, 198, 54]];
 const NEAR = [[0, 250, 80], [90, 238, 50], [150, 258, 90], [250, 244, 60], [320, 262, 70], [400, 240, 50], [460, 256, 90], [560, 246, 80]];
 const STACKS = [[110, 224], [232, 204], [376, 176], [540, 216]];
@@ -29,7 +31,7 @@ export class IntroScreen extends Screen {
     this.lines = this.stage.introLines || LINES;
     this.stageLabel = `STAGE ${this.stage.number || stageIndex(this.stage) + 1}`;
     this.done = false;
-    this.portraits = (this.chars || []).slice(0, 2).map((ci) => { const c = this.game.characters[ci]; return c ? { def: c, rig: buildRig(c.build || {}), pose: idlePoseOf(c) } : null; });
+    this.portraits = (this.chars || []).slice(0, MAX_PLAYERS).map((ci) => { if (ci == null || ci < 0) return null; const c = this.game.characters[ci]; return c ? { def: c, rig: buildRig(c.build || {}), pose: idlePoseOf(c) } : null; });
     particles.clear();
     this.game.audio.music.stop();
   }
@@ -41,7 +43,7 @@ export class IntroScreen extends Screen {
     particles.update();
     if (this.done) return;
     let skip = this.frame >= INTRO_FRAMES || this.game.options.bot;
-    for (let p = 0; p < 2 && !skip; p++) if (this.frame > 10 && (inp.pressed(p, 'attack') || inp.pressed(p, 'start'))) skip = true;
+    for (let p = 0; p < inp.playerCount && !skip; p++) if (this.frame > 10 && (inp.pressed(p, 'attack') || inp.pressed(p, 'start'))) skip = true;
     if (skip) { this.done = true; this.game.audio.play('menu_confirm'); this.game.fadeTo(() => this.game.replace('gameplay', { chars: this.chars, stage: this.stage }), 0.08); }
   }
   draw(ctx) {
@@ -85,7 +87,7 @@ export class IntroScreen extends Screen {
     // hero portraits with READY tags
     this.portraits.forEach((pr, i) => {
       if (!pr) return;
-      const right = i === 1, px = right ? VIEW_W - 44 - 48 : 44, py = VIEW_H - 112, col = right ? UI.p2 : UI.p1;
+      const right = i % 2 === 1, px = PORTRAIT_X[i], py = VIEW_H - 112, col = PLAYER_COLORS[i];
       drawPortraitFrame(ctx, px, py, 48, 48, col, 4);
       drawHeadPortrait(ctx, pr.rig, pr.pose, px, py, 48, { facing: right ? -1 : 1, bg: '#1a1426', fill: 0.62 });
       drawText(ctx, `P${i + 1} ${pr.def.name}`, right ? px + 48 : px, py + 52, { size: 1, color: col, align: right ? 'right' : 'left' });

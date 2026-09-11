@@ -769,21 +769,36 @@ const SPOIL_DAMP = 0.55;
 const NET_SAG = 10, NET_OPEN = 60, NET_DROP_FRAC = 0.08, NET_CLEAR = 10, NET_SQUARE = { w: 60, d: 30 };
 
 /**
- * A floor zone with a rule: molten (Foundry Row back edge), rails (funicular railings), daisVents (boss dais edges),
+ * Open-rails edge loss (issue #21, GDD 7): a thrown weapon / prop still in flight is marked `lost` and made to
+ * expire in place (its own onExpire — throwables.js landWeapon / landProp — reads `lost` and skips both the
+ * pickup and the shatter FX, so it neither lands nor breaks, it is just gone); a resting weapon pickup that has
+ * drifted past the edge is simply removed. Unlike `ringOut` this is cargo, not a body: no score, no death FX.
+ */
+function loseOverEdge(world, e) {
+  if (e.kind === 'projectile') { e.lost = true; e.expire(world, false); } else e.removeMe = true;
+  particles.burst('dust', e.x, 0, e.z, 6, { speed: 1.5, up: 1 });
+}
+
+/**
+ * A floor zone with a rule: molten (Foundry Row back edge), rails (funicular railings / open decks), daisVents (boss dais edges),
  * conveyor (cargo-bay front strip), gust (Mooring Spine deck wind), spoil (tailings patches), netGive (Crop Loft net
  * squares). Drawn behind entities (z = -5).
  */
 export class Zone extends Entity {
   /**
-   * @param {{ type: 'molten'|'rails'|'daisVents'|'conveyor'|'gust'|'spoil'|'netGive', x0: number, x1: number, z0?: number, z1?: number, active?: boolean, color?: string,
+   * @param {{ type: 'molten'|'rails'|'daisVents'|'conveyor'|'gust'|'spoil'|'netGive', x0: number, x1: number, z0?: number, z1?: number, active?: boolean, color?: string, open?: boolean,
    *   period?: number, tell?: number, push?: number, dir?: number, offset?: number, squares?: {x:number, z:number, w?:number, d?:number}[] }} spec
    *   gust { period 420, tell 45, active (frames) 40, push 1.3, dir 0|1|-1 } | spoil { z0, z1 } | netGive { squares }
+   *   rails { open: true } (issue #21) also discards thrown weapons / props and weapon pickups that drift over the edge (loseOverEdge)
    */
   constructor(spec) {
     super('fx');
     this.type = spec.type; this.x0 = spec.x0; this.x1 = spec.x1; this.z0 = spec.z0 != null ? spec.z0 : 100;
     this.x = (spec.x0 + spec.x1) / 2; this.z = -5; this.shadowW = 0;
     this.forced = !!spec.active;
+    /** issue #21 GDD 7: a `rails` zone with no bulwark at all (open air past the edge, not a railing) also
+     *  discards thrown weapons / props and dropped weapon pickups that drift past it (updateRails). */
+    this.open = !!spec.open;
     this.color = spec.color || '';   // daisVents edge glow: the board's own energy colour (see draw())
     this.burns = new Map();        // fighter id -> { f, ticks, t }
     this.wasAir = new Map();       // enemy id -> was airborne last frame (edge shove detection)
@@ -866,6 +881,15 @@ export class Zone extends Entity {
       if (f.kind === 'enemy' && (f.state === ST.THROWN || (f.state === ST.KNOCKDOWN && f.y > 4))) { ringOut(world, f, 'rail', over); continue; }
       f.z = over < 0 ? RAIL : Z_MAX - RAIL;
       if (f.vz * over > 0) f.vz = 0;
+    }
+    // Open deck (no railing at all, issue #21 GDD 7): a thrown weapon / prop still in flight, or a weapon pickup
+    // that has drifted, past the same front/back band falls off the edge instead of landing or staying collectable.
+    if (!this.open) return;
+    for (const e of world.entities) {
+      if (e.removeMe || !this.inX(e)) continue;
+      const cargo = (e.kind === 'projectile' && (e.thrownWeapon || e.thrownProp)) || (e.kind === 'item' && e.weaponId);
+      if (!cargo) continue;
+      if (e.z < RAIL || e.z > Z_MAX - RAIL) loseOverEdge(world, e);
     }
   }
   /** Boss dais (GDD 5.2): the world's floor band shrinks 20px per phase (stage.js calls shrinkBand); the closed strips are steam

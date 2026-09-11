@@ -26,6 +26,7 @@
 //  blinkOnDamage N + blinkAnim 'aetherStep' + blinkChain 'caneFlurry' (teleport away after N damage in one combo, bosses)
 //  rig.look = { x, y } (-1..1 toward the target) is refreshed every step for part hooks (Sootborn eyes track the nearest player)
 //  valveStun true (bosses: pressure valves may stun) | stunDamageMult 1.5 + stunGrabbable (boss stun windows)
+//  traits.dummy + e.dummyMode 'stand'|'block'|'cpu' + e.dummyFaceLock   training dummy (thinkDummy): no attacks / tokens / ripostes / fleeing unless cpu
 //  Frame events handled here: aim (lob target), summon (frame.summon [{ type, variant }]), crateDrop, timeStop (frame.freeze; a dodge in the last
 //  tellWarnFrames of the tell escapes), teleportBehind. Enemy content may also use every def.hooks / traits / frame field of fighter.js.
 import { ST, TEAM, VIEW_W, Z_SPEED_FACTOR, FLOOR_TOP, UI } from '../constants.js';
@@ -37,6 +38,7 @@ import { drawText } from '../engine/text.js';
 import { floatText } from '../art/fx.js';
 import { Prop } from './items.js';
 import { laneAroundHazards } from './hazards.js';
+import { tryEnemyPropThrow, thinkEnemyHeld, dropHeldProp } from './throwables.js';
 import { applyMods } from './traits.js';
 
 /** Defaults for `def.ai` (content overrides per type / variant). */
@@ -90,6 +92,9 @@ export class Enemy extends Fighter {
     if (this.mods.includes('winged')) fromSky = true;  // a bladder-borne body arrives from above
     this.ai = normalizeAi(d);
     this.applyAiTraits();
+    // training room (screens/training.js): traits.dummy set per instance via spawnDummy's def spread; dummyMode/
+    // dummyFaceLock are read only when traits.dummy is true, so every non-training spawn ignores them.
+    this.dummyMode = 'stand'; this.dummyFaceLock = false;
     this.entered = entered;
     this.aiState = entered ? 'APPROACH' : 'ENTER';
     this.aiTimer = 0; this.target = null; this.retargetTimer = 0;
@@ -99,6 +104,9 @@ export class Enemy extends Fighter {
     this.fled = false; this.fleeTimer = 0; this.fleeing = false; this.fleeOff = false; this.fleeDir = 1; this.fleeChecked = false;
     this.pendingAttack = null; this.currentAttack = null; this.attackUses = new Map(); this.hasToken = false; this.attackCount = 0;
     this.retreatBudget = this.ai.retreatBudget; this.panicCooldown = 0; this.panicFlee = false; this.evadeTimer = 0; this.lastSeenAttack = -1; this.riposteTimer = 0;
+    // optional stretch, step 21.6, dev-only ?enemythrow=1 (game/throwables.js tryEnemyPropThrow): Scrap Slinger /
+    // Soot Cutthroat throttle between prop-throw attempts on this cooldown (hashed in net/checksum.js).
+    this.propThrowCooldown = 0;
     this.retreating = false; this.grabHitTimer = 0; this.stalled = false;
     // whiff backsteps / riposte stance bookkeeping
     this.watchInst = -1; this.watchNear = false; this.hitByInst = -1; this.whiffs = 0; this.backstepCooldown = 0;
@@ -114,6 +122,8 @@ export class Enemy extends Fighter {
     if (ai.shield) { this.traits.superArmor = true; this.traits.noLaunch = true; this.unlaunchable = true; if (ai.shield.frontOnly) this.traits.armorFrontOnly = true; }
     this.armor = this.traits.superArmor;
   }
+  /** traits.dummy (training room) and not put into CPU mode: never attacks, takes no token, never flees or ripostes. */
+  get passiveDummy() { return !!this.traits.dummy && this.dummyMode !== 'cpu'; }
 
   // ---------- per-step ----------
   update(world) {
@@ -125,6 +135,14 @@ export class Enemy extends Fighter {
   }
 
   think(world) {
+    // A passive training dummy (STAND / BLOCK-STAGGER) must never act on its own, but Fighter.update calls a
+    // content onUpdate hook BEFORE think() runs (chandler.js tallyman's rite is the one offender today), so
+    // the hook can already have pushed this dummy into ATTACK/SPECIAL by the time we get here. Bounce it
+    // straight back to idle before the ATTACK/SPECIAL early-return a few lines down would otherwise skip the
+    // passiveDummy branch below forever (issue #22 review).
+    if (this.passiveDummy && (this.state === ST.ATTACK || this.state === ST.SPECIAL)) {
+      this.currentAttack = null; this.pendingAttack = null; this.setState(ST.IDLE, 'idle');
+    }
     const ai = this.ai, f = this.anim.frame;
     this.rig.tell = !!(f && f.tell) || this.inStance;
     this.updateTellSpeed(world, f);
@@ -137,6 +155,7 @@ export class Enemy extends Fighter {
     if (this.riposteTimer > 0) this.riposteTimer--;
     if (this.retargetTimer > 0) this.retargetTimer--;
     if (this.backstepCooldown > 0) this.backstepCooldown--;
+    if (this.propThrowCooldown > 0) this.propThrowCooldown--;
     if (this.stanceCooldown > 0) this.stanceCooldown--;
     if (this.stanceTimer > 0 && --this.stanceTimer === 0) this.inStance = false;
     // punish window: stalls (STAGGER) or frames flagged punish:true
@@ -149,6 +168,7 @@ export class Enemy extends Fighter {
     this.pickTarget(world);
     if (this.aiState === 'STAGGER') { if (--this.aiTimer <= 0) this.endStagger(); return; }
     if (this.aiState === 'FLEE') { this.thinkFlee(world); return; }
+    if (this.passiveDummy) { this.thinkDummy(world); return; }
     // an enemy that has not walked inside the lock yet always keeps entering (a hit while entering must not park it outside the arena)
     if (this.aiState === 'ENTER' || !this.entered) { this.thinkEnter(world); return; }
     const t = this.target;
@@ -159,6 +179,7 @@ export class Enemy extends Fighter {
     if (this.inStance) { this.face(t); this.stand(); return; }
     if (this.tryEvade(world, t) || this.tryPanic(world, t) || this.tryBackstep(world, t) || this.tryStance(world, t)) return;
     this.separate(world);
+    if (tryEnemyPropThrow(this, world)) return; // optional stretch, step 21.6: ?enemythrow=1 (no-op otherwise)
     switch (this.aiState) {
       case 'KEEP_DISTANCE': this.thinkRanged(world, t); break;
       case 'HOVER': this.thinkHover(world, t); break;
@@ -334,7 +355,19 @@ export class Enemy extends Fighter {
     }
     if (--this.fleeTimer <= 0) { this.aiState = 'APPROACH'; this.fleeing = false; }
   }
+  /** traits.dummy (training room): never attacks, never takes a token; faces the nearest player (unless dummyFaceLock) and stands. CPU mode never gets here. */
+  thinkDummy(world) {
+    this.aiState = 'DUMMY';
+    const t = this.target;
+    if (t) {
+      if (!this.dummyFaceLock) this.face(t);
+      const look = this.rig.look || (this.rig.look = { x: 0, y: 0 });
+      look.x = clamp((t.x - this.x) * this.facing / 80, -1, 1); look.y = clamp((this.z - t.z) / 60, -1, 1);
+    }
+    this.stand();
+  }
   thinkGrab(world) {
+    if (this.heldProp) { thinkEnemyHeld(this, world); return; } // step 21.6 stretch
     if (!this.grabTarget || this.throwPending) return;
     if (this.anim.name === 'grab' && !this.anim.done) return;
     if (++this.grabHitTimer >= this.ai.grabHitEvery) { this.grabHitTimer = 0; this.grabHit(); }
@@ -500,9 +533,9 @@ export class Enemy extends Fighter {
     const ai = this.ai;
     const melee = attacker && attacker.kind === 'player' && attacker.state !== ST.SUPER && !hit.projectile && hit.type !== 'grab';
     // Riposte stance (GDD 3 A5): any melee into the stance is parried and answered with the flurry
-    if (this.inStance && melee && !this.dead) { this.riposte(attacker, ai.riposteStance.flurryAnim || ai.riposteAnim); return false; }
+    if (this.inStance && melee && !this.dead && !this.passiveDummy) { this.riposte(attacker, ai.riposteStance.flurryAnim || ai.riposteAnim); return false; }
     // Random riposte: a melee hit from a player is parried and answered; the rest of that swing whiffs (Fighter.parried)
-    if (ai.riposteChance && this.riposteTimer <= 0 && !this.dead && !this.inHitstun && !this.airborne && (this.state === ST.IDLE || this.state === ST.WALK)
+    if (ai.riposteChance && !this.passiveDummy && this.riposteTimer <= 0 && !this.dead && !this.inHitstun && !this.airborne && (this.state === ST.IDLE || this.state === ST.WALK)
       && melee && this.anim.has(ai.riposteAnim) && rng.chance(ai.riposteChance)) { this.riposteTimer = ai.riposteCooldown; this.riposte(attacker, ai.riposteAnim); return false; }
     // launchStun (Cinder Hulk): an armored brute is stunned by launchers instead of launched
     if (ai.launchStun && hit.type === 'launch' && this.armor && !this.unlaunchable && !this.airborne && !this.dead && this.state !== ST.KNOCKDOWN) {
@@ -520,8 +553,13 @@ export class Enemy extends Fighter {
     audio.play('parry');
   }
   onHurt(hit, attacker) {
+    // A STAND/BLOCK dummy is pinned by traits.weight (every knockback path above divides by it), except the
+    // armored branch (Fighter.takeHit), which applies a flat `face * 0.5` nudge with no weight divisor at all --
+    // over a drill of absorbed hits that walks a BLOCK dummy out of the attack band (review finding).
+    if (this.passiveDummy) this.vx = 0;
     const ai = this.ai, world = this.world;
     this.pendingAttack = null; this.releaseToken(world); this.inStance = false;
+    this.throwPending = null; dropHeldProp(this); // a hit mid-hold drops a held prop (step 21.6, GDD 7 decision 14)
     if (this.aiState !== 'FLEE' && this.aiState !== 'ENTER' && this.aiState !== 'STAGGER') { this.aiState = 'APPROACH'; this.retreating = false; }
     this.attackCooldown = Math.max(this.attackCooldown, 25);
     if (attacker && attacker.kind === 'player') { this.target = attacker; this.retargetTimer = RETARGET; if (attacker.anim) this.hitByInst = attacker.anim.instance; }
@@ -541,17 +579,18 @@ export class Enemy extends Fighter {
       this.callHook('onShieldStripped', world);
     }
     const fleeFrac = this.traits.fleeHpFrac || 0.3, fleeChance = this.traits.fleeChance || 0.5;
-    if (!this.dead && ai.fleeHp && this.hp < ai.fleeHp && !this.fled && attacker) {
+    if (!this.dead && !this.passiveDummy && ai.fleeHp && this.hp < ai.fleeHp && !this.fled && attacker) {
       this.fled = true; this.fleeTimer = Math.round(ai.fleeDistance / Math.max(1, this.runSpeed * 1.15)); this.fleeDir = -(sign(attacker.x - this.x) || this.facing); this.aiState = 'FLEE';
       audio.play('soot_flee');
-    } else if (!this.dead && ai.fleeLast && !this.fleeChecked && world && this.hp <= this.maxHp * fleeFrac && world.waveEnemies.length === 1 && world.camera.locked) {
+    } else if (!this.dead && !this.passiveDummy && ai.fleeLast && !this.fleeChecked && world && this.hp <= this.maxHp * fleeFrac && world.waveEnemies.length === 1 && world.camera.locked) {
       this.fleeChecked = true;
       if (rng.chance(fleeChance)) { this.fleeOff = true; this.fleeing = true; this.entered = false; this.aiState = 'FLEE'; this.fleeDir = (this.x - world.camera.x) < VIEW_W / 2 ? -1 : 1; this.invuln = 30; audio.play('soot_flee'); }
     }
   }
 
-  drawDebug(ctx, cam) {
-    super.drawDebug(ctx, cam);
+  drawDebug(ctx, cam, labels = true) {
+    super.drawDebug(ctx, cam, labels);
+    if (!labels) return;
     drawText(ctx, this.aiState + (this.hasToken ? '*' : '') + (this.inStance ? ' RIPOSTE' : '') + (this.punishable ? ' PUNISH' : ''), cam.toScreenX(this.x), FLOOR_TOP + this.z + 12, { size: 1, color: '#ff9', align: 'center' });
   }
 }

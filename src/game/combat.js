@@ -74,14 +74,17 @@ export function resolveHits(world) {
           if (a.grabTarget || t.kind === 'prop' || t.kind === 'projectile' || !t.grabbableBy || !t.grabbableBy(a)) continue;
           a.hitTargets.set(t.id, { key, frame: world.frame });
           a.startGrab(t);
+          world.logEvent('grab', a, t, {});
           break;
         }
         let hit = hb;
         if (hb.pierceDamage != null && !rec && a.hitTargets.size >= 1) hit = { ...hb, damage: hb.pierceDamage };
+        const wasAir = !!t.airborne;
         if (!deliver(t, hit, a, ob)) continue;
         a.hitTargets.set(t.id, { key, frame: world.frame });
         if (t.kind === 'projectile') { audio.play('parry'); continue; }
         a.onHitConfirmed(t, hit);
+        world.logEvent('hit', a, t, { hit, air: wasAir });
         playHitSfx(hit);
         if (hb.onHit && a.onHitEffect) a.onHitEffect(hb.onHit, t, hb);
       }
@@ -103,9 +106,11 @@ function resolveThrownBody(world, body, ents) {
     let ob = null;
     for (const tb of boxesOf(t)) if (hb.x0 < tb.x1 && hb.x1 > tb.x0 && hb.y0 < tb.y1 && hb.y1 > tb.y0) { ob = tb; break; }
     if (!ob) continue;
+    const wasAir = !!t.airborne;
     if (!deliver(t, hit, thrower, ob)) continue;
     body.thrownHit.add(t.id);
     if (thrower) thrower.onHitConfirmed(t, hit);
+    if (thrower) world.logEvent('body', thrower, t, { hit, air: wasAir });
     playHitSfx(hit);
   }
 }
@@ -122,9 +127,11 @@ function resolveProjectile(world, p, ents) {
     let ob = null;
     for (const tb of boxesOf(t)) if (box.x0 < tb.x1 && box.x1 > tb.x0 && box.y0 < tb.y1 && box.y1 > tb.y0) { ob = tb; break; }
     if (!ob) continue;
+    const wasAir = !!t.airborne;
     if (!deliver(t, p.hit, p.owner, ob)) continue;
     p.hitTargets.add(t.id);
     if (p.owner && p.owner.onHitConfirmed) p.owner.onHitConfirmed(t, p.hit);
+    world.logEvent('projectile', p.owner, t, { hit: p.hit, anim: p.fromAnim, air: wasAir });
     playHitSfx(p.hit);
     p.onHitTarget(t, world);
     if (p.reelTarget) break;

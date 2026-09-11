@@ -85,9 +85,18 @@ ignored: half the code alphabet (B, C, N, V, X, Z) is also a P1 arcade key, and 
 with a `C` in it used to back the player out of the screen mid-word.
 
 **Deferred from v1**, deliberately: rollback (M2), state-transfer resync after a desync (a
-desync ends the session and hands P2 to the bot), more than two players, and the MQTT
+desync ends the session and hands P2 to the bot), more than two players online, and the MQTT
 transport is untested against a live broker from this environment — BroadcastChannel is the
 verified path.
+
+**Local co-op grew to four slots (issue #23) while the session stays two-slot.** `engine/input.js` now
+owns four player records (`MAX_PLAYERS = 4`), but the lockstep session, the two-slot INPUT packet and
+`src/net/checksum.js` are unchanged (`NET_PLAYERS = 2`) — no new sim state was added, so the checksum
+needs no new fields. `session.js beginMatch` calls `input.resetClaims(); input.setPadClaiming(false)` and
+un-joins any local slot `>= NET_PLAYERS` before the match starts, so an online match is always exactly two
+players regardless of how many were joined locally beforehand. With claiming off, `pollRaw(player)` reads
+the pad bound to that slot plus every unbound pad, so a pad drives the local player whether it was pressed
+before or after the keyboard, and a pad pressed mid-match can never claim the peer's slot.
 
 ### What testing actually proved
 
@@ -451,7 +460,9 @@ Lockstep's failure mode is silent divergence, so make it loud:
 
 - Every 30 frames, each peer computes a cheap checksum over sim state — `rng.state` plus
   each fighter's `x, y, z, state, hp` quantised to integers — and sends it with the input
-  packet.
+  packet, plus the held / dropped pickup-weapon fields (weaponId, weaponHits, grace), plus issue
+  #21's thrown-item state (a heldProp / holder / lost / throwable / lastHitWasThrow bitfield,
+  throwPending.kind, thrownWeapon, thrownProp, propThrowCooldown).
 - On mismatch: log both checksums with the frame number, then pick a recovery:
   - **Soft:** host re-sends an authoritative state snapshot, guest adopts it (requires
     partial serialization — i.e. some of M3's work)

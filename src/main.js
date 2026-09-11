@@ -1,5 +1,5 @@
 // Boot: create services, Game, screens, loop; install window.__game debug/test hooks (ARCHITECTURE.md 12/15).
-import { VIEW_W, VIEW_H } from './constants.js';
+import { VIEW_W, VIEW_H, DIFFICULTIES } from './constants.js';
 import { createLoop } from './engine/loop.js';
 import { input } from './engine/input.js';
 import { rng } from './engine/rng.js';
@@ -13,15 +13,24 @@ import { BoardSelectScreen } from './game/screens/boardselect.js';
 import { SelectScreen } from './game/screens/select.js';
 import { GalleryScreen } from './game/screens/gallery.js';
 import { GameplayScreen } from './game/screens/gameplay.js';
+import { TrainingScreen } from './game/screens/training.js';
 import { IntroScreen } from './game/screens/intro.js';
 import { PauseScreen } from './game/screens/pause.js';
+import { TrainPauseScreen } from './game/screens/trainpause.js';
+import { TrialsScreen } from './game/screens/trialsScreen.js';
+import { MovesScreen } from './game/screens/moves.js';
+import { OptionsScreen } from './game/screens/options.js';
 import { GameOverScreen } from './game/screens/gameover.js';
 import { LobbyScreen } from './game/screens/lobby.js';
 import { ResultsScreen } from './game/screens/results.js';
 import { createNetSession } from './net/session.js';
 import { progress } from './game/progress.js';
+import { trialProgress, TRIALS_KEY } from './game/trials.js';
+import { options as userOptions } from './game/options.js';
 import { CHARACTERS } from './content/characters/index.js';
+import { MOVE_ANIMS } from './content/characters/common.js';
 import { ENEMY_LIST, ENEMY_GALLERY } from './content/enemies/index.js';
+import { weaponGalleryEntries } from './game/weapons.js';
 
 /** Parse URL params into game options. */
 export function parseOptions(search = window.location.search) {
@@ -58,6 +67,12 @@ export function parseOptions(search = window.location.search) {
     // open every board on BOARD SELECT for this page load; `resetprogress` wipes the saved unlocks instead.
     unlockall: flag('unlockall'),
     resetprogress: flag('resetprogress'),
+    // which difficulty to play: honoured outside dev mode too (a link can carry it) and session only, never written back (game/options.js)
+    difficulty: DIFFICULTIES.includes(q.get('difficulty') || '') ? q.get('difficulty') : '',
+    // dev-only stretch (issue #21 step 21.6): Scrap Slinger / Soot Cutthroat may lift + throw a nearby prop
+    // (game/throwables.js tryEnemyPropThrow). Forced off in netplay regardless (the START packet does not carry
+    // it, so a peer without the flag would desync) -- see enemy.js's own world.game.net.active check.
+    enemyThrow: devOnly && flag('enemythrow'),
   };
 }
 
@@ -77,7 +92,7 @@ window.addEventListener('unhandledrejection', (e) => { if (!hooks._record) hooks
 function boot() {
   const options = parseOptions();
   // Unlock state has to settle before the title / board select read it.
-  if (options.resetprogress) progress.reset();
+  if (options.resetprogress) { progress.reset(); trialProgress.reset(); }
   if (options.unlockall) progress.unlockAllForSession();
   if (options.stage > 1) progress.allowSession(options.stage - 1); // a `?stage=N` link is its own key to board N
   audio.testMode = options.autotest;
@@ -89,10 +104,16 @@ function boot() {
   audio.init();
 
   const game = new Game({ input, audio, rng, options });
+  // Persisted options (difficulty / mixer / shake / bindings) load once, before the first screen, so the
+  // title and every screen after it read the saved (or session-overridden) values from frame 0. Audio gains
+  // are created lazily, so setting volumes before unlock is correct.
+  userOptions.load();
+  if (options.difficulty) userOptions.setSessionDifficulty(options.difficulty);
+  game.options.difficulty = userOptions.difficulty();
   // Content registries: playable characters, enemy list (10 variants + midboss + boss) and the gallery (all rigs).
   game.characters = CHARACTERS;
   game.enemyList = ENEMY_LIST;
-  game.galleryRegistry = [...CHARACTERS.map((c) => ({ id: c.id, name: c.name, build: c.build, anims: c.anims })), ...ENEMY_GALLERY];
+  game.galleryRegistry = [...CHARACTERS.map((c) => ({ id: c.id, name: c.name, build: c.build, anims: c.anims })), ...ENEMY_GALLERY, ...weaponGalleryEntries(CHARACTERS)];
   game.registerScreen('title', (g) => new TitleScreen(g));
   game.registerScreen('boardselect', (g) => new BoardSelectScreen(g));
   game.registerScreen('select', (g) => new SelectScreen(g));
@@ -100,7 +121,12 @@ function boot() {
   game.registerScreen('gallery', (g) => new GalleryScreen(g));
   game.registerScreen('lobby', (g) => new LobbyScreen(g));
   game.registerScreen('gameplay', (g) => new GameplayScreen(g));
+  game.registerScreen('training', (g) => new TrainingScreen(g));
   game.registerScreen('pause', (g) => new PauseScreen(g));
+  game.registerScreen('trainpause', (g) => new TrainPauseScreen(g));
+  game.registerScreen('trials', (g) => new TrialsScreen(g));
+  game.registerScreen('moves', (g) => new MovesScreen(g));
+  game.registerScreen('options', (g) => new OptionsScreen(g));
   game.registerScreen('gameover', (g) => new GameOverScreen(g));
   game.registerScreen('results', (g) => new ResultsScreen(g));
 
@@ -166,7 +192,7 @@ function boot() {
   };
   // NOTE: Object.assign would evaluate getters once; live getters are defined separately below.
   Object.assign(hooks, {
-    game, input, rng, audio, particles, loop, options, progress,
+    game, input, rng, audio, particles, loop, options, progress, userOptions,
     step(n = 1) { loop.step(Math.max(0, n | 0)); },
     screen() { return game.screenId(); },
     summary() {
@@ -179,10 +205,13 @@ function boot() {
     setInput(p, actions) { input.setVirtual(p, actions); },
     clearInput(p) { input.clearVirtual(p); },
     spawnEnemy: delegate('spawnEnemy', null),
+    spawnWeapon: delegate('spawnWeapon', null),
     killAllEnemies: delegate('killAllEnemies', undefined),
     enemyList: () => (game.enemyList || []).map((e) => ({ type: e.type, variant: e.variant, name: e.name, role: e.role })),
     characterList: () => (game.characters || []).map((c) => ({ id: c.id, name: c.name })),
     fillMeter: delegate('fillMeter', undefined),
+    setTraining: delegate('setTraining', null),
+    moveAnims: MOVE_ANIMS.slice(),
     facePlayerToNearestEnemy: delegate('facePlayerToNearestEnemy', undefined),
     toggleDebug() { showDebug = !showDebug; return showDebug; },
     /** Online co-op state for tools/playtest.js. */
@@ -195,6 +224,14 @@ function boot() {
       const readAt = (sc) => { progress.setScope(sc); const u = [0, 1, 2, 3].map((i) => progress.isUnlocked(i)); progress.setScope(here); return u; };
       return { scope: here, isGroup: progress.isGroup, unlockedCount: progress.unlockedCount(),
         unlocked: [0, 1, 2, 3].map((i) => progress.isUnlocked(i)), solo: readAt('solo'), saved };
+    },
+    /** Persisted-options state, for tools/playtest.js (game/options.js). */
+    optionsState() { return userOptions.state(); },
+    /** Trial-completion state, for tools/playtest.js (game/trials.js). `saved` proves the tick is persisted. */
+    trialState() {
+      let saved = null;
+      try { saved = window.localStorage.getItem(TRIALS_KEY); } catch (e) { saved = null; }
+      return { saved, heroes: Object.fromEntries((game.characters || []).map((c) => [c.id, trialProgress.done(c.id)])) };
     },
     /** Netplay tests need the real gated rAF loop; autotest otherwise leaves it stopped. */
     startLoop() { loop.start(true); return true; },

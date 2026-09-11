@@ -7,13 +7,13 @@
 // Usage:
 //   node tools/winrate.js                                   # default sweep: 4 boards x 4 heroes, solo, balanced, normal
 //   node tools/winrate.js --stages 1 --styles all --seeds 8  # one board against every autopilot archetype
-//   node tools/winrate.js --party 1,2 --difficulty easy,normal,hard
+//   node tools/winrate.js --party 1,2,3,4 --difficulty easy,normal,hard
 //   node tools/winrate.js --json out.json                   # raw per-run rows for further analysis
 //
 // Options (all comma-separated lists):
 //   --stages 1,2,3,4          boards to play
 //   --chars 0,1,2,3           hero indices; in party=2 each is paired with the next hero
-//   --party 1,2               party size (2 = local co-op, both slots on autopilot)
+//   --party 1,2,3,4           party size (2-4 = local co-op, every slot on autopilot)
 //   --styles balanced,...     autopilot archetypes (see BOT_STYLES in src/game/bot.js), or `all`
 //   --difficulty easy,normal,hard
 //   --seeds N                 runs per cell (default 5)
@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import { createServer } from './server.js';
 import { loadPlaywright } from './browser.js';
 import { BOT_STYLES } from '../src/game/bot.js';
+import { MAX_PLAYERS } from '../src/constants.js';
 
 const { chromium } = loadPlaywright();
 
@@ -54,6 +55,7 @@ function parseArgs(argv) {
   }
   for (const s of o.styles) if (!BOT_STYLES[s]) { console.log(`unknown --styles ${s} (have: ${Object.keys(BOT_STYLES).join(', ')})`); process.exit(2); }
   for (const d of o.difficulty) if (!['easy', 'normal', 'hard'].includes(d)) { console.log(`unknown --difficulty ${d}`); process.exit(2); }
+  for (const p of o.party) if (p < 1 || p > MAX_PLAYERS) { console.log(`unknown --party ${p} (have: 1..${MAX_PLAYERS})`); process.exit(2); }
   return o;
 }
 
@@ -70,8 +72,8 @@ async function playRun(ctx, port, job, max) {
       + `&chars=${chars}&bot=1&botstyle=${styles}`;
     await page.goto(url, { waitUntil: 'load' });
     await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 20000 });
-    // difficulty has no URL param (it is a title-screen choice and ?skipTo skips the title), so set it and
-    // re-enter gameplay on the same seed — that way every cell starts from an identical rng stream.
+    // difficulty is set directly on game.options and gameplay re-entered (rather than via ?difficulty=,
+    // which exists) so every cell starts from an identical rng stream.
     await page.evaluate(([d, s, cs]) => {
       const g = window.__game;
       g.game.options.difficulty = d;
@@ -159,8 +161,9 @@ async function main() {
   const jobs = [];
   for (const difficulty of opts.difficulty) for (const stage of opts.stages) for (const style of opts.styles) {
     for (const party of opts.party) for (const c of opts.chars) {
-      // party of 2 pairs each hero with the next one, so co-op covers the roster without a full cross product
-      const chars = party === 1 ? [c] : [c, opts.chars[(opts.chars.indexOf(c) + 1) % opts.chars.length]];
+      // party of N pairs c with the next N-1 heroes (wrapping), so co-op covers the roster without a full cross product
+      const base = opts.chars.indexOf(c);
+      const chars = Array.from({ length: Math.max(1, party | 0) }, (_, k) => opts.chars[(base + k) % opts.chars.length]);
       for (let i = 0; i < opts.seeds; i++) jobs.push({ difficulty, stage, style, party, chars, seed: 1000 + i * 7 });
     }
   }

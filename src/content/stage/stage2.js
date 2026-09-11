@@ -55,8 +55,10 @@ export const stage2 = {
         { type: 'lightning', x: 1620, z: 40, period: 220, active: 12, tell: 40, offset: 110 },
       ],
       /** No bulwark up here: the front and back 12px are open air. Anything thrown over goes into the cloud (+200) — and the
-       *  cloud tears sideways: every 7s a gust (45f of gale first) drags everyone on their feet toward one edge or the other. */
-      zones: [{ type: 'rails', x0: 0, x1: 1900 }, { type: 'gust', x0: 0, x1: 1900, dir: 0 }],
+       *  cloud tears sideways: every 7s a gust (45f of gale first) drags everyone on their feet toward one edge or the other.
+       *  `open: true` (issue #21): a thrown weapon / prop, or a dropped weapon pickup, that drifts past the same edge falls
+       *  into the cloud too -- lost, not landed. */
+      zones: [{ type: 'rails', x0: 0, x1: 1900, open: true }, { type: 'gust', x0: 0, x1: 1900, dir: 0 }],
       waves: [
         // the pressed crew first: three Deckhands, no wing-packs, throwable - learn the rail
         { triggerX: 420, lock: true, spawns: hands(3, { z0: 40 }) },

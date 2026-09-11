@@ -137,7 +137,8 @@ export const stage4 = {
         { type: 'ballastDrop', x: 2280, z: 100, period: 240, tell: 36, active: 8, offset: 120 },
       ],
       /** No bulwark on a raft of other people's hulls: the front and back 12px are open air over the field (+200). */
-      zones: [{ type: 'rails', x0: 1800, x1: 2440 }],
+      // `open: true` (issue #21): a thrown weapon / prop, or a dropped weapon pickup, drifting past the same edge is lost too.
+      zones: [{ type: 'rails', x0: 1800, x1: 2440, open: true }],
       waves: [],
       timedWaves: [
         // the first Thresher, with the ground crew and the first Stormcrow on the board, grounded and working

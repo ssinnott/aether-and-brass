@@ -3,7 +3,8 @@
 A steampunk high-fantasy side-scrolling beat-em-up in the spirit of *Golden Axe*, the *TMNT*
 arcade games and *TMNT: Shredder's Revenge*. **Four complete boards** end to end, four playable
 heroes, five enemy factions (thirty-one variants, plus five spawn modifiers that re-dress them per
-board), four mid-bosses and four multi-phase final bosses. Local two-player co-op on one keyboard or with gamepads.
+board), four mid-bosses and four multi-phase final bosses. Local co-op for up to four players (two keyboard
+halves plus gamepads, or four gamepads).
 
 Everything is drawn and synthesized in code: vanilla JavaScript, HTML5 Canvas 2D and WebAudio.
 No engine, no framework, and not a single image or audio file. Characters are procedural
@@ -48,6 +49,14 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
 - **Run**: double-tap left or right (or hold RT). **Dash attack**: attack while running.
 - **Grab**: attack next to an enemy that isn't reeling. **Throw**: direction + attack while holding.
   Thrown bodies are weapons: they hurt whatever they land on.
+- Enemies drop their weapons; pick one up for a handful of swings before it shatters. Direction + attack
+  while wielding one **throws it** instead of swinging — forward hurls it along your facing, up/down arcs
+  it into the depth you're facing — and costs a durability hit whether it lands or misses; drift one off an
+  open edge and it's gone for good. Walking into an enemy with a weapon held and pressing attack now
+  throws rather than swings, so release the stick first if you meant to swing.
+- A few small props (a bottle, a gaslamp) can be picked up empty-handed the same way, but they never
+  swing at all — any attack while holding one throws it, and it always shatters where it lands. Grabbing
+  an enemy comes first, then a held weapon's throw, then picking up a prop, then an ordinary swing.
 - **Special** costs one meter bar, or a slice of health when the meter is empty. **Super** needs all three bars.
 - **Dodge** rolls with invulnerability frames and cancels attack recovery.
 - Every hero carries a **shield**: a small regenerating buffer, drawn as the thin brass strip above the health
@@ -55,7 +64,27 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
   the wait are different for each hero (character select prints them), and breaking one keeps it down twice as
   long — it is a buffer, not a block, so the hit still lands, staggers and knocks down as usual.
 - Player 2 joins at any time by pressing any of their own keys (J K U L O I or Backspace — the arrows are
-  shared, so they don't count). Escape pauses, M mutes, F1 shows the debug overlay.
+  shared, so they don't count). Escape pauses, M mutes, F1 shows the debug overlay. The on-screen legends and
+  the "P2: PRESS J TO JOIN" hint follow whatever is actually bound, so they change if you remap keys below.
+- Players 3 and 4 use gamepads: press any button on a pad and it takes the next free slot, on the title,
+  character select, pause or mid-run. A pad is never tied to a fixed slot — whichever one you press first
+  becomes P1 if nobody else has, and a pad you set down keeps its slot until you return to the title screen,
+  where every claim resets.
+- Keys and gamepad buttons can be remapped from **OPTIONS** (a row on the title menu, or on the pause plate
+  during a local game) → **CONTROLS**: one key per action per layout. A key already used by the other player,
+  by the arcade / co-op sibling layout for a different action, or a global key (Escape, M, F1) is refused;
+  a collision within the same layout swaps the two actions instead. OPTIONS also has MUSIC and SFX volume
+  sliders, a SCREEN SHAKE setting (off / low / full) and difficulty, and everything there persists in the
+  browser under `aetherAndBrass.options.v1` — same caveat as progress: if storage is unavailable the game
+  still plays, it just falls back to defaults every session and nothing throws.
+- **Training**: TRAINING on the title menu, then pick a hero, opens the Funicular roof with a standing
+  dummy. Its pause plate (same Escape/Start as a real run) sets the dummy to STAND, BLOCK-STAGGER or
+  CPU, picks any of the 31 enemy variants, locks its facing so you can practice hits from behind, locks
+  your meter full or empty, and toggles a hitbox overlay and a frame-data readout under the HUD. MOVES
+  (from either pause plate) lists every move with its bound key and a short description, animating the
+  rig beside each row. TRIALS gives each hero a handful of scripted combos and setups to land — a combo,
+  a jump-in grab, a dodge-cancel, a body throw — ticked off and saved next to board progress the moment
+  you land them; `?resetprogress=1` clears both saves together.
 
 ## The heroes
 
@@ -113,10 +142,11 @@ a spawn.
 
 ## Board 1: The Ascent of Calderwick
 
-Sootfoot Docks (rainy night moorings, swinging cargo hooks) → Foundry Row (molten channels,
-crushing pistons, the mid-boss in a conveyor-fed cargo bay) → The Brass Funicular (a fight on
-the roof of a climbing tram, throw enemies over the railings) → The Heart-Engine (a boiler
-cathedral where the sky opens again when you win).
+Sootfoot Docks (rainy night moorings, swinging cargo hooks, a bottle and a gaslamp lying around
+to pick up and throw) → Foundry Row (molten channels, crushing pistons, the mid-boss in a
+conveyor-fed cargo bay) → The Brass Funicular (a fight on the roof of a climbing tram — its
+railings catch anything thrown, enemy or otherwise) → The Heart-Engine (a boiler cathedral
+where the sky opens again when you win).
 
 Fifteen enemy waves, breakable props with pickups, stage hazards that hurt everyone,
 ring-outs, a combo grading system, ranks, lives and continues.
@@ -125,12 +155,12 @@ ring-outs, a combo grading system, ranks, lives and continues.
 
 The morning after Vane falls, the Ninth Aeronaut Wing blockades the sky nobody told them was
 free. The Mooring Spine (dawn storm above a cloud sea; no bulwark, so throw them off the edge, and
-a gust that drags everyone toward it) → The Gas-Halls (the soft green interior of a captured
-freighter, gas cells that burst into drifting clouds, and the quartermaster's grapnel winch at the
-end of it) → The Cold Sovereign (one locked screen on the flagship's gun deck while she banks:
-run-out cannon, powder tubs, the deck listing under you) → The Bridge (two masts, the Admiral's
-second, and the Admiral). The Stormcrows fight beside the Brassbound the Concordat left aboard:
-the higher you board, the more clockwork.
+a gust that drags everyone toward it — a weapon or prop thrown too near it is lost the same way, not
+landed) → The Gas-Halls (the soft green interior of a captured freighter, gas cells that burst into
+drifting clouds, and the quartermaster's grapnel winch at the end of it) → The Cold Sovereign (one locked
+screen on the flagship's gun deck while she banks: run-out cannon, powder tubs, the deck listing under you)
+→ The Bridge (two masts, the Admiral's second, and the Admiral). The Stormcrows fight beside the Brassbound
+the Concordat left aboard: the higher you board, the more clockwork.
 
 Board 2 is **locked until you clear board 1**. Full design doc: `docs/STAGE2.md`.
 
@@ -201,9 +231,10 @@ npm run winrate -- --stages 1 --styles all       # balance sweep: how often does
 ```
 
 The suite boots the game, walks the character select, drives every hero's whole moveset,
-runs an autopilot bot through all four boards to their results screens, plays co-op, spawns
-every enemy variant, exercises every autopilot archetype, and renders every sound effect and
-music track offline to check none are silent.
+runs an autopilot bot through all four boards to their results screens, plays co-op (including a full
+four-player run, drop-in on every slot and gamepad-claim rules, `coop4`), spawns every enemy variant,
+picks up, swings, breaks and drops every enemy weapon, exercises every autopilot archetype, and renders
+every sound effect and music track offline to check none are silent.
 
 `npm test` answers "does it work"; `npm run winrate` answers "is it fair". The latter plays real
 runs with no godmode and counts how often the ENGINE wins — a run lost is the continue stack
@@ -212,7 +243,7 @@ running out — across boards, difficulties, heroes, party sizes and autopilot s
 ```
 npm run winrate                                          # 4 boards x 4 heroes, solo, balanced, normal
 npm run winrate -- --stages 1 --styles all --seeds 8     # one board against every archetype
-npm run winrate -- --party 1,2 --difficulty easy,normal,hard --json out.json
+npm run winrate -- --party 1,2,3,4 --difficulty easy,normal,hard --json out.json
 ```
 
 Autopilot archetypes (`src/game/bot.js`): `balanced` (the default, and what the test suite is
@@ -220,9 +251,12 @@ written against), `aggressive` (fast buttons, never dodges), `defensive` (fights
 dodges hard, backs off when hurt), `masher` (no spacing, no patience). A run that never reaches
 a result is reported apart as unfinished — that is a soft-lock, not a loss.
 
-Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,2`,
-`?skipTo=gallery`, `?bot=1`, `?botstyle=aggressive,defensive` (one archetype per slot),
-`?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=4`, `?unlockall=1`, `?resetprogress=1`.
+Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,1,2,3`,
+`?skipTo=gallery`, `?skipTo=training&chars=0` (straight into the training room), `?bot=1`,
+`?botstyle=aggressive,defensive` (one archetype per slot),
+`?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=4`, `?unlockall=1`, `?resetprogress=1`,
+`?difficulty=easy|normal|hard` (session only — overrides the saved difficulty for this page load without
+writing it back).
 
 ### Deployment
 

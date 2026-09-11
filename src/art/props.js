@@ -305,6 +305,29 @@ function signalLocker(ctx, sx, sy, p) {
   for (let i = 0; i < 3; i++) { ctx.fillStyle = C(cols[i]); ctx.fillRect(x + 5 + i * 8, y + 6, 5, 12); }
 }
 
+// ---------------------------------------------------------------- Throwable clutter (issue #21, GDD 7)
+/** Empty glass bottle: never rolled, so it does not honour `p.angle` (thrown-prop spin is a canvas rotation
+ *  in throwables.js's draw closure instead, decision 7). */
+const BOTTLE_GLASS = '#4a7a52';
+function bottle(ctx, sx, sy, p) {
+  const w = p.w, h = p.h, x = sx - w / 2, y = sy - h, neckW = Math.round(w * 0.42), neckX = sx - Math.round(neckW / 2);
+  box(ctx, x, y + 7, w, h - 7, BOTTLE_GLASS, 2, 0.4);
+  box(ctx, neckX, y, neckW, 8, BOTTLE_GLASS, 1, 0.4);
+  if (flash) return;
+  ctx.fillStyle = tones('#8a6a40').base; ctx.fillRect(neckX, y - 2, neckW, 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(x + 2, y + 10, 1, h - 13);
+}
+/** Small carry lamp: an oil lamp set on the dock planks, brass body and a warm flicker (never rolled either). */
+function lamp(ctx, sx, sy, p, frame) {
+  const w = p.w, h = p.h, x = sx - w / 2, y = sy - h, bodyX = sx - Math.round(w * 0.35), bodyW = Math.round(w * 0.7);
+  box(ctx, x, sy - 6, w, 6, IRON, 1);
+  box(ctx, bodyX, y + 6, bodyW, h - 12, BRASS, 2, 0.3);
+  if (flash) return;
+  ctx.fillStyle = 'rgba(160,220,240,0.3)'; ctx.fillRect(bodyX + 1, y + 1, bodyW - 2, 6);
+  const k = 0.55 + 0.3 * Math.sin(frame * 0.2 + p.x);
+  glow(ctx, bodyX, y - 3, bodyW, 6, '#ffd070', k);
+  ctx.fillStyle = '#FFD27A'; ctx.fillRect(sx - 1, y, 2, 3);
+}
 // ---------------------------------------------------------------- Boards 2-4 (issue #27; docs/STAGE2.md, STAGE3.md, STAGE4.md section 1)
 // Each board's props are drawn in that board's quoted palette so they sit in their own backdrop: the Wing's canvas / pewter /
 // deck timber with static violet on the powder marks; the Chandlery's chalk / lime spoil / tallow / harness leather / kiln iron
@@ -568,6 +591,15 @@ export const PROP_TYPES = {
   locker: { w: 32, h: 50, hp: 34, drops: 'goldenSprocket', draw: signalLocker, color: '#2E3446' },
   /** Falls when hit by a jump attack: 30 to enemies within 90px, once. */
   chandelier: { w: 60, h: 40, hp: 1, drops: null, draw: chandelier, color: BRASS, yOff: 70, jumpOnly: true, fall: { radius: 90, damage: 30 }, score: 0 },
+  /** Throwable clutter (issue #21, GDD 7): liftable only where a stage row says `throwable: true`. `throw`
+   *  shapes the flying feel exactly like WEAPONS[id].throw (game/weapons.js) -- see ThrowSpec in throwables.js.
+   *  Always shatters on landing (Prop.break), whether or not it hit anything on the way (no durability to spend). */
+  bottle: { w: 10, h: 18, hp: 4, drops: null, draw: bottle, color: BOTTLE_GLASS,
+    throw: { speed: 8, vy: 1, gravity: 0.22, damage: 8, type: 'light', kbX: 2, kbY: 0, hitstun: 14, pierce: 0, maxDist: 220, spin: 0.6 } },
+  /** A lit oil lamp, so breaking or throwing one is a fire source like `lantern` above: on a board with gas
+   *  (the Tailings' seeps, the Gas-Halls' cells) a thrown lamp lights it. */
+  lamp: { w: 16, h: 26, hp: 6, drops: null, draw: lamp, color: BRASS, fire: true,
+    throw: { speed: 7, vy: 1.2, gravity: 0.25, damage: 12, type: 'medium', kbX: 3, kbY: 2, hitstun: 18, pierce: 0, maxDist: 200, spin: 0.4 } },
   // ---- boards 2-4 (issue #27). Behaviour fields items.js reads besides roll / rollHit / explode / fall / valve / jumpOnly:
   //      release { type, variant, mods? }  a live enemy tips out on break (a stage entry overrides it or sets release: null)
   //      dump 'chassis'                    an overhead net drops that prop type on the floor, rolling, when a jump attack opens it

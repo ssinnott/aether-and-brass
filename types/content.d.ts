@@ -65,6 +65,8 @@ interface Hit {
   groundBounce?: boolean | number;
   /** Removes fire puddles the box touches (Pip's Steam Vent). */
   extinguish?: boolean;
+  /** A held pickup weapon's swing: connecting spends one point of its durability (game/player.js). */
+  weapon?: boolean;
 }
 
 interface Hitbox extends Hit {
@@ -171,6 +173,13 @@ interface Hooks {
   drawAfter?(ctx: CanvasRenderingContext2D, f: any, sx: number, sy: number, cam?: any): void;
 }
 
+/** Combat-log event kinds (game/world.js logEvent) a trial step may name. Area / shockwave hits are 'projectile'. */
+type TrialKind = 'hit' | 'projectile' | 'body' | 'grab' | 'grabHit' | 'throw' | 'parry' | 'dodge' | 'cancel' | 'airDash' | 'armor';
+/** One row of a hero's MOVES list (screens/moves.js). `anims` plays in sequence beside the row; `anim` is the one-anim shorthand. */
+interface MoveEntry { id: string; name: string; input: string; desc: string; anim?: string; anims?: string[]; }
+interface TrialStep { kind?: TrialKind | TrialKind[]; anim?: string | string[]; air?: boolean; type?: HitType; label: string; }
+/** A combo trial: ordered steps matched against the combat log (game/trials.js). `spacing` = px between the two bodies. */
+interface Trial { id: string; name: string; hint: string; steps: TrialStep[]; window?: number; strict?: boolean; bodies?: 1 | 2; spacing?: number; dummyMode?: 'stand' | 'block' | 'cpu'; }
 /**
  * Spawn modifiers (issue #28 part 3; game/traits.js SPAWN_MODS). A stage spawn entry carries `mods: ['holdout']` and the
  * Enemy is built from the derived def (`applyMods`): spawn-time only, so lockstep netplay never sees a late coin flip.

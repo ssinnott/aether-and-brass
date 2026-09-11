@@ -34,7 +34,7 @@ export class GameOverScreen extends Screen {
       const d = this.digit;
       if (d !== this.lastDigit) { this.lastDigit = d; this.crack = 8; this.game.audio.play('continue_tick'); this.spawnShards(); }
       let go = false;
-      for (let p = 0; p < 2; p++) if (inp.pressed(p, 'attack') || inp.pressed(p, 'start')) go = true;
+      for (let p = 0; p < inp.playerCount; p++) if (inp.pressed(p, 'attack') || inp.pressed(p, 'start')) go = true;
       if (this.game.options.bot && this.frame > 30) go = true;
       if (go && this.continues > 0 && this.gameplay) {
         this.leaving = true;

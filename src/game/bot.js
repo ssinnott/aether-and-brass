@@ -4,9 +4,10 @@
 // The autopilot has named STYLES (?botstyle=NAME, one per slot: `aggressive,defensive`). `balanced` is the default and
 // is the behaviour every scenario in tools/playtest.js was written against; the others exist so tools/winrate.js can
 // sweep a board against more than one kind of player before anyone calls it tuned.
-import { ST, METER, TEAM } from '../constants.js';
+import { ST, METER, THROW, TEAM } from '../constants.js';
 import { rng } from '../engine/rng.js';
 import { laneAroundHazards } from './hazards.js';
+import { WEAPONS, nearestWeaponPickup, WEAPON_SEEK_DIST, WEAPON_SEEK_SAFE_X, WEAPON_SEEK_SAFE_Z } from './weapons.js';
 
 const Z_TOL = 14, RUN_DIST = 170, STOP_RUN_DIST = 110;
 
@@ -19,16 +20,18 @@ const Z_TOL = 14, RUN_DIST = 170, STOP_RUN_DIST = 110;
  * - `jumpChance`    chance to throw the periodic jump-in
  * - `spacing`       extra px of reach kept before committing (positive = fights at range)
  * - `retreatHp`     fraction of max HP below which it backs off to heal/space (0 = never retreats)
+ * - `throwChance`   chance per eligible frame to hurl a held weapon at a target out of swinging reach (issue #21;
+ *                    0 = never throws, so aggressive keeps closing distance instead of spending its weapon at range)
  */
 export const BOT_STYLES = {
   // the original autopilot, unchanged: trades freely, dodges when something is coming
-  balanced: { attackEvery: 8, dodgeChance: 0.3, specialChance: 0.5, superEvery: 20, jumpChance: 0.5, spacing: 0, retreatHp: 0 },
+  balanced: { attackEvery: 8, dodgeChance: 0.3, specialChance: 0.5, superEvery: 20, jumpChance: 0.5, spacing: 0, retreatHp: 0, throwChance: 0.4 },
   // buttons down, never blocks: the ceiling on how fast a board can be cleared and the floor on how much it costs
-  aggressive: { attackEvery: 5, dodgeChance: 0, specialChance: 0.9, superEvery: 12, jumpChance: 0.8, spacing: -6, retreatHp: 0 },
+  aggressive: { attackEvery: 5, dodgeChance: 0, specialChance: 0.9, superEvery: 12, jumpChance: 0.8, spacing: -6, retreatHp: 0, throwChance: 0 },
   // fights at the tip of its reach, dodges hard, backs off when hurt: a cautious player
-  defensive: { attackEvery: 12, dodgeChance: 0.65, specialChance: 0.35, superEvery: 40, jumpChance: 0.15, spacing: 10, retreatHp: 0.35 },
+  defensive: { attackEvery: 12, dodgeChance: 0.65, specialChance: 0.35, superEvery: 40, jumpChance: 0.15, spacing: 10, retreatHp: 0.35, throwChance: 0.9 },
   // no spacing, no patience, mashes one button: a first-time player on a keyboard
-  masher: { attackEvery: 3, dodgeChance: 0.05, specialChance: 0.15, superEvery: 90, jumpChance: 0.35, spacing: -10, retreatHp: 0 },
+  masher: { attackEvery: 3, dodgeChance: 0.05, specialChance: 0.15, superEvery: 90, jumpChance: 0.35, spacing: -10, retreatHp: 0, throwChance: 0.2 },
 };
 export const DEFAULT_BOT_STYLE = 'balanced';
 /** @returns {typeof BOT_STYLES.balanced} the named style, falling back to `balanced`. */
@@ -87,6 +90,16 @@ export function botIntent(p, world, style) {
     return it;
   }
   const e = pickTarget(p, world);
+  // weapon pickups (game/weapons.js): walk over one nearby while unarmed and nothing is close enough to punish it
+  if (!p.weaponId && p.pickUpWeapon && !p.airborne) {
+    const wp = nearestWeaponPickup(world, p.x, p.z, WEAPON_SEEK_DIST);
+    const threatened = !!e && Math.abs(e.x - p.x) < WEAPON_SEEK_SAFE_X && Math.abs(e.z - p.z) < WEAPON_SEEK_SAFE_Z;
+    if (wp && !threatened) {
+      it.x = wp.x > p.x + 4 ? 1 : wp.x < p.x - 4 ? -1 : 0;
+      it.y = wp.z > p.z + 4 ? 1 : wp.z < p.z - 4 ? -1 : 0;
+      if (it.x || it.y) return it;
+    }
+  }
   if (!e) {
     it.x = 1;
     // a human steps round a live hazard; the autopilot has to be told to (walking into the dock's cargo
@@ -100,9 +113,22 @@ export function botIntent(p, world, style) {
   }
   const dx = e.x - p.x, dz = e.z - p.z, adx = Math.abs(dx);
   const gap = adx - (e.w || 28) / 2;               // distance to the target's hurtbox edge
-  const reach = (p.def.reach || 40) + 8 + s.spacing;
+  const reach = (p.weaponId && WEAPONS[p.weaponId] ? WEAPONS[p.weaponId].reach : (p.def.reach || 40)) + 8 + s.spacing;
   const dir = dx > 0 ? 1 : -1;
   if (Math.abs(dz) > 10) it.y = dz > 0 ? 1 : -1;
+  // A bot's ONLY intentional weapon throw (issue #21 step 21.4): hurl a held weapon at a target that is out of
+  // swinging reach but still within THROW.botRange, roughly every 20 frames per style's throwChance. This must
+  // run before the retreat check below (a defensive bot backing off should still get to throw first) and the
+  // in-range branch further down must never itself set it.attack alongside a turn / z-align while armed (see the
+  // weaponId guard there) or it would throw by accident.
+  if (p.weaponId && s.throwChance > 0 && gap > reach + 20 && gap < THROW.botRange && Math.abs(dz) <= Z_TOL && f % 20 < 2) {
+    // Still running from an earlier approach (e.g. the target was out of THROW.botRange until just now): a throw
+    // pressed while running dash-attacks instead (player.js thinkGround checks `running` before startWeaponThrow),
+    // so drop out of the run first and let the throw roll happen the following frame instead (review finding 4).
+    // The rng call stays out of this branch so an already-running bot does not spend an extra roll doing so.
+    if (p.running) { it.x = 0; return it; }
+    if (rng.chance(s.throwChance)) { it.x = dir; it.attack = true; return it; }
+  }
   // hurt and cautious: give ground rather than trade, so the style actually reads as defensive. The retreat is
   // time-boxed — a wave that will not chase (a locked arena) must not turn into a standoff neither side can end.
   const hurt = s.retreatHp > 0 && p.hp > 0 && p.hp < (p.maxHp || 200) * s.retreatHp;
@@ -112,8 +138,12 @@ export function botIntent(p, world, style) {
     if (gap > RUN_DIST) it.run = true;
     else if (p.running && gap < STOP_RUN_DIST && f % 2 === 0) it.x = 0; // drop out of the run so the approach ends in a combo, not a dash attack
   } else {
-    if (dir !== p.facing) it.x = dir;
-    if (Math.abs(dz) <= Z_TOL) {
+    const turning = dir !== p.facing;
+    if (turning) it.x = dir;
+    // A held weapon throws on ANY direction pressed with attack (game/player.js startWeaponThrow), so an armed
+    // bot must never combine a turn or a z-align step with an attack press here: without this it would hurl its
+    // weapon away every time the target closed in from behind or off its z-band, in every style.
+    if (Math.abs(dz) <= Z_TOL && !(p.weaponId && (turning || it.y))) {
       if (p.meter >= METER.super && f % s.superEvery === 0) it.super = true;
       else if (p.meter >= METER.special && f % 60 === 0 && rng.chance(s.specialChance)) it.special = true;
       else if (f % s.attackEvery === 0) it.attack = true;

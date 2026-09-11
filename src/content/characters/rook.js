@@ -16,6 +16,7 @@
 // oxblood coat / dark brown beard / slate trousers / warm leather boots with a steel toe / light steel blade on a brass
 // guard / dark felt tricorne with a brass band. Ground keys use G(): root.y is solved so the lowest sole sits on the floor.
 import { speedFor, hpFor, areaBox, frontBox, P, F, hit } from './common.js';
+import { moveList, trials } from './rookMoves.js';
 import { JUMP_VY, METER, ST } from '../../constants.js';
 import { celRect, celBall, celPoly, celPath, tones, flat, band } from '../../art/shading.js';
 import { drawSkull, drawFace, drawBoot, drawFist, drawBelt } from '../../art/rigParts.js';
@@ -512,6 +513,7 @@ export const rook = {
   build,
   anims,
   hooks,
+  moveList, trials,
   moves: {
     special: { name: 'FAN THE HAMMER', cost: METER.special }, super: { name: 'BROADSIDE', cost: METER.super, damage: 150 },
     // forward: boot kick released as the boot lands (frame 6); back: hip toss dropped ~90 px behind (vx 4 / vy 5.5) and bounced once

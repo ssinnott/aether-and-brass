@@ -80,7 +80,7 @@ export class BoardSelectScreen extends Screen {
       return;
     }
     if (this.leaving || !this.boards.length) return;
-    for (let p = 0; p < 2; p++) {
+    for (let p = 0; p < inp.playerCount; p++) {
       if (!inp.joined(p)) { if (inp.joinPressed(p)) { inp.setJoined(p, true); audio.play('join'); } continue; }
       const dir = (inp.pressed(p, 'right') ? 1 : 0) - (inp.pressed(p, 'left') ? 1 : 0);
       if (dir) { this.cursor = (this.cursor + dir + this.boards.length) % this.boards.length; audio.play('menu_move'); continue; }
@@ -101,7 +101,7 @@ export class BoardSelectScreen extends Screen {
     if (r.shake > 0) r.shake--;
     // anyone can skip the flourish once it has been on screen for a beat
     if (r.t > RV_SKIPPABLE) {
-      for (let p = 0; p < 2; p++) {
+      for (let p = 0; p < inp.playerCount; p++) {
         if (!inp.joined(p)) { if (inp.joinPressed(p)) { inp.setJoined(p, true); audio.play('join'); } continue; }
         if (inp.pressed(p, 'attack') || inp.pressed(p, 'start')) { this.endReveal(); return; }
       }

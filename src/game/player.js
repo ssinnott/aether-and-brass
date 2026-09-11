@@ -1,14 +1,17 @@
 // Player: input -> intent -> state transitions (ARCHITECTURE.md section 5, GDD section 7 combat rules).
 // Character-specific behaviour comes from def.traits (extraJumps, airDashes, dodgeRecovery, dodgeIFrames, parry, grabReach...) and
 // def.hooks (onAttackPressed / onJumpPressed / onDodgePressed / onSpecial / onSuper / onHitDealt ...) — see the tables in fighter.js.
-import { ST, TEAM, METER, FIGHTER_DEFAULTS, VIEW_W, Z_SPEED_FACTOR, KNOCKDOWN_POP_VY, UI } from '../constants.js';
+import { ST, TEAM, METER, FIGHTER_DEFAULTS, VIEW_W, Z_SPEED_FACTOR, KNOCKDOWN_POP_VY, UI, THROW, GRAB_REACH_BEHIND, GRAB_REACH_AHEAD_EXTRA, GRAB_Z_TOL } from '../constants.js';
 import { Fighter, AIR_FALL_STATES } from './fighter.js';
 import { initShield } from './shield.js';
 import { mashNet } from './status.js';
 import { botIntent } from './bot.js';
 import { audio } from '../engine/audio.js';
 import { clamp, sign } from '../engine/math.js';
-import { floatText } from '../art/fx.js';
+import { floatText, burstBreak } from '../art/fx.js';
+import { WEAPONS, WEAPON_DROP_VX, WEAPON_DROP_GRACE } from './weapons.js';
+import { WeaponPickup } from './items.js';
+import { startWeaponThrow, findLiftProp, liftProp, startPropThrow, dropHeldProp, updateHeldProp } from './throwables.js';
 
 const DOUBLE_TAP_FRAMES = 12;
 const DODGE_FRAMES = 20, DODGE_DIST = 60, DODGE_COOLDOWN = 6, DODGE_BASE_RECOVERY = 8;
@@ -26,7 +29,7 @@ export function comboGrade(n) { for (const g of GRADES) if (n >= g[0]) return { 
 export class Player extends Fighter {
   /**
    * @param {object} def character definition (content/characters)
-   * @param {number} index player slot 0|1
+   * @param {number} index player slot 0..3
    * @param {{ input: object, x?: number, z?: number, facing?: number, bot?: boolean, botStyle?: string, godmode?: boolean, lives?: number }} o
    */
   constructor(def, index, { input, x = 100, z = 70, facing = 1, bot = false, botStyle = '', godmode = false, lives = 3 } = {}) {
@@ -43,10 +46,15 @@ export class Player extends Fighter {
     this.kills = 0; this.damageTakenTotal = 0; this.continuesUsed = 0;
     this.comboStep = 0;
     this.comboLength = 0; for (let i = 1; i <= 6; i++) if (this.anim.has('attack' + i)) this.comboLength = i;
+    this.baseComboLength = this.comboLength;
+    /** Held pickup weapon id ('' = none) and its remaining hits (game/weapons.js); both hashed by net/checksum.js. */
+    this.weaponId = ''; this.weaponHits = 0;
     this.running = false; this.runDir = 0; this.tapDir = 0; this.tapFrame = -100; this.frameCount = 0;
     this.dodgeCooldown = 0; this.dodgeDx = 0; this.dodgeDz = 0; this.airDash = false; this.lastDodgeFrame = -100;
     this.jumpsLeft = 0; this.airDashesLeft = 0; this.airShotUsed = false;
     this.out = false; this.respawnTimer = 0;
+    /** Last dodge attempt was through an attack's active frames (fighter.js onDodged), else a clean roll (training readout). */
+    this.dodgeThrough = false;
     this.lastTarget = null; this.heldBody = null; this.heldProj = null; this.victory = false;
     this.crowdInst = -1; this.crowdHits = 0; this.crowdClearUntil = -1; this.tauntAcc = 0;
     this.intent = { x: 0, y: 0, attack: false, jump: false, special: false, super: false, dodge: false, taunt: false, run: false, start: false };
@@ -104,7 +112,7 @@ export class Player extends Fighter {
       case ST.ATTACK: case ST.DASH_ATTACK: this.thinkAttack(world); break;
       case ST.JUMP: this.thinkAir(world, true); break;
       case ST.JUMP_ATTACK: this.thinkAir(world, false); break;
-      case ST.GRAB: this.thinkGrab(); break;
+      case ST.GRAB: this.thinkGrab(world); break;
       case ST.GRABBED: this.thinkGrabbed(); break;
       case ST.DODGE: this.thinkDodge(world); break;
       case ST.SUPER: this.thinkSuper(); break;
@@ -124,7 +132,13 @@ export class Player extends Fighter {
       if (this.callHook('onAttackPressed', world, false) === true) return;
       if (this.running && this.anim.has('dashAttack')) { this.startDashAttack(); return; }
       const g = this.findGrabTarget(world);
-      if (g) { this.startGrab(g); return; }
+      if (g) { this.startGrab(g); world.logEvent('grab', this, g, {}); return; }
+      // A held weapon with a direction pressed throws instead of swinging (GDD 7 / issue #21); a neutral attack
+      // with no direction stays the ordinary swing so an armed hero standing still can still fight.
+      if (this.weaponId && (it.x || it.y) && startWeaponThrow(this, it)) return;
+      // Bare-handed, an idle liftable prop in reach is lifted instead of swung (GDD 7 decision 4/5): one hand,
+      // one held thing, so an armed hero leaves props alone entirely.
+      if (!this.weaponId) { const prop = findLiftProp(this, world); if (prop) { liftProp(this, prop); return; } }
       this.startAttack(1); return;
     }
     if (it.jump) { this.consume('jump'); if (this.callHook('onJumpPressed', world, false) !== true) this.jump(); return; }
@@ -149,7 +163,7 @@ export class Player extends Fighter {
       this.consume('attack'); this.startAttack(this.comboStep + 1); return;
     }
     if (it.attack && this.state === ST.DASH_ATTACK && a.cancel === 'attack') { this.consume('attack'); this.startAttack(1); return; }
-    if (it.dodge && this.dodgeCooldown <= 0) { if (this.callHook('onDodgePressed', world, false) !== true) this.startDodge(); return; }
+    if (it.dodge && this.dodgeCooldown <= 0) { if (this.callHook('onDodgePressed', world, false) !== true) { this.startDodge(); world.logEvent('cancel', this, null, { anim: 'dodge' }); } return; }
     if (it.jump && (a.cancel === 'any' || a.cancel === 'jump')) { this.consume('jump'); if (this.callHook('onJumpPressed', world, false) !== true) this.jump(); return; }
     if (it.special && a.cancel === 'any') { this.consume('special'); if (this.callHook('onSpecial', world) !== true) this.trySpecial(world); }
   }
@@ -171,7 +185,8 @@ export class Player extends Fighter {
       if (this.airDashesLeft > 0) this.startAirDash();
     }
   }
-  thinkGrab() {
+  thinkGrab(world) {
+    if (this.heldProp) { this.thinkHeld(world); return; }
     const it = this.intent;
     if (!this.grabTarget || this.throwPending || (this.anim.name === 'grab' && !this.anim.done)) return;
     if (!it.attack) return;
@@ -179,6 +194,25 @@ export class Player extends Fighter {
     if (it.x === this.facing) this.throwTarget(1);
     else if (it.x === -this.facing) this.throwTarget(-1);
     else this.grabHit();
+  }
+  /** Holding a liftable prop (GDD 7 decision 14): stays in ST.GRAB the whole hold (grabs.js updateGrab positions
+   *  it every frame via throwables.updateHeldProp, BEFORE this runs), so movement runs here instead of
+   *  thinkGround. Slow walk only (holdWalk 0.7x, no run/jump/dodge); a prop has no swing, so ANY attack press
+   *  throws it (decision 3). Repositions once more after moving: updateGrab ran before this (Fighter.update calls
+   *  updateState, then think), so without this second call the drawn prop would lag the mover by one frame. */
+  thinkHeld(world) {
+    const it = this.intent;
+    if (this.throwPending) return;
+    if (it.attack) { this.consume('attack'); startPropThrow(this, it); return; }
+    if (it.x || it.y) {
+      const speed = this.walkSpeed * THROW.holdWalk;
+      this.x += it.x * speed;
+      const zb = world.zBounds(this);
+      this.z = clamp(this.z + it.y * speed * Z_SPEED_FACTOR, zb.z0, zb.z1);
+      if (it.x) this.facing = it.x;
+      if (this.anim.name !== 'walk') this.play('walk', { restart: false });
+    } else if (this.anim.name !== 'idle') this.play('idle', { restart: false });
+    updateHeldProp(this);
   }
   thinkDodge(world) {
     const tr = this.traits;
@@ -235,11 +269,12 @@ export class Player extends Fighter {
     this.airDashesLeft--;
     const dir = this.intent.x || this.facing;
     this.facing = dir; this.dodgeDx = dir * AIR_DASH_DIST / AIR_DASH_FRAMES; this.dodgeDz = 0;
-    this.airDash = true; this.noGravity = AIR_DASH_FRAMES; this.vy = 0;
+    this.airDash = true; this.noGravity = AIR_DASH_FRAMES; this.vy = 0; this.dodgeThrough = false;
     this.setState(ST.DODGE, 'airDash', { fallback: 'dodge' });
     this.invuln = Math.max(this.invuln, this.traits.dodgeIFrames[1] - 2);
     if (this.world) this.world.addFx('steam', this.x - dir * 10, this.y + 20, this.z, { count: 4 });
     audio.play('dodge');
+    if (this.world) this.world.logEvent('airDash', this, null, { anim: 'airDash' });
   }
   /** Pay for a special: one meter bar, else 8% max HP above 15% HP (GDD 7). Returns false (and whiffs) when unaffordable. */
   paySpecial() {
@@ -265,14 +300,14 @@ export class Player extends Fighter {
     audio.play('super_charge'); audio.play(this.def.sfx && this.def.sfx.super || 'super_' + this.def.id);
   }
   startSuper(world) {
-    this.meter = 0; this.running = false; this.hitConfirmed = false; this.blinkHit.clear(); this.heldBody = null; this.heldProj = null;
+    this.meter = 0; this.running = false; this.hitConfirmed = false; this.blinkHit.clear(); this.heldBody = null; this.heldProj = null; this.heldProp = null;
     this.setState(ST.SUPER, 'super');
     this.invuln = Math.max(this.invuln, this.anim.length + 4);
     this.beginSuper(world);
   }
   startDodge() {
     const it = this.intent;
-    this.running = false; this.airDash = false;
+    this.running = false; this.airDash = false; this.dodgeThrough = false;
     if (it.y) { this.dodgeDz = it.y * (DODGE_DIST * Z_SPEED_FACTOR) / DODGE_FRAMES; this.dodgeDx = 0; }
     else { const dir = it.x || this.facing; this.dodgeDx = dir * DODGE_DIST / DODGE_FRAMES; this.dodgeDz = 0; if (it.x) this.facing = it.x; }
     this.dodgeCooldown = DODGE_COOLDOWN + DODGE_FRAMES;
@@ -284,7 +319,7 @@ export class Player extends Fighter {
     for (const e of world.enemies) {
       if (!e.grabbableBy || !e.grabbableBy(this)) continue;
       const dx = (e.x - this.x) * this.facing, dz = Math.abs(e.z - this.z);
-      if (dx < -4 || dx > this.grabReach + 28 || dz > 14) continue;
+      if (dx < -GRAB_REACH_BEHIND || dx > this.grabReach + GRAB_REACH_AHEAD_EXTRA || dz > GRAB_Z_TOL) continue;
       if (dx < bestD) { bestD = dx; best = e; }
     }
     return best;
@@ -334,7 +369,7 @@ export class Player extends Fighter {
     }
   }
   releaseHeld(world, damage, vx = 14, frame = null) {
-    const b = this.heldBody, pr = this.heldProj; this.heldBody = null; this.grabTarget = null; this.heldProj = null;
+    const b = this.heldBody, pr = this.heldProj; this.heldBody = null; this.grabTarget = null; this.heldProj = null; this.heldProp = null;
     if (pr && !pr.removeMe) { // hurl the rubble ball: a knockdown projectile that flies `maxDist` (300px) and hits everything on the way
       pr.vx = this.facing * vx; pr.vy = 2; pr.gravity = 0.25; pr.facing = this.facing; pr.startX = pr.x; pr.maxDist = (frame && frame.maxDist) || 300; pr.life = 90; pr.pierce = 99;
       pr.hit = { damage, type: 'knockdown', kbX: 6, kbY: 5, hitstun: 24, projectile: true, ranged: true };
@@ -351,6 +386,7 @@ export class Player extends Fighter {
   }
   onHitConfirmed(target, hit) {
     if (target.kind === 'prop') { this.hitConfirmed = true; return; }
+    if (this.weaponId && hit.weapon) this.spendWeapon();
     this.lastTarget = target;
     const type = hit.type || 'light';
     this.addMeter(type === 'light' || type === 'medium' ? METER.light : METER.heavy);
@@ -363,8 +399,10 @@ export class Player extends Fighter {
     if (++this.crowdHits === CROWD_CLEAR_HITS && this.world) { this.crowdClearUntil = this.world.frame + CROWD_CLEAR_FRAMES; floatText(this.x, this.y + this.h + 24, this.z, 'CROWD CLEAR!', UI.brassLight, 2); }
     super.onHitConfirmed(target, hit);
   }
-  onDodged(attacker) { this.addMeter(DODGE_METER); floatText(this.x, this.y + this.h + 10, this.z, 'DODGE', UI.meter, 1); }
+  onDodged(attacker) { this.addMeter(DODGE_METER); this.dodgeThrough = true; floatText(this.x, this.y + this.h + 10, this.z, 'DODGE', UI.meter, 1); if (this.world) this.world.logEvent('dodge', this, attacker, {}); }
   onHurt(hit, attacker) {
+    this.throwPending = null; // a hit mid-windup cancels a pending weapon/prop throw (issue #21)
+    dropHeldProp(this); // a hit mid-hold drops a held prop where it was being carried (GDD 7 decision 14)
     this.damageTakenTotal += this.lastDamage != null ? this.lastDamage : (hit.damage || 0);
     if (this.combo > 0) this.dropCombo();
     this.addMeter(METER.damaged);
@@ -372,7 +410,9 @@ export class Player extends Fighter {
   onKill(target) {
     this.kills++;
     const base = (target.def && target.def.score) || 100;
-    let n = target.thrownBy === this ? Math.round(base * 1.5) : base; // GDD 7: throw kill x1.5
+    // GDD 7: throw kill x1.5 -- the thrown body itself (thrownBy) OR anyone killed by a thrown body / weapon's
+    // last hit (lastHitWasThrow, fighter.js takeHit/takeHitRaw; issue #21 decision 8).
+    let n = (target.thrownBy === this || target.lastHitWasThrow) ? Math.round(base * 1.5) : base;
     if (this.world && this.world.frame <= this.crowdClearUntil) n *= 2;
     this.addScore(n, true);
     this.addMeter(12);
@@ -415,7 +455,8 @@ export class Player extends Fighter {
     this.hp = this.maxHp; this.meter = 0; this.dead = false; this.deathHooked = false; this.alive = true; this.removeMe = false;
     initShield(this); // a new life drops in with a full shield
     this.combo = 0; this.comboTimer = 0; this.juggleCount = 0; this.juggleGravity = 0; this.juggleImmune = false; this.chainHits = 0;
-    this.grabTarget = null; this.grabbedBy = null; this.heldBody = null; this.hitstop = 0; this.flashTimer = 0; this.status = {};
+    this.grabTarget = null; this.grabbedBy = null; this.heldBody = null; this.heldProp = null; this.hitstop = 0; this.flashTimer = 0; this.status = {};
+    this.clearWeapon();
     const cam = world.camera;
     this.x = clamp(cam.x + VIEW_W / 2, cam.left + 20, cam.right - 20); this.z = 70; this.y = 160; this.vy = 0; this.vx = 0; this.facing = 1;
     this.invuln = FIGHTER_DEFAULTS.respawnInvuln;
@@ -433,4 +474,61 @@ export class Player extends Fighter {
       this.z += clamp(e.z - this.z, -8, 8);
     }
   }
+
+  // ---------- pickup weapons (issue #20, GDD 7) ----------
+  /** Wield a picked-up weapon: swap the held rig, swap the ground combo, restart comboLength. False if already armed. */
+  pickUpWeapon(pickup) {
+    const w = WEAPONS[pickup.weaponId];
+    if (!w || this.weaponId) return false;
+    this.weaponId = w.id;
+    this.weaponHits = pickup.weaponHits;
+    this.anim.setOverlay(w.anims);
+    this.rig.weapon = w.rig;
+    this.comboLength = w.swings.length;
+    floatText(this.x, this.y + this.h + 10, this.z, w.name, UI.brassLight, 1);
+    audio.play('pickup_score');
+    return true;
+  }
+  /** Drop the overlay / rig swap and go back to the hero's own weapon (or bare hands). */
+  clearWeapon() {
+    if (!this.weaponId) return;
+    this.weaponId = ''; this.weaponHits = 0;
+    this.anim.setOverlay(null);
+    this.rig.weapon = this.rig.build.weapon || null;
+    this.comboLength = this.baseComboLength;
+  }
+  /** Section entry (GDD 7): the weapon is not carried into the next section, with feedback (no pickup left behind). */
+  discardWeapon() {
+    if (!this.weaponId) return;
+    floatText(this.x, this.y + this.h + 10, this.z, 'LEFT BEHIND', UI.paper, 1);
+    if (this.world) this.world.addFx('dust', this.x, 0, this.z, { count: 4 });
+    this.clearWeapon();
+  }
+  /** Knockdown / throw (GDD 7): the weapon falls to the floor as a WeaponPickup, free after a short grace. */
+  dropWeapon() {
+    if (!this.weaponId || !this.world) return;
+    const wp = new WeaponPickup(this.weaponId, this.x, this.z, { hits: this.weaponHits, grace: WEAPON_DROP_GRACE });
+    wp.vx = -this.facing * WEAPON_DROP_VX;
+    this.world.add(wp);
+    this.clearWeapon();
+  }
+  /** The weapon shatters: burst debris, a heavy spark and BROKEN! (plays prop_break; `break` is only a legacy alias
+   *  of the same definition, sfx.js). Clearing here restores comboLength while the last swing's anim finishes; a
+   *  buffered chain then plays the hero's own attackN — harmless. */
+  breakWeapon() {
+    const w = WEAPONS[this.weaponId];
+    if (!w) return;
+    const hx = this.x + this.facing * 20, hy = this.y + this.h * 0.6;
+    burstBreak(hx, hy, this.z, w.color, 8);
+    if (this.world) this.world.addFx('spark', hx, hy, this.z, { type: 'heavy' });
+    floatText(this.x, this.y + this.h + 10, this.z, 'BROKEN!', UI.red, 1);
+    audio.play('prop_break');
+    this.clearWeapon();
+  }
+  /** Spend one point of durability on a connecting weapon swing; breaks the weapon at 0. */
+  spendWeapon() { if (--this.weaponHits <= 0) this.breakWeapon(); }
+  /** Drop the held weapon before going down (fighter.js:529); every hit/launch/juggle reaches this through knockDown. */
+  knockDown(vy, vx, animName = 'knockdown') { this.dropWeapon(); super.knockDown(vy, vx, animName); }
+  /** Drop the held weapon before becoming a thrown body (grabs.js:103, installed on Fighter.prototype). */
+  thrown(vx, vy, damage, thrower) { this.dropWeapon(); super.thrown(vx, vy, damage, thrower); }
 }

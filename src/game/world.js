@@ -1,6 +1,6 @@
 // World: entity list, spawn/despawn, update order, depth-sorted draw with shadows first, FX, attack tokens (per faction group),
 // camera bounds, floor band (boss arena shrink), area hits, spec-based projectile spawning, cutscenes, boss stun (pressure valves).
-import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MIN, Z_MAX, CAMERA_MARGIN, TEAM, ST } from '../constants.js';
+import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MIN, Z_MAX, CAMERA_MARGIN, TEAM, ST, ATTACK_TOKENS_BY_PARTY } from '../constants.js';
 import { Camera } from '../engine/camera.js';
 import { particles } from '../engine/particles.js';
 import { resolveHits } from './combat.js';
@@ -11,6 +11,8 @@ import { audio } from '../engine/audio.js';
 
 const FX_LIFE = { spark: 10, slash: 10, ring: 16, muzzle: 6, flash: 8 };
 const FIGHTER_KINDS = new Set(['player', 'enemy', 'boss']);
+/** Capped combat log length (World.log): oldest entries drop first. */
+const LOG_MAX = 64;
 
 /** The playfield: owns entities, the camera, transient FX and the hit resolution pass. */
 export class World {
@@ -27,6 +29,9 @@ export class World {
     this.stageLength = stageLength;
     this.backdrop = backdrop;
     this.frame = 0;
+    /** Capped combat log of player-dealt hits (training room: game/trials.js, screens/training.js). Derived state
+     *  like `fx`: never hashed by net/checksum.js. */
+    this.log = []; this.logSeq = 0;
     this.fx = [];
     this.freeze = 0;
     this.freezeFocus = null;
@@ -78,6 +83,8 @@ export class World {
   get enemies() { return this._enemies; }
   /** Living players. */
   get alivePlayers() { return this.players.filter((p) => p.alive && !p.dead && !p.removeMe); }
+  /** Players still in the run (alive or respawning, not out): the party size waves scale to (issue #23). */
+  get partySize() { let n = 0; for (const p of this.players) if (p && !p.out) n++; return n; }
   _refreshLists() {
     this._fighters.length = 0; this._enemies.length = 0;
     for (const e of this.entities) {
@@ -85,7 +92,8 @@ export class World {
       this._fighters.push(e);
       if (e.team === TEAM.ENEMY) this._enemies.push(e);
     }
-    this.attackTokens.max = this.alivePlayers.length > 1 ? 3 : 2;
+    const n = this.alivePlayers.length;
+    this.attackTokens.max = ATTACK_TOKENS_BY_PARTY[Math.min(n, ATTACK_TOKENS_BY_PARTY.length - 1)];
   }
   /** Freeze the world for n frames (super cut-in); `focus` keeps drawing on top. */
   freezeFrames(n, focus = null) { this.freeze = Math.max(this.freeze, n); this.freezeFocus = focus; }
@@ -143,6 +151,19 @@ export class World {
     b.stun(frames, source);
     return true;
   }
+  /**
+   * Record a player-dealt combat event. Derived state like `fx`: never hashed by net/checksum.js, read only by the
+   * training room (screens/training.js, game/trials.js). Area / shockwave hits arrive here as kind 'projectile'
+   * because world.areaHit builds a Projectile. opts: { hit, anim, air }
+   */
+  logEvent(kind, attacker, target, { hit = null, anim = null, air = false } = {}) {
+    if (!attacker || attacker.kind !== 'player') return;
+    if (target && target.kind !== 'enemy' && target.kind !== 'boss') return;
+    if (this.log.length >= LOG_MAX) this.log.shift();
+    this.log.push({ seq: ++this.logSeq, frame: this.frame, p: attacker.index, kind, anim: anim || (attacker.anim ? attacker.anim.name : ''),
+      type: hit ? (hit.type || 'light') : '', damage: target ? (target.lastDamage || 0) : 0, hitstun: target && target.state === ST.HURT ? target.hurtTimer : 0,
+      air: !!air, targetId: target ? target.id : 0 });
+  }
 
   /** Draw everything: backdrop, shadows, depth-sorted entities, FX, particles, foreground, cutscene overlay. */
   draw(ctx) {
@@ -168,8 +189,8 @@ export class World {
     if (b.z1 < Z_MAX) ctx.fillRect(0, FLOOR_TOP + b.z1 + cam.shakeY, VIEW_W, Z_MAX - b.z1);
     ctx.restore();
   }
-  /** Debug overlay: hitboxes, hurtboxes, states. */
-  drawDebug(ctx) { for (const e of this.entities) if (e.drawDebug) e.drawDebug(ctx, this.camera); }
+  /** Debug overlay: hitboxes, hurtboxes, states (`labels` false = boxes only, no state text). */
+  drawDebug(ctx, labels = true) { for (const e of this.entities) if (e.drawDebug) e.drawDebug(ctx, this.camera, labels); }
 
   // ---------- FX ----------
   /**
@@ -285,7 +306,7 @@ export class World {
     if (f.kind === 'boss' && this.boss === f) this.boss = null;
   }
   /** Reset for a new run. */
-  clear() { this.entities.length = 0; this.players.length = 0; this.fx.length = 0; this.fires.length = 0; this.lastFires.length = 0; this.boss = null; this.attackTokens.holders.clear(); this._valves.clear(); this.resetBand(); this.cutsceneTimer = 0; particles.clear(); }
+  clear() { this.entities.length = 0; this.players.length = 0; this.fx.length = 0; this.log.length = 0; this.fires.length = 0; this.lastFires.length = 0; this.boss = null; this.attackTokens.holders.clear(); this._valves.clear(); this.resetBand(); this.cutsceneTimer = 0; particles.clear(); }
   /** Living enemies excluding bosses (wave bookkeeping). */
   get waveEnemies() { return this._enemies.filter((e) => e.kind !== 'boss' && !e.fleeing && !e.dead); }
 }

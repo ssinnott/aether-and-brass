@@ -3,16 +3,21 @@
 // (chandelier), stun the Regent Engine (pressure valves), tip out a live enemy (`release`: the Chandlery's handcarts), dump a
 // rolling load from overhead (`dump`: the Gleaning's cargo nets) and light gas (`fire`: lanterns, every explosion — world.addFire);
 // every break plays a split-pieces animation + debris unless the type brings its own `pieces` drawing (a cut salvage line).
-import { FLOOR_TOP, GRAVITY, TEAM, HITSTOP, METER, UI, ST } from '../constants.js';
-import { clamp } from '../engine/math.js';
+// Throwable clutter (issue #21, GDD 7): a `throwable: true` stage row + a `throw` spec on PROP_TYPES (bottle, lamp)
+// lets a player lift it (state 'held'; game/throwables.js owns lift/hold/throw/land -- a thrown prop is removed
+// outright and flies as a plain Projectile instead, so this file only carries the 'held' state and its guards).
+import { FLOOR_TOP, GRAVITY, TEAM, HITSTOP, METER, UI, ST, Z_MIN, Z_MAX } from '../constants.js';
 import { Entity } from './entity.js';
 import { Projectile } from './projectile.js';
 import { audio } from '../engine/audio.js';
 import { rng } from '../engine/rng.js';
+import { clamp } from '../engine/math.js';
 import { particles } from '../engine/particles.js';
 import { floatText, burstBreak } from '../art/fx.js';
 import { rrect, circle, gear, pathPoly, paint, line } from '../art/shapes.js';
 import { PROP_TYPES, getPropType, drawProp, drawPieces, tones } from '../art/props.js';
+import { WEAPONS } from './weapons.js';
+import { drawWeaponFloor } from '../art/weapons.js';
 
 /** Pickup catalogue (GDD 7). hp = fraction of max HP, meter = points, score = points, life = extra lives. */
 export const PICKUPS = Object.freeze({
@@ -26,13 +31,28 @@ export const PICKUPS = Object.freeze({
 });
 /** Aliases used by enemy/stage `drops` fields. */
 const DROP_ALIASES = { none: null, meter: 'aetherVial', food_small: 'meatPie', food_big: 'roastBird', food: 'meatPie', score: 'brassCog', score_big: 'coalScrip', life: 'brassHeart' };
-const PICKUP_LIFE = 600, PICKUP_BLINK = 120;
+export const PICKUP_LIFE = 600, PICKUP_BLINK = 120;
+/** Walk-over collection box (half-widths), shared by `Pickup` and `WeaponPickup`. */
+export const PICKUP_DX = 18, PICKUP_DZ = 14;
 const OL = '#2B2B30';
 const BREAK_FRAMES = 16, ROLL_FRAMES = 20, PROP_SCORE = 50, RING_OUT_SCORE = 200;
 /** Fire radius a breaking `fire` prop (a lantern's spilt oil) reports to world.addFire; explosions report their own radius. */
 const FIRE_R = 40;
 /** Rite lime (docs/STAGE3.md): the ring a released enemy climbs out of — the Chandlery's carts are how the Brassbound come back. */
 const RELEASE_COLOR = '#D8FF6E';
+
+/**
+ * Shared pop-physics tick for walk-over pickups (`Pickup`, `WeaponPickup`): life countdown, bounce, ground friction
+ * and the world-bounds clamp. Returns false when the caller should stop (the pickup expired this frame).
+ */
+export function tickPickupBody(p, world) {
+  p.world = world;
+  if (--p.life <= 0) { p.removeMe = true; return false; }
+  if (p.y > 0 || p.vy > 0) { p.y += p.vy; p.vy -= GRAVITY; if (p.y <= 0) { p.y = 0; p.vy = p.vy < -1.5 ? -p.vy * 0.4 : 0; p.vx *= 0.5; } }
+  p.x += p.vx; if (p.y <= 0) p.vx *= 0.9;
+  const b = world.boundsFor(p); if (p.x < b.x0) p.x = b.x0; if (p.x > b.x1) p.x = b.x1;
+  return true;
+}
 
 /** Walk-over pickup. `life` in frames (GDD: vanish at 10s). */
 export class Pickup extends Entity {
@@ -45,14 +65,10 @@ export class Pickup extends Entity {
     this.life = life; this.w = 16; this.h = 14; this.zSize = 24; this.shadowW = 16;
   }
   update(world) {
-    this.world = world;
-    if (--this.life <= 0) { this.removeMe = true; return; }
-    if (this.y > 0 || this.vy > 0) { this.y += this.vy; this.vy -= GRAVITY; if (this.y <= 0) { this.y = 0; this.vy = this.vy < -1.5 ? -this.vy * 0.4 : 0; this.vx *= 0.5; } }
-    this.x += this.vx; if (this.y <= 0) this.vx *= 0.9;
-    const b = world.boundsFor(this); if (this.x < b.x0) this.x = b.x0; if (this.x > b.x1) this.x = b.x1;
+    if (!tickPickupBody(this, world)) return;
     for (const p of world.players) {
       if (!p.alive || p.dead || p.removeMe || p.y > 24) continue;
-      if (Math.abs(p.x - this.x) < 18 && Math.abs(p.z - this.z) < 14) { this.collect(p, world); return; }
+      if (Math.abs(p.x - this.x) < PICKUP_DX && Math.abs(p.z - this.z) < PICKUP_DZ) { this.collect(p, world); return; }
     }
   }
   collect(p, world) {
@@ -104,17 +120,53 @@ export class Pickup extends Entity {
   }
 }
 
+/**
+ * A held pickup weapon lying on the floor (issue #20, GDD 7): dropped by an enemy on death or a player on knockdown,
+ * walk-over collectable by any actionable player who is not already armed. `grace` (player drops only) blocks
+ * collection for a few frames so the dropper does not instantly re-collect his own weapon. Both `weaponId` and
+ * `weaponHits` and `grace` are hashed by net/checksum.js.
+ */
+export class WeaponPickup extends Entity {
+  constructor(weaponId, x, z, { hits = null, pop = true, life = PICKUP_LIFE, grace = 0 } = {}) {
+    super('item');
+    this.weaponId = WEAPONS[weaponId] ? weaponId : 'halberd';
+    this.info = WEAPONS[this.weaponId];
+    this.weaponHits = hits != null ? hits : this.info.hits;
+    this.grace = grace;
+    this.x = x; this.z = clamp(z, Z_MIN, Z_MAX); this.y = pop ? 1 : 0;
+    this.vy = pop ? 4 : 0; this.vx = pop ? rng.range(-1.2, 1.2) : 0;
+    this.life = life; this.w = 24; this.h = 10; this.zSize = 24; this.shadowW = 22;
+  }
+  update(world) {
+    if (!tickPickupBody(this, world)) return;
+    if (this.grace > 0) { this.grace--; return; }
+    for (const p of world.players) {
+      if (!p.pickUpWeapon || p.weaponId || p.out || p.dead || p.removeMe || !p.actionable) continue;
+      if (Math.abs(p.x - this.x) < PICKUP_DX && Math.abs(p.z - this.z) < PICKUP_DZ) {
+        if (p.pickUpWeapon(this)) { this.removeMe = true; return; }
+      }
+    }
+  }
+  hurtbox() { return null; }
+  draw(ctx, cam) {
+    if (this.life < PICKUP_BLINK && (this.life % 8) < 4) return;
+    drawWeaponFloor(ctx, cam.toScreenX(this.x), Math.round(FLOOR_TOP + this.z - this.y + cam.shakeY), this.info.rig);
+  }
+}
+
 /** Breakable (or static) stage prop from the art/props.js catalogue. Takes hits from any team, drops items. */
 export class Prop extends Entity {
   /**
    * Stage entries forward every extra field of a prop entry here, so these names are the stage-data contract.
    * @param {string} type PROP_TYPES key
-   * @param {{ drops?: string|string[]|null, hp?: number, solid?: boolean, rider?: boolean,
+   * @param {{ drops?: string|string[]|null, hp?: number, solid?: boolean, rider?: boolean, throwable?: boolean,
    *   release?: { type: string, variant?: string, mods?: string[] }|null, dump?: string|null, fire?: boolean }} o
    *   rider = travels on the cargo-bay conveyor; release / dump / fire override the type's catalogue defaults
-   *   (leave them out to keep the type's own, pass null / false to switch the behaviour off on one entry)
+   *   (leave them out to keep the type's own, pass null / false to switch the behaviour off on one entry);
+   *   throwable (issue #21, GDD 7) = the stage row allows lifting this instance, which only actually applies when the
+   *   type also carries a `throw` spec (game/throwables.js findLiftProp).
    */
-  constructor(type, x, z, { drops = null, hp = 0, solid = true, rider = false, release, dump, fire } = {}) {
+  constructor(type, x, z, { drops = null, hp = 0, solid = true, rider = false, throwable = false, release, dump, fire } = {}) {
     super('prop');
     this.type = PROP_TYPES[type] ? type : 'crate';
     this.info = getPropType(this.type);
@@ -132,6 +184,11 @@ export class Prop extends Entity {
     this.vx = 0; this.rollLeft = 0; this.breaker = null; this.rider = rider;
     /** A dumped cargo net: still hanging (drawn empty), never solid again. */
     this.spent = false;
+    /** Issue #21 (GDD 7): liftable (throwable AND info.throw exists) and the Player currently holding this, if any.
+     *  Both hashed by net/checksum.js (bitfield). State 'held' adds to idle/rolling/breaking/fuse/falling -- a
+     *  thrown prop is removed outright (throwHeldItem) and flies as a plain Projectile, never a Prop state. */
+    this.throwable = !!(throwable && this.info.throw);
+    this.holder = null;
     /** Live enemy that tips out on break ({ type, variant, mods? }); the handcart's default is a Tin Footman. */
     this.release = release !== undefined ? release : (this.info.release || null);
     /** Prop type an overhead net dumps on the floor, rolling, when a jump attack opens it (the cargo net's 'chassis'). */
@@ -165,7 +222,21 @@ export class Prop extends Entity {
         if (this.hangY <= 0) { this.hangY = 0; this.land(world); }
         break;
       }
+      case 'held': this.updateHeld(); break;
       default: break;
+    }
+  }
+  /** Guard only (issue #21 decision 6): the real per-frame position comes from the HOLDER's own updateGrab
+   *  (game/grabs.js -> throwables.js updateHeldProp) every frame while held. This just notices a holder that
+   *  let go without going through dropHeldProp (dead, out, or otherwise reset) and settles back to idle in place. */
+  updateHeld() {
+    const h = this.holder;
+    // Also self-heals a holder that stopped holding without going through dropHeldProp: grabbed out of ST.GRAB
+    // (grabs.js startGrab drops it explicitly, but this is a second line of defence) or removed/killed by a path
+    // that never calls onHurt (takeHitRaw death, review findings 1/10).
+    if (!h || h.heldProp !== this || h.state !== ST.GRAB || !h.alive || h.dead) {
+      if (h && h.heldProp === this) h.heldProp = null;
+      this.holder = null; this.state = 'idle'; this.y = 0;
     }
   }
   hurtbox() {
@@ -186,7 +257,8 @@ export class Prop extends Entity {
   }
   /** Damage the prop. Returns true when the hit counted. */
   takeHit(hit, attacker) {
-    if (!this.alive || !this.solid || this.state === 'breaking' || this.state === 'fuse' || this.state === 'falling') return false;
+    if (!this.alive || !this.solid || this.state === 'breaking' || this.state === 'fuse' || this.state === 'falling'
+      || this.state === 'held') return false;
     if (!this.canBeHitBy(attacker)) return false;
     this.hp -= Math.max(1, Math.round(hit.damage || 1));
     this.flashTimer = 4; this.wobble = 10;
@@ -338,7 +410,9 @@ export function spawnDrops(world, x, z, drops) {
   let i = 0;
   for (const d of list) {
     const id = DROP_ALIASES[d] !== undefined ? DROP_ALIASES[d] : d;
-    if (!id || !PICKUPS[id]) continue;
+    if (!id) continue;
+    if (WEAPONS[id]) { const wp = new WeaponPickup(id, x + i * 6, z); wp.vx = (i % 2 ? 1 : -1) * (0.8 + i * 0.4); world.add(wp); i++; continue; }
+    if (!PICKUPS[id]) continue;
     const p = new Pickup(id, x + i * 6, z);
     p.vx = (i % 2 ? 1 : -1) * (0.8 + i * 0.4);
     world.add(p);

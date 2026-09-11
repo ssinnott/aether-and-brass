@@ -1,6 +1,6 @@
 // Gameplay screen: World + players + HUD + StageRunner (ARCHITECTURE.md sections 7, 9, 12, 15).
 // Exposes spawnEnemy / spawnEnemyAt / killAllEnemies / fillMeter / facePlayerToNearestEnemy / summary for window.__game.
-import { VIEW_W, VIEW_H, TEAM, ST, Z_MAX, METER, UI } from '../../constants.js';
+import { VIEW_W, VIEW_H, TEAM, ST, Z_MAX, METER, UI, MAX_PLAYERS, NET_PLAYERS } from '../../constants.js';
 import { Screen } from '../game.js';
 import { World } from '../world.js';
 import { Player } from '../player.js';
@@ -12,9 +12,13 @@ import { getEnemyDef } from '../../content/enemies/index.js';
 import { getStage } from '../../content/stage/index.js';
 import { drawTextOutlined } from '../../engine/text.js';
 import { clamp } from '../../engine/math.js';
+import { WeaponPickup } from '../items.js';
+import { dropInChar, dupTint } from '../party.js';
 
 const GAME_OVER_DELAY = 150;
 const START_X = 100;
+/** Player z spread (issue #23): slot 3 lands at 70 + 3*16 = 118, inside Z_MAX 140 (today's slot*24 would hit 142). */
+const PLAYER_START_Z = 70, PLAYER_Z_PITCH = 16;
 /** Difficulty tuning (GDD 7): enemy HP / damage multipliers, tell speed, continues. */
 const DIFFICULTY = {
   easy: { hpMult: 0.75, dmgMult: 0.6, tellScale: 1.3, continues: 5 },
@@ -24,7 +28,7 @@ const DIFFICULTY = {
 
 /** The main in-game screen. */
 export class GameplayScreen extends Screen {
-  constructor(game) { super(game, 'gameplay'); }
+  constructor(game) { super(game, 'gameplay'); this.pauseScreenId = 'pause'; }
   enter(params) {
     super.enter(params);
     const game = this.game, opt = game.options;
@@ -40,15 +44,19 @@ export class GameplayScreen extends Screen {
     this.continues = params.continues != null ? params.continues : this.difficulty.continues;
     this.continuesUsed = 0;
     this.hud = new Hud(this.world, game);
-    chars.slice(0, 2).forEach((ci, i) => this.addPlayer(ci, i));
-    if (this.players.length >= 2) game.input.setJoined(1, true);
+    chars.slice(0, this.maxPlayers()).forEach((ci, i) => { if (ci != null && ci >= 0) this.addPlayer(ci, i); });
+    this.players.forEach((p, i) => { if (p && i > 0) game.input.setJoined(i, true); });
     game.players = this.players;
     this.gameOverTimer = 0; this.gameOverShown = false;
     this.time = 0;
-    this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves: !!opt.nowaves, startSection: opt.section || 0 });
+    // #22 training room: TrainingScreen passes its own nowaves/section (arena stage, camera locked by hand
+    // since the runner only locks when !nowaves); every other caller keeps reading game.options as before.
+    const nowaves = params.nowaves != null ? !!params.nowaves : !!opt.nowaves;
+    const section = params.section != null ? params.section | 0 : (opt.section || 0);
+    this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves, startSection: section });
     this.runner.start();
     for (const s of opt.spawn || []) this.spawnEnemy(s.type, s.variant, s.dx, s.dz);
-    if (!params.resume && !(opt.section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);
+    if (!params.resume && !(section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);
   }
   /**
    * Netplay status over the scene: a stall while the peer's input is late, and the banner shown
@@ -70,6 +78,9 @@ export class GameplayScreen extends Screen {
   }
   /** Swap the backdrop (StageRunner calls this on section changes). */
   setBackdrop(b) { this.backdrop = b; this.world.backdrop = b; }
+  /** Slots this run may fill: two under netplay (the lockstep session owns them), four for couch co-op.
+   *  A method (not a constant) so #22's training arena can override it to cap the run at one. */
+  maxPlayers() { return this.game.options.netplay ? NET_PLAYERS : MAX_PLAYERS; }
   /** Add a player for character index `ci` in slot `slot`. */
   addPlayer(ci, slot) {
     const def = this.game.characters[ci] || this.game.characters[0];
@@ -78,10 +89,10 @@ export class GameplayScreen extends Screen {
     const x = clamp(Math.max(cam.x, cam.left) + START_X + slot * 40, 20, this.stage.length - 20);
     // ?botstyle=aggressive,defensive gives each slot its own autopilot archetype; one name applies to both.
     const styles = opt.botStyle || [];
-    const p = new Player(def, slot, { input: this.game.input, x, z: 70 + slot * 24, facing: 1,
+    const p = new Player(def, slot, { input: this.game.input, x, z: PLAYER_START_Z + slot * PLAYER_Z_PITCH, facing: 1,
       bot: !!opt.bot, botStyle: styles[slot] || styles[0] || '', godmode: !!opt.godmode });
-    const other = this.players[1 - slot];
-    if (other && other.def === def) { p.tint = '#1a1a2e'; p.tintAlpha = 0.3; }
+    const t = dupTint(this.players, def, slot);
+    if (t) { p.tint = t.tint; p.tintAlpha = t.tintAlpha; }
     this.world.add(p);
     this.players[slot] = p;
     return p;
@@ -93,20 +104,24 @@ export class GameplayScreen extends Screen {
     // lockstep mask. joinPressed() and globalPressed() are local keyboard edges that never reach
     // the peer, so acting on them here would advance one peer's simulation and not the other's.
     const online = !!(this.game.net && this.game.net.active);
-    // P2 drop-in (any P2-only key); the join key itself never doubles as a pause press
-    let joinedNow = false;
-    if (!online && !inp.joined(1) && inp.joinPressed(1) && this.players.length < 2) {
-      inp.setJoined(1, true); joinedNow = true;
-      const ci = this.game.options.chars[1] != null ? this.game.options.chars[1] : 1;
-      this.addPlayer(ci, 1);
-      this.game.audio.play('join');
-      this.hud.showBanner('P2 JOINS!', '', 60);
+    // Drop-in on any free slot (any that slot's own key/pad); the join edge itself never doubles as
+    // a pause press. A Set per update is fine -- this is the sim tick, not a per-frame draw path.
+    const joinedNow = new Set();
+    if (!online) {
+      for (let s = 1; s < MAX_PLAYERS; s++) {
+        if (inp.joined(s) || this.players[s] || !inp.joinPressed(s)) continue;
+        if (this.players.filter(Boolean).length >= this.maxPlayers()) break;
+        inp.setJoined(s, true); joinedNow.add(s);
+        this.addPlayer(dropInChar(this.game.options, this.game.characters, s), s);
+        this.game.audio.play('join');
+        this.hud.showBanner(`P${s + 1} JOINS!`, '', 60);
+      }
     }
     // pause: Escape (global) or a joined player's start button
     // Escape is folded into the `start` bit by the net session, so pause is a simulated event.
     let pause = !online && inp.globalPressed('pause');
-    for (let i = 0; i < 2 && !pause; i++) if (inp.joined(i) && !(i === 1 && joinedNow) && inp.pressed(i, 'start')) pause = true;
-    if (pause && this.game.factories.pause && !this.gameOverShown) { this.game.audio.play('pause'); this.game.push('pause'); return; }
+    for (let i = 0; i < MAX_PLAYERS && !pause; i++) if (inp.joined(i) && !joinedNow.has(i) && inp.pressed(i, 'start')) pause = true;
+    if (pause && this.game.factories[this.pauseScreenId] && !this.gameOverShown) { this.game.audio.play('pause'); this.game.push(this.pauseScreenId); return; }
     this.time++;
     world.update();
     this.runner.update();
@@ -129,9 +144,10 @@ export class GameplayScreen extends Screen {
     this.players.forEach((p, i) => {
       if (!p) return;
       p.out = false; p.dead = false; p.alive = true; p.removeMe = false; p.lives = 3; p.continuesUsed++;
-      p.hp = p.maxHp; p.meter = 0; p.state = ST.IDLE; p.stateTimer = 0; p.hitstop = 0; p.grabbedBy = null; p.grabTarget = null; p.heldBody = null;
+      p.hp = p.maxHp; p.meter = 0; p.state = ST.IDLE; p.stateTimer = 0; p.hitstop = 0; p.grabbedBy = null; p.grabTarget = null; p.heldBody = null; p.heldProp = null;
       p.hurtTimer = 0; p.juggleCount = 0; p.juggleGravity = 0; p.juggleImmune = false; p.chainHits = 0; p.combo = 0; p.comboTimer = 0; p.running = false; p.comboStep = 0; p.busy = 0;
-      p.x = clamp(cam.x + VIEW_W / 2 - 40 + i * 60, cam.left + 20, cam.right - 20); p.z = 70 + i * 24; p.y = 0; p.vy = 0; p.vx = 0;
+      p.clearWeapon();
+      p.x = clamp(cam.x + VIEW_W / 2 - 40 + i * 60, cam.left + 20, cam.right - 20); p.z = PLAYER_START_Z + i * PLAYER_Z_PITCH; p.y = 0; p.vy = 0; p.vx = 0;
       p.invuln = 120; p.play('idle');
       if (!this.world.entities.includes(p)) this.world.add(p);
     });
@@ -179,7 +195,7 @@ export class GameplayScreen extends Screen {
     return {
       ...rs,
       sectionIndex: w.sectionIndex, cameraX: w.camera.x, locked: w.camera.locked, wavesCleared: w.wavesCleared,
-      players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, shield: p.shield, shieldMax: p.shieldMax, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out })),
+      players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, shield: p.shield, shieldMax: p.shieldMax, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out, weapon: p.weaponId, weaponHits: p.weaponHits, index: p.index, id: p.def.id })),
       enemies: w.enemies.filter((e) => e.kind !== 'boss').map((e) => ({ name: e.name, type: e.def.type || '', variant: e.def.variant || '', mods: e.mods || [], hp: e.hp, state: e.state, x: e.x, z: e.z, ai: e.aiState })),
       boss: b ? { kind: b.bossKind || 'boss', name: b.name, hp: b.hpTotal != null ? b.hpTotal : b.hp, maxHp: b.hpTotalMax || b.maxHp, phase: b.phase || 1, state: b.state, phaseName: b.phaseName } : null,
       enemiesDefeated: this.enemiesDefeated, time: this.time, continues: this.continues,
@@ -191,15 +207,22 @@ export class GameplayScreen extends Screen {
     const x = p1.x + (Number(dx) || 0), z = clamp(p1.z + (Number(dz) || 0), 0, Z_MAX);
     return this.spawnEnemyAt(type, variant, x, z, { facing: x < p1.x ? 1 : -1 });
   }
-  /** Spawn an enemy from the content registry at absolute world coords. */
+  /** Spawn an enemy from the content registry at absolute world coords. `opts.def` (training room) skips the lookup. */
   spawnEnemyAt(type, variant, x, z, opts = {}) {
-    const def = getEnemyDef(type, variant);
+    const def = opts.def || getEnemyDef(type, variant);
     const e = def.boss ? new Boss(def, { x, z, facing: opts.facing != null ? opts.facing : -1 }) : new Enemy(def, { x, z, ...opts });
     const d = this.difficulty || DIFFICULTY.normal;
     if (!def.boss && d.hpMult !== 1) { e.maxHp = Math.round(e.maxHp * d.hpMult); e.hp = e.maxHp; }
     if (d.dmgMult !== 1) e.damageMult = (e.damageMult || 1) * d.dmgMult;
     this.world.add(e);
     return e;
+  }
+  /** Test hook: lay a pickup weapon at P1.x + dx, P1.z + dz (settled, no pop, no grace). */
+  spawnWeapon(id = 'halberd', dx = 0, dz = 0) {
+    const p1 = this.players[0] || { x: this.world.camera.x + 200, z: 70 };
+    const wp = new WeaponPickup(id, p1.x + (Number(dx) || 0), clamp(p1.z + (Number(dz) || 0), 0, Z_MAX), { pop: false });
+    this.world.add(wp);
+    return wp.weaponId;
   }
   /** Remove every enemy (and boss) immediately. */
   killAllEnemies() {
