@@ -206,11 +206,13 @@ export const input = {
   hasKey(layout, action, code) -> bool,
   swallowKey(code),                   // drops a just-captured keydown from keysDown/keysPressedPending before the next update(), so it fires no action and doesn't toggle mute/debug
   beginPadCapture() / capturePadButton() -> number / endPadCapture(),  // gamepad rebind capture (no player/index arg: any connected pad), polled from a screen's update(); capturePadButton() returns -1 when nothing new is pressed
+  padOf(player) -> number, hasKeyboard(player) -> bool, freeSlots() -> number[], unboundPads,  // pad claimed / has a keyboard half (false for slots 2/3) / free slots (allocates) / unclaimed connected pads
+  joinState() -> number,              // joined bitmask | unbound-pad bit; no allocation, for cache invalidation
+  resetClaims(), setPadClaiming(bool),  // reset every pad claim/kbSeen (title entry) / claiming off (netplay) => any pad drives the local player, never claims a new slot
 }
 ```
-Players are `0` and `1`. Gamepad `i` maps to player `i` and is OR-merged with that
-player's keyboard bindings. Use the standard gamepad mapping (d-pad + left stick
-for movement, buttons per GDD). The four binding layouts are `solo` (1P arcade aliases), `p1`, `p2`
+Players are `0..3` (`MAX_PLAYERS`); keyboard halves exist for slots 0/1 only, so slots 2/3 need a claimed gamepad or a test virtual. Gamepads are not index-bound: an unbound pad's first BUTTON edge (axes ignored) claims the lowest slot with no pad whose keyboard half is unused (`kbSeen`) and that isn't a netplay virtual slot — that press also counts as the slot's join. Claims (and `kbSeen`) reset on title entry (`resetClaims()`). Netplay turns claiming off (`setPadClaiming(false)`, `lobby.js`/`session.js`); while off, `pollRaw(player)` reads the pad bound to that slot plus every unbound pad, so a pad drives the local player whether pressed before or after the keyboard and can never claim the peer's slot mid-match. Use the standard gamepad mapping (d-pad + left stick, buttons per GDD).
+The four binding layouts are `solo` (1P arcade aliases), `p1`, `p2`
 (both keyboard) and `pad` (shared gamepad map); `engine/bindings.js` owns `DEFAULT_BINDINGS`, `LAYOUTS`
 and the pure `cloneBindings` / `sanitiseBindings` / `rebindKey` / `rebindPad` / `keyLabel` / `padLabel` /
 `legendFor` / `joinLabels` / `joinCodesFor` helpers that `input.js`'s wrappers above delegate to; the six
@@ -518,16 +520,16 @@ An `EnemyDef` (in `content/enemies/*.js`):
 }
 ```
 Base AI state machine (in `Enemy`), tuned by `def.ai`:
-`ENTER` (walk on-screen) → `APPROACH` (align `z` within `zTolerance`, close to `attackRange` on the target's facing-agnostic side; picks the nearest player, re-targets every 90 frames or when hit) → `ATTACK` (needs an **attack token**: `World.attackTokens` limits simultaneous attackers to 2 (3 in co-op) — enemies without a token `HOVER`: shuffle at distance `attackRange + 30..60`, occasionally step in `z`) → `RECOVER` (short back-off after attacking, `retreatChance`) → loop. Ranged variants use `KEEP_DISTANCE`. Elites/bosses ignore tokens. Enemies never overlap each other perfectly: apply a soft separation force between enemies within 18px in `x` and 10px in `z`. Enemies react to being hit exactly like players (shared `Fighter`).
+`ENTER` (walk on-screen) → `APPROACH` (align `z` within `zTolerance`, close to `attackRange` on the target's facing-agnostic side; picks the nearest player, re-targets every 90 frames or when hit) → `ATTACK` (needs an **attack token**: `World.attackTokens.max` comes from `ATTACK_TOKENS_BY_PARTY = [2, 2, 3, 4, 4]`, indexed by the number of living players (`World.alivePlayers.length`; `World.partySize` — players not yet out — drives the `WAVE_EXTRA_BY_PARTY` clones below instead) — 1 and 2 players keep today's 2, 3 players get 3, 4 players get 4 — enemies without a token `HOVER`: shuffle at distance `attackRange + 30..60`, occasionally step in `z`) → `RECOVER` (short back-off after attacking, `retreatChance`) → loop. Ranged variants use `KEEP_DISTANCE`. Elites/bosses ignore tokens. Enemies never overlap each other perfectly: apply a soft separation force between enemies within 18px in `x` and 10px in `z`. Enemies react to being hit exactly like players (shared `Fighter`).
 Off-screen rule: an enemy that is > 200px outside the camera for 300 frames teleports to
 the nearest lock edge (prevents stuck waves).
+`StageRunner.queueSpawns(list, extraDelay)` appends `WAVE_EXTRA_BY_PARTY = [0, 0, 0, 1, 2]` non-sky clones (delay + `PARTY_EXTRA_DELAY`, side flipped) to every spawn list for parties of 3-4; bosses excluded, 1-2 unchanged.
 
 ## 9. Screens (`game/screens/`)
 `Game` holds a stack `screens[]`; top screen gets `update()`, all screens draw bottom
 to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
 `update()`, `draw(ctx)`. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`.
-Title: animated backdrop, logo, "PRESS ATTACK", blinking. Select: 4 portraits, both
-players can join (P2 presses start), stats bars, confirm/back. The online co-op lobby
+Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `OPTIONS`, "PRESS ATTACK", blinking; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`). The online co-op lobby
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
 (`boardcards.js`, compact) on one screen, with the peer driving the P2 cursor and no two
 players allowed on one hero (docs/MULTIPLAYER.md). Intro: stage card 2.5s
@@ -540,13 +542,14 @@ for the key/gamepad remap grid. Neither screen touches sim state, so nothing her
 `src/net/checksum.js`.
 
 ## 10. HUD (`game/hud.js`)
-Per player (P1 left, P2 right): portrait icon, name, shield strip (120x2, drawn by
+Per player: portrait icon, name, shield strip (120x2, drawn by
 `game/shield.js`), health bar (segmented, colors shift
 at < 30%), special meter bar, lives count, score. Center-top: current enemy targeted
 health bar (name + bar, last hit enemy, 2s), boss bar at bottom when a boss is active.
 Combo counter: near the player, big number + "HITS" + grade text when dropped.
 Held pickup weapon: 14x8 icon past the health-bar end with one 2x4 durability pip per remaining hit
 (`drawWeaponSlot`, `game/hud.js` / `art/weapons.js`).
+Layout: slots 0-1 only keeps the mirrored two-column strip (P1 left, P2 right); a player in slot 2/3 switches it to four 158px columns in slot order (`PLAYER_COLORS`), name above the bar, center-top timer/`GO`/target dropped 40px, `CONTINUE` boxes below the wave-banner block. Join hints are cached, rebuilt only on `input.joinState()` change.
 
 ## 11. Performance rules
 - No allocations in the per-frame draw of rigs beyond `ctx` calls; poses are reused
@@ -573,15 +576,14 @@ window.__game = {
   game, world (getter), input, rng,
   step(n),                           // run n fixed updates + 1 render (test mode)
   screen() -> string,                // current screen id
-  summary() -> { screen, sectionIndex, cameraX, locked, players: [{hp, lives, x, state, meter, score, weapon, weaponHits}], enemies: [{name, variant, hp, state, x, z}], boss: {...}|null, wavesCleared, errors: [] },
+  summary() -> { screen, sectionIndex, cameraX, locked, players: [{hp, lives, x, state, meter, score, weapon, weaponHits, index, id}], enemies: [{name, variant, hp, state, x, z}], boss: {...}|null, wavesCleared, errors: [] },
   setInput(p, actions) / clearInput(p),
   userOptions,                       // the game/options.js module object (load/apply/get/set/cycle/adjust/difficulty/saveBindings/reset/state)
   optionsState() -> object,          // userOptions.state(): { storage, saved, ...current values } for test assertions
   errors: []                         // window.onerror + unhandledrejection push here
 }
 ```
-Every uncaught error must be pushed to `__game.errors` (and rendered in a red box in
-debug mode) — tests fail on any error.
+Every uncaught error must be pushed to `__game.errors` (and rendered in a red box in debug mode) — tests fail on any error. `players[].index` is the input slot (0-3); `players[].id` is `def.id` — both let a test find an entry in a slot-sparse party without relying on array position.
 
 ## 13. Tooling & tests
 - `npm run dev` → `node tools/server.js` (serves repo root on http://localhost:8080 with correct
@@ -629,12 +631,13 @@ debug mode) — tests fail on any error.
      RESET TO DEFAULTS. Further scenarios that don't fit in `playtest.js` follow this sibling-module
      pattern: a small file exporting one function of the form `(server, { withPage, assert }) => {...}`,
      imported and added to the `scenarios` map here.
+  9. `coop4` (`tools/scenarios/coop4.js`, issue #23): a four-bot run to results (`attackTokens.max===4`, 4 stats rows); pad-only drop-in mid-run/pause; title pad-claim assignment (arrows-then-pad stays P2, `resetClaims()` releases on title entry); a four-cursor select into gameplay; the netplay guard (own room) — `beginMatch` un-joins local slots above `NET_PLAYERS`, no pad claims the peer's slot, no desync.
   Exit code non-zero on any assertion failure or `__game.errors.length > 0`.
 
 `tools/winrate.js` (`npm run winrate`) is the balance counterpart: it plays runs with NO godmode
 and reports how often the engine wins, sweeping `--stages`, `--difficulty`, `--chars`, `--party`
-(1 or 2, both slots on autopilot) and `--styles`. Every playtest bot run is in godmode, so the
-suite can prove the game works but never that it is fair; this answers the second question.
+(1-4, every slot beyond the first on autopilot) and `--styles`. Every playtest bot run is in godmode, so
+the suite can prove the game works but never that it is fair; this answers the second question.
 Runs that never reach the results plaque are reported as unfinished — a soft-lock, not a loss.
 
 ## 14. Code conventions
@@ -652,15 +655,15 @@ URL params (all only honored when `?autotest=1` or `?debug=1`):
 - `skipTo=gameplay|gallery|results|title` — `gallery` is a debug screen that draws every
   playable character, every enemy variant and both bosses in a labelled grid, cycling
   animations (`right` = next anim: idle → walk → attack1 → hurt …, `left` = previous).
-- `chars=0,2` — character indices for P1 (and P2 if two given).
+- `chars=0,2` — character indices by slot, up to four (`MAX_PLAYERS`): `chars=0,1,2,3` fills slots 0-3.
 - `nowaves=1` — the stage runner never triggers waves/bosses (free-roam test arena).
 - `spawn=typeA:grunt@80,typeB:brute@-90` — spawn enemies at `player.x + dx` on load.
 - `bot=1` — autopilot for every player: walk toward the nearest enemy (align z), attack when
   in range, occasionally jump-attack/special, walk right when no enemies; skip intro/results prompts.
-- `botstyle=NAME[,NAME]` — which `BOT_STYLES` archetype each slot's autopilot plays as
+- `botstyle=NAME[,NAME,...]` — which `BOT_STYLES` archetype each slot's autopilot plays as
   (`src/game/bot.js`): `balanced` (default, the behaviour the playtest scenarios are written
-  against), `aggressive`, `defensive`, `masher`. One name applies to both slots; two give each
-  slot its own. A style is a whole player archetype (button speed, dodge rate, spacing, when it
+  against), `aggressive`, `defensive`, `masher`. One name applies to every slot; one name per joined
+  slot gives each its own. A style is a whole player archetype (button speed, dodge rate, spacing, when it
   retreats), not a difficulty setting — difficulty is an OPTIONS choice persisted by
   `game/options.js`, with `?difficulty=` as a session override. Each style also carries a
   `throwChance` (issue #21: balanced 0.4, aggressive 0, defensive 0.9, masher 0.2) — the only intentional bot throw path, rolled at most once every 20 frames while armed and in range.
@@ -680,8 +683,8 @@ P1 toward and steps toward the nearest enemy — used by the enemy test), `summa
 `lost`), the same convention the `weapons` scenario already uses for dropped `WeaponPickup`s.
 
 ## 16. Input bindings
-The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Y T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V N B until P2 joins; Space jumps on both P1 sets; gamepads 0/1 → P1/P2). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
-`engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.soloAliases`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). P2 drop-in: poll `input.joinPressed(1)` and call `input.setJoined(1, true)`; the title screen resets it.
+The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Y T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V N B until P2 joins; Space jumps on both P1 sets; gamepads are not index-bound — an unbound pad's first button press claims the lowest free slot; P3/P4 are gamepad-only, no keyboard half). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
+`engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.soloAliases`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). Drop-in for any slot 1-3: poll `input.joinPressed(slot)` and call `input.setJoined(slot, true)`; the title screen resets every claim (`input.resetClaims()`).
 The table above is only the shipped default: `game/options.js` persists any remapping under
 `aetherAndBrass.options.v1` (same guarded-`localStorage` pattern as `game/progress.js`, via
 `game/storage.js`'s `store()`), loading it once at boot and re-sanitising it against the defaults. The

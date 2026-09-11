@@ -1,11 +1,12 @@
 // Title screen (GDD 9 + RECONCILIATION): navy sky, a brass gear (r 140) rotating behind the tiered-city silhouette,
-// the AETHER & BRASS logo with a bevel, the four heroes idling on the gear, menu START (1P) / START (2P) /
-// ONLINE CO-OP / OPTIONS, blinking PRESS START, a compact controls legend and P2 drop-in. DIFFICULTY and MUTE
-// moved off this menu onto the OPTIONS overlay (screens/options.js), which is pushed on top of this screen and
+// the AETHER & BRASS logo with a bevel, the four heroes idling on the gear, a single menu row START /
+// ONLINE CO-OP / OPTIONS, blinking PRESS START, a compact controls legend and a composite join hint for
+// up to three drop-in players (P2's keyboard half, P3/P4 gamepad-only). DIFFICULTY and MUTE moved off
+// this menu onto the OPTIONS overlay (screens/options.js), which is pushed on top of this screen and
 // popped back to it; Game.update() ticks only the top of the stack, so the heroes and steam freeze while it is
 // up. START goes to BOARD SELECT (screens/boardselect.js), which is where the run's board is chosen; the plate
 // under the logo just reports how many boards are open so far (game/progress.js).
-import { VIEW_W, VIEW_H, UI } from '../../constants.js';
+import { VIEW_W, VIEW_H, UI, MAX_PLAYERS, PLAYER_COLORS } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined, measureText } from '../../engine/text.js';
 import { particles } from '../../engine/particles.js';
@@ -17,15 +18,17 @@ import { ENV } from '../../art/palettes.js';
 import { STAGES } from '../../content/stage/index.js';
 import { progress } from '../progress.js';
 import { options } from '../options.js';
+import { joinHint } from '../party.js';
 
 // A remapped legend line is centred at x=320 and must not clip the view; 16px clears the side gutter.
 const LEGEND_MAX_W = VIEW_W - 16;
-const MENU = ['START (1P)', 'START (2P)', 'ONLINE CO-OP', 'OPTIONS'];
-const I_ONLINE = 2, I_OPTIONS = 3;
+const MENU = ['START', 'ONLINE CO-OP', 'OPTIONS'];
+const I_START = 0, I_ONLINE = 1, I_OPTIONS = 2;
+const PLATE_H = MENU.length * 14 + 10;
 // Controls legend text is rebuilt from the live bindings (engine/input.js legend()/joinHint()) in
 // refreshLegends() below, so a remap in OPTIONS is reflected here without any hardcoded key literal.
 // Global keys are not remappable, so ESC / M stay literal in the fixed part of the footer.
-const FOOT_FIXED = 'RUN: DOUBLE-TAP   ESC PAUSE   M MUTE   GAMEPADS SUPPORTED   REMAP IN OPTIONS';
+const FOOT_FIXED = 'RUN: DOUBLE-TAP   ESC PAUSE   M MUTE   PADS JOIN ON ANY BUTTON   REMAP IN OPTIONS';
 // tiered city: [x, top, w] terraces, front row darker
 const FAR_TOWERS = [[0, 236, 44], [48, 214, 30], [84, 246, 60], [150, 222, 26], [182, 206, 50], [240, 232, 34], [280, 218, 40], [326, 240, 30], [362, 210, 56], [424, 230, 40], [470, 216, 30], [506, 244, 50], [562, 222, 40], [608, 236, 40]],
   NEAR_TOWERS = [[0, 262, 70], [76, 250, 40], [122, 270, 90], [218, 256, 60], [284, 272, 70], [360, 252, 44], [410, 268, 80], [496, 254, 50], [552, 266, 90]];
@@ -33,7 +36,7 @@ const STACKS = [[196, 206], [372, 210], [566, 222]];
 const HERO_X = [96, 184, 456, 544], HERO_Y = 300;
 const GEAR_CX = 320, GEAR_CY = 300, GEAR_R = 140;
 
-/** Title screen. Attack / start confirm the menu item; P2 keys join at any time. */
+/** Title screen. Attack / start confirm the menu item; any slot's own keys/pad join at any time. */
 export class TitleScreen extends Screen {
   constructor(game) { super(game, 'title'); }
   enter(params) {
@@ -42,8 +45,12 @@ export class TitleScreen extends Screen {
     particles.clear();
     // A netplay session owns slot 1 for its lifetime; clearing it here would silently drop the peer, and a
     // finished match must not leave the host's difficulty behind on the next visit to the title.
-    if (!(this.game.net && this.game.net.active)) { this.game.input.setJoined(1, false); this.game.options.difficulty = options.difficulty(); }
-    this.cursor = 0; this.p2Flash = 0; this.starting = false;
+    if (!(this.game.net && this.game.net.active)) {
+      for (let s = 1; s < MAX_PLAYERS; s++) this.game.input.setJoined(s, false);
+      this.game.options.difficulty = options.difficulty();
+      this.game.input.resetClaims();
+    }
+    this.cursor = 0; this.joinFlash = null; this.joinKey = -1; this.hint = ''; this.starting = false;
     this.heroes = (this.game.characters || []).slice(0, 4).map((c, i) => {
       const anim = new AnimPlayer(c.anims || {});
       anim.play('idle');
@@ -76,12 +83,19 @@ export class TitleScreen extends Screen {
     if (this.frame % 5 === 0) particles.spawn('ember', 60 + (this.frame * 37) % 520, 330, 0, { screen: true, vx: 0.2, vy: -0.6, size: 1, life: 70 });
     particles.update();
     for (const h of this.heroes) h.anim.tick();
-    if (this.p2Flash > 0) this.p2Flash--;
-    let joinedNow = false; // the join key itself never doubles as a menu press
-    if (!inp.joined(1) && inp.joinPressed(1)) { inp.setJoined(1, true); this.p2Flash = 120; audio.play('join'); joinedNow = true; }
+    if (this.joinFlash && this.joinFlash.t > 0) this.joinFlash.t--;
+    // Slots joined THIS step (a bitmask, not a scalar): two pads claiming on the same 60Hz frame must
+    // both be excluded from the menu loop below, or the earlier slot's claim press doubles as a
+    // START/confirm (review major -- a single "last slot" scalar only caught the later one).
+    let joinedNow = 0;
+    for (let s = 1; s < MAX_PLAYERS; s++) {
+      if (!inp.joined(s) && inp.joinPressed(s)) { inp.setJoined(s, true); this.joinFlash = { slot: s, t: 120, text: `P${s + 1} JOINED!` }; audio.play('join'); joinedNow |= 1 << s; }
+    }
+    const k = inp.joinState();
+    if (k !== this.joinKey) { this.joinKey = k; this.hint = joinHint(inp); }
     if (this.frame < 10 || this.starting) return;
-    for (let p = 0; p < 2; p++) {
-      if (!inp.joined(p) || (p === 1 && joinedNow)) continue;
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      if (!inp.joined(p) || (joinedNow & (1 << p))) continue;
       if (inp.pressed(p, 'up')) { this.cursor = (this.cursor + MENU.length - 1) % MENU.length; audio.play('menu_move'); }
       if (inp.pressed(p, 'down')) { this.cursor = (this.cursor + 1) % MENU.length; audio.play('menu_move'); }
       if (inp.pressed(p, 'attack') || inp.pressed(p, 'start') || inp.pressed(p, 'jump')) { this.activate(this.cursor); return; }
@@ -89,8 +103,7 @@ export class TitleScreen extends Screen {
   }
   activate(i) {
     const audio = this.game.audio;
-    if (i === 0 || i === 1) {
-      if (i === 1) this.game.input.setJoined(1, true);
+    if (i === I_START) {
       this.starting = true;
       audio.play('menu_confirm');
       // START always goes through BOARD SELECT; if that screen is not registered the run falls back to the
@@ -163,7 +176,7 @@ export class TitleScreen extends Screen {
     const open = progress.unlockedCount();
     drawText(ctx, `${open} OF ${STAGES.length} BOARDS OPEN`, 320, 146, { size: 1, color: open < STAGES.length ? '#4DF0E0' : UI.brassLight, align: 'center' });
     // menu on a translucent plate
-    rrect(ctx, 200, 156, 240, 66, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
+    rrect(ctx, 200, 156, 240, PLATE_H, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
     for (let i = 0; i < MENU.length; i++) {
       const sel = i === this.cursor, y = 161 + i * 14;
       const label = MENU[i];
@@ -171,10 +184,12 @@ export class TitleScreen extends Screen {
       drawText(ctx, label, 320, y, { size: 1, color: sel ? UI.white : UI.steel, align: 'center' });
     }
     if ((f % 60) < 40) drawTextOutlined(ctx, 'PRESS START', 320, 244, { size: 2, color: '#ffffff', outline: '#3a2010', thickness: 1, align: 'center' });
-    // P2 status + compact controls legend on the walkway
+    // Join status + compact controls legend on the walkway. A JOINED flash for whichever slot last
+    // joined (in that slot's colour) briefly overrides the composite hint for the still-free slots.
     const p2 = this.game.input.joined(1);
-    if (p2 && this.p2Flash > 0 && (f % 10) < 6) drawText(ctx, 'P2 JOINED!', 320, 266, { size: 1, color: UI.p2, align: 'center' });
-    else if (!p2 && (f % 90) < 60) drawText(ctx, this.game.input.joinHint(1), 320, 266, { size: 1, color: UI.p2, align: 'center' });
+    if (this.joinFlash && this.joinFlash.t > 0 && (f % 10) < 6) {
+      drawText(ctx, this.joinFlash.text, 320, 266, { size: 1, color: PLAYER_COLORS[this.joinFlash.slot], align: 'center' });
+    } else if (this.hint && (f % 90) < 60) drawText(ctx, this.hint, 320, 266, { size: 1, color: UI.p2, align: 'center' });
     // Alone, the arcade row leads and the split-keyboard half is only a dimmed footnote; once P2 is in, the
     // two halves are what matter, so they swap places. Matches input.js soloAliases, which are live iff !p2.
     const lead = p2 ? this.legends.p1 : this.legends.solo;

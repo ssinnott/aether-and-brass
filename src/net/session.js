@@ -12,7 +12,7 @@
 //  * The entity id counter and the RNG are reset at the match boundary so both peers start level.
 
 import { rng } from '../engine/rng.js';
-import { DIFFICULTIES } from '../constants.js';
+import { DIFFICULTIES, NET_PLAYERS } from '../constants.js';
 import { Entity } from '../game/entity.js';
 import { progress } from '../game/progress.js';
 import { createPeer } from './peer.js';
@@ -211,6 +211,12 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     Entity.resetIds();          // ids must match: a host who played solo first would otherwise start higher
     rng.seed(seed);             // the boot seed is Date.now()-derived, so re-seed at the match boundary
     input.setJoined(1, true);   // both slots exist from frame 0; drop-in is disabled under netplay
+    // Pad claims are a couch-only concept; online, ANY unbound pad must drive the local player (see
+    // pollRaw), never claim the peer's slot, and any local slot above NET_PLAYERS (left over from
+    // couch co-op) must not silently ride along into the match. The nettest stub input has neither
+    // method nor playerCount, so both are guarded.
+    if (typeof input.resetClaims === 'function') { input.resetClaims(); input.setPadClaiming(false); }
+    for (let s = NET_PLAYERS; s < (input.playerCount || NET_PLAYERS); s++) input.setJoined(s, false);
     // The disconnect watchdog runs on a timer, NOT off canStep(): the gated loop only calls that
     // from requestAnimationFrame, which Chromium throttles or suspends for a backgrounded page -
     // exactly the situation where the peer has gone away and the session must be torn down.

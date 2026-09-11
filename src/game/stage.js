@@ -2,7 +2,7 @@
 // side / sky spawns with delays, reinforcements, timed waves for locked sections, props / hazards / zones, GO arrow,
 // scripted transitions (lift, funicular boarding, docking), mid-boss and boss triggers with intro cutscene / spotlight /
 // name plates, the defeat spectacle and results after a 240f pose hold.
-import { VIEW_W, ST, UI } from '../constants.js';
+import { VIEW_W, ST, UI, WAVE_EXTRA_BY_PARTY, PARTY_EXTRA_DELAY } from '../constants.js';
 import { createBackdrop, backdropsReady } from '../art/backgrounds/index.js';
 import { Prop } from './items.js';
 import { Hazard, Zone } from './hazards.js';
@@ -161,11 +161,21 @@ export class StageRunner {
     }
     return e;
   }
-  /** Queue a wave's spawn list just outside the current lock bounds. */
+  /** Queue a wave's spawn list just outside the current lock bounds. A party of 3-4 (issue #23:
+   *  WAVE_EXTRA_BY_PARTY) gets extra clones of the list's leading non-sky specs, delayed by
+   *  PARTY_EXTRA_DELAY and mirrored to the opposite side, so a locked section with more heroes does
+   *  not thin out; sky specs are never cloned (a timed Warden crashing through the roof twice would
+   *  double its shake/SFX burst). Applies to every list that reaches here: waves, reinforcements and
+   *  timed waves alike. No randomness; parties of 1-2 get `specs === list` (identity, byte-for-byte
+   *  unchanged streams for solo, two-player and netplay checksums). */
   queueSpawns(list, extraDelay = 0) {
     const cam = this.world.camera;
     const left = cam.locked ? cam.left : cam.x, right = cam.locked ? cam.right : cam.x + VIEW_W;
-    list.forEach((spec, i) => {
+    const extra = WAVE_EXTRA_BY_PARTY[Math.min(this.world.partySize, WAVE_EXTRA_BY_PARTY.length - 1)];
+    const specs = extra > 0
+      ? list.concat(list.filter((s) => s.side !== 'sky').slice(0, extra).map((s) => ({ ...s, delay: (s.delay || 0) + PARTY_EXTRA_DELAY, side: s.side === 'left' ? 'right' : 'left' })))
+      : list;
+    specs.forEach((spec, i) => {
       const side = spec.side || (i % 2 ? 'left' : 'right');
       const x = side === 'left' ? left - SPAWN_MARGIN - (i % 3) * 14 : side === 'sky' ? (left + right) / 2 + (spec.dx || 0) : right + SPAWN_MARGIN + (i % 3) * 14;
       this.pending.push({ at: this.frame + (spec.delay || 0) + extraDelay, spec, x, z: clamp(spec.z != null ? spec.z : 70, 10, 130), facing: side === 'left' ? 1 : -1 });

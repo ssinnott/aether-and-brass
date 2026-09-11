@@ -1,10 +1,14 @@
-// In-game HUD (GDD 9, ARCHITECTURE 10). Top 40px strip at alpha 0.5: per-player 24x24 rig portrait, name, 120x8 health
-// bar (green/yellow/red thresholds, 4f white flash, delayed second bar) under a 120x2 brass shield strip, 120x5 meter in three segments (full = pulsing
-// white rim, red tint when a special would cost HP), lives icons, 7-digit score. Centre: stage timer, GO arrow, targeted
-// enemy. Combo counter with grade word / colour climb / scale pop on each side. Elite armor icons, 400x10 boss bar with
-// name plate + phase segments, banners / boss name plates, the super cut-in (portrait slam + name banner during the
-// 12f freeze) and the per-player CONTINUE countdown while the partner keeps playing.
-import { VIEW_W, VIEW_H, FLOOR_TOP, METER, UI, ST } from '../constants.js';
+// In-game HUD (GDD 9, ARCHITECTURE 10). Two-column strip while every player sits in slot 0/1 (24x24 rig portrait,
+// name, 120x8 health bar under a 120x2 brass shield strip, 120x5 meter, lives icons, 7-digit score, mirrored left/
+// right); a four-column 158px-per-slot layout as soon as a slot >= 2 exists (never mirrored, name above the bar,
+// timer/GO/target dropped 40px, CONTINUE boxes below the banner block). Per-slot colour (PLAYER_COLORS), combo
+// counter and the per-player CONTINUE countdown are keyed by the player's input slot (`p.index`), not array
+// position, since drop-in can fill slots out of order. Join hints are cached strings rebuilt only when
+// `input.joinState()` changes -- never allocated in draw(). Centre: stage timer, GO arrow, targeted enemy. Combo
+// counter with grade word / colour climb / scale pop on each side. Elite armor icons, 400x10 boss bar with name
+// plate + phase segments, banners / boss name plates, the super cut-in (portrait slam + name banner during the 12f
+// freeze) and the per-player CONTINUE countdown while the rest of the party keeps playing.
+import { VIEW_W, VIEW_H, FLOOR_TOP, METER, UI, ST, MAX_PLAYERS, PLAYER_COLORS } from '../constants.js';
 import { drawText, drawTextOutlined, measureText } from '../engine/text.js';
 import { buildRig } from '../art/rig.js';
 import { rrect, gear, rivetLine, pathPoly, paint } from '../art/shapes.js';
@@ -13,7 +17,8 @@ import { ease } from '../art/poses.js';
 import { clamp } from '../engine/math.js';
 import { drawShieldBar } from './shield.js';
 import { WEAPONS } from './weapons.js';
-import { drawWeaponIcon, drawDurabilityPips, WPN_ICON_W } from '../art/weapons.js';
+import { drawWeaponIcon, drawDurabilityPips, WPN_ICON_W, PIP_PITCH } from '../art/weapons.js';
+import { joinHint } from './party.js';
 
 const STRIP_H = 40, BAR_W = 120, BAR_H = 8, METER_H = 5, PORTRAIT = 24;
 const GHOST_DELAY = 20, GHOST_SPEED = 0.8;
@@ -21,23 +26,41 @@ const COMBO_COLORS = ['#c8c8c8', '#ffe45a', '#ff9a30', '#4DF0E0', '#ffffff'];
 const BOSS_BAR_W = 400, BOSS_BAR_Y = 349, BOSS_BAR_H = 10;
 const CUTIN_LIFE = 50, CONTINUE_FRAMES = 600, TARGET_FRAMES = 90;
 const HP_COLORS = ['#59C3A0', '#F2C94C', '#FF5C5C'];
+// Four-column layout (columns at x 4, 162, 320, 478; 24px portrait + 4px gap + 120px bar = 148px fits in 158px).
+const COL_W = 158, COL_X0 = 4, QUAD_DY = 40;
+const COMBO_X_WIDE = [46, VIEW_W - 46], CONT_X_WIDE = [100, VIEW_W - 100], CONT_HALF = 70, CONT_Y_QUAD = 200;
 
 /** Draws the HUD for a World's players. The gameplay screen forwards update()/draw(). */
 export class Hud {
   constructor(world, game) {
     this.world = world; this.game = game;
     this.frame = 0;
-    this.ghost = [null, null];      // { hp, delay, flash, lastHp } per player (delayed second bar + damage flash)
-    this.prig = [null, null];       // portrait rigs per player slot
+    this.ghost = new Array(MAX_PLAYERS).fill(null); // { hp, delay, flash, lastHp } per slot (delayed second bar + damage flash)
+    this.prig = new Array(MAX_PLAYERS).fill(null);  // portrait rigs per player slot
     this.target = null; this.targetTimer = 0;
     this.banner = null;             // { text, sub, timer, life, plate }
     this.cutIn = null;              // { p, text, sub, timer, life }
-    this.superInst = [-1, -1];
-    this.cont = [null, null];       // per-player continue countdown while the partner plays
+    this.superInst = new Array(MAX_PLAYERS).fill(-1);
+    this.cont = new Array(MAX_PLAYERS).fill(null);  // per-slot continue countdown while the rest of the party plays
+    this.joinKey = -1; this.hint = ''; this.slotHints = new Array(MAX_PLAYERS).fill('');
   }
   /** The gameplay screen that owns this HUD (via the stage runner). */
   get screen() { const s = this.world.stage; return s && s.screen ? s.screen : null; }
-  playerRig(p, i) {
+  /** True once a player holds slot 2 or 3 -- switches the strip from mirrored two-column to four columns. */
+  get quad() {
+    for (const p of this.world.players) if (p.index >= 2) return true;
+    return false;
+  }
+  /** Column left edge for slot `i`: four left-aligned 158px columns in quad mode, else today's mirrored pair.
+   *  Split from `right` (below) into two allocation-free helpers -- draw() runs these every frame. */
+  slotX0(i) {
+    if (this.quad) return COL_X0 + i * COL_W;
+    return i === 1 ? VIEW_W - 8 - PORTRAIT : 8;
+  }
+  /** True when slot `i` draws mirrored on the right (only slot 1, and only outside quad mode). */
+  slotRight(i) { return !this.quad && i === 1; }
+  playerRig(p) {
+    const i = p.index;
     let r = this.prig[i];
     if (!r || r.def !== p.def) r = this.prig[i] = { def: p.def, rig: buildRig(p.def.build || {}), pose: idlePoseOf(p.def) };
     return r;
@@ -63,9 +86,9 @@ export class Hud {
     this.frame++;
     const ps = this.world.players;
     for (let i = 0; i < ps.length; i++) {
-      const p = ps[i];
-      let g = this.ghost[i];
-      if (!g) g = this.ghost[i] = { hp: p.hp, delay: 0, flash: 0, lastHp: p.hp };
+      const p = ps[i], idx = p.index;
+      let g = this.ghost[idx];
+      if (!g) g = this.ghost[idx] = { hp: p.hp, delay: 0, flash: 0, lastHp: p.hp };
       if (p.hp < g.lastHp) { g.flash = 4; g.delay = GHOST_DELAY; }
       if (p.hp > g.hp) g.hp = p.hp;
       g.lastHp = p.hp;
@@ -73,11 +96,21 @@ export class Hud {
       if (g.delay > 0) g.delay--; else if (g.hp > p.hp) g.hp = Math.max(p.hp, g.hp - Math.max(GHOST_SPEED, p.dead || p.out ? p.maxHp * 0.03 : 0));
       const t = p.lastTarget;
       if (t && t.alive && !t.dead && t.hpBarTimer > 0 && t.kind !== 'boss') { this.target = t; this.targetTimer = TARGET_FRAMES; }
-      this.updateContinue(p, i);
+      this.updateContinue(p, idx);
     }
     if (this.targetTimer > 0) this.targetTimer--; else this.target = null;
     if (this.banner && ++this.banner.timer >= this.banner.life) this.banner = null;
     if (this.cutIn && ++this.cutIn.timer >= this.cutIn.life) this.cutIn = null;
+    // Join hints: rebuilt only when the joined/unbound-pad bitmask changes, never every frame (draw() just reads them).
+    const inp = this.game.input, k = inp.joinState();
+    if (k !== this.joinKey) {
+      this.joinKey = k;
+      const online = !!(this.game.net && this.game.net.active);
+      this.hint = joinHint(inp, online);
+      for (let s = 1; s < MAX_PLAYERS; s++) {
+        this.slotHints[s] = online || inp.joined(s) || (!inp.hasKeyboard(s) && inp.unboundPads === 0) ? '' : inp.joinHint(s);
+      }
+    }
   }
   /** GDD 9: a player at 0 lives counts down CONTINUE? on their side while the partner keeps playing. */
   updateContinue(p, i) {
@@ -113,21 +146,37 @@ export class Hud {
     const w = this.world, ps = w.players;
     ctx.fillStyle = 'rgba(10,6,12,0.5)'; ctx.fillRect(0, 0, VIEW_W, STRIP_H);
     ctx.fillStyle = 'rgba(226,179,74,0.5)'; ctx.fillRect(0, STRIP_H - 1, VIEW_W, 1);
-    for (let i = 0; i < ps.length; i++) this.drawPlayer(ctx, ps[i], i);
-    if (ps.length < 2 && !this.game.input.joined(1) && (this.frame % 90) < 60) drawText(ctx, this.game.input.joinHint(1), VIEW_W - 8, 16, { size: 1, color: UI.p2, align: 'right' });
+    for (const p of ps) this.drawPlayer(ctx, p);
+    this.drawJoinHints(ctx);
     this.drawCenter(ctx);
     this.drawEnemyArmor(ctx);
     if (w.boss && w.boss.alive) this.drawBoss(ctx, w.boss);
-    for (let i = 0; i < ps.length; i++) this.drawCombo(ctx, ps[i], i);
-    for (let i = 0; i < ps.length; i++) if (this.cont[i]) this.drawContinue(ctx, ps[i], i, this.cont[i]);
+    for (const p of ps) this.drawCombo(ctx, p);
+    for (const p of ps) if (this.cont[p.index]) this.drawContinue(ctx, p, this.cont[p.index]);
     if (this.cutIn) this.drawCutIn(ctx, this.cutIn);
     else if (this.banner) this.drawBanner(ctx, this.banner);
   }
-  drawPlayer(ctx, p, i) {
-    const right = i === 1;
-    const x0 = right ? VIEW_W - 8 - PORTRAIT : 8;
+  /** Cached composite join hint (never rebuilt here -- see update()): one line per free pad-only column in quad
+   *  mode, else today's corner spot (slot 1 free) or a centred line below the strip (slot 1 taken, 3/4 free). */
+  drawJoinHints(ctx) {
+    if ((this.frame % 90) >= 60) return;
+    if (this.quad) {
+      const ps = this.world.players;
+      for (let s = 1; s < MAX_PLAYERS; s++) {
+        if (!this.slotHints[s]) continue;
+        let taken = false;
+        for (let j = 0; j < ps.length; j++) if (ps[j].index === s) { taken = true; break; }
+        if (taken) continue;
+        drawText(ctx, this.slotHints[s], COL_X0 + s * COL_W + 4, 16, { size: 1, color: PLAYER_COLORS[s] });
+      }
+    } else if (this.hint) {
+      if (!this.game.input.joined(1)) drawText(ctx, this.hint, VIEW_W - 8, 16, { size: 1, color: UI.p2, align: 'right' });
+      else drawText(ctx, this.hint, VIEW_W / 2, STRIP_H + 4, { size: 1, color: UI.p3, align: 'center' });
+    }
+  }
+  drawPlayer(ctx, p) {
+    const i = p.index, x0 = this.slotX0(i), right = this.slotRight(i), col = PLAYER_COLORS[i], pr = this.playerRig(p);
     const bx = right ? VIEW_W - 12 - PORTRAIT - BAR_W : x0 + PORTRAIT + 4;
-    const col = right ? UI.p2 : UI.p1, pr = this.playerRig(p, i);
     // portrait (24x24 rig head in a brass frame)
     rrect(ctx, x0 - 1, 5, PORTRAIT + 2, PORTRAIT + 2, 3, '#1a1420', UI.brass, 1);
     drawHeadPortrait(ctx, pr.rig, pr.pose, x0, 6, PORTRAIT, { facing: right ? -1 : 1, bg: '#241a2e', flash: p.flashTimer > 0 && !p.dead });
@@ -148,7 +197,7 @@ export class Hud {
     ctx.fillRect(fillX(hw), 14, hw, BAR_H);
     ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fillRect(fillX(hw), 14, hw, 2);
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; for (let s = 1; s < 10; s++) ctx.fillRect(bx + s * 12, 14, 1, BAR_H);
-    this.drawWeaponSlot(ctx, p, bx, right);
+    this.drawWeaponSlot(ctx, p, bx, right, this.quad);
     // meter: three 100-point segments
     const segW = Math.floor((BAR_W - 4) / 3), full = p.meter >= METER.max;
     const costsHp = p.meter < METER.special && p.hp > p.maxHp * METER.hpCostMinFrac, pulse = (this.frame % 20) < 10;
@@ -161,40 +210,57 @@ export class Hud {
       if (fw > 2) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(right ? sx + segW - fw : sx, 25, fw, 1); }
     }
     if (full) { ctx.strokeStyle = pulse ? '#ffffff' : '#9af4ec'; ctx.lineWidth = 1; ctx.strokeRect(bx - 1.5, 23.5, BAR_W + 1, METER_H + 3); }
-    else if (costsHp && (this.frame % 30) < 20) drawText(ctx, 'HP', right ? bx - 4 : bx + BAR_W + 4, 24, { size: 1, color: UI.red, align: right ? 'right' : 'left' });
+    else if (costsHp && (this.frame % 30) < 20) {
+      // Quad columns have no room past the bar (same 158-148=10px squeeze as the weapon slot), so the
+      // blinking HP-cost label moves to the name row, right-aligned past drawWeaponSlot's icon spot.
+      // A held weapon's durability pips run leftward from the icon (drawWeaponSlot), so the label is
+      // placed at the pip run's OWN left edge -- computed from w.hits/PIP_PITCH, not a fixed 6px --
+      // so it never lands on top of a pip (issue #23 review); with no weapon it hugs the bar's end.
+      const quad = this.quad, w = quad ? WEAPONS[p.weaponId] : null;
+      const hx = quad ? (w ? bx + BAR_W - WPN_ICON_W - 6 - (w.hits - 1) * PIP_PITCH : bx + BAR_W) : (right ? bx - 4 : bx + BAR_W + 4);
+      drawText(ctx, 'HP', hx, quad ? 3 : 24, { size: 1, color: UI.red, align: quad || right ? 'right' : 'left' });
+    }
     // lives icons + 7-digit score
     const n = Math.min(p.lives, 5);
     for (let l = 0; l < n; l++) drawLifeIcon(ctx, p.def.id, right ? bx + BAR_W - 10 - l * 12 : bx + l * 12, 32);
     if (p.lives > 5) drawText(ctx, '+' + (p.lives - 5), right ? bx + BAR_W - n * 12 - 2 : bx + n * 12 + 2, 33, { size: 1, color: UI.paper, align: right ? 'right' : 'left' });
     drawText(ctx, String(Math.min(9999999, p.score)).padStart(7, '0'), right ? bx : bx + BAR_W, 32, { size: 1, color: UI.paper, align: right ? 'left' : 'right' });
   }
-  /** Held pickup weapon: 14x8 icon past the end of the health bar with one 2x4 pip per remaining hit (game/weapons.js). */
-  drawWeaponSlot(ctx, p, bx, right) {
+  /** Held pickup weapon: 14x8 icon with one 2x4 pip per remaining hit (game/weapons.js). Wide mode puts it past
+   *  the end of the health bar; quad columns have no room there (158 - 148 = 10px), so it moves onto the name
+   *  row instead, at the bar's own right end, with pips reading leftward. */
+  drawWeaponSlot(ctx, p, bx, right, quad) {
     const w = WEAPONS[p.weaponId];
     if (!w) return;
+    if (quad) {
+      const ix = bx + BAR_W - WPN_ICON_W;
+      drawWeaponIcon(ctx, p.weaponId, ix, 3);
+      drawDurabilityPips(ctx, ix - 4, 5, w.hits, p.weaponHits, -1);
+      return;
+    }
     const ix = right ? bx - 4 - WPN_ICON_W : bx + BAR_W + 4;
     drawWeaponIcon(ctx, p.weaponId, ix, 13);
     drawDurabilityPips(ctx, right ? ix - 4 : ix + WPN_ICON_W + 3, 15, w.hits, p.weaponHits, right ? -1 : 1);
   }
-  /** Stage timer, GO arrow and the targeted enemy's bar. */
+  /** Stage timer, GO arrow and the targeted enemy's bar; dropped 40px in quad mode to clear the wider name row. */
   drawCenter(ctx) {
-    const scr = this.screen, st = this.world.stage, cx = VIEW_W / 2;
+    const scr = this.screen, st = this.world.stage, cx = VIEW_W / 2, dy = this.quad ? QUAD_DY : 0;
     const frames = scr ? scr.time || 0 : 0, s = Math.floor(frames / 60);
-    drawText(ctx, `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`, cx, 3, { size: 2, color: UI.paper, align: 'center' });
+    drawText(ctx, `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`, cx, 3 + dy, { size: 2, color: UI.paper, align: 'center' });
     if (st && st.goTimer > 0 && !this.world.camera.locked) {
       if ((st.goTimer % 30) < 20) {
-        drawTextOutlined(ctx, 'GO', cx - 6, 21, { size: 2, color: UI.brass, outline: '#3a2010', thickness: 1, align: 'center' });
-        pathPoly(ctx, [cx + 10, 22, cx + 22, 28, cx + 10, 34]); paint(ctx, UI.brass, '#3a2010', 1);
+        drawTextOutlined(ctx, 'GO', cx - 6, 21 + dy, { size: 2, color: UI.brass, outline: '#3a2010', thickness: 1, align: 'center' });
+        pathPoly(ctx, [cx + 10, 22 + dy, cx + 22, 28 + dy, cx + 10, 34 + dy]); paint(ctx, UI.brass, '#3a2010', 1);
       }
       return;
     }
     const t = this.target;
     if (t && t.alive && !t.dead && !t.removeMe) {
       const w = 100, x = Math.round(cx - w / 2);
-      drawText(ctx, t.name, cx, 20, { size: 1, color: UI.paper, align: 'center' });
-      ctx.fillStyle = '#120c14'; ctx.fillRect(x - 1, 30, w + 2, 6);
-      ctx.fillStyle = '#5a1a1a'; ctx.fillRect(x, 31, w, 4);
-      ctx.fillStyle = t.hp / t.maxHp > 0.3 ? UI.hp : UI.hpLow; ctx.fillRect(x, 31, Math.round(w * clamp(t.hp / t.maxHp, 0, 1)), 4);
+      drawText(ctx, t.name, cx, 20 + dy, { size: 1, color: UI.paper, align: 'center' });
+      ctx.fillStyle = '#120c14'; ctx.fillRect(x - 1, 30 + dy, w + 2, 6);
+      ctx.fillStyle = '#5a1a1a'; ctx.fillRect(x, 31 + dy, w, 4);
+      ctx.fillStyle = t.hp / t.maxHp > 0.3 ? UI.hp : UI.hpLow; ctx.fillRect(x, 31 + dy, Math.round(w * clamp(t.hp / t.maxHp, 0, 1)), 4);
     }
   }
   /** Armor icon beside the 60x4 elite bars drawn by the fighters themselves. */
@@ -227,9 +293,10 @@ export class Hud {
     else if (b.phases > 1) for (let i = 1; i < b.phases; i++) ctx.fillRect(x + Math.round(BOSS_BAR_W * i / b.phases) - 1, y, 2, BOSS_BAR_H);
     rrect(ctx, x - 1.5, y - 0.5, BOSS_BAR_W + 3, BOSS_BAR_H + 1, 1, null, UI.brassDark, 0.5);
   }
-  /** Combo counter on the player's side (GDD 9): number pops 1.3 -> 1.0, colour climbs grey/yellow/orange/cyan/white. */
-  drawCombo(ctx, p, i) {
-    const x = i === 0 ? 46 : VIEW_W - 46, y = 50;
+  /** Combo counter by slot (GDD 9): number pops 1.3 -> 1.0, colour climbs grey/yellow/orange/cyan/white. Quad
+   *  columns centre it under the player's own column; wide mode keeps today's mirrored corners. */
+  drawCombo(ctx, p) {
+    const i = p.index, quad = this.quad, x = quad ? COL_X0 + i * COL_W + COL_W / 2 : COMBO_X_WIDE[i], y = 50;
     if (p.combo >= 3) {
       const tier = p.combo >= 60 ? 4 : p.combo >= 35 ? 3 : p.combo >= 20 ? 2 : p.combo >= 10 ? 1 : 0, col = COMBO_COLORS[tier];
       const sc = clamp(p.comboScale || 1, 1, 1.3);
@@ -241,16 +308,20 @@ export class Hud {
       if (w) drawTextOutlined(ctx, w, x, y + 35, { size: 1, color: col, outline: '#2a1410', thickness: 1, align: 'center' });
     } else if (p.gradeTimer > 0 && p.grade) {
       const a = Math.min(1, p.gradeTimer / 30);
-      ctx.globalAlpha = a; // anchored to the screen edge: 'AETHERIC!' at size 2 is wider than the counter column
-      drawTextOutlined(ctx, p.grade.word + '!', i === 0 ? 12 : VIEW_W - 12, y, { size: 2, color: p.grade.color, outline: '#2a1410', thickness: 1, align: i === 0 ? 'left' : 'right' });
+      ctx.globalAlpha = a; // wide mode anchors to the screen edge: 'AETHERIC!' at size 2 is wider than the counter column
+      const gx = quad ? x : (i === 0 ? 12 : VIEW_W - 12), align = quad ? 'center' : (i === 0 ? 'left' : 'right');
+      drawTextOutlined(ctx, p.grade.word + '!', gx, y, { size: 2, color: p.grade.color, outline: '#2a1410', thickness: 1, align });
       ctx.globalAlpha = 1;
     }
   }
-  /** Per-player CONTINUE? countdown with a cracking gear digit (partner still fighting). */
-  drawContinue(ctx, p, i, c) {
-    const x = i === 0 ? 100 : VIEW_W - 100, y = 60, scr = this.screen;
+  /** Per-slot CONTINUE? countdown with a cracking gear digit (rest of the party still fighting). Quad mode sits
+   *  below the size-3 banner block (rows 196..288); wide mode keeps today's mirrored spot. */
+  drawContinue(ctx, p, c) {
+    const i = p.index, quad = this.quad;
+    const x = quad ? clamp(COL_X0 + i * COL_W + COL_W / 2, CONT_HALF + 4, VIEW_W - CONT_HALF - 4) : CONT_X_WIDE[i];
+    const y = quad ? CONT_Y_QUAD : 60, scr = this.screen;
     const d = Math.max(0, Math.ceil(c.timer / 60)), shake = c.crack > 0 ? (c.crack % 2 ? 2 : -2) : 0;
-    rrect(ctx, x - 70, y - 4, 140, 92, 6, 'rgba(10,6,14,0.7)', UI.brassDark, 1);
+    rrect(ctx, x - CONT_HALF, y - 4, CONT_HALF * 2, 92, 6, 'rgba(10,6,14,0.7)', UI.brassDark, 1);
     if (c.expired) {
       drawTextOutlined(ctx, scr && scr.continues > 0 ? 'OUT' : 'NO CONTINUES', x, y + 30, { size: 2, color: UI.red, outline: '#2a1010', thickness: 1, align: 'center' });
       drawText(ctx, 'THE ENGINE CLAIMS ' + (p.def.name || 'A HERO'), x, y + 56, { size: 1, color: UI.steel, align: 'center' });
@@ -280,10 +351,11 @@ export class Hud {
     }
     ctx.globalAlpha = 1;
   }
-  /** Super cut-in: dark band, 64px portrait slamming in from the player's side, move name + hero name banner. */
+  /** Super cut-in: dark band, 64px portrait slamming in from the player's side, move name + hero name banner.
+   *  Slots 0/2 slam from the left, 1/3 from the right (four columns are never mirrored past that choice). */
   drawCutIn(ctx, c) {
-    const p = c.p, i = p.index || 0, t = c.timer, life = c.life, left = i === 0;
-    const a = t > life - 12 ? (life - t) / 12 : 1, pr = this.playerRig(p, i);
+    const p = c.p, i = p.index || 0, t = c.timer, life = c.life, left = i % 2 === 0;
+    const a = t > life - 12 ? (life - t) / 12 : 1, pr = this.playerRig(p);
     const y0 = 92, h = 84;
     ctx.globalAlpha = a;
     pathPoly(ctx, [0, y0 + 8, VIEW_W, y0, VIEW_W, y0 + h, 0, y0 + h + 8]); paint(ctx, 'rgba(10,6,14,0.84)', null, 0);
@@ -301,7 +373,7 @@ export class Hud {
     const tx = left ? px + size + 22 : px - 22, align = left ? 'left' : 'right';
     const slide = Math.round((1 - k2) * (left ? 120 : -120));
     drawTextOutlined(ctx, c.text, tx + slide, y0 + 24, { size: 3, color: UI.brassLight, outline: '#3a2010', thickness: 2, align });
-    drawText(ctx, c.sub, tx + slide, y0 + 52, { size: 1, color: left ? UI.p1 : UI.p2, align });
+    drawText(ctx, c.sub, tx + slide, y0 + 52, { size: 1, color: PLAYER_COLORS[i], align });
     ctx.globalAlpha = 1;
   }
 }

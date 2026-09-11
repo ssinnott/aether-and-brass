@@ -39,6 +39,10 @@ export class LobbyScreen extends Screen {
 
   enter(params) {
     super.enter(params);
+    // Couch pad claims are meaningless in the lobby: any pad should drive the local menu (readUnboundPads
+    // covers slot 0 while claiming is off), and claims come back with the next visit to the title screen.
+    this.game.input.resetClaims();
+    this.game.input.setPadClaiming(false);
     this.phase = 'role';
     this.cursor = 0;
     this.isHost = true;
@@ -317,8 +321,7 @@ export class LobbyScreen extends Screen {
     for (let i = 0; i < n; i++) {
       drawCharCard(ctx, this.slots[i], cardX(i, n), HERO_Y, f, {
         index: i,
-        p1: cur[0].char === i ? cur[0] : null,
-        p2: cur[1].char === i ? cur[1] : null,
+        cursors: [cur[0].char === i ? cur[0] : null, cur[1].char === i ? cur[1] : null],
         taken: this.net.charTaken(i),
       });
     }

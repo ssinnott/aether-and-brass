@@ -1,6 +1,6 @@
 // World: entity list, spawn/despawn, update order, depth-sorted draw with shadows first, FX, attack tokens (per faction group),
 // camera bounds, floor band (boss arena shrink), area hits, spec-based projectile spawning, cutscenes, boss stun (pressure valves).
-import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MIN, Z_MAX, CAMERA_MARGIN, TEAM, ST } from '../constants.js';
+import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MIN, Z_MAX, CAMERA_MARGIN, TEAM, ST, ATTACK_TOKENS_BY_PARTY } from '../constants.js';
 import { Camera } from '../engine/camera.js';
 import { particles } from '../engine/particles.js';
 import { resolveHits } from './combat.js';
@@ -66,6 +66,8 @@ export class World {
   get enemies() { return this._enemies; }
   /** Living players. */
   get alivePlayers() { return this.players.filter((p) => p.alive && !p.dead && !p.removeMe); }
+  /** Players still in the run (alive or respawning, not out): the party size waves scale to (issue #23). */
+  get partySize() { let n = 0; for (const p of this.players) if (p && !p.out) n++; return n; }
   _refreshLists() {
     this._fighters.length = 0; this._enemies.length = 0;
     for (const e of this.entities) {
@@ -73,7 +75,8 @@ export class World {
       this._fighters.push(e);
       if (e.team === TEAM.ENEMY) this._enemies.push(e);
     }
-    this.attackTokens.max = this.alivePlayers.length > 1 ? 3 : 2;
+    const n = this.alivePlayers.length;
+    this.attackTokens.max = ATTACK_TOKENS_BY_PARTY[Math.min(n, ATTACK_TOKENS_BY_PARTY.length - 1)];
   }
   /** Freeze the world for n frames (super cut-in); `focus` keeps drawing on top. */
   freezeFrames(n, focus = null) { this.freeze = Math.max(this.freeze, n); this.freezeFocus = focus; }

@@ -26,8 +26,20 @@ export const Z_SPEED_FACTOR = 0.6;
 export const CAMERA_MARGIN = 8;
 /** Input buffer length in frames. */
 export const INPUT_BUFFER = 8;
+/** Local couch co-op slots (engine/input.js). */
+export const MAX_PLAYERS = 4;
+/** The two-slot lockstep session (docs/MULTIPLAYER.md): netplay never exceeds this many players. */
+export const NET_PLAYERS = 2;
 /** Default hitbox depth tolerance. */
 export const HIT_Z_TOLERANCE = 24;
+
+/** Simultaneous attackers allowed by party size (index = players standing; index 0 is the solo
+ *  value so an all-dead party never reads undefined). GDD/ARCHITECTURE section 8. */
+export const ATTACK_TOKENS_BY_PARTY = Object.freeze([2, 2, 3, 4, 4]);
+/** Extra non-sky spawn clones `stage.js queueSpawns` appends for parties of 3 and 4 (index = party size). */
+export const WAVE_EXTRA_BY_PARTY = Object.freeze([0, 0, 0, 1, 2]);
+/** Delay (frames) added to a party-scaled spawn clone so it does not land on top of its original. */
+export const PARTY_EXTRA_DELAY = 30;
 
 /** Difficulty levels. The order is the wire index net/protocol.js encodeStart sends. */
 export const DIFFICULTIES = Object.freeze(['easy', 'normal', 'hard']);
@@ -72,5 +84,11 @@ export const UI = Object.freeze({
   ink: '#120c14', shadow: '#000000', paper: '#f4e8c8', white: '#ffffff', red: '#e03a3a', green: '#59c85a',
   blue: '#4a9ce0', teal: '#35c8b8', purple: '#8f5bd6', hp: '#e8402c', hpLow: '#ff8a2a', meter: '#3fd0ff',
   meterFull: '#ffe45a', dim: 'rgba(0,0,0,0.55)', panel: 'rgba(18,12,20,0.85)',
-  p1: '#4ac0ff', p2: '#ff8a4a',
+  p1: '#4ac0ff', p2: '#ff8a4a', p3: '#b884ff', p4: '#ff6ad5',
 });
+
+/** Per-slot HUD/cursor colour, indexed by player slot 0..3. */
+export const PLAYER_COLORS = Object.freeze([UI.p1, UI.p2, UI.p3, UI.p4]);
+/** Bust tint for the Nth duplicate copy of a hero (index = other players already on that hero, capped at 3). */
+export const DUP_TINTS = Object.freeze([null, '#1a1a2e', '#2e1a1a', '#1a2e1a']);
+export const DUP_TINT_ALPHA = 0.3;

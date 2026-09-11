@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown playthrough playthrough2 playthrough3 playthrough4 coop audio gallery botstyles options weapons)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown playthrough playthrough2 playthrough3 playthrough4 coop coop4 audio gallery botstyles options weapons)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 // This file is already close to its ~700-line budget: further scenarios belong in their own sibling
@@ -13,6 +13,7 @@ import { loadPlaywright } from './browser.js';
 import { options as optionsScenario } from './playtest-options.js';
 import { weaponScenarios } from './scenarios/weapons.js';
 import { thrown } from './scenarios/thrown.js';
+import { coop4Scenarios } from './scenarios/coop4.js';
 
 const { chromium } = loadPlaywright();
 
@@ -673,6 +674,7 @@ const scenarios = {
 // 3c. Weapon pickups: drop, swing, break, knockdown drop + partner pickup, section discard, no-swap
 // (tools/scenarios/weapons.js). A sibling module, same pattern as playtest-options.js above.
 Object.assign(scenarios, weaponScenarios({ withPage, assert }));
+Object.assign(scenarios, coop4Scenarios({ withPage, withPair, assert, readyUp }));
 
 async function main() {
   const wanted = process.argv.slice(2).filter((a) => !a.startsWith('-'));

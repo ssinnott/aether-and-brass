@@ -3,7 +3,7 @@
 A steampunk high-fantasy side-scrolling beat-em-up in the spirit of *Golden Axe*, the *TMNT*
 arcade games and *TMNT: Shredder's Revenge*. **Four complete boards** end to end, four playable
 heroes, five enemy factions with five variants each, four mid-bosses and four multi-phase final
-bosses. Local two-player co-op on one keyboard or with gamepads.
+bosses. Local co-op for up to four players (two keyboard halves plus gamepads, or four gamepads).
 
 Everything is drawn and synthesized in code: vanilla JavaScript, HTML5 Canvas 2D and WebAudio.
 No engine, no framework, and not a single image or audio file. Characters are procedural
@@ -65,6 +65,10 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
 - Player 2 joins at any time by pressing any of their own keys (J K U L O I or Backspace — the arrows are
   shared, so they don't count). Escape pauses, M mutes, F1 shows the debug overlay. The on-screen legends and
   the "P2: PRESS J TO JOIN" hint follow whatever is actually bound, so they change if you remap keys below.
+- Players 3 and 4 use gamepads: press any button on a pad and it takes the next free slot, on the title,
+  character select, pause or mid-run. A pad is never tied to a fixed slot — whichever one you press first
+  becomes P1 if nobody else has, and a pad you set down keeps its slot until you return to the title screen,
+  where every claim resets.
 - Keys and gamepad buttons can be remapped from **OPTIONS** (a row on the title menu, or on the pause plate
   during a local game) → **CONTROLS**: one key per action per layout. A key already used by the other player,
   by the arcade / co-op sibling layout for a different action, or a global key (Escape, M, F1) is refused;
@@ -196,10 +200,10 @@ npm run winrate -- --stages 1 --styles all       # balance sweep: how often does
 ```
 
 The suite boots the game, walks the character select, drives every hero's whole moveset,
-runs an autopilot bot through all four boards to their results screens, plays co-op, spawns
-every enemy variant, picks up, swings, breaks and drops every enemy weapon, exercises every
-autopilot archetype, and renders every sound effect and music track offline to check none are
-silent.
+runs an autopilot bot through all four boards to their results screens, plays co-op (including a full
+four-player run, drop-in on every slot and gamepad-claim rules, `coop4`), spawns every enemy variant,
+picks up, swings, breaks and drops every enemy weapon, exercises every autopilot archetype, and renders
+every sound effect and music track offline to check none are silent.
 
 `npm test` answers "does it work"; `npm run winrate` answers "is it fair". The latter plays real
 runs with no godmode and counts how often the ENGINE wins — a run lost is the continue stack
@@ -208,7 +212,7 @@ running out — across boards, difficulties, heroes, party sizes and autopilot s
 ```
 npm run winrate                                          # 4 boards x 4 heroes, solo, balanced, normal
 npm run winrate -- --stages 1 --styles all --seeds 8     # one board against every archetype
-npm run winrate -- --party 1,2 --difficulty easy,normal,hard --json out.json
+npm run winrate -- --party 1,2,3,4 --difficulty easy,normal,hard --json out.json
 ```
 
 Autopilot archetypes (`src/game/bot.js`): `balanced` (the default, and what the test suite is
@@ -216,7 +220,7 @@ written against), `aggressive` (fast buttons, never dodges), `defensive` (fights
 dodges hard, backs off when hurt), `masher` (no spacing, no patience). A run that never reaches
 a result is reported apart as unfinished — that is a soft-lock, not a loss.
 
-Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,2`,
+Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,1,2,3`,
 `?skipTo=gallery`, `?bot=1`, `?botstyle=aggressive,defensive` (one archetype per slot),
 `?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=4`, `?unlockall=1`, `?resetprogress=1`,
 `?difficulty=easy|normal|hard` (session only — overrides the saved difficulty for this page load without

@@ -2,7 +2,7 @@
 // Bindings follow docs/RECONCILIATION.md "Final controls" (ARCHITECTURE.md section 16). The default
 // table and the rebind / conflict / sanitise machinery live in engine/bindings.js (pure, no
 // window/navigator); this file owns the mutable live `bindings` object, device polling and caching.
-import { INPUT_BUFFER } from '../constants.js';
+import { INPUT_BUFFER, MAX_PLAYERS } from '../constants.js';
 import {
   DEFAULT_BINDINGS, LAYOUTS, layoutMap, cloneBindings, sanitiseBindings, rebindKey, rebindPad,
   joinCodesFor, keyLabel, padLabel, legendFor, joinLabels,
@@ -47,9 +47,9 @@ function makeActionMap(v = false) {
 }
 function makePlayer() {
   return { cur: makeActionMap(), prev: makeActionMap(), pressedNow: makeActionMap(), bufAge: makeActionMap(NEVER), virtual: null, device: 'none',
-    joined: false, joinNow: false, run: false, gpAny: false, gpAnyPrev: false };
+    joined: false, joinNow: false, run: false, gpAny: false, gpAnyPrev: false, pad: -1, kbSeen: false };
 }
-const players = [makePlayer(), makePlayer()];
+const players = Array.from({ length: MAX_PLAYERS }, makePlayer);
 players[0].joined = true;
 
 function rebuildBoundCodes() {
@@ -90,6 +90,70 @@ function pollGamepads() {
   try { pads = virtualPads || (typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null); } catch { pads = null; }
 }
 function padButton(gp, b) { const btn = gp.buttons[b]; return !!btn && (btn.pressed || btn.value > 0.5); }
+
+// --- Pad claiming (ARCHITECTURE.md section 3, docs/RECONCILIATION.md "Final controls"): an unbound
+// pad's first BUTTON edge (axes ignored -- stick drift must never drop a phantom hero in) claims the
+// lowest slot with no pad, whose keyboard half has not been used, and that is not netplay-virtual.
+// A pad that disconnects releases its slot (the slot itself stays joined); on reconnect it claims
+// again by the same rule, which can land it in a different slot. All claims are released wholesale by
+// resetClaims() (called when the title screen is entered). Netplay turns claiming off with
+// setPadClaiming(false): update() then merges every unbound pad into slot 0 and pollRaw(player) reads
+// the pad bound to `player` plus every unbound pad, so a pad drives the local player online whether it
+// was pressed before or after the keyboard, and can never claim the peer's slot mid-match.
+/** pad index -> slot */
+const padSlot = new Map();
+/** @type {boolean[]} */
+let padActivePrev = [];
+let claiming = true;
+let unboundPads = 0;
+
+/** True if any button (not axis) of `gp` is currently pressed. */
+function padActive(gp) {
+  for (let b = 0; b < gp.buttons.length; b++) if (padButton(gp, b)) return true;
+  return false;
+}
+
+/**
+ * Release/claim pad->slot bindings for this step. Must run right after pollGamepads(), before the
+ * per-slot loop. Returns the set of slots claimed THIS step (so their joinNow can be set).
+ * @returns {Set<number>}
+ */
+function claimPads() {
+  const claimed = new Set();
+  unboundPads = 0;
+  const n = pads ? pads.length : 0;
+  for (let k = 0; k < n; k++) {
+    const gp = pads[k];
+    if (!gp || !gp.connected) {
+      if (padSlot.has(k)) { players[padSlot.get(k)].pad = -1; padSlot.delete(k); }
+      padActivePrev[k] = false;
+      continue;
+    }
+    if (!padSlot.has(k)) unboundPads++;
+    const active = padActive(gp), rising = active && !padActivePrev[k];
+    padActivePrev[k] = active;
+    // A press while the CONTROLS panel is capturing a gamepad button (padSnapshot != null between
+    // beginPadCapture()/endPadCapture()) must rebind that pad, not silently claim a slot and drop an
+    // unwanted player in on the button's NEXT press.
+    if (rising && claiming && !padSnapshot && !padSlot.has(k)) {
+      const s = players.findIndex((pl) => pl.pad < 0 && !pl.kbSeen && !pl.virtual);
+      if (s >= 0) { players[s].pad = k; padSlot.set(k, s); claimed.add(s); unboundPads--; }
+    }
+  }
+  return claimed;
+}
+
+/** OR-merge every CONNECTED pad whose index is not claimed to any slot into `out`. Returns true if any was active. */
+function readUnboundPads(out, pl) {
+  let any = false;
+  const n = pads ? pads.length : 0;
+  for (let k = 0; k < n; k++) {
+    const gp = pads[k];
+    if (!gp || !gp.connected || padSlot.has(k)) continue;
+    if (readGamepad(k, out, pl)) any = true;
+  }
+  return any;
+}
 /** OR-merge gamepad `index` into `out`; returns true if any button/axis is active. Sets pl.run for the RT "run" buttons. */
 function readGamepad(index, out, pl) {
   const gp = pads && pads[index];
@@ -116,7 +180,10 @@ function keyHeld(codes) {
 /** Touch-control state, OR-ed into player 1's input each step (see engine/touch.js). */
 let touchActions = null;
 
-/** Input singleton (ARCHITECTURE.md section 3 / 16). Players are 0 and 1. */
+/** Input singleton (ARCHITECTURE.md section 3 / 16). Players are 0..3 (MAX_PLAYERS); gamepads claim
+ *  slots on their first button press (never index-bound); claims reset when the title screen is
+ *  entered (resetClaims()); netplay turns claiming off (setPadClaiming(false)) and reads unbound
+ *  pads as slot 0's local player. */
 export const input = {
   bindings,
   ACTIONS,
@@ -142,6 +209,7 @@ export const input = {
       for (const code of bindings.global[k]) if (keysPressedPending.has(code)) globalPressed[k] = true;
     }
     pollGamepads();
+    const claimed = claimPads();
     const soloActive = !players[1].joined;
     for (let p = 0; p < players.length; p++) {
       const pl = players[p];
@@ -149,7 +217,7 @@ export const input = {
       for (const a of ACTIONS) pl.prev[a] = pl.cur[a];
       pl.run = false;
       pl.gpAnyPrev = pl.gpAny;
-      pl.joinNow = false;
+      pl.joinNow = claimed.has(p);
       if (pl.virtual) {
         for (const a of ACTIONS) pl.cur[a] = !!pl.virtual[a];
         pl.run = !!pl.virtual.run;
@@ -158,20 +226,24 @@ export const input = {
       } else {
         let kb = false;
         for (const a of ACTIONS) {
-          let v = keyHeld(map[a]);
+          let v = map ? keyHeld(map[a]) : false;
           if (!v && p === 0 && soloActive) v = keyHeld(bindings.soloAliases[a] || []);
           pl.cur[a] = v;
           if (v) kb = true;
         }
-        pl.gpAny = readGamepad(p, pl.cur, pl);
+        if (p === 0 && kb) pl.kbSeen = true;
+        pl.gpAny = pl.pad >= 0 ? readGamepad(pl.pad, pl.cur, pl) : (p === 0 && !claiming ? readUnboundPads(pl.cur, pl) : false);
         let touched = false;
         if (p === 0 && touchActions) {
           for (const a of ACTIONS) if (touchActions[a]) { pl.cur[a] = true; touched = true; }
           if (touchActions.run) pl.run = true;
         }
         pl.device = touched ? 'touch' : pl.gpAny ? 'gamepad' : kb ? 'keyboard' : pl.device;
-        // "this player pressed one of their OWN keys" (used for P2 drop-in): keyboard edge on a non-shared key, or a gamepad edge
-        for (const code of keysPressedPending) if (joinCodes[p].has(code)) { pl.joinNow = true; break; }
+        // "this player pressed one of their OWN keys" (used for P2+ drop-in): keyboard edge on a
+        // non-shared key, or a gamepad edge. Slot 0's kbSeen comes from `kb` above (own map or solo
+        // aliases); slots >= 1 set kbSeen ONLY here, inside their own join-code edge (decision #2:
+        // P1 steering with the shared arrows must never mark slot 1 as used).
+        for (const code of keysPressedPending) if (joinCodes[p] && joinCodes[p].has(code)) { pl.joinNow = true; if (p > 0) pl.kbSeen = true; break; }
         if (pl.gpAny && !pl.gpAnyPrev) pl.joinNow = true;
       }
       for (const a of ACTIONS) {
@@ -216,6 +288,41 @@ export const input = {
   setJoined(player, joined = true) { players[player].joined = !!joined; },
   /** Has the player joined? (P1 is always joined.) */
   joined(player) { return player === 0 || !!players[player].joined; },
+  /** Gamepad index claimed by `player`'s slot, or -1 if none. */
+  padOf(player) { return players[player].pad; },
+  /** Does this slot have a keyboard half at all? (Slots 2/3 have none: gamepad or virtual only.) */
+  hasKeyboard(player) { return !!bindings.keyboard[player]; },
+  /** Slots 1..MAX_PLAYERS-1 that have not joined yet. Allocates -- call only on a joinState() change. */
+  freeSlots() {
+    const out = [];
+    for (let p = 1; p < players.length; p++) if (!players[p].joined) out.push(p);
+    return out;
+  },
+  /** Connected pads not yet claimed by any slot. 0 while claiming is off (netplay): no press can
+   *  claim a slot then, so hints must not advertise "ANY PAD BUTTON" during that window. */
+  get unboundPads() { return claiming ? unboundPads : 0; },
+  /** Slot a fresh unbound pad press would claim right now (mirrors claimPads()'s own rule: the
+   *  lowest slot with no pad, an unused keyboard half and not virtual), or -1 if none. Read-only --
+   *  used to phrase join hints correctly when a keyboard slot (e.g. P2) is still poachable by a pad. */
+  nextPadSlot() { return players.findIndex((pl) => pl.pad < 0 && !pl.kbSeen && !pl.virtual); },
+  /** Small integer summarising joined slots (bit p) plus an unbound-pad bit (bit MAX_PLAYERS). No
+   *  allocation -- screens compare this to a cached value and rebuild their hint strings on change. */
+  joinState() {
+    let m = 0;
+    for (let p = 0; p < players.length; p++) if (this.joined(p)) m |= 1 << p;
+    return m | (this.unboundPads > 0 ? 1 << MAX_PLAYERS : 0);
+  },
+  /** Release every pad claim and keyboard-seen flag and turn claiming back on. Called when the title
+   *  screen is entered, so a pad that was P3 last run re-claims on its next press. padActivePrev is
+   *  deliberately left alone: a button still held from before the reset must not read as a fresh
+   *  rising edge and instantly re-claim slot 0 -- only a press that begins after the reset can claim. */
+  resetClaims() {
+    padSlot.clear();
+    claiming = true;
+    for (const pl of players) { pl.pad = -1; pl.kbSeen = false; }
+  },
+  /** Turn pad claiming on/off. Netplay turns it off for the lobby and the match's lifetime. */
+  setPadClaiming(on) { claiming = !!on; },
   /** Global (non-player) key edge this step: 'pause' | 'mute' | 'debug'. */
   globalPressed(name) { return !!globalPressed[name]; },
   /**
@@ -239,11 +346,15 @@ export const input = {
     const o = {};
     const map = bindings.keyboard[player];
     for (const a of ACTIONS) {
-      let v = keyHeld(map[a]);
+      let v = map ? keyHeld(map[a]) : false;
       if (!v && player === 0 && solo) v = keyHeld(bindings.soloAliases[a] || []);
       o[a] = v;
     }
-    readGamepad(player, o, o);        // writes o[action] and o.run; passing `o` as both keeps the real record clean
+    // Reads the pad bound to `player` (if any) plus every unbound pad -- readUnboundPads keys off
+    // padSlot, not `claiming`, so this also covers the ended-session pump (claiming already back on).
+    const pl = players[player];
+    if (pl.pad >= 0) readGamepad(pl.pad, o, o);
+    readUnboundPads(o, o);
     if (player === 0 && touchActions) {
       for (const a of ACTIONS) if (touchActions[a]) o[a] = true;
       if (touchActions.run) o.run = true;
@@ -302,10 +413,13 @@ export const input = {
     if (v === undefined) { v = legendFor(bindings, layout); legendCache.set(layout, v); }
     return v;
   },
-  /** Cached short "P{slot+1}: PRESS X TO JOIN" hint. */
+  /** Cached short "P{slot+1}: PRESS X TO JOIN" hint, or "P{slot+1}: ANY PAD BUTTON" for a slot with no keyboard half. */
   joinHint(slot = 1) {
     let v = joinHintCache[slot];
-    if (v === undefined) { v = `P${slot + 1}: PRESS ${joinLabels(bindings, slot).key} TO JOIN`; joinHintCache[slot] = v; }
+    if (v === undefined) {
+      v = !bindings.keyboard[slot] ? `P${slot + 1}: ANY PAD BUTTON` : `P${slot + 1}: PRESS ${joinLabels(bindings, slot).key} TO JOIN`;
+      joinHintCache[slot] = v;
+    }
     return v;
   },
   /** Cached long "P{slot+1}: PRESS X/Y/Z OR W TO JOIN" hint (lists every joinable key). */

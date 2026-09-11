@@ -65,7 +65,7 @@ export class OptionsScreen extends Screen {
     if (this.noticeTimer > 0) this.noticeTimer--;
     if (this.panel === 'controls') { this.controls.update(); return; }
     const inp = this.game.input, audio = this.game.audio;
-    for (let p = 0; p < 2; p++) {
+    for (let p = 0; p < inp.playerCount; p++) {
       if (!inp.joined(p)) continue;
       if (inp.pressed(p, 'up')) { this.cursor = (this.cursor + ROWS.length - 1) % ROWS.length; audio.play('menu_move'); }
       if (inp.pressed(p, 'down')) { this.cursor = (this.cursor + 1) % ROWS.length; audio.play('menu_move'); }

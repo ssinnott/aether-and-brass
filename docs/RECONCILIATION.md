@@ -41,7 +41,7 @@ row; index dodge, middle taunt, ring super above). Nothing requires a finger to 
 - Run = double-tap left/right (12f window) or hold RT (gamepad 7). Dash attack = attack while running.
 - Grab = attack within grab reach of an enemy that is NOT in hitstun and not armored (never interrupts a combo). Throw = direction + attack while holding; attack = hold hit.
 - Global: `Escape` pauses/unpauses for everyone, `M` mutes, `F1` toggles the debug overlay. `preventDefault()` on all bound keys.
-- P2 joins (title, select, pause, or in-game) by pressing any P2-only key (J K U L O I Backspace or Numpad). When P2 joins, the 1P arcade keys switch off and P1 moves to the left half; the title legend swaps to match. Gamepad 0 → P1, gamepad 1 → P2, OR-merged with their keyboard keys.
+- P2 joins (title, select, pause, or in-game) by pressing any P2-only key (J K U L O I Backspace or Numpad). When P2 joins, the 1P arcade keys switch off and P1 moves to the left half; the title legend swaps to match. Gamepads are not index-bound: an unbound pad's first button press (axes ignored) claims the lowest slot with no pad whose keyboard half has not been used, OR-merged with that slot's keyboard keys once claimed. P3/P4 are gamepad only (no keyboard half); claims reset whenever the title screen is entered; online co-op stays two players (the session un-joins any local slot above 2 and turns pad claiming off).
 - Super = separate button (no attack+jump chord).
 
 ## Scope tiers — final ship status (verified 2026-09-07 against the tree)
@@ -63,7 +63,7 @@ card; it was screenshot-verified separately with `skipTo=intro`), and
 | Pickups, lives/continues, score/combo/grades/rank | `game/items.js`, `game/hud.js` (per-player CONTINUE countdown), `game/screens/results.js` |
 | Meter / specials / supers, dodge i-frames, juggles, grabs & throws (thrown enemies hit others) | `game/player.js`, `game/fighter.js`, `game/grabs.js` |
 | Hit-stop / shake, HUD, title / select / intro / pause / game-over / results | `game/screens/*`, `game/hud.js` |
-| Local co-op, gamepad | `engine/input.js` (P2 drop-in on any P2 key; pads 0→P1, 1→P2) |
+| Local co-op, gamepad | `engine/input.js` (drop-in on any free slot's own key or pad; up to 4 local slots, gamepads claim by first button press, not index; P3/P4 are gamepad only; claims reset on the title screen) |
 | Synthesized SFX + music per section | `engine/audio/{sfx,music,synth}.js` — all canonical names below implemented |
 
 Nothing from MUST is missing.
@@ -96,7 +96,7 @@ HUD uses the simple delayed second bar), no typewriter text, no friendly fire, n
 **OPTIONS (issue #19):** an overlay pushed from the title menu and the pause plate holds difficulty, a
 music / SFX volume mixer, a screen-shake setting (off / low / full) and key + gamepad remapping under a
 CONTROLS sub-plate, all persisted in `localStorage` (`game/options.js`, `aetherAndBrass.options.v1`).
-This diverges from GDD 9's menu lists: the title menu is now **START (1P) / START (2P) / ONLINE CO-OP /
+This diverges from GDD 9's menu lists: the title menu is now **START / ONLINE CO-OP /
 OPTIONS** (difficulty and mute both moved off the title into OPTIONS) and the pause plate is **RESUME /
 MUTE / OPTIONS / QUIT TO TITLE** (OPTIONS hidden under netplay). CONTROLS is a sub-plate of OPTIONS, not
 a menu row of its own. Friendly-fire and scale toggles remain cut, as above.

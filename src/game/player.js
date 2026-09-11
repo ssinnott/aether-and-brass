@@ -29,7 +29,7 @@ export function comboGrade(n) { for (const g of GRADES) if (n >= g[0]) return { 
 export class Player extends Fighter {
   /**
    * @param {object} def character definition (content/characters)
-   * @param {number} index player slot 0|1
+   * @param {number} index player slot 0..3
    * @param {{ input: object, x?: number, z?: number, facing?: number, bot?: boolean, botStyle?: string, godmode?: boolean, lives?: number }} o
    */
   constructor(def, index, { input, x = 100, z = 70, facing = 1, bot = false, botStyle = '', godmode = false, lives = 3 } = {}) {

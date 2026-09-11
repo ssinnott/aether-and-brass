@@ -96,7 +96,7 @@ export function createControlsPanel(screen) {
         }
         return;
       }
-      for (let p = 0; p < 2; p++) {
+      for (let p = 0; p < input.playerCount; p++) {
         if (!input.joined(p)) continue;
         if (input.pressed(p, 'up')) { st.row = (st.row + ACTIONS.length - 1) % ACTIONS.length; audio.play('menu_move'); }
         if (input.pressed(p, 'down')) { st.row = (st.row + 1) % ACTIONS.length; audio.play('menu_move'); }
