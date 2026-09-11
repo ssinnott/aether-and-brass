@@ -1,7 +1,7 @@
 // Player: input -> intent -> state transitions (ARCHITECTURE.md section 5, GDD section 7 combat rules).
 // Character-specific behaviour comes from def.traits (extraJumps, airDashes, dodgeRecovery, dodgeIFrames, parry, grabReach...) and
 // def.hooks (onAttackPressed / onJumpPressed / onDodgePressed / onSpecial / onSuper / onHitDealt ...) — see the tables in fighter.js.
-import { ST, TEAM, METER, FIGHTER_DEFAULTS, VIEW_W, Z_SPEED_FACTOR, KNOCKDOWN_POP_VY, UI } from '../constants.js';
+import { ST, TEAM, METER, FIGHTER_DEFAULTS, VIEW_W, Z_SPEED_FACTOR, KNOCKDOWN_POP_VY, UI, THROW, GRAB_REACH_BEHIND, GRAB_REACH_AHEAD_EXTRA, GRAB_Z_TOL } from '../constants.js';
 import { Fighter, AIR_FALL_STATES } from './fighter.js';
 import { initShield } from './shield.js';
 import { mashNet } from './status.js';
@@ -11,6 +11,7 @@ import { clamp, sign } from '../engine/math.js';
 import { floatText, burstBreak } from '../art/fx.js';
 import { WEAPONS, WEAPON_DROP_VX, WEAPON_DROP_GRACE } from './weapons.js';
 import { WeaponPickup } from './items.js';
+import { startWeaponThrow, findLiftProp, liftProp, startPropThrow, dropHeldProp, updateHeldProp } from './throwables.js';
 
 const DOUBLE_TAP_FRAMES = 12;
 const DODGE_FRAMES = 20, DODGE_DIST = 60, DODGE_COOLDOWN = 6, DODGE_BASE_RECOVERY = 8;
@@ -103,7 +104,7 @@ export class Player extends Fighter {
       case ST.ATTACK: case ST.DASH_ATTACK: this.thinkAttack(world); break;
       case ST.JUMP: this.thinkAir(world, true); break;
       case ST.JUMP_ATTACK: this.thinkAir(world, false); break;
-      case ST.GRAB: this.thinkGrab(); break;
+      case ST.GRAB: this.thinkGrab(world); break;
       case ST.GRABBED: this.thinkGrabbed(); break;
       case ST.DODGE: this.thinkDodge(world); break;
       case ST.SUPER: this.thinkSuper(); break;
@@ -124,6 +125,12 @@ export class Player extends Fighter {
       if (this.running && this.anim.has('dashAttack')) { this.startDashAttack(); return; }
       const g = this.findGrabTarget(world);
       if (g) { this.startGrab(g); return; }
+      // A held weapon with a direction pressed throws instead of swinging (GDD 7 / issue #21); a neutral attack
+      // with no direction stays the ordinary swing so an armed hero standing still can still fight.
+      if (this.weaponId && (it.x || it.y) && startWeaponThrow(this, it)) return;
+      // Bare-handed, an idle liftable prop in reach is lifted instead of swung (GDD 7 decision 4/5): one hand,
+      // one held thing, so an armed hero leaves props alone entirely.
+      if (!this.weaponId) { const prop = findLiftProp(this, world); if (prop) { liftProp(this, prop); return; } }
       this.startAttack(1); return;
     }
     if (it.jump) { this.consume('jump'); if (this.callHook('onJumpPressed', world, false) !== true) this.jump(); return; }
@@ -170,7 +177,8 @@ export class Player extends Fighter {
       if (this.airDashesLeft > 0) this.startAirDash();
     }
   }
-  thinkGrab() {
+  thinkGrab(world) {
+    if (this.heldProp) { this.thinkHeld(world); return; }
     const it = this.intent;
     if (!this.grabTarget || this.throwPending || (this.anim.name === 'grab' && !this.anim.done)) return;
     if (!it.attack) return;
@@ -178,6 +186,25 @@ export class Player extends Fighter {
     if (it.x === this.facing) this.throwTarget(1);
     else if (it.x === -this.facing) this.throwTarget(-1);
     else this.grabHit();
+  }
+  /** Holding a liftable prop (GDD 7 decision 14): stays in ST.GRAB the whole hold (grabs.js updateGrab positions
+   *  it every frame via throwables.updateHeldProp, BEFORE this runs), so movement runs here instead of
+   *  thinkGround. Slow walk only (holdWalk 0.7x, no run/jump/dodge); a prop has no swing, so ANY attack press
+   *  throws it (decision 3). Repositions once more after moving: updateGrab ran before this (Fighter.update calls
+   *  updateState, then think), so without this second call the drawn prop would lag the mover by one frame. */
+  thinkHeld(world) {
+    const it = this.intent;
+    if (this.throwPending) return;
+    if (it.attack) { this.consume('attack'); startPropThrow(this, it); return; }
+    if (it.x || it.y) {
+      const speed = this.walkSpeed * THROW.holdWalk;
+      this.x += it.x * speed;
+      const zb = world.zBounds(this);
+      this.z = clamp(this.z + it.y * speed * Z_SPEED_FACTOR, zb.z0, zb.z1);
+      if (it.x) this.facing = it.x;
+      if (this.anim.name !== 'walk') this.play('walk', { restart: false });
+    } else if (this.anim.name !== 'idle') this.play('idle', { restart: false });
+    updateHeldProp(this);
   }
   thinkDodge(world) {
     const tr = this.traits;
@@ -264,7 +291,7 @@ export class Player extends Fighter {
     audio.play('super_charge'); audio.play(this.def.sfx && this.def.sfx.super || 'super_' + this.def.id);
   }
   startSuper(world) {
-    this.meter = 0; this.running = false; this.hitConfirmed = false; this.blinkHit.clear(); this.heldBody = null; this.heldProj = null;
+    this.meter = 0; this.running = false; this.hitConfirmed = false; this.blinkHit.clear(); this.heldBody = null; this.heldProj = null; this.heldProp = null;
     this.setState(ST.SUPER, 'super');
     this.invuln = Math.max(this.invuln, this.anim.length + 4);
     this.beginSuper(world);
@@ -283,7 +310,7 @@ export class Player extends Fighter {
     for (const e of world.enemies) {
       if (!e.grabbableBy || !e.grabbableBy(this)) continue;
       const dx = (e.x - this.x) * this.facing, dz = Math.abs(e.z - this.z);
-      if (dx < -4 || dx > this.grabReach + 28 || dz > 14) continue;
+      if (dx < -GRAB_REACH_BEHIND || dx > this.grabReach + GRAB_REACH_AHEAD_EXTRA || dz > GRAB_Z_TOL) continue;
       if (dx < bestD) { bestD = dx; best = e; }
     }
     return best;
@@ -333,7 +360,7 @@ export class Player extends Fighter {
     }
   }
   releaseHeld(world, damage, vx = 14, frame = null) {
-    const b = this.heldBody, pr = this.heldProj; this.heldBody = null; this.grabTarget = null; this.heldProj = null;
+    const b = this.heldBody, pr = this.heldProj; this.heldBody = null; this.grabTarget = null; this.heldProj = null; this.heldProp = null;
     if (pr && !pr.removeMe) { // hurl the rubble ball: a knockdown projectile that flies `maxDist` (300px) and hits everything on the way
       pr.vx = this.facing * vx; pr.vy = 2; pr.gravity = 0.25; pr.facing = this.facing; pr.startX = pr.x; pr.maxDist = (frame && frame.maxDist) || 300; pr.life = 90; pr.pierce = 99;
       pr.hit = { damage, type: 'knockdown', kbX: 6, kbY: 5, hitstun: 24, projectile: true, ranged: true };
@@ -365,6 +392,8 @@ export class Player extends Fighter {
   }
   onDodged(attacker) { this.addMeter(DODGE_METER); floatText(this.x, this.y + this.h + 10, this.z, 'DODGE', UI.meter, 1); }
   onHurt(hit, attacker) {
+    this.throwPending = null; // a hit mid-windup cancels a pending weapon/prop throw (issue #21)
+    dropHeldProp(this); // a hit mid-hold drops a held prop where it was being carried (GDD 7 decision 14)
     this.damageTakenTotal += this.lastDamage != null ? this.lastDamage : (hit.damage || 0);
     if (this.combo > 0) this.dropCombo();
     this.addMeter(METER.damaged);
@@ -372,7 +401,9 @@ export class Player extends Fighter {
   onKill(target) {
     this.kills++;
     const base = (target.def && target.def.score) || 100;
-    let n = target.thrownBy === this ? Math.round(base * 1.5) : base; // GDD 7: throw kill x1.5
+    // GDD 7: throw kill x1.5 -- the thrown body itself (thrownBy) OR anyone killed by a thrown body / weapon's
+    // last hit (lastHitWasThrow, fighter.js takeHit/takeHitRaw; issue #21 decision 8).
+    let n = (target.thrownBy === this || target.lastHitWasThrow) ? Math.round(base * 1.5) : base;
     if (this.world && this.world.frame <= this.crowdClearUntil) n *= 2;
     this.addScore(n, true);
     this.addMeter(12);
@@ -415,7 +446,7 @@ export class Player extends Fighter {
     this.hp = this.maxHp; this.meter = 0; this.dead = false; this.deathHooked = false; this.alive = true; this.removeMe = false;
     initShield(this); // a new life drops in with a full shield
     this.combo = 0; this.comboTimer = 0; this.juggleCount = 0; this.juggleGravity = 0; this.juggleImmune = false; this.chainHits = 0;
-    this.grabTarget = null; this.grabbedBy = null; this.heldBody = null; this.hitstop = 0; this.flashTimer = 0; this.status = {};
+    this.grabTarget = null; this.grabbedBy = null; this.heldBody = null; this.heldProp = null; this.hitstop = 0; this.flashTimer = 0; this.status = {};
     this.clearWeapon();
     const cam = world.camera;
     this.x = clamp(cam.x + VIEW_W / 2, cam.left + 20, cam.right - 20); this.z = 70; this.y = 160; this.vy = 0; this.vx = 0; this.facing = 1;

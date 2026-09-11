@@ -88,6 +88,13 @@ export function worldChecksum(world, rng) {
     h = mixAny(h, e.hitstop); h = mixAny(h, e.invuln); h = mixAny(h, e.life); h = mixAny(h, e.meter);
     h = mixAny(h, e.shield); h = mixAny(h, e.shieldTimer);   // the shield (game/shield.js) drains and refills a hit before hp does
     h = mixAny(h, e.weaponId); h = mixAny(h, e.weaponHits); h = mixAny(h, e.grace);   // held / dropped pickup weapons (game/weapons.js): the overlay swaps the whole ground combo
+    // Thrown weapons / props (issue #21): a held prop / holder / lost-over-an-edge flag / liftable prop / thrown-hit
+    // note packed into one bitfield (same pattern as the alive/removeMe bitfield above), plus the string/id fields a
+    // bitfield cannot carry -- a divergence in any of these swaps a whole player's held-item state, a projectile's
+    // landing outcome, or (lastHitWasThrow) the x1.5 throw-kill score bonus (player.js onKill).
+    h = mix(h, (e.heldProp ? 1 : 0) | (e.holder ? 2 : 0) | (e.lost ? 4 : 0) | (e.throwable ? 8 : 0) | (e.lastHitWasThrow ? 16 : 0));
+    h = mixAny(h, e.throwPending && e.throwPending.kind); h = mixAny(h, e.thrownWeapon); h = mixAny(h, e.thrownProp);
+    h = mixAny(h, e.propThrowCooldown); // enemy prop-throw cooldown (issue #21 step 21.6, dev-only ?enemythrow=1)
     if (e.anim) { h = mix(h, e.anim.instance | 0); h = mix(h, e.anim.frameIndex | 0); h = mixNum(h, e.anim.frameTime); }
   }
   h = mix(h, n);                             // count of hashed entities, not entities.length

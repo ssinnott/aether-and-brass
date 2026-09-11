@@ -1,6 +1,9 @@
 // Pickups (food, score, meter, 1-UP) and breakable props (GDD section 6 props, section 7 pickups; ARCHITECTURE section 6).
 // Props take hits from any team, roll (barrels, coal carts), explode after breaking (oil drums), fall on a jump attack
 // (chandelier) and stun the Regent Engine (pressure valves); every break plays a split-pieces animation + debris.
+// Throwable clutter (issue #21, GDD 7): a `throwable: true` stage row + a `throw` spec on PROP_TYPES (bottle, lamp)
+// lets a player lift it (state 'held'; game/throwables.js owns lift/hold/throw/land -- a thrown prop is removed
+// outright and flies as a plain Projectile instead, so this file only carries the 'held' state and its guards).
 import { FLOOR_TOP, GRAVITY, TEAM, HITSTOP, METER, UI, ST, Z_MIN, Z_MAX } from '../constants.js';
 import { Entity } from './entity.js';
 import { Projectile } from './projectile.js';
@@ -149,9 +152,11 @@ export class WeaponPickup extends Entity {
 export class Prop extends Entity {
   /**
    * @param {string} type PROP_TYPES key
-   * @param {{ drops?: string|string[]|null, hp?: number, solid?: boolean, rider?: boolean }} o rider = travels on the cargo-bay conveyor
+   * @param {{ drops?: string|string[]|null, hp?: number, solid?: boolean, rider?: boolean, throwable?: boolean }} o
+   *   rider = travels on the cargo-bay conveyor; throwable (issue #21, GDD 7) = the stage row allows lifting this
+   *   instance, which only actually applies when the type also carries a `throw` spec (game/throwables.js findLiftProp).
    */
-  constructor(type, x, z, { drops = null, hp = 0, solid = true, rider = false } = {}) {
+  constructor(type, x, z, { drops = null, hp = 0, solid = true, rider = false, throwable = false } = {}) {
     super('prop');
     this.type = PROP_TYPES[type] ? type : 'crate';
     this.info = getPropType(this.type);
@@ -168,6 +173,11 @@ export class Prop extends Entity {
     this.state = 'idle'; this.t = 0; this.angle = 0;
     this.vx = 0; this.rollLeft = 0; this.breaker = null; this.rider = rider;
     this.spent = false;
+    /** Issue #21 (GDD 7): liftable (throwable AND info.throw exists) and the Player currently holding this, if any.
+     *  Both hashed by net/checksum.js (bitfield). State 'held' adds to idle/rolling/breaking/fuse/falling -- a
+     *  thrown prop is removed outright (throwHeldItem) and flies as a plain Projectile, never a Prop state. */
+    this.throwable = !!(throwable && this.info.throw);
+    this.holder = null;
   }
   update(world) {
     this.world = world;
@@ -189,7 +199,21 @@ export class Prop extends Entity {
         if (this.hangY <= 0) { this.hangY = 0; this.land(world); }
         break;
       }
+      case 'held': this.updateHeld(); break;
       default: break;
+    }
+  }
+  /** Guard only (issue #21 decision 6): the real per-frame position comes from the HOLDER's own updateGrab
+   *  (game/grabs.js -> throwables.js updateHeldProp) every frame while held. This just notices a holder that
+   *  let go without going through dropHeldProp (dead, out, or otherwise reset) and settles back to idle in place. */
+  updateHeld() {
+    const h = this.holder;
+    // Also self-heals a holder that stopped holding without going through dropHeldProp: grabbed out of ST.GRAB
+    // (grabs.js startGrab drops it explicitly, but this is a second line of defence) or removed/killed by a path
+    // that never calls onHurt (takeHitRaw death, review findings 1/10).
+    if (!h || h.heldProp !== this || h.state !== ST.GRAB || !h.alive || h.dead) {
+      if (h && h.heldProp === this) h.heldProp = null;
+      this.holder = null; this.state = 'idle'; this.y = 0;
     }
   }
   hurtbox() {
@@ -210,7 +234,8 @@ export class Prop extends Entity {
   }
   /** Damage the prop. Returns true when the hit counted. */
   takeHit(hit, attacker) {
-    if (!this.alive || !this.solid || this.state === 'breaking' || this.state === 'fuse' || this.state === 'falling') return false;
+    if (!this.alive || !this.solid || this.state === 'breaking' || this.state === 'fuse' || this.state === 'falling'
+      || this.state === 'held') return false;
     if (!this.canBeHitBy(attacker)) return false;
     this.hp -= Math.max(1, Math.round(hit.damage || 1));
     this.flashTimer = 4; this.wobble = 10;

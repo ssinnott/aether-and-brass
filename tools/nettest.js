@@ -132,6 +132,11 @@ const suites = {
     ok(worldChecksum(world({ vz: 0.5 }), rng) !== base, 'a vz difference is caught (drives ring-outs)');
     ok(worldChecksum(world({ hitstop: 3 }), rng) !== base, 'a hitstop difference is caught');
     ok(worldChecksum(world({ weaponId: 'halberd', weaponHits: 12 }), rng) !== base, 'a held pickup weapon difference is caught (game/weapons.js)');
+    ok(worldChecksum(world({ heldProp: { id: 1 } }), rng) !== base, 'a held prop difference is caught (issue #21 game/throwables.js)');
+    ok(worldChecksum(world({ thrownWeapon: 'halberd', weaponHits: 11 }), rng) !== base, 'a thrown-weapon projectile difference is caught (issue #21)');
+    ok(worldChecksum(world({ throwPending: { kind: 'weapon' } }), rng) !== base, 'a throwPending.kind difference is caught (issue #21)');
+    ok(worldChecksum(world({ propThrowCooldown: 60 }), rng) !== base, 'an enemy prop-throw cooldown difference is caught (issue #21 step 21.6)');
+    ok(worldChecksum(world({ lastHitWasThrow: true }), rng) !== base, 'a lastHitWasThrow difference is caught (issue #21 fighter.js, feeds the x1.5 throw-kill score bonus)');
     ok(worldChecksum(world({ anim: { instance: 1, frameIndex: 0, frameTime: 0 } }), rng)
        !== worldChecksum(world({ anim: { instance: 2, frameIndex: 0, frameTime: 0 } }), rng), 'an animation cursor difference is caught');
     ok(worldChecksum(world({ state: 'AB' }), rng) !== worldChecksum(world({ state: 'BA' }), rng), 'string hashing is order sensitive');

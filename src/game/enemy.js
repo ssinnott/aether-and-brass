@@ -37,6 +37,7 @@ import { drawText } from '../engine/text.js';
 import { floatText } from '../art/fx.js';
 import { Prop } from './items.js';
 import { laneAroundHazards } from './hazards.js';
+import { tryEnemyPropThrow, thinkEnemyHeld, dropHeldProp } from './throwables.js';
 
 /** Defaults for `def.ai` (content overrides per type / variant). */
 export const AI_DEFAULTS = Object.freeze({
@@ -92,6 +93,9 @@ export class Enemy extends Fighter {
     this.fled = false; this.fleeTimer = 0; this.fleeing = false; this.fleeOff = false; this.fleeDir = 1; this.fleeChecked = false;
     this.pendingAttack = null; this.currentAttack = null; this.attackUses = new Map(); this.hasToken = false; this.attackCount = 0;
     this.retreatBudget = this.ai.retreatBudget; this.panicCooldown = 0; this.panicFlee = false; this.evadeTimer = 0; this.lastSeenAttack = -1; this.riposteTimer = 0;
+    // optional stretch, step 21.6, dev-only ?enemythrow=1 (game/throwables.js tryEnemyPropThrow): Scrap Slinger /
+    // Soot Cutthroat throttle between prop-throw attempts on this cooldown (hashed in net/checksum.js).
+    this.propThrowCooldown = 0;
     this.retreating = false; this.grabHitTimer = 0; this.stalled = false;
     // whiff backsteps / riposte stance bookkeeping
     this.watchInst = -1; this.watchNear = false; this.hitByInst = -1; this.whiffs = 0; this.backstepCooldown = 0;
@@ -130,6 +134,7 @@ export class Enemy extends Fighter {
     if (this.riposteTimer > 0) this.riposteTimer--;
     if (this.retargetTimer > 0) this.retargetTimer--;
     if (this.backstepCooldown > 0) this.backstepCooldown--;
+    if (this.propThrowCooldown > 0) this.propThrowCooldown--;
     if (this.stanceCooldown > 0) this.stanceCooldown--;
     if (this.stanceTimer > 0 && --this.stanceTimer === 0) this.inStance = false;
     // punish window: stalls (STAGGER) or frames flagged punish:true
@@ -152,6 +157,7 @@ export class Enemy extends Fighter {
     if (this.inStance) { this.face(t); this.stand(); return; }
     if (this.tryEvade(world, t) || this.tryPanic(world, t) || this.tryBackstep(world, t) || this.tryStance(world, t)) return;
     this.separate(world);
+    if (tryEnemyPropThrow(this, world)) return; // optional stretch, step 21.6: ?enemythrow=1 (no-op otherwise)
     switch (this.aiState) {
       case 'KEEP_DISTANCE': this.thinkRanged(world, t); break;
       case 'HOVER': this.thinkHover(world, t); break;
@@ -328,6 +334,7 @@ export class Enemy extends Fighter {
     if (--this.fleeTimer <= 0) { this.aiState = 'APPROACH'; this.fleeing = false; }
   }
   thinkGrab(world) {
+    if (this.heldProp) { thinkEnemyHeld(this, world); return; } // step 21.6 stretch
     if (!this.grabTarget || this.throwPending) return;
     if (this.anim.name === 'grab' && !this.anim.done) return;
     if (++this.grabHitTimer >= this.ai.grabHitEvery) { this.grabHitTimer = 0; this.grabHit(); }
@@ -515,6 +522,7 @@ export class Enemy extends Fighter {
   onHurt(hit, attacker) {
     const ai = this.ai, world = this.world;
     this.pendingAttack = null; this.releaseToken(world); this.inStance = false;
+    this.throwPending = null; dropHeldProp(this); // a hit mid-hold drops a held prop (step 21.6, GDD 7 decision 14)
     if (this.aiState !== 'FLEE' && this.aiState !== 'ENTER' && this.aiState !== 'STAGGER') { this.aiState = 'APPROACH'; this.retreating = false; }
     this.attackCooldown = Math.max(this.attackCooldown, 25);
     if (attacker && attacker.kind === 'player') { this.target = attacker; this.retargetTimer = RETARGET; if (attacker.anim) this.hitByInst = attacker.anim.instance; }

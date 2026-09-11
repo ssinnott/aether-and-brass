@@ -25,11 +25,13 @@ export const stage1 = {
     // ---------------------------------------------------------------- Section 1: Sootfoot Docks (rain, night)
     { id: 's1', name: 'SOOTFOOT DOCKS', x0: 0, x1: 1800, backdrop: 'section1', floor: 'planks',
       // crates: Brass Cog x2, one in four hides a Meat Pie; barrels roll 40px (10 to enemies) and drop Coal Scrip; the winch an Aether Vial
+      // bottle + lamp (issue #21, GDD 7): throwable clutter -- an empty hand near either lifts it instead of swinging
       props: [
         { type: 'crate', x: 300, z: 30, drops: COGS }, { type: 'crate', x: 340, z: 30, drops: 'meatPie' },
         { type: 'barrel', x: 760, z: 118, drops: 'coalScrip' }, { type: 'crate', x: 1080, z: 24, drops: COGS },
         { type: 'winch', x: 1180, z: 14, drops: 'aetherVial' }, { type: 'barrel', x: 1450, z: 120, drops: 'coalScrip' },
         { type: 'crate', x: 1720, z: 40, drops: COGS },
+        { type: 'bottle', x: 520, z: 96, throwable: true }, { type: 'lamp', x: 1000, z: 110, throwable: true },
       ],
       hazards: [
         { type: 'steamVent', x: 600, z: 100, period: 180, active: 45, tell: 30 },

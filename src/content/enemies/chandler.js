@@ -250,17 +250,29 @@ const DOSED = {
     if (riteSourceGone(a, s)) return;
     if (s.age % 6 === 0) particles.burst('ember', a.x + (s.age % 5 - 2) * 3, a.y + a.h * 0.75, a.z, 1, { speed: 1, up: 1.4, color: CH.lime });
   },
+  // Only restores a field if it still holds the exact value THIS status set it to -- walkSpeed also gets saved
+  // and restored, absolutely, by the thrown lime rake's slow (game/throwables.js limeTick); without this guard
+  // whichever of the two ends later stomps the other's still-active value with its own stale saved baseline
+  // (issue #21 review finding 2).
   onEnd(a, s) {
     if (s.pd == null) return;
-    a.damageMult = s.pd; a.walkSpeed = s.pw; a.runSpeed = s.pr;
+    a.damageMult = s.pd;
+    if (a.walkSpeed === s.sw) a.walkSpeed = s.pw;
+    if (a.runSpeed === s.sr) a.runSpeed = s.pr;
     if (s.pcd && a.ai) a.ai.attackCooldown = s.pcd;
   },
 };
 function dose(a, f) {
   if (a.hasStatus('dosed')) return false;
   const s = a.applyStatus('dosed', DOSED, f);
-  s.pd = a.damageMult; s.pw = a.walkSpeed; s.pr = a.runSpeed; s.pcd = a.ai ? a.ai.attackCooldown : null;
-  a.damageMult *= 1.35; a.walkSpeed *= 1.25; a.runSpeed *= 1.25;
+  s.pd = a.damageMult;
+  // If a lime-rake slow (game/throwables.js) is already active, its OWN saved value is the true pre-buff walk
+  // speed -- not the current (already-slowed) walkSpeed -- so 'dosed' does not adopt the slow as its own baseline.
+  s.pw = a.status.limed ? a.status.limed.savedWalk : a.walkSpeed;
+  s.pr = a.runSpeed; s.pcd = a.ai ? a.ai.attackCooldown : null;
+  a.damageMult *= 1.35;
+  s.sw = s.pw * 1.25; s.sr = s.pr * 1.25;
+  a.walkSpeed = s.sw; a.runSpeed = s.sr;
   // a NEW array, never an in-place mutation: normalizeAi spreads def.ai but keeps arrays by reference
   if (s.pcd) a.ai.attackCooldown = [Math.round(s.pcd[0] * 0.6), Math.round(s.pcd[1] * 0.6)];
   return true;

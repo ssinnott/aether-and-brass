@@ -451,7 +451,9 @@ Lockstep's failure mode is silent divergence, so make it loud:
 
 - Every 30 frames, each peer computes a cheap checksum over sim state — `rng.state` plus
   each fighter's `x, y, z, state, hp` quantised to integers — and sends it with the input
-  packet, plus the held / dropped pickup-weapon fields (weaponId, weaponHits, grace).
+  packet, plus the held / dropped pickup-weapon fields (weaponId, weaponHits, grace), plus issue
+  #21's thrown-item state (a heldProp / holder / lost / throwable / lastHitWasThrow bitfield,
+  throwPending.kind, thrownWeapon, thrownProp, propThrowCooldown).
 - On mismatch: log both checksums with the frame number, then pick a recovery:
   - **Soft:** host re-sends an authoritative state snapshot, guest adopts it (requires
     partial serialization — i.e. some of M3's work)

@@ -2,13 +2,17 @@
 // grapples (chain out, reel the first enemy hit into the owner's grab), fire puddles (area hazards), reflectable bombs / bolts,
 // custom-drawn projectiles. Built from content specs by `projectileOptsFromSpec` (frame `projectile`, `spawn.projectile`,
 // def.projectiles[name]); see the FRAME FIELDS / PROJECTILE SPEC tables at the top of fighter.js.
-import { FLOOR_TOP, TEAM, VIEW_W, ST } from '../constants.js';
+import { FLOOR_TOP, TEAM, VIEW_W, ST, CAMERA_MARGIN } from '../constants.js';
 import { Entity } from './entity.js';
 import { particles } from '../engine/particles.js';
 import { circle, rrect, pathPoly, paint, line } from '../art/shapes.js';
 import { jointScreen } from '../art/rig.js';
 import { audio } from '../engine/audio.js';
+import { clamp } from '../engine/math.js';
 import { dsin, dcos, dhypot } from '../engine/trig.js';
+
+/** Default local spawn offset (facing x, up y) used by `projectileOptsFromSpec` when a spec omits offsetX/offsetY. */
+export const PROJ_OFFSET_X = 20, PROJ_OFFSET_Y = 40;
 
 const STYLE_R = { bullet: 3, bolt: 3, bomb: 6, cannonball: 8, claw: 8, explosion: 20, shell: 5, hat: 8, crate: 12, net: 10, watch: 6, stone: 4, fire: 22, rubble: 10 };
 const KIND_DEFAULTS = {
@@ -30,7 +34,7 @@ const KIND_DEFAULTS = {
  * @property {function} [draw] custom renderer (ctx, projectile, sx, sy)
  */
 export class Projectile extends Entity {
-  /** @param {ProjectileOpts & { x, y, z, vx, vy, vz, gravity, life, r, pierce, maxDist, color, onHit, onExpire, radius, every, hitsTeams, reelFrames }} o */
+  /** @param {ProjectileOpts & { x, y, z, vx, vy, vz, gravity, life, r, pierce, maxDist, color, onHit, onExpire, radius, every, hitsTeams, reelFrames, stopAtBounds }} o */
   constructor(o) {
     super('projectile');
     this.owner = o.owner || null;
@@ -71,6 +75,11 @@ export class Projectile extends Entity {
     this.drawFn = typeof o.draw === 'function' ? o.draw : null;
     this.retract = false; this.returning = false;
     this.spin = 0; this.lastTick = -99;
+    /** A thrown weapon / prop lands at the camera / lock edge instead of being culled off-screen (issue #21). */
+    this.stopAtBounds = !!o.stopAtBounds;
+    /** Puddle tick hook for a puddle with no direct hit (issue #21 lime patch, throwables.js): `onTick(world, this)`
+     *  fires every `every` frames alongside (or instead of) the ordinary area-hit tick. */
+    this.onTick = typeof o.onTick === 'function' ? o.onTick : null;
   }
   /** World-space AABB of the projectile body (y positive up). */
   box() { return { x0: this.x - this.r, x1: this.x + this.r, y0: Math.max(0, this.y - this.r), y1: this.y + this.r }; }
@@ -116,22 +125,28 @@ export class Projectile extends Entity {
       this.expire(world, false); return;
     }
     const cam = world.camera;
+    if (this.stopAtBounds && cam) {
+      const lk = cam.locked ? world.boundsFor(this) : { x0: cam.x + CAMERA_MARGIN, x1: cam.x + VIEW_W - CAMERA_MARGIN };
+      if (this.x < lk.x0 || this.x > lk.x1) { this.x = clamp(this.x, lk.x0, lk.x1); this.expire(world, false); return; }
+    }
     if (cam && (this.x < cam.x - 200 || this.x > cam.x + VIEW_W + 200)) this.removeMe = true;
   }
   turnBack() { this.returning = true; this.hitTargets.clear(); this.vx = -this.vx; this.life = 0; }
-  /** Fire puddle / area hazard: hits everything inside every `every` frames. */
+  /** Fire puddle / area hazard: hits everything inside every `every` frames (or runs a custom `onTick`, e.g. the
+   *  lime patch's slow — a puddle with `hit: null` that has nothing to deal an area hit with). */
   updatePuddle(world) {
     if (this.life <= 0) { this.expire(world, false); return; }
     if (this.life % 4 === 0) particles.burst('ember', this.x + (this.life % 7 - 3) * this.r * 0.25, 2, this.z, 1, { speed: 0.6, up: 1.6, color: this.color === '#ffe070' ? '#ff9a30' : this.color });
-    if (this.every && world.frame - this.lastTick >= this.every && this.hit) {
+    if (this.every && world.frame - this.lastTick >= this.every && (this.hit || this.onTick)) {
       this.lastTick = world.frame;
-      world.areaHit(this.x, this.z, this.r, this.hit, this.owner, { team: this.team, y: 0, silent: true, hitsTeams: this.hitsTeams });
+      if (this.hit) world.areaHit(this.x, this.z, this.r, this.hit, this.owner, { team: this.team, y: 0, silent: true, hitsTeams: this.hitsTeams });
+      if (this.onTick) this.onTick(world, this);
     }
   }
   /** Grapple: drag the hooked fighter to the owner, then hand it to the owner's grab. */
   updateReel(world) {
     const t = this.reelTarget, o = this.owner;
-    if (!o || !o.alive || o.dead || !t.alive || t.dead || o.grabTarget || o.inHitstun) { this.reelTarget = null; this.removeMe = true; return; }
+    if (!o || !o.alive || o.dead || !t.alive || t.dead || o.grabTarget || o.inHitstun || o.heldProp) { this.reelTarget = null; this.removeMe = true; return; }
     const off = ((o.def && o.def.grabOffset) || 24) * (o.scale || 1);
     const gx = o.x + o.facing * off;
     t.x += (gx - t.x) * 0.3; t.z += (o.z - t.z) * 0.3; t.y = Math.max(0, t.y * 0.7); t.vx = 0; t.vy = 0;
@@ -149,7 +164,7 @@ export class Projectile extends Entity {
     if (this.style === 'bullet' || this.style === 'shell') particles.burst('spark', this.x, this.y, this.z, 5, { speed: 3 });
     if (this.onHit === 'reel') {
       const o = this.owner;
-      if (target.kind !== 'prop' && !target.dead && target.grabbableBy && o && !o.grabTarget && target.grabbableBy(o, { ignoreHitstun: true })
+      if (target.kind !== 'prop' && !target.dead && target.grabbableBy && o && !o.grabTarget && !o.heldProp && target.grabbableBy(o, { ignoreHitstun: true })
         && (o.state === ST.DASH_ATTACK || o.state === ST.ATTACK || o.state === ST.SPECIAL || o.actionable)) {
         this.reelTarget = target; this.reelT = 0; this.hit = null; this.pierce = 99;
         audio.play('hook_yank');
@@ -283,11 +298,11 @@ export function projectileOptsFromSpec(spec, owner, o = {}) {
     out.y = spec.height || 200; out.z = spec.aimAt ? (aimZ != null ? aimZ : oz) : oz + (spec.zOffset || 0); out.vx = 0; out.vy = 0; out.gravity = spec.gravity || 0.5;
   } else if (spec.aimAt) {
     const T = spec.flight || 50, g = spec.gravity != null ? spec.gravity : 0.5;
-    out.x = ox + facing * (spec.offsetX != null ? spec.offsetX : 20); out.y = oy + (spec.offsetY != null ? spec.offsetY : 40); out.z = oz;
+    out.x = ox + facing * (spec.offsetX != null ? spec.offsetX : PROJ_OFFSET_X); out.y = oy + (spec.offsetY != null ? spec.offsetY : PROJ_OFFSET_Y); out.z = oz;
     const tx = aimX != null ? aimX : ox + facing * 120, tz = aimZ != null ? aimZ : oz;
     out.vx = (tx - out.x) / T; out.vz = (tz - out.z) / T; out.vy = (0.5 * g * T * T - out.y) / T; out.gravity = g;
   } else {
-    out.x = ox + facing * (spec.offsetX != null ? spec.offsetX : 20); out.y = oy + (spec.offsetY != null ? spec.offsetY : 40); out.z = oz;
+    out.x = ox + facing * (spec.offsetX != null ? spec.offsetX : PROJ_OFFSET_X); out.y = oy + (spec.offsetY != null ? spec.offsetY : PROJ_OFFSET_Y); out.z = oz;
     out.vx = dcos(angle) * speed * facing; out.vy = dsin(angle) * speed;
     out.vz = count > 1 ? (i - (count - 1) / 2) * (spec.spreadZ || 0) : (spec.vz || 0);
   }

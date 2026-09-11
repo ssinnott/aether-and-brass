@@ -47,6 +47,13 @@ function anims(swings) {
 // `rig` is exactly the build.weapon shape art/rig.js draws in hand space ({ attach, length, draw, headAt }).
 // `status.burn` uses the record shape of STATUS_DEFAULTS.burn (game/status.js). sfx names (whiff, hammer_swing,
 // rapier, rapier_arc) all exist in src/engine/audio/sfx.js.
+// Per-weapon throw feel (issue #21, GDD 7): speed/vy/gravity shape the arc, damage/type/kbX/kbY/hitstun/pierce/
+// maxDist the hit it lands, spin a visual rotation-rate multiplier (throwables.js drawThrownWeapon). limeRake's
+// `patch` is the lime-patch spec its landing spot leaves behind (step 21.2). See ThrowSpec in throwables.js.
+const THROW_HALBERD = { speed: 7, vy: 1.5, gravity: 0.25, damage: 22, type: 'knockdown', kbX: 5, kbY: 5, hitstun: 24, pierce: 0, maxDist: 200, spin: 0 };
+const THROW_CUTLASS = { speed: 10, vy: 1, gravity: 0.2, damage: 14, type: 'heavy', kbX: 4, kbY: 0, hitstun: 22, pierce: 1, maxDist: 260, spin: 0.5 };
+const THROW_LIMERAKE = { speed: 6, vy: 5, gravity: 0.45, damage: 12, type: 'knockdown', kbX: 3, kbY: 4, hitstun: 20, pierce: 0, maxDist: 220, spin: 0.2, patch: { life: 150, r: 34, mult: 0.5, frames: 30 } };
+
 const table = {
   halberd: {
     id: 'halberd', name: 'HALBERD', hits: 12, color: '#9EB5D3',
@@ -56,6 +63,7 @@ const table = {
       { style: 'swing', startup: 8, active: 4, recovery: 12, reach: 58, dmg: 12, type: 'medium', kbX: 3, hitstun: 20, sfx: 'hammer_swing', smear: SM_SWING },
       { style: 'swing', low: true, startup: 10, active: 5, recovery: 16, reach: 60, dmg: 16, type: 'knockdown', kbX: 5, kbY: 4, hitstun: 22, sfx: 'hammer_swing', smear: SM_LOW },
     ],
+    throw: THROW_HALBERD,
   },
   cutlass: {
     id: 'cutlass', name: 'CUTLASS', hits: 15, color: '#9EB5D3',
@@ -65,6 +73,7 @@ const table = {
       { style: 'backhand', startup: 3, active: 3, recovery: 7, reach: 34, dmg: 7, type: 'light', kbX: 2, hitstun: 22, sfx: 'rapier', smear: SM_BACK },
       { style: 'swing', startup: 4, active: 3, recovery: 10, reach: 38, dmg: 9, type: 'knockdown', kbX: 4, kbY: 4, hitstun: 22, sfx: 'rapier_arc', smear: SM_SWING },
     ],
+    throw: THROW_CUTLASS,
   },
   limerake: {
     id: 'limerake', name: 'LIME RAKE', hits: 10, color: '#B8C0C4',
@@ -73,6 +82,7 @@ const table = {
       { style: 'swing', startup: 6, active: 4, recovery: 10, reach: 46, dmg: 9, type: 'medium', kbX: 3, hitstun: 18, status: { burn: { frames: 40, every: 20, damage: 2 } }, sfx: 'whiff', smear: SM_SWING },
       { style: 'slam', startup: 8, active: 4, recovery: 14, reach: 48, dmg: 12, type: 'knockdown', kbX: 4, kbY: 4, hitstun: 20, status: { burn: { frames: 40, every: 20, damage: 2 } }, sfx: 'hammer_swing', smear: SM_SLAM },
     ],
+    throw: THROW_LIMERAKE,
   },
   sabre: {
     id: 'sabre', name: 'DUELLING SABRE', hits: 8, color: '#DDE6EE',
@@ -82,6 +92,7 @@ const table = {
       { style: 'thrust', startup: 4, active: 3, recovery: 8, reach: 48, dmg: 14, type: 'medium', kbX: 3, hitstun: 18, sfx: 'rapier' },
       { style: 'thrust', startup: 5, active: 4, recovery: 12, reach: 52, dmg: 18, type: 'knockdown', kbX: 5, kbY: 4, hitstun: 22, sfx: 'rapier_arc' },
     ],
+    throw: { ...THROW_CUTLASS, damage: 18 },
   },
 };
 for (const w of Object.values(table)) {

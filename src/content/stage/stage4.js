@@ -92,9 +92,10 @@ export const stage4 = {
        * No bulwark on a raft of other people's hulls: the front and back 12px are open air over the field (+200).
        * It STOPS at 3120, which is where the Reeve's arena starts — the press end of the float is decked in, because
        * a ring-out zone inside a boss arena only ever takes a player's life (the boss is unlaunchable and cannot be
-       * thrown), and stage2 keeps its own `rails` out of its mid-boss section for the same reason.
+       * thrown), and stage2 keeps its own `rails` out of its mid-boss section for the same reason. `open: true`
+       * (issue #21): a thrown weapon / prop, or a dropped weapon pickup, drifting past the same edge is lost too.
        */
-      zones: [{ type: 'rails', x0: 1800, x1: 3120 }],
+      zones: [{ type: 'rails', x0: 1800, x1: 3120, open: true }],
       waves: [
         { triggerX: 2100, lock: true, spawns: [
           { type: G, variant: 'thresher', side: 'right', z: 40, delay: 0 },

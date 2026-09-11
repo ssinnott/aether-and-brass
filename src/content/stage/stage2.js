@@ -44,8 +44,10 @@ export const stage2 = {
         { type: 'hook', x: 1180, z: 70, period: 120 },
         { type: 'lightning', x: 1620, z: 40, period: 220, active: 12, tell: 40, offset: 110 },
       ],
-      /** No bulwark up here: the front and back 12px are open air. Anything thrown over goes into the cloud (+200). */
-      zones: [{ type: 'rails', x0: 0, x1: 1900 }],
+      /** No bulwark up here: the front and back 12px are open air. Anything thrown over goes into the cloud (+200).
+       *  `open: true` (issue #21): a thrown weapon / prop, or a dropped weapon pickup, that drifts past the same
+       *  edge falls into the cloud too -- lost, not landed. */
+      zones: [{ type: 'rails', x0: 0, x1: 1900, open: true }],
       waves: [
         { triggerX: 420, lock: true, spawns: crimp(3, { z0: 40 }) },
         { triggerX: 880, lock: true, spawns: [...crimp(3, { z0: 30 }),

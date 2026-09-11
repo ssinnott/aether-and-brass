@@ -105,6 +105,7 @@ src/
     animation.js           # animation player utilities: play(name), tick(), current frame/pose, events
     items.js               # pickups (food/health, score, meter) and breakable props
     weapons.js             # pickup weapon table (WEAPONS), swing anims, bot seek helpers
+    throwables.js          # issue #21: weapon + prop throw/land/shatter, held prop, lime patch, edge-loss helper
     hazards.js             # stage hazards (steam vents, pistons, conveyor floors, pits if any)
     stage.js               # StageRunner: sections, wave director, camera locks, GO arrow, boss trigger
     storage.js             # guarded localStorage probe: store(namespace), shared by progress.js + options.js
@@ -405,6 +406,16 @@ Input → intent → state transitions (implements GDD section 7 combat rules):
   may retake it); entering the next section discards it (`LEFT BEHIND`, no pickup); respawn and continue
   clear it silently; a hero already wielding never swaps for another pickup. `net/checksum.js` hashes
   `weaponId`, `weaponHits` and the dropped pickup's `grace`.
+- **Throwing** (`game/throwables.js`, issue #21, GDD 7): direction + Attack while wielding a weapon (`startWeaponThrow`, checked between grab and swing in the attack order) turns the hero into
+  `ST.GRAB` playing its own forward `throw` anim; release spawns a plain `Projectile` (`spawnThrownWeapon`) carrying the weapon's own `WEAPONS[id].throw` spec (`speed, vy, gravity, damage, type, kbX,
+  kbY, hitstun, pierce, maxDist, spin`, plus an optional lime-patch `patch` on the Lime Rake) and every hit sets `hit.body = true` (`fighter.js` `takeHit`: `throwDamageTakenMult` applies,
+  `lastHitWasThrow` is set for the kill-credit bonus). It lands as the same `WeaponPickup` with `hits - 1` (`landWeapon`), or shatters at 0 either way — durability always drops on a throw, hit or
+  miss, and a weapon lost over an `open` rails edge gives nothing back. Left/right + Attack turns to face and throws forward; up/down adds `THROW.vz` px/f of z drift instead. A small stage prop
+  flagged `throwable: true` (bottle, lamp — `PROP_TYPES[type].throw`) can be lifted empty-handed (`findLiftProp` / `liftProp`) and only thrown, never swung (`thinkHeld`, walk-only at `THROW.holdWalk`,
+  no run/jump/dodge); it is a live `Prop` in state `'held'`, positioned every frame from the holder (`fighter.heldProp`, `updateHeldProp` — no one-frame lag) and always shatters on landing
+  (`landProp`, a fresh `Prop.break()`). Grab beats weapon-throw beats prop-lift beats swing; a held prop drops on any hit taken (`onHurt`); a wielded weapon still drops only on a knockdown / being
+  thrown (`Player.knockDown` / `thrown`, issue #20). `net/checksum.js` also hashes `heldProp`,
+  `holder`, `lost`, `throwable`, `throwPending.kind`, `thrownWeapon`, `thrownProp` and `lastHitWasThrow` per entity.
 - Combo counter: increments on every hit dealt while the "combo timer" (60 frames since last hit) is alive; on drop, HUD shows grade per GDD.
 - Lives/continues per GDD; on death respawn after 90 frames with invuln 120 frames if lives remain; else show `CONTINUE?` (handled by gameplay screen).
 
@@ -430,9 +441,12 @@ export const stage1 = {
   music: { section1: 'track1', ... },
   sections: [
     { id: 's1', x0: 0, x1: 1100, backdrop: 'section1', floor: 'cobble',
-      props: [ { type: 'crate', x: 320, z: 60, drops: 'food_small' }, { type: 'lamp', x: 500, z: 8 /* static, no collide */ } ],
+      props: [ { type: 'crate', x: 320, z: 60, drops: 'food_small' }, { type: 'lamp', x: 1000, z: 110, throwable: true } ],
       // `drops:` on an enemy def (content/enemies/*.js) may also name a weapon id
       // (halberd | cutlass | limerake | sabre, game/weapons.js) to spawn a WeaponPickup instead.
+      // `throwable: true` on a prop row (issue #21, GDD 7) makes that instance liftable empty-handed
+      // when its PROP_TYPES entry also carries a `throw` spec (game/throwables.js findLiftProp) — only
+      // bottle and lamp today; barrels/kegs/carts have no `throw` spec, so `startRoll` is unaffected.
       hazards: [ { type: 'steamVent', x: 800, z: 100, period: 180, active: 60 } ],
       waves: [
         { triggerX: 240,   // when camera.x + VIEW_W/2 >= triggerX (i.e. players reached here)
@@ -463,6 +477,10 @@ their ids added to `art/backgrounds/index.js`), a `preview` block for its select
 `banners` is optional: a board that does not supply it keeps stage 1's wording ("FOREMAN DEFEATED" on the mid-boss,
 "THE SKY OPENS" under STAGE CLEAR). A `zones` entry may also carry `color` — the `daisVents` edge glow defaults to
 aether cyan, which is Concordat machinery, so a board with no Concordat on it passes its own energy colour instead.
+
+A `rails` hazard zone (`game/hazards.js` `Zone`) may also carry `open: true` (issue #21, GDD 7): outside `[RAIL, Z_MAX - RAIL]` z it discards a thrown weapon, thrown prop or weapon pickup still in
+flight over the edge (`loseOverEdge`) instead of letting it land — only The Mooring Spine (stage2 `m1`) and The Lash-Up (stage4 `g2`) set it, because both boards say so explicitly ("no bulwark", "no
+bulwark anywhere"). The Brass Funicular's `rails` (stage1 `s3`) are railings, not an open edge, so it omits `open` and thrown items land on the roof as normal.
 
 ### Board unlocks (`game/progress.js`)
 Board 1 is always selectable; board N opens once board N-1 has been cleared. `ResultsScreen` calls
@@ -590,6 +608,9 @@ debug mode) — tests fail on any error.
   3c. `weapons` (`tools/scenarios/weapons.js`): each of the four weapons drops, is picked up, swings and
      spends durability, shatters, is dropped by a knockdown and picked up by the partner, and is
      discarded on section entry.
+  3d. `thrown` (`tools/scenarios/thrown.js`, issue #21, blocks A-F): weapon throw direction/z-drift/durability/no-accidental-throw, open-rails re-pickup and edge loss on stage 2, a lime patch
+     slowing and restoring a staggered footman, bottle/lamp lift-hold-throw-and-always-shatter, defensive-vs-aggressive bot `throwChance`, and the optional Scrap Slinger / Soot Cutthroat
+     prop-throw stretch behind dev-only `?enemythrow=1` (never in netplay).
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.
@@ -641,7 +662,11 @@ URL params (all only honored when `?autotest=1` or `?debug=1`):
   against), `aggressive`, `defensive`, `masher`. One name applies to both slots; two give each
   slot its own. A style is a whole player archetype (button speed, dodge rate, spacing, when it
   retreats), not a difficulty setting — difficulty is an OPTIONS choice persisted by
-  `game/options.js`, with `?difficulty=` as a session override.
+  `game/options.js`, with `?difficulty=` as a session override. Each style also carries a
+  `throwChance` (issue #21: balanced 0.4, aggressive 0, defensive 0.9, masher 0.2) — the only intentional bot throw path, rolled at most once every 20 frames while armed and in range.
+- `enemythrow=1` — optional stretch (issue #21 step 21.6): a Scrap Slinger or Soot Cutthroat may lift and throw a nearby throwable prop at its target (`game/throwables.js` `tryEnemyPropThrow` /
+  `thinkEnemyHeld`), spending an attack token like any other attack. Off by default and forced off whenever `world.game.net.active` (the START packet does not carry the flag, so a peer without it
+  would desync).
 
 `window.__game` extra members: `ready` (true once the first screen entered),
 `spawnEnemy(type, variant, dx, dz)` (relative to P1), `killAllEnemies()`,
@@ -651,6 +676,8 @@ URL params (all only honored when `?autotest=1` or `?debug=1`):
 P1 toward and steps toward the nearest enemy — used by the enemy test), `summary().boss` =
 `{ kind:'midboss'|'boss', name, hp, maxHp, phase, state }` or `null`.
 `summary().sectionIndex` = index of the section containing the camera center.
+`summary().players[]` has no held-prop or thrown-projectile fields (issue #21); the `thrown` scenario reaches those directly off `world.entities` (`heldProp`, `thrownWeapon`, `thrownProp`,
+`lost`), the same convention the `weapons` scenario already uses for dropped `WeaponPickup`s.
 
 ## 16. Input bindings
 The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Y T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V N B until P2 joins; Space jumps on both P1 sets; gamepads 0/1 → P1/P2). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.

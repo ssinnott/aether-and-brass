@@ -48,7 +48,14 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
 - **Run**: double-tap left or right (or hold RT). **Dash attack**: attack while running.
 - **Grab**: attack next to an enemy that isn't reeling. **Throw**: direction + attack while holding.
   Thrown bodies are weapons: they hurt whatever they land on.
-- Enemies drop their weapons; pick one up for a handful of swings before it shatters.
+- Enemies drop their weapons; pick one up for a handful of swings before it shatters. Direction + attack
+  while wielding one **throws it** instead of swinging — forward hurls it along your facing, up/down arcs
+  it into the depth you're facing — and costs a durability hit whether it lands or misses; drift one off an
+  open edge and it's gone for good. Walking into an enemy with a weapon held and pressing attack now
+  throws rather than swings, so release the stick first if you meant to swing.
+- A few small props (a bottle, a gaslamp) can be picked up empty-handed the same way, but they never
+  swing at all — any attack while holding one throws it, and it always shatters where it lands. Grabbing
+  an enemy comes first, then a held weapon's throw, then picking up a prop, then an ordinary swing.
 - **Special** costs one meter bar, or a slice of health when the meter is empty. **Super** needs all three bars.
 - **Dodge** rolls with invulnerability frames and cancels attack recovery.
 - Every hero carries a **shield**: a small regenerating buffer, drawn as the thin brass strip above the health
@@ -109,10 +116,11 @@ Every one of them is stripped down phase by phase until the person inside is exp
 
 ## Board 1: The Ascent of Calderwick
 
-Sootfoot Docks (rainy night moorings, swinging cargo hooks) → Foundry Row (molten channels,
-crushing pistons, the mid-boss in a conveyor-fed cargo bay) → The Brass Funicular (a fight on
-the roof of a climbing tram, throw enemies over the railings) → The Heart-Engine (a boiler
-cathedral where the sky opens again when you win).
+Sootfoot Docks (rainy night moorings, swinging cargo hooks, a bottle and a gaslamp lying around
+to pick up and throw) → Foundry Row (molten channels, crushing pistons, the mid-boss in a
+conveyor-fed cargo bay) → The Brass Funicular (a fight on the roof of a climbing tram — its
+railings catch anything thrown, enemy or otherwise) → The Heart-Engine (a boiler cathedral
+where the sky opens again when you win).
 
 Fifteen enemy waves, breakable props with pickups, stage hazards that hurt everyone,
 ring-outs, a combo grading system, ranks, lives and continues.
@@ -120,7 +128,8 @@ ring-outs, a combo grading system, ranks, lives and continues.
 ## Board 2: The Storm Above Calderwick
 
 The morning after Vane falls, the Ninth Aeronaut Wing blockades the sky nobody told them was
-free. The Mooring Spine (dawn storm above a cloud sea; no bulwark, so throw them off the edge)
+free. The Mooring Spine (dawn storm above a cloud sea; no bulwark, so throw them off the edge —
+and a weapon or prop thrown too near it is lost the same way, not landed)
 → The Gas-Halls (the soft green interior of a captured freighter, and the quartermaster's
 grapnel winch at the end of it) → The Cold Sovereign (the flagship's weather deck, gun ports
 and lightning, up to the bridge where the Admiral is waiting).

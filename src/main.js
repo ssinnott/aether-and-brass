@@ -63,6 +63,10 @@ export function parseOptions(search = window.location.search) {
     resetprogress: flag('resetprogress'),
     // which difficulty to play: honoured outside dev mode too (a link can carry it) and session only, never written back (game/options.js)
     difficulty: DIFFICULTIES.includes(q.get('difficulty') || '') ? q.get('difficulty') : '',
+    // dev-only stretch (issue #21 step 21.6): Scrap Slinger / Soot Cutthroat may lift + throw a nearby prop
+    // (game/throwables.js tryEnemyPropThrow). Forced off in netplay regardless (the START packet does not carry
+    // it, so a peer without the flag would desync) -- see enemy.js's own world.game.net.active check.
+    enemyThrow: devOnly && flag('enemythrow'),
   };
 }
 

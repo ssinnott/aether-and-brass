@@ -43,7 +43,8 @@
 //           stagger, status: { burn: {...} }, element: 'fire', groundedOnly, otg, unblockable, breaksArmor, onHit: 'rebound'|name, sfx,
 //           fromX (world x the hit came from: knockback pushes away from it instead of off the victim's facing — stage hazards),
 //           groundBounce: true|vy (an airborne / knocked-down target bounces off the floor once more: Brunhild slam, Rook hip toss),
-//           extinguish: true (removes fire puddles the box touches: Pip's Steam Vent), weapon: true (held pickup weapon swing: spends durability, player.js) }
+//           extinguish: true (removes fire puddles the box touches: Pip's Steam Vent), weapon: true (held pickup weapon swing: spends durability, player.js),
+//           body: true (a thrown weapon/prop/enemy body's own hit: throwDamageTakenMult applies and it sets f.lastHitWasThrow, GDD 3/7, game/throwables.js) }
 //  hitboxes [..] | move { x, z, y|vy } | armor: true|N | invuln: true | fx [{ kind, x, y, ... }] | sfx | cancel | event | tell: true
 //  hurtboxScale 0..1   shrink the hurtbox height on this frame (Rook's slide passes under projectiles)
 //  spawn { projectile: name|spec, x, y, z, count, aimAt }   spawn a projectile (name -> def.projectiles[name]) on frame entry
@@ -117,6 +118,8 @@ export class Fighter extends Entity {
     this.hurtTimer = 0; this.chainHits = 0; this.chainTimer = 0; this.hitCount = 0;
     this.lastHitBy = null; this.dead = false; this.deadTimer = 0; this.deathHooked = false;
     this.grabTarget = null; this.grabbedBy = null; this.grabHits = 0; this.grabTimer = 0; this.throwPending = null;
+    /** Held pickup prop (issue #21, step 21.3) and a note that the last hit dealt/taken was a throw (GDD 7 scoring). */
+    this.heldProp = null; this.lastHitWasThrow = false;
     this.hitTargets = new Map(); this.hitInstance = -1; this.hitConfirmed = false;
     this.throwDamage = 0; this.thrownBy = null; this.thrownHit = new Set();
     /** Pending ground bounce ({ vy }) armed by hit.groundBounce / throw bounce; `bounced` = already used once this fall. */
@@ -445,7 +448,11 @@ export class Fighter extends Entity {
     if (armored && (type === 'launch' || type === 'knockdown') && !this.unlaunchable) armored = false;
     let dmg = (hit.damage || 0) * (attacker && attacker.damageMult || 1) * tr.damageTakenMult;
     if (hit.element === 'fire' || hit.fire) dmg *= tr.fireDamageMult;
-    if (hit.body || hit.type === 'throw') dmg *= tr.throwDamageTakenMult; // thrown bodies count as throws (Brassbound 1.5x, GDD 3)
+    // thrown bodies count as throws (Brassbound throwDamageTakenMult 1.5x, GDD 3); a thrown weapon's own hit.body
+    // does too, and marks this hit as throw-scored (Player.onKill x1.5, GDD 7 decision 8 — the intentional scoring
+    // extension: a target killed by a thrown BODY earns the bonus, not only the thrown body itself).
+    this.lastHitWasThrow = !!(hit.body || hit.type === 'throw');
+    if (hit.body || hit.type === 'throw') dmg *= tr.throwDamageTakenMult;
     if (attacker && attacker.kind === 'player' && attacker.airborne) dmg *= tr.jumpAttackTakenMult;
     if (part && part.damageMult) dmg *= part.damageMult;
     if (this.punishable && this.punishMult > 1) dmg *= this.punishMult;
@@ -558,6 +565,9 @@ export class Fighter extends Entity {
   /** Damage without a state change (hold hits, throws, burns). opts: { noStop, fire, silent }. */
   takeHitRaw(damage, type = 'medium', attacker = null, opts = {}) {
     if (!this.alive || this.dead) return;
+    // 'throw' marks the thrown body itself (grabs.js `thrown`); anything else (a burn tick, a hold squeeze) resets
+    // the note so it is not still credited as a throw kill after (GDD 7 decision 8, Player.onKill).
+    this.lastHitWasThrow = type === 'throw';
     let dmg = Math.round(damage * this.damageTaken * (attacker && attacker.damageMult || 1));
     if (this.godmode) dmg = 0;
     const eaten = absorbShield(this, dmg, attacker);

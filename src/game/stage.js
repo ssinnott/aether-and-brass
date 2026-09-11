@@ -51,7 +51,7 @@ export class StageRunner {
   /** Place every prop / hazard / zone, position the camera, enter the first section. */
   start() {
     for (const sec of this.sections) {
-      for (const p of sec.props || []) this.world.add(new Prop(p.type, p.x, p.z, { drops: p.drops !== undefined ? p.drops : null, hp: p.hp || 0 }));
+      for (const p of sec.props || []) this.world.add(new Prop(p.type, p.x, p.z, { drops: p.drops !== undefined ? p.drops : null, hp: p.hp || 0, throwable: !!p.throwable }));
       if (!this.nowaves) for (const h of sec.hazards || []) this.world.add(new Hazard(h));
       for (const z of sec.zones || []) this.world.add(new Zone(z));
       for (const w of sec.waves || []) w._state = 'idle';

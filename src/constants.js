@@ -55,6 +55,17 @@ export const FIGHTER_DEFAULTS = Object.freeze({
 /** Meter economy: 3 bars x 100 (RECONCILIATION). special = 1 bar, super = full; HP fallback 8% max HP when no bar is full and HP > 15%. */
 export const METER = Object.freeze({ max: 300, bar: 100, special: 100, super: 300, hpCostFrac: 0.08, hpCostMinFrac: 0.15, light: 4, heavy: 8, taunt: 25, damaged: 2 });
 
+/** Thrown weapons / props (GDD 7, issue #21): `vz` z drift per frame from an up/down throw, `holdLift` / `holdWalk`
+ *  a held prop's pose lift and walk-speed multiplier, `botRange` max gap a bot's throwChance may fire across,
+ *  `life` max flight frames before a thrown item lands on its own, `weaponR` a thrown weapon's hit radius. */
+export const THROW = Object.freeze({ vz: 2, holdLift: 30, holdWalk: 0.7, botRange: 200, life: 120, weaponR: 8 });
+
+/** Reach window shared by Player.findGrabTarget (game/player.js) and findLiftProp (game/throwables.js, issue #21):
+ *  a target/prop up to `GRAB_REACH_BEHIND`px behind the front foot, up to `traits.grabReach + GRAB_REACH_AHEAD_EXTRA`
+ *  ahead of it, within `GRAB_Z_TOL`px of z -- kept in one place so a lift-range tweak can never silently drift from
+ *  the grab range it is defined to mirror. */
+export const GRAB_REACH_BEHIND = 4, GRAB_REACH_AHEAD_EXTRA = 28, GRAB_Z_TOL = 14;
+
 /** UI colours shared by HUD / screens. */
 export const UI = Object.freeze({
   brass: '#e2b34a', brassDark: '#8a5a1c', brassLight: '#fff0b0', copper: '#c96a3a', steel: '#9aa6b2',
