@@ -691,6 +691,12 @@ while `game.net.active`) lists a hero's `moveList` with an animated rig preview 
 bound key via `inputLabel()`. `trialsScreen.js` lists a hero's `trials` with a `[X]`/`[ ]` tick
 (`game/trials.js` `trialProgress`) and hands the picked id to `TrainingScreen.setTrial()`.
 `gameplay ⇄ pause → moves` too (hidden online, same guard) so the move list is reachable from a real run.
+`help.js` is the COMMANDS & SOUND quick reference, pushed from either pause plate (hidden from the normal
+plate while `game.net.active`, same guard and same reason as MOVES / OPTIONS): eleven command rows, each
+built once in `enter()` from `input.moveText()` / `input.keyText()` for the live keyboard half (`solo`
+until P2 joins, then `p1`) and for `pad`, beside a one-line description; under a divider the MUSIC / SFX /
+MUTE rows write the same `game/options.js` settings the OPTIONS plate writes (and share its
+`drawVolumeRow`), so this is a second door onto one setting, never a second copy.
 `title | pause → options`: `OptionsScreen` (`screens/options.js`) is a transparent overlay pushed on top
 of either opener and popped on back (both openers freeze underneath exactly like `pause` freezes
 `gameplay`, since `Game.update()` only ticks the top of the stack); it is hidden from the pause plate

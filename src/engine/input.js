@@ -5,7 +5,7 @@
 import { INPUT_BUFFER, MAX_PLAYERS } from '../constants.js';
 import {
   DEFAULT_BINDINGS, LAYOUTS, layoutMap, cloneBindings, sanitiseBindings, rebindKey, rebindPad,
-  joinCodesFor, keyLabel, padLabel, legendFor, joinLabels,
+  joinCodesFor, keyLabel, padLabel, legendFor, moveLabelFor, joinLabels,
 } from './bindings.js';
 
 /** All per-player actions. */
@@ -23,11 +23,12 @@ const globalPressed = { pause: false, mute: false, debug: false };
 let boundCodes = null;
 let joinCodes = null; // per player: keyboard codes that count as "this player pressed a key of their own"
 let bindingsVersion = 0;
-// Cached legend()/joinHint()/joinKeysHint()/keyText()/cellText() strings, cleared on refreshBindings().
+// Cached legend()/moveText()/joinHint()/joinKeysHint()/keyText()/cellText() strings, cleared on refreshBindings().
 // Keyed without template-string concatenation (layout/slot/action are looked up directly) so a cache
 // HIT - the common case from per-frame draw paths (hud.js, pause.js, title.js, select.js) - allocates
 // nothing; only a cache MISS (at most once per bindings change) builds a string.
 const legendCache = new Map(); // layout -> string
+const moveTextCache = new Map(); // layout -> string
 const joinHintCache = []; // slot -> string
 const joinKeysHintCache = []; // slot -> string
 const keyTextCache = new Map(); // layout -> Map(action -> string)
@@ -65,7 +66,7 @@ function rebuildBoundCodes() {
 /** Invalidate everything that is derived from `bindings` (boundCodes, joinCodes, cached hint/legend strings). */
 function refreshBindings() {
   boundCodes = null; joinCodes = null;
-  legendCache.clear(); joinHintCache.length = 0; joinKeysHintCache.length = 0;
+  legendCache.clear(); moveTextCache.clear(); joinHintCache.length = 0; joinKeysHintCache.length = 0;
   keyTextCache.clear(); cellTextCache.clear();
   bindingsVersion++;
 }
@@ -425,6 +426,12 @@ export const input = {
   legend(layout) {
     let v = legendCache.get(layout);
     if (v === undefined) { v = legendFor(bindings, layout); legendCache.set(layout, v); }
+    return v;
+  },
+  /** Cached label for a layout's four direction keys ('ARROWS' / 'WASD' / 'D-PAD'; see bindings.js moveLabelFor). */
+  moveText(layout) {
+    let v = moveTextCache.get(layout);
+    if (v === undefined) { v = moveLabelFor(bindings, layout); moveTextCache.set(layout, v); }
     return v;
   },
   /** Cached short "P{slot+1}: PRESS X TO JOIN" hint, or "P{slot+1}: ANY PAD BUTTON" for a slot with no keyboard half. */

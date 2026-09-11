@@ -1,5 +1,5 @@
-// Pause overlay (GDD 9 + RECONCILIATION): 60% dim, brass plate with RESUME / MUTE / OPTIONS / QUIT TO
-// TITLE, a composite drop-in join hint for any free slot (issue #23). OPTIONS is hidden under netplay
+// Pause overlay (GDD 9 + RECONCILIATION): 60% dim, brass plate with RESUME / MUTE / OPTIONS / MOVES /
+// COMMANDS / QUIT TO TITLE, a composite drop-in join hint for any free slot (issue #23). OPTIONS is hidden under netplay
 // (ITEMS_ONLINE): pause is pushed on both peers by a
 // masked start press and key capture is local-only, so the two screen stacks would diverge if either peer
 // could open it; options stays reachable from the title before/after a session (decision 3). OPTIONS is
@@ -12,9 +12,11 @@ import { drawText, drawTextOutlined } from '../../engine/text.js';
 import { rrect, rivetLine, gear } from '../../art/shapes.js';
 import { dropInChar, joinHint } from '../party.js';
 
-// MOVES is hidden under netplay (ITEMS_ONLINE): a screen-stack divergence between peers must be
-// impossible by construction (docs/MULTIPLAYER.md), and MOVES is a local-only overlay like OPTIONS.
-const ITEMS_LOCAL = ['RESUME', 'MUTE', 'OPTIONS', 'MOVES', 'QUIT TO TITLE'];
+// MOVES and COMMANDS are hidden under netplay (ITEMS_ONLINE): a screen-stack divergence between peers
+// must be impossible by construction (docs/MULTIPLAYER.md), and both are local-only overlays like OPTIONS.
+// COMMANDS (screens/help.js) is the quick reference: every command with its bound key and pad button,
+// plus the MUSIC / SFX / MUTE rows, so a forgotten button or a too-loud track is one row away mid-run.
+const ITEMS_LOCAL = ['RESUME', 'MUTE', 'OPTIONS', 'MOVES', 'COMMANDS', 'QUIT TO TITLE'];
 const ITEMS_ONLINE = ['RESUME', 'MUTE', 'QUIT TO TITLE'];
 const PLATE_W = 240, PLATE_BASE_H = 84, ROW_H = 16, PLATE_Y = 104;
 
@@ -80,6 +82,7 @@ export class PauseScreen extends Screen {
         if (item === 'RESUME') { audio.play('menu_confirm'); resume = true; }
         else if (item === 'MUTE') { audio.toggleMute(); audio.play('menu_confirm'); }
         else if (item === 'OPTIONS') { audio.play('menu_confirm'); this.game.push('options', { dim: false, lockDifficulty: true }); return; }
+        else if (item === 'COMMANDS') { audio.play('menu_confirm'); this.game.push('help'); return; }
         else if (item === 'MOVES') {
           audio.play('menu_confirm');
           const gp = this.game.screens[this.game.screens.length - 2];

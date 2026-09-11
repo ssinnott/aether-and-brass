@@ -231,7 +231,7 @@ export async function options(server, { withPage, assert }) {
     // OPTIONS is reachable from pause and returns to it; netplay's pause plate hides it.
     await strt();
     assert((await g.screen()) === 'pause', 'start opens pause');
-    assert((await g.eval(() => window.__game.game.screen.items.length)) === 5, 'local pause has 5 rows including OPTIONS and MOVES');
+    assert((await g.eval(() => window.__game.game.screen.items.length)) === 6, 'local pause has 6 rows including OPTIONS, MOVES and COMMANDS');
     await dn(); await dn();
     await atk();
     assert((await g.screen()) === 'options', 'OPTIONS on the pause plate opens the overlay');
@@ -246,6 +246,50 @@ export async function options(server, { withPage, assert }) {
     assert((await g.screen()) === 'pause', 'dodge returns to pause');
     await strt();
     assert((await g.screen()) === 'gameplay', 'start resumes gameplay');
+    // 5b. COMMANDS (screens/help.js): the quick reference reads the LIVE bindings (attack was remapped to
+    // P off the default Z above -- a hard-coded key would still say Z), and its SOUND rows drive the same
+    // persisted settings as the OPTIONS plate rather than a second copy of them.
+    await strt();
+    for (let i = 0; i < 4; i++) await dn();
+    await atk();
+    assert((await g.screen()) === 'help', 'COMMANDS on the pause plate opens the quick reference');
+    s = await g.summary();
+    assert(s.commandRows === 11 && s.cursor === 0, 'the plate lists 11 commands and opens on the MUSIC row');
+    // One player, so the plate shows the 1P arcade half (Z), and the PAD column follows the rebind
+    // made above (attack moved to button 1 = B, off the default A) rather than a hard-coded label.
+    assert(s.layout === 'solo' && s.commandKeys[2] === 'Z', `the ATTACK row shows the arcade key while P2 is out (got "${s.commandKeys[2]}")`);
+    assert(s.commandPads[2] === 'B', `the PAD column follows the remapped button (got "${s.commandPads[2]}")`);
+    assert(s.commandKeys[8] === 'DIR + Z' && s.commandPads[8] === 'DIR + B', 'the THROW row is built from the same attack binding');
+    assert(s.commandPads[1] === 'HOLD RT', 'the RUN row names the gamepad run button');
+    assert(/ESC$/.test(s.commandKeys[9]) && s.commandKeys[10] === 'M', 'the global keys (pause / mute) are listed as they are bound');
+    await g.shot('95-commands');
+    const music0 = (await g.eval(() => window.__game.optionsState())).music;
+    await lt();
+    assert((await g.eval(() => window.__game.optionsState())).music === music0 - 1, 'left on MUSIC steps the shared volume setting down');
+    await dn(); await lt();
+    assert((await g.eval(() => window.__game.optionsState())).sfx === 8, 'left on SFX steps the shared volume setting down');
+    await dn(); await atk();
+    assert((await g.eval(() => window.__game.audio.muted)) === true, 'attack on MUTE silences the game');
+    await atk();
+    assert((await g.eval(() => window.__game.audio.muted)) === false, 'attack on MUTE toggles back');
+    await dg();
+    assert((await g.screen()) === 'pause', 'dodge returns from COMMANDS to the pause plate');
+    // With P2 in, P1 is on the left half of the keyboard, so the plate lists those keys instead
+    // (attack was remapped to P there above) -- the same rule the MOVES screen follows.
+    const coop = await g.eval(() => {
+      const gm = window.__game.game;
+      window.__game.input.setJoined(1, true);
+      gm.push('help');
+      const sum = gm.screen.summary();
+      gm.pop();
+      window.__game.input.setJoined(1, false);
+      return sum;
+    });
+    assert(coop.layout === 'p1' && coop.commandKeys[2] === 'P', `with P2 joined the plate lists P1's own keys (got ${coop.layout} "${coop.commandKeys[2]}")`);
+    await strt();
+    assert((await g.screen()) === 'gameplay', 'start resumes gameplay from the pause plate again');
+    assert((await g.summary()).players[0].state === 'IDLE', 'the COMMANDS press never leaked into the sim');
+
     const onlineItems = await g.eval(() => {
       const gm = window.__game.game;
       gm.net = { active: true };

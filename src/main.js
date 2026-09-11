@@ -19,6 +19,7 @@ import { PauseScreen } from './game/screens/pause.js';
 import { TrainPauseScreen } from './game/screens/trainpause.js';
 import { TrialsScreen } from './game/screens/trialsScreen.js';
 import { MovesScreen } from './game/screens/moves.js';
+import { HelpScreen } from './game/screens/help.js';
 import { OptionsScreen } from './game/screens/options.js';
 import { GameOverScreen } from './game/screens/gameover.js';
 import { LobbyScreen } from './game/screens/lobby.js';
@@ -135,6 +136,7 @@ function boot() {
   game.registerScreen('trainpause', (g) => new TrainPauseScreen(g));
   game.registerScreen('trials', (g) => new TrialsScreen(g));
   game.registerScreen('moves', (g) => new MovesScreen(g));
+  game.registerScreen('help', (g) => new HelpScreen(g));
   game.registerScreen('options', (g) => new OptionsScreen(g));
   game.registerScreen('gameover', (g) => new GameOverScreen(g));
   game.registerScreen('results', (g) => new ResultsScreen(g));

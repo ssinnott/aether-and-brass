@@ -236,6 +236,19 @@ export async function training(server, h) {
       await g.press(0, { jump: true }, 2, 5);
       await g.press(0, { start: true }, 2, 5);
       assert((await g.screen()) === 'training', 'back out of MOVES and resume');
+
+      // COMMANDS from the training plate (the same quick reference the gameplay plate opens): 11 downs
+      // from RESUME (row 0) lands on COMMANDS (row 11), and jump backs out to the plate it came from.
+      await g.press(0, { start: true }, 2, 5);
+      for (let i = 0; i < 11; i++) await g.press(0, { down: true }, 2, 2);
+      await g.press(0, { attack: true }, 2, 5);
+      assert((await g.screen()) === 'help', 'COMMANDS opens from the training plate');
+      const help = await g.eval(() => window.__game.game.screen.summary());
+      assert(help.commandRows === 11 && help.commandKeys[2] === 'Z', `the plate lists every command with its bound key (got "${help.commandKeys[2]}")`);
+      await g.press(0, { jump: true }, 2, 5);
+      assert((await g.screen()) === 'trainpause', 'jump backs out of COMMANDS to the training plate');
+      await g.press(0, { start: true }, 2, 5);
+      assert((await g.screen()) === 'training', 'start resumes training from the plate');
     }
   });
 

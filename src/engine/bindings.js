@@ -152,6 +152,26 @@ export function joinCodesFor(b, slot) {
 const LEGEND_BUTTONS = ['attack', 'jump', 'dodge', 'special', 'super', 'taunt', 'start'];
 
 /**
+ * Short label for a layout's four direction keys: the two shipped sets are named ('ARROWS', 'WASD',
+ * 'D-PAD'), anything remapped is spelled out up/left/down/right ('WASD' order), run together when
+ * every label is one character and slash-separated otherwise. The single definition of that label:
+ * `legendFor` below and `input.moveText()` (the COMMANDS plate's MOVE row) both read it from here.
+ * @param {Bindings} b
+ * @param {string} layout
+ * @returns {string}
+ */
+export function moveLabelFor(b, layout) {
+  if (layout === 'pad') return 'D-PAD';
+  const map = /** @type {Record<string, string[]>|null} */ (layoutMap(b, layout));
+  if (!map) return '';
+  const up = map.up[0], left = map.left[0], down = map.down[0], right = map.right[0];
+  if (up === 'ArrowUp' && left === 'ArrowLeft' && down === 'ArrowDown' && right === 'ArrowRight') return 'ARROWS';
+  if (up === 'KeyW' && left === 'KeyA' && down === 'KeyS' && right === 'KeyD') return 'WASD';
+  const labels = [up, left, down, right].map(keyLabel);
+  return labels.every((l) => l.length === 1) ? labels.join('') : labels.join('/');
+}
+
+/**
  * Legend line for a layout, e.g. `'ARROWS MOVE  Z ATTACK  X JUMP  C DODGE  V SPECIAL  N SUPER  B TAUNT  ENTER START'`.
  * @param {Bindings} b
  * @param {string} layout
@@ -162,20 +182,12 @@ export function legendFor(b, layout) {
     const map = /** @type {Record<string, number[]>} */ (layoutMap(b, layout));
     if (!map) return '';
     const parts = LEGEND_BUTTONS.map((a) => `${padLabel(map[a][0])} ${a.toUpperCase()}`);
-    return `D-PAD MOVE  ${parts.join('  ')}`;
+    return `${moveLabelFor(b, layout)} MOVE  ${parts.join('  ')}`;
   }
   const map = /** @type {Record<string, string[]>|null} */ (layoutMap(b, layout));
   if (!map) return '';
-  const up = map.up[0], left = map.left[0], down = map.down[0], right = map.right[0];
-  let move;
-  if (up === 'ArrowUp' && left === 'ArrowLeft' && down === 'ArrowDown' && right === 'ArrowRight') move = 'ARROWS';
-  else if (up === 'KeyW' && left === 'KeyA' && down === 'KeyS' && right === 'KeyD') move = 'WASD';
-  else {
-    const labels = [up, left, down, right].map(keyLabel);
-    move = labels.every((l) => l.length === 1) ? labels.join('') : labels.join('/');
-  }
   const parts = LEGEND_BUTTONS.map((a) => `${keyLabel(map[a][0])} ${a.toUpperCase()}`);
-  return `${move} MOVE  ${parts.join('  ')}`;
+  return `${moveLabelFor(b, layout)} MOVE  ${parts.join('  ')}`;
 }
 
 /**
