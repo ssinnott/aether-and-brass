@@ -67,6 +67,7 @@ src/
   engine/
     loop.js                # fixed-timestep loop; test mode step(n)
     input.js               # keyboard + gamepad -> per-player action state with edge detection & buffer
+    bindings.js            # default binding table + pure helpers: clone/sanitise/rebind/legend/join-hint
     rng.js                 # seedable RNG: rng.seed(n), rng.next(), rng.range(a,b), rng.int(a,b), rng.pick(arr), rng.chance(p)
     camera.js              # camera x, lock/unlock, shake
     canvas.js              # create internal canvas, display canvas, resize/scaling, present()
@@ -103,11 +104,14 @@ src/
     items.js               # pickups (food/health, score, meter) and breakable props
     hazards.js             # stage hazards (steam vents, pistons, conveyor floors, pits if any)
     stage.js               # StageRunner: sections, wave director, camera locks, GO arrow, boss trigger
+    storage.js             # guarded localStorage probe: store(namespace), shared by progress.js + options.js
+    options.js             # persisted options (difficulty, music/sfx volume, screen shake, bindings)
     hud.js                 # in-game HUD
     screens/
       title.js, boardselect.js, select.js, intro.js, gameplay.js, pause.js, gameover.js, results.js
       gallery.js, lobby.js       # rig gallery; online co-op lobby (net/)
       charcards.js, boardcards.js  # hero cards / board plaques, shared by select+lobby and boardselect+lobby
+      options.js, controls.js     # OPTIONS overlay (main plate) and its CONTROLS sub-plate
   content/
     characters/            # one file per playable character (rig build, palette, anims, moves)
       index.js, brass.js, ... (names from GDD)
@@ -185,12 +189,31 @@ export const input = {
   globalPressed('pause'|'mute'|'debug') -> bool,
   setVirtual(player, actionsObject),  // test hook: { left:true, attack:true ... } overrides devices until cleared
   clearVirtual(player),
-  bindings,                           // exported default keyboard maps (from GDD section 8)
+  setPadVirtual(index, buttons),      // test hook: number[] of pressed button indices (or null to remove the fake pad); fakes navigator.getGamepads()[index] for pollGamepads()
+  bindings,                           // mutable clone of engine/bindings.js DEFAULT_BINDINGS; edited in place by rebind/importBindings/resetBindings
+  bindingsVersion,                    // bumps on every bindings change; screens diff it to know when to rebuild cached hint strings
+  rebind(layout, action, code) -> { ok: true, swapped?: string } | { ok: false, reason: string },  // layout: 'solo'|'p1'|'p2'|'pad'; code is a KeyboardEvent.code for solo/p1/p2, a gamepad button index for pad
+  importBindings(raw) / exportBindings() / resetBindings(),  // round-trip through engine/bindings.js sanitiseBindings()
+  legend(layout) -> string,           // e.g. "WASD MOVE  F ATTACK  G JUMP  ..." style legend line for a layout, built from current bindings
+  joinHint(slot) -> string,           // "P2: PRESS J TO JOIN" style hint (single primary key), built from the slot's own (non-shared) keys
+  joinKeysHint(slot) -> string,       // long form, same "P2: PRESS ..." prefix but every joinable key: "P2: PRESS J/K/U/L/O/I OR BACKSPACE TO JOIN"
+  keyText(layout, action) -> string,  // first bound key/button label for one action
+  cellText(layout, action) -> string, // every bound label for a grid cell joined ' / ', e.g. "G / SPACE"
+  hasKey(layout, action, code) -> bool,
+  swallowKey(code),                   // drops a just-captured keydown from keysDown/keysPressedPending before the next update(), so it fires no action and doesn't toggle mute/debug
+  beginPadCapture() / capturePadButton() -> number / endPadCapture(),  // gamepad rebind capture (no player/index arg: any connected pad), polled from a screen's update(); capturePadButton() returns -1 when nothing new is pressed
 }
 ```
 Players are `0` and `1`. Gamepad `i` maps to player `i` and is OR-merged with that
 player's keyboard bindings. Use the standard gamepad mapping (d-pad + left stick
-for movement, buttons per GDD).
+for movement, buttons per GDD). The four binding layouts are `solo` (1P arcade aliases), `p1`, `p2`
+(both keyboard) and `pad` (shared gamepad map); `engine/bindings.js` owns `DEFAULT_BINDINGS`, `LAYOUTS`
+and the pure `cloneBindings` / `sanitiseBindings` / `rebindKey` / `rebindPad` / `keyLabel` / `padLabel` /
+`legendFor` / `joinLabels` / `joinCodesFor` helpers that `input.js`'s wrappers above delegate to; the six
+rebind conflict invariants (same-layout swap, same-side sibling strip with refusal if it would unbind
+something, other-side / global / RT refusal, and the same-code exemption that lets P1 and P2 rearrange
+the shared arrow keys) live there and are re-checked by `sanitiseBindings` on every load, so no path —
+UI, a hand-edited save, or a future import — can put one key on two actions or a P1 key into P2's join set.
 
 ### `engine/camera.js`
 ```js
@@ -199,6 +222,7 @@ export class Camera {
   x = 0; left = 0; right = STAGE_LENGTH; locked = false; shakeX; shakeY; minX;
   follow(players)             // target = mean x of alive players - VIEW_W/2, clamped to [max(left, minX), right - VIEW_W]; eased (approach 0.12)
   lock(x0, x1) / unlock()     // lock also sets left/right (right >= x0 + VIEW_W); unlock sets left = floor(x) (never scrolls back)
+  static shakeScale = 1       // visual-only multiplier applied inside shake(); OPTIONS' SCREEN SHAKE setting (1 / 0.5 / 0) scales it; never hashed in net/checksum.js
   shake(intensity, frames)
   update()
   toScreenX(x)                // Math.round(x - this.x + shakeX)
@@ -237,6 +261,9 @@ export const audio = {
   play(name, { volume=1, pitch=1 } = {}),   // named synthesized SFX (list in GDD section 10); no-op if not unlocked
   music: { play(trackName), stop(), setVolume(v) },   // pattern sequencer, loops; tracks per GDD
   muted, toggleMute(),
+  setMuted(m),               // primitive mute setter; toggleMute() delegates to it
+  setSfxVolume(v),            // 0..1, seeds the sfx gain node
+  sfxVolume, musicVolume,     // getters mirroring the current gain values
 }
 ```
 Test mode (`?autotest=1`) must never create an AudioContext (all calls no-op).
@@ -472,6 +499,12 @@ players can join (P2 presses start), stats bars, confirm/back. The online co-op 
 (`boardcards.js`, compact) on one screen, with the peer driving the P2 cursor and no two
 players allowed on one hero (docs/MULTIPLAYER.md). Intro: stage card 2.5s
 (skip on attack). Results: score, max combo, grade, time, "PRESS START".
+`title | pause → options`: `OptionsScreen` (`screens/options.js`) is a transparent overlay pushed on top
+of either opener and popped on back (both openers freeze underneath exactly like `pause` freezes
+`gameplay`, since `Game.update()` only ticks the top of the stack); it is hidden from the pause plate
+under netplay. Its `CONTROLS` row pushes an in-screen sub-plate (`screens/controls.js`, not a stack push)
+for the key/gamepad remap grid. Neither screen touches sim state, so nothing here enters
+`src/net/checksum.js`.
 
 ## 10. HUD (`game/hud.js`)
 Per player (P1 left, P2 right): portrait icon, name, shield strip (120x2, drawn by
@@ -495,7 +528,10 @@ URL params: `?debug=1` (hitboxes, hurtboxes, AI state labels, FPS), `?autotest=1
 chosen characters and section), `?stage=2` (which board to play; honoured outside dev mode
 too, and it opens that board on BOARD SELECT for the page load), `?unlockall=1` (open every board for
 this page load, save untouched), `?resetprogress=1` (wipe the saved unlocks), `?godmode=1`, `?bot=1`
-(built-in autopilot that walks right and attacks the nearest enemy — used for headless playthroughs).
+(built-in autopilot that walks right and attacks the nearest enemy — used for headless playthroughs),
+`?difficulty=easy|normal|hard` (session-only override of the saved difficulty: sets
+`game.options.difficulty` for this page load via `userOptions.setSessionDifficulty()`, never written
+back to `aetherAndBrass.options.v1`).
 
 ```js
 window.__game = {
@@ -504,6 +540,8 @@ window.__game = {
   screen() -> string,                // current screen id
   summary() -> { screen, sectionIndex, cameraX, locked, players: [{hp, lives, x, state, meter, score}], enemies: [{name, variant, hp, state, x, z}], boss: {...}|null, wavesCleared, errors: [] },
   setInput(p, actions) / clearInput(p),
+  userOptions,                       // the game/options.js module object (load/apply/get/set/cycle/adjust/difficulty/saveBindings/reset/state)
+  optionsState() -> object,          // userOptions.state(): { storage, saved, ...current values } for test assertions
   errors: []                         // window.onerror + unhandledrejection push here
 }
 ```
@@ -542,6 +580,14 @@ debug mode) — tests fail on any error.
      `?skipTo=gameplay&spawn=typeA:grunt`, screenshot each for a visual review sheet (`tools/screens/enemies.png` contact sheet).
   7. `botstyles`: every `BOT_STYLES` archetype fights and makes progress, and `?botstyle=a,b`
      puts a different archetype in each co-op slot.
+  8. `options` (lives in its own `tools/playtest-options.js`, imported and registered here as
+     `optionsScenario`): drives the OPTIONS overlay from both title and pause (hidden from pause under
+     netplay), every row (difficulty, music/sfx sliders, screen shake incl. a live `Camera.shakeScale`
+     check), the CONTROLS grid's key and gamepad capture and every conflict-refusal path, persistence
+     across a reload, that a remapped key drives gameplay damage while the old key does nothing, and
+     RESET TO DEFAULTS. Further scenarios that don't fit in `playtest.js` follow this sibling-module
+     pattern: a small file exporting one function of the form `(server, { withPage, assert }) => {...}`,
+     imported and added to the `scenarios` map here.
   Exit code non-zero on any assertion failure or `__game.errors.length > 0`.
 
 `tools/winrate.js` (`npm run winrate`) is the balance counterpart: it plays runs with NO godmode
@@ -574,7 +620,8 @@ URL params (all only honored when `?autotest=1` or `?debug=1`):
   (`src/game/bot.js`): `balanced` (default, the behaviour the playtest scenarios are written
   against), `aggressive`, `defensive`, `masher`. One name applies to both slots; two give each
   slot its own. A style is a whole player archetype (button speed, dodge rate, spacing, when it
-  retreats), not a difficulty setting — difficulty stays a title-screen choice.
+  retreats), not a difficulty setting — difficulty is an OPTIONS choice persisted by
+  `game/options.js`, with `?difficulty=` as a session override.
 
 `window.__game` extra members: `ready` (true once the first screen entered),
 `spawnEnemy(type, variant, dx, dz)` (relative to P1), `killAllEnemies()`,
@@ -587,3 +634,15 @@ P1 toward and steps toward the nearest enemy — used by the enemy test), `summa
 ## 16. Input bindings
 The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Y T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V N B until P2 joins; Space jumps on both P1 sets; gamepads 0/1 → P1/P2). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
 `engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.soloAliases`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). P2 drop-in: poll `input.joinPressed(1)` and call `input.setJoined(1, true)`; the title screen resets it.
+The table above is only the shipped default: `game/options.js` persists any remapping under
+`aetherAndBrass.options.v1` (same guarded-`localStorage` pattern as `game/progress.js`, via
+`game/storage.js`'s `store()`), loading it once at boot and re-sanitising it against the defaults. The
+six binding conflict invariants (one key per action per layout; a same-layout collision swaps; a
+same-side sibling strip refuses if it would leave an action unbound; the other player's key, the
+sibling layout's key for a different action, and the three global keys are always refused; a code the
+edited layout already owns under the same action is exempt, so P1 and P2 can rearrange the shared arrow
+keys between themselves) live entirely in `engine/bindings.js` (`rebindKey` / `rebindPad` /
+`sanitiseBindings`) and are enforced identically for a live rebind (`screens/controls.js` via
+`input.rebind`) and a loaded save. Screens must never hard-code a key name or gamepad label: every
+legend, join hint and grid cell reads through `input.legend()` / `input.joinHint()` / `input.joinKeysHint()` /
+`input.keyText()` / `input.cellText()` / `input.hasKey()`, cached and invalidated by `input.bindingsVersion`.

@@ -4,6 +4,9 @@ import { clamp } from './math.js';
 
 /** Camera along x; `left`/`right` are the current world bounds entities are clamped to. */
 export class Camera {
+  /** Visual-only multiplier on every shake() (options SCREEN SHAKE: 0 off, 0.5 low, 1 full). Never hashed: camera shake is excluded from net/checksum.js. */
+  static shakeScale = 1;
+
   /**
    * @param {number} stageLength total stage width in px (right bound when unlocked)
    */
@@ -64,9 +67,11 @@ export class Camera {
     this.minX = Math.min(this.minX, this.x);
   }
 
-  /** Shake for `frames` frames with pixel intensity. */
+  /** Shake for `frames` frames with pixel intensity, scaled by the SCREEN SHAKE option. */
   shake(intensity = 4, frames = 10) {
-    this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
+    const k = intensity * Camera.shakeScale;
+    if (k <= 0) return;
+    this.shakeIntensity = Math.max(this.shakeIntensity, k);
     this.shakeFrames = Math.max(this.shakeFrames, frames);
   }
 

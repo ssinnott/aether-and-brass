@@ -8,6 +8,7 @@
 import { VIEW_W, VIEW_H, UI } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
+import { Camera } from '../../engine/camera.js';
 import { rrect, rivetLine, gear } from '../../art/shapes.js';
 import { particles } from '../../engine/particles.js';
 import { buildRig, drawRig } from '../../art/rig.js';
@@ -20,6 +21,7 @@ const ROWS = [['ENEMIES DEFEATED', 'kills'], ['MAX COMBO', 'maxCombo'], ['DAMAGE
 const ROW_FRAMES = 20, ROLL_FRAMES = 16;
 const RANKS = [[120000, 'S', '#ffffff'], [90000, 'A', '#4DF0E0'], [60000, 'B', '#ffe45a'], [30000, 'C', '#ff9a30'], [0, 'D', '#c8c8c8']];
 const AUTO_RETURN = 600, BOT_HOLD = 900;
+const RANK_STAMP_SHAKE = 3;
 const LABEL_X = 64, COL_X = 250, COL_W = 120, ROW_Y = 104;
 const HERO_X = [470, 560], HERO_Y = 322;
 
@@ -133,10 +135,11 @@ export class ResultsScreen extends Screen {
       drawShadowScreen(ctx, HERO_X[i], HERO_Y, 34 * h.rig.scale, 0.45);
       drawRig(ctx, h.rig, h.anim.pose, { x: HERO_X[i], y: HERO_Y, facing: i === 0 ? 1 : -1 });
     });
-    // rank stamp: 6f slam from big to final size, then a 6f shake
+    // rank stamp: 6f slam from big to final size, then a 6f shake (scaled by the SCREEN SHAKE option)
     if (this.stamp >= 0) {
       const t = Math.min(1, this.stamp / 6), sc = 5 + Math.round((1 - t) * 6);
-      const shake = this.stamp >= 6 && this.stamp < 12 ? ((this.stamp % 2) ? 3 : -3) : 0;
+      const amp = Math.round(RANK_STAMP_SHAKE * Camera.shakeScale);
+      const shake = this.stamp >= 6 && this.stamp < 12 ? ((this.stamp % 2) ? amp : -amp) : 0;
       const rx = 540 + shake, ry = 128;
       drawText(ctx, 'RANK', rx, ry - 14, { size: 1, color: UI.steel, align: 'center' });
       if (t >= 1) { rrect(ctx, rx - 32, ry - 6, 64, 56, 4, null, this.rank.color, 2); ctx.globalAlpha = 0.15; ctx.fillStyle = this.rank.color; ctx.fillRect(rx - 32, ry - 6, 64, 56); ctx.globalAlpha = 1; }

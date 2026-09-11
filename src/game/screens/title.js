@@ -1,11 +1,13 @@
 // Title screen (GDD 9 + RECONCILIATION): navy sky, a brass gear (r 140) rotating behind the tiered-city silhouette,
 // the AETHER & BRASS logo with a bevel, the four heroes idling on the gear, menu START (1P) / START (2P) /
-// DIFFICULTY / MUTE, blinking PRESS START, a compact controls legend (no controls screen) and P2 drop-in.
-// START goes to BOARD SELECT (screens/boardselect.js), which is where the run's board is chosen; the plate under
-// the logo just reports how many boards are open so far (game/progress.js).
+// ONLINE CO-OP / OPTIONS, blinking PRESS START, a compact controls legend and P2 drop-in. DIFFICULTY and MUTE
+// moved off this menu onto the OPTIONS overlay (screens/options.js), which is pushed on top of this screen and
+// popped back to it; Game.update() ticks only the top of the stack, so the heroes and steam freeze while it is
+// up. START goes to BOARD SELECT (screens/boardselect.js), which is where the run's board is chosen; the plate
+// under the logo just reports how many boards are open so far (game/progress.js).
 import { VIEW_W, VIEW_H, UI } from '../../constants.js';
 import { Screen } from '../game.js';
-import { drawText, drawTextOutlined } from '../../engine/text.js';
+import { drawText, drawTextOutlined, measureText } from '../../engine/text.js';
 import { particles } from '../../engine/particles.js';
 import { gear, rrect, pathPoly, paint, rivetLine, pipe, circle } from '../../art/shapes.js';
 import { buildRig, drawRig } from '../../art/rig.js';
@@ -14,14 +16,16 @@ import { AnimPlayer } from '../animation.js';
 import { ENV } from '../../art/palettes.js';
 import { STAGES } from '../../content/stage/index.js';
 import { progress } from '../progress.js';
+import { options } from '../options.js';
 
-const MENU = ['START (1P)', 'START (2P)', 'ONLINE CO-OP', 'DIFFICULTY', 'MUTE'];
-const I_ONLINE = 2, I_DIFF = 3, I_MUTE = 4;
-// Controls legend (RECONCILIATION "Final controls"). Keep in step with engine/input.js bindings.
-const LEGEND_1P = '1P  ARROWS MOVE  Z ATTACK  X JUMP  C DODGE  V SPECIAL  N SUPER  B TAUNT  ENTER START';
-const LEGEND_P1 = 'P1  WASD MOVE  F ATTACK  G JUMP  R DODGE  H SPECIAL  Y SUPER  T TAUNT  ENTER START';
-const LEGEND_P2 = 'P2  ARROWS MOVE  J ATTACK  K JUMP  U DODGE  L SPECIAL  O SUPER  I TAUNT  BACKSPACE START';
-export const DIFFICULTIES = ['easy', 'normal', 'hard'];
+// A remapped legend line is centred at x=320 and must not clip the view; 16px clears the side gutter.
+const LEGEND_MAX_W = VIEW_W - 16;
+const MENU = ['START (1P)', 'START (2P)', 'ONLINE CO-OP', 'OPTIONS'];
+const I_ONLINE = 2, I_OPTIONS = 3;
+// Controls legend text is rebuilt from the live bindings (engine/input.js legend()/joinHint()) in
+// refreshLegends() below, so a remap in OPTIONS is reflected here without any hardcoded key literal.
+// Global keys are not remappable, so ESC / M stay literal in the fixed part of the footer.
+const FOOT_FIXED = 'RUN: DOUBLE-TAP   ESC PAUSE   M MUTE   GAMEPADS SUPPORTED   REMAP IN OPTIONS';
 // tiered city: [x, top, w] terraces, front row darker
 const FAR_TOWERS = [[0, 236, 44], [48, 214, 30], [84, 246, 60], [150, 222, 26], [182, 206, 50], [240, 232, 34], [280, 218, 40], [326, 240, 30], [362, 210, 56], [424, 230, 40], [470, 216, 30], [506, 244, 50], [562, 222, 40], [608, 236, 40]],
   NEAR_TOWERS = [[0, 262, 70], [76, 250, 40], [122, 270, 90], [218, 256, 60], [284, 272, 70], [360, 252, 44], [410, 268, 80], [496, 254, 50], [552, 266, 90]];
@@ -36,9 +40,9 @@ export class TitleScreen extends Screen {
     super.enter(params);
     this.game.audio.music.play('title');
     particles.clear();
-    // A netplay session owns slot 1 for its lifetime; clearing it here would silently drop the peer.
-    if (!(this.game.net && this.game.net.active)) this.game.input.setJoined(1, false); // new session: P1 solo aliases active until P2 joins
-    if (!this.game.options.difficulty) this.game.options.difficulty = 'normal';
+    // A netplay session owns slot 1 for its lifetime; clearing it here would silently drop the peer, and a
+    // finished match must not leave the host's difficulty behind on the next visit to the title.
+    if (!(this.game.net && this.game.net.active)) { this.game.input.setJoined(1, false); this.game.options.difficulty = options.difficulty(); }
     this.cursor = 0; this.p2Flash = 0; this.starting = false;
     this.heroes = (this.game.characters || []).slice(0, 4).map((c, i) => {
       const anim = new AnimPlayer(c.anims || {});
@@ -46,11 +50,28 @@ export class TitleScreen extends Screen {
       for (let k = 0; k < i * 11; k++) anim.tick(); // desynchronise the idle loops
       return { rig: buildRig(c.build || {}), anim, def: c };
     });
+    this.refreshLegends();
   }
-  get difficulty() { return this.game.options.difficulty || 'normal'; }
+  /** Rebuild the legend / footer strings from the live bindings. Called on enter and whenever
+   * `input.bindingsVersion` changes (returning from the OPTIONS overlay never re-enters the title,
+   * so the version check below is what picks up a remap); draw() itself allocates nothing new.
+   * Remapping several actions to long-label keys (e.g. "L SHIFT", "NUM ENTER") can push a centred
+   * line past the view width, so each line is fit to `LEGEND_MAX_W` before it is stored. */
+  refreshLegends() {
+    const inp = this.game.input;
+    this.legends = {
+      solo: fitLegend('1P  ' + inp.legend('solo')),
+      p1: fitLegend('P1  ' + inp.legend('p1')),
+      p2: fitLegend('P2  ' + inp.legend('p2')),
+      coop: fitLegend('CO-OP P1  ' + inp.legend('p1'), 'P1  ' + inp.legend('p1')),
+      foot: (inp.hasKey('p1', 'jump', 'Space') || inp.hasKey('solo', 'jump', 'Space') ? 'SPACE JUMPS   ' : '') + FOOT_FIXED,
+    };
+    this.legendVersion = inp.bindingsVersion;
+  }
   update() {
     super.update();
     const inp = this.game.input, audio = this.game.audio;
+    if (this.legendVersion !== inp.bindingsVersion) this.refreshLegends();
     for (const s of STACKS) if (this.frame % 9 === 0) particles.spawn('steam', s[0] + 4, s[1] - 6, 0, { screen: true, vx: 0.25, vy: -0.7, size: 3, life: 55 });
     if (this.frame % 5 === 0) particles.spawn('ember', 60 + (this.frame * 37) % 520, 330, 0, { screen: true, vx: 0.2, vy: -0.6, size: 1, life: 70 });
     particles.update();
@@ -63,16 +84,8 @@ export class TitleScreen extends Screen {
       if (!inp.joined(p) || (p === 1 && joinedNow)) continue;
       if (inp.pressed(p, 'up')) { this.cursor = (this.cursor + MENU.length - 1) % MENU.length; audio.play('menu_move'); }
       if (inp.pressed(p, 'down')) { this.cursor = (this.cursor + 1) % MENU.length; audio.play('menu_move'); }
-      const dir = (inp.pressed(p, 'right') ? 1 : 0) - (inp.pressed(p, 'left') ? 1 : 0);
-      if (dir && this.cursor === I_DIFF) { this.cycleDifficulty(dir); continue; }
-      if (dir && this.cursor === I_MUTE) { audio.toggleMute(); audio.play('menu_move'); continue; }
       if (inp.pressed(p, 'attack') || inp.pressed(p, 'start') || inp.pressed(p, 'jump')) { this.activate(this.cursor); return; }
     }
-  }
-  cycleDifficulty(dir) {
-    const i = DIFFICULTIES.indexOf(this.difficulty);
-    this.game.options.difficulty = DIFFICULTIES[(i + dir + DIFFICULTIES.length) % DIFFICULTIES.length];
-    this.game.audio.play('menu_move');
   }
   activate(i) {
     const audio = this.game.audio;
@@ -88,8 +101,7 @@ export class TitleScreen extends Screen {
       this.starting = true;
       audio.play('menu_confirm');
       this.game.fadeTo(() => this.game.replace('lobby'), 0.08);
-    } else if (i === I_DIFF) this.cycleDifficulty(1);
-    else { audio.toggleMute(); audio.play('menu_confirm'); }
+    } else if (i === I_OPTIONS) { audio.play('menu_confirm'); this.game.push('options'); }
   }
   draw(ctx) {
     const f = this.frame;
@@ -151,12 +163,10 @@ export class TitleScreen extends Screen {
     const open = progress.unlockedCount();
     drawText(ctx, `${open} OF ${STAGES.length} BOARDS OPEN`, 320, 146, { size: 1, color: open < STAGES.length ? '#4DF0E0' : UI.brassLight, align: 'center' });
     // menu on a translucent plate
-    rrect(ctx, 200, 156, 240, 80, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
+    rrect(ctx, 200, 156, 240, 66, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
     for (let i = 0; i < MENU.length; i++) {
       const sel = i === this.cursor, y = 161 + i * 14;
-      let label = MENU[i];
-      if (i === I_DIFF) label = `DIFFICULTY  < ${this.difficulty.toUpperCase()} >`;
-      if (i === I_MUTE) label = `MUTE  < ${this.game.audio.muted ? 'ON' : 'OFF'} >`;
+      const label = MENU[i];
       if (sel) { gear(ctx, 320 - drawTextWidth(label) / 2 - 12, y + 4, 5, 6, UI.brass, '#3a2010', 1, f * 0.05, 1.5); }
       drawText(ctx, label, 320, y, { size: 1, color: sel ? UI.white : UI.steel, align: 'center' });
     }
@@ -164,19 +174,36 @@ export class TitleScreen extends Screen {
     // P2 status + compact controls legend on the walkway
     const p2 = this.game.input.joined(1);
     if (p2 && this.p2Flash > 0 && (f % 10) < 6) drawText(ctx, 'P2 JOINED!', 320, 266, { size: 1, color: UI.p2, align: 'center' });
-    else if (!p2 && (f % 90) < 60) drawText(ctx, 'P2: PRESS J TO JOIN', 320, 266, { size: 1, color: UI.p2, align: 'center' });
+    else if (!p2 && (f % 90) < 60) drawText(ctx, this.game.input.joinHint(1), 320, 266, { size: 1, color: UI.p2, align: 'center' });
     // Alone, the arcade row leads and the split-keyboard half is only a dimmed footnote; once P2 is in, the
     // two halves are what matter, so they swap places. Matches input.js soloAliases, which are live iff !p2.
-    const lead = p2 ? LEGEND_P1 : LEGEND_1P;
-    const second = p2 ? LEGEND_P2 : `CO-OP ${LEGEND_P1}`;
+    const lead = p2 ? this.legends.p1 : this.legends.solo;
+    const second = p2 ? this.legends.p2 : this.legends.coop;
     drawText(ctx, lead, 320, 318, { size: 1, color: UI.paper, align: 'center', shadow: false });
     drawText(ctx, second, 320, 330, { size: 1, color: p2 ? UI.paper : UI.brassDark, align: 'center', shadow: false });
-    drawText(ctx, 'SPACE JUMPS   RUN: DOUBLE-TAP   ESC PAUSE   M MUTE   GAMEPADS SUPPORTED', 320, 342, { size: 1, color: UI.brass, align: 'center', shadow: false });
+    drawText(ctx, this.legends.foot, 320, 342, { size: 1, color: UI.brass, align: 'center', shadow: false });
     drawText(ctx, '2026 AETHER WORKS', 320, 352, { size: 1, color: UI.brassDark, align: 'center', shadow: false });
   }
 }
 
 function drawTextWidth(s) { return s.length * 6 - 1; }
+/**
+ * Fit a legend line to `LEGEND_MAX_W`: first try `fallback` (e.g. the same line without the
+ * "CO-OP " prefix) if it is narrower and given, then collapse double spaces to single, then hard
+ * truncate with "..." (never used in practice at today's default bindings; a guard against a
+ * remap to several long labels, e.g. "L SHIFT" / "NUM ENTER").
+ * @param {string} s
+ * @param {string} [fallback]
+ * @returns {string}
+ */
+function fitLegend(s, fallback) {
+  if (measureText(s, 1) <= LEGEND_MAX_W) return s;
+  if (fallback && measureText(fallback, 1) <= LEGEND_MAX_W) return fallback;
+  let out = (fallback || s).replace(/ {2,}/g, ' ');
+  if (measureText(out, 1) <= LEGEND_MAX_W) return out;
+  while (out.length > 3 && measureText(out + '...', 1) > LEGEND_MAX_W) out = out.slice(0, -1);
+  return out + '...';
+}
 /** Chunky bevelled brass lettering: dark outline, highlight pass offset up-left, base fill on top. */
 function bevelText(ctx, text, x, y, size, base, hi) {
   drawTextOutlined(ctx, text, x, y, { size, color: '#6a4014', outline: '#2a1408', thickness: 2, align: 'center' });

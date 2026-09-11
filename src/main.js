@@ -1,5 +1,5 @@
 // Boot: create services, Game, screens, loop; install window.__game debug/test hooks (ARCHITECTURE.md 12/15).
-import { VIEW_W, VIEW_H } from './constants.js';
+import { VIEW_W, VIEW_H, DIFFICULTIES } from './constants.js';
 import { createLoop } from './engine/loop.js';
 import { input } from './engine/input.js';
 import { rng } from './engine/rng.js';
@@ -15,11 +15,13 @@ import { GalleryScreen } from './game/screens/gallery.js';
 import { GameplayScreen } from './game/screens/gameplay.js';
 import { IntroScreen } from './game/screens/intro.js';
 import { PauseScreen } from './game/screens/pause.js';
+import { OptionsScreen } from './game/screens/options.js';
 import { GameOverScreen } from './game/screens/gameover.js';
 import { LobbyScreen } from './game/screens/lobby.js';
 import { ResultsScreen } from './game/screens/results.js';
 import { createNetSession } from './net/session.js';
 import { progress } from './game/progress.js';
+import { options as userOptions } from './game/options.js';
 import { CHARACTERS } from './content/characters/index.js';
 import { ENEMY_LIST, ENEMY_GALLERY } from './content/enemies/index.js';
 
@@ -58,6 +60,8 @@ export function parseOptions(search = window.location.search) {
     // open every board on BOARD SELECT for this page load; `resetprogress` wipes the saved unlocks instead.
     unlockall: flag('unlockall'),
     resetprogress: flag('resetprogress'),
+    // which difficulty to play: honoured outside dev mode too (a link can carry it) and session only, never written back (game/options.js)
+    difficulty: DIFFICULTIES.includes(q.get('difficulty') || '') ? q.get('difficulty') : '',
   };
 }
 
@@ -89,6 +93,12 @@ function boot() {
   audio.init();
 
   const game = new Game({ input, audio, rng, options });
+  // Persisted options (difficulty / mixer / shake / bindings) load once, before the first screen, so the
+  // title and every screen after it read the saved (or session-overridden) values from frame 0. Audio gains
+  // are created lazily, so setting volumes before unlock is correct.
+  userOptions.load();
+  if (options.difficulty) userOptions.setSessionDifficulty(options.difficulty);
+  game.options.difficulty = userOptions.difficulty();
   // Content registries: playable characters, enemy list (10 variants + midboss + boss) and the gallery (all rigs).
   game.characters = CHARACTERS;
   game.enemyList = ENEMY_LIST;
@@ -101,6 +111,7 @@ function boot() {
   game.registerScreen('lobby', (g) => new LobbyScreen(g));
   game.registerScreen('gameplay', (g) => new GameplayScreen(g));
   game.registerScreen('pause', (g) => new PauseScreen(g));
+  game.registerScreen('options', (g) => new OptionsScreen(g));
   game.registerScreen('gameover', (g) => new GameOverScreen(g));
   game.registerScreen('results', (g) => new ResultsScreen(g));
 
@@ -166,7 +177,7 @@ function boot() {
   };
   // NOTE: Object.assign would evaluate getters once; live getters are defined separately below.
   Object.assign(hooks, {
-    game, input, rng, audio, particles, loop, options, progress,
+    game, input, rng, audio, particles, loop, options, progress, userOptions,
     step(n = 1) { loop.step(Math.max(0, n | 0)); },
     screen() { return game.screenId(); },
     summary() {
@@ -196,6 +207,8 @@ function boot() {
       return { scope: here, isGroup: progress.isGroup, unlockedCount: progress.unlockedCount(),
         unlocked: [0, 1, 2, 3].map((i) => progress.isUnlocked(i)), solo: readAt('solo'), saved };
     },
+    /** Persisted-options state, for tools/playtest.js (game/options.js). */
+    optionsState() { return userOptions.state(); },
     /** Netplay tests need the real gated rAF loop; autotest otherwise leaves it stopped. */
     startLoop() { loop.start(true); return true; },
     stopLoop() { loop.stop(); return true; },

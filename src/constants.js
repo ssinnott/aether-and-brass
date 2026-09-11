@@ -29,6 +29,9 @@ export const INPUT_BUFFER = 8;
 /** Default hitbox depth tolerance. */
 export const HIT_Z_TOLERANCE = 24;
 
+/** Difficulty levels. The order is the wire index net/protocol.js encodeStart sends. */
+export const DIFFICULTIES = Object.freeze(['easy', 'normal', 'hard']);
+
 /** Teams. Players never hurt players; enemies never hurt enemies unless hit.friendly. */
 export const TEAM = Object.freeze({ PLAYER: 0, ENEMY: 1, NONE: 2 });
 

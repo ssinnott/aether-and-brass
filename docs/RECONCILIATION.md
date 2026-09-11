@@ -78,7 +78,8 @@ Wrangler net, both with mash-out (`status.mashNet`, `player.mashCount`); Sootbor
 Section 2 conveyor + molten channel in the mid-boss cargo bay; Time Stop dodge-cancel
 (`enemy.timeStop` honours `dodgedRecently`); Aether Step (Vane `blinkAnim`); pressure valves and
 the chandelier (`game/items.js` + the section 4 props); tech roll (`player.js`); difficulty select
-(Easy/Normal/Hard on the title menu, `DIFFICULTY` in `screens/gameplay.js`); crowd-clear bonus;
+(Easy/Normal/Hard, now an OPTIONS row persisted by `game/options.js` — see below — read into
+`DIFFICULTY` in `screens/gameplay.js`); crowd-clear bonus;
 **no-damage wave bonus (+1000, `game/stage.js`)**.
 
 **SHOULD — not built (the one gap):** *co-op revive* in the GDD 7 sense — a partner at 0 lives
@@ -87,11 +88,18 @@ ships instead is the MUST-tier continue system: a downed player gets their own 1
 CONTINUE? countdown on their side of the HUD while the partner keeps playing, and any of
 attack/jump/special spends a continue to bring them back (`game/hud.js`).
 
-**CUT — confirmed absent from the tree:** no options menu beyond difficulty + mute, no alternate
-palettes, no partner toss, no DUO super, no attract mode, no controls screen (the title draws the
-compact legend instead), no MVP / BEST PARTNER badges, no per-continue rank penalty (rank comes
-from score only; a lost continue countdown caps it at D), no "Boilerplate" difficulty, no ghost-bar
-drain animation (the HUD uses the simple delayed second bar), no typewriter text.
+**CUT — confirmed absent from the tree:** no alternate palettes, no partner toss, no DUO super, no
+attract mode, no MVP / BEST PARTNER badges, no per-continue rank penalty (rank comes from score only;
+a lost continue countdown caps it at D), no "Boilerplate" difficulty, no ghost-bar drain animation (the
+HUD uses the simple delayed second bar), no typewriter text, no friendly fire, no scale toggle.
+
+**OPTIONS (issue #19):** an overlay pushed from the title menu and the pause plate holds difficulty, a
+music / SFX volume mixer, a screen-shake setting (off / low / full) and key + gamepad remapping under a
+CONTROLS sub-plate, all persisted in `localStorage` (`game/options.js`, `aetherAndBrass.options.v1`).
+This diverges from GDD 9's menu lists: the title menu is now **START (1P) / START (2P) / ONLINE CO-OP /
+OPTIONS** (difficulty and mute both moved off the title into OPTIONS) and the pause plate is **RESUME /
+MUTE / OPTIONS / QUIT TO TITLE** (OPTIONS hidden under netplay). CONTROLS is a sub-plate of OPTIONS, not
+a menu row of its own. Friendly-fire and scale toggles remain cut, as above.
 
 ## Game title
 The game is **AETHER & BRASS** (logo already on the title screen). The GDD's "CALDERWICK" logo is

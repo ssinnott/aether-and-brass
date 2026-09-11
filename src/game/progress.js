@@ -9,14 +9,16 @@
 // another machine or browser profile) mints a new id, so that reads as a new group - unavoidable without
 // accounts, and accounts would mean a backend.
 //
-// Storage is localStorage and EVERY access is guarded: private-mode browsers, `file://` pages and
-// storage-blocked embeds throw on read or write. A failure means "nothing cleared yet" and the game stays
-// fully playable on board 1 - progress is a convenience, never a prerequisite.
+// Storage is localStorage and EVERY access is guarded (the guarded probe lives in game/storage.js, shared
+// with game/options.js): private-mode browsers, `file://` pages and storage-blocked embeds throw on read or
+// write. A failure means "nothing cleared yet" and the game stays fully playable on board 1 - progress is a
+// convenience, never a prerequisite.
 //
 // Session unlocks (allowSession / unlockAllForSession) open a board for this page load only and are never
 // written back, so `?stage=2` and `?unlockall=1` links keep working without silently rewriting a save.
 // They are deliberately scope-independent: a link is a key to a board, whoever is playing.
 import { STAGES } from '../content/stage/index.js';
+import { store } from './storage.js';
 
 const KEY = 'aetherAndBrass.progress.v1';
 const ID_KEY = 'aetherAndBrass.playerId.v1';
@@ -35,17 +37,6 @@ const sessionOpen = new Set();
 const scopedOpen = new Map();
 let sessionOpenAll = false;
 
-/** localStorage or null when it is unavailable / throws (private mode, file://, blocked embeds). */
-function store() {
-  try {
-    const s = window.localStorage;
-    if (!s) return null;
-    const probe = KEY + '.probe';
-    s.setItem(probe, '1'); s.removeItem(probe); // Safari private mode only throws on write
-    return s;
-  } catch (e) { return null; }
-}
-
 /** Keep only entries for boards that still exist, so a removed stage cannot unlock its neighbour. */
 function sanitise(boards) {
   const out = {};
@@ -61,7 +52,7 @@ function sanitise(boards) {
 function loadAll() {
   if (scopes) return scopes;
   scopes = {};
-  const s = store();
+  const s = store(KEY);
   if (!s) return scopes;
   try {
     const parsed = JSON.parse(s.getItem(KEY) || '{}');
@@ -82,7 +73,7 @@ function load() {
 }
 
 function persist() {
-  const s = store();
+  const s = store(KEY);
   if (!s) return false;
   const out = {};
   for (const [key, boards] of Object.entries(loadAll())) out[key] = { boards };
@@ -104,7 +95,7 @@ export const progress = {
    */
   playerId() {
     if (myId) return myId;
-    const s = store();
+    const s = store(KEY);
     try {
       const existing = s && s.getItem(ID_KEY);
       if (existing) { myId = existing; return myId; }
@@ -188,7 +179,7 @@ export const progress = {
     scopes = {};
     active = SOLO_SCOPE;
     sessionOpen.clear(); scopedOpen.clear(); sessionOpenAll = false;
-    const s = store();
+    const s = store(KEY);
     try { if (s) s.removeItem(KEY); } catch (e) { /* nothing to clean up */ }
   },
 };

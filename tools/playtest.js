@@ -1,13 +1,16 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields playthrough playthrough2 playthrough3 playthrough4 coop audio gallery botstyles)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields playthrough playthrough2 playthrough3 playthrough4 coop audio gallery botstyles options)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
+// This file is already close to its ~700-line budget: further scenarios belong in their own sibling
+// module (see tools/playtest-options.js), registered below the same way `options` is.
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './server.js';
 import { loadPlaywright } from './browser.js';
+import { options as optionsScenario } from './playtest-options.js';
 
 const { chromium } = loadPlaywright();
 
@@ -656,6 +659,9 @@ const scenarios = {
       await g.shot('81-botstyle-coop');
     });
   },
+
+  // 9. Options plate, key remapping and persistence (tools/playtest-options.js).
+  async options(server) { await optionsScenario(server, { withPage, assert }); },
 };
 
 async function main() {

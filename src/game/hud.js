@@ -112,7 +112,7 @@ export class Hud {
     ctx.fillStyle = 'rgba(10,6,12,0.5)'; ctx.fillRect(0, 0, VIEW_W, STRIP_H);
     ctx.fillStyle = 'rgba(226,179,74,0.5)'; ctx.fillRect(0, STRIP_H - 1, VIEW_W, 1);
     for (let i = 0; i < ps.length; i++) this.drawPlayer(ctx, ps[i], i);
-    if (ps.length < 2 && !this.game.input.joined(1) && (this.frame % 90) < 60) drawText(ctx, 'P2: PRESS J TO JOIN', VIEW_W - 8, 16, { size: 1, color: UI.p2, align: 'right' });
+    if (ps.length < 2 && !this.game.input.joined(1) && (this.frame % 90) < 60) drawText(ctx, this.game.input.joinHint(1), VIEW_W - 8, 16, { size: 1, color: UI.p2, align: 'right' });
     this.drawCenter(ctx);
     this.drawEnemyArmor(ctx);
     if (w.boss && w.boss.alive) this.drawBoss(ctx, w.boss);

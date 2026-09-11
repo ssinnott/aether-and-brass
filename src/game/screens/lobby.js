@@ -50,6 +50,14 @@ export class LobbyScreen extends Screen {
     this.slots = buildCharSlots(this.game.characters || []);
     this.boards = []; this.boardsKey = '';
     this.shownChars = [-1, -1];       // last drawn [mine, theirs], so a change can play a taunt
+    // The local player is always sampled through slot 0's keyboard (net/session.js pollRaw(0, { solo: true }))
+    // whichever slot they end up owning, so the keys to name are P1's plus the arcade aliases.
+    const inp = this.game.input;
+    const k = (a) => inp.keyText('p1', a) === inp.keyText('solo', a) ? inp.keyText('p1', a) : `${inp.keyText('p1', a)}/${inp.keyText('solo', a)}`;
+    this.hintRole = `ATTACK (${k('attack')}): CHOOSE    DODGE (${k('dodge')}): BACK`;
+    this.hintReadyHost = `LEFT/RIGHT: HERO    UP/DOWN: BOARD    ATTACK (${k('attack')}): READY`;
+    this.hintReadyHost1 = `LEFT/RIGHT: HERO    ATTACK (${k('attack')}): READY`;
+    this.hintReadyGuest = `LEFT/RIGHT: HERO    ATTACK (${k('attack')}): READY    THE HOST PICKS THE BOARD`;
     this.game.audio.music.play('title');
     // A ?room= invite link drops the guest straight into connecting.
     const opt = this.game.options;
@@ -253,7 +261,7 @@ export class LobbyScreen extends Screen {
         drawText(ctx, blurb, 168, y + 16, { size: 1, color: sel ? UI.brass : UI.brassDark });
       });
       drawText(ctx, 'THE HOST GETS A ROOM CODE TO SEND TO THEIR FRIEND', 320, 214, { size: 1, color: UI.brassDark, align: 'center' });
-      drawText(ctx, 'ATTACK: CHOOSE    DODGE: BACK', 320, 250, { size: 1, color: UI.brassDark, align: 'center' });
+      drawText(ctx, this.hintRole, 320, 250, { size: 1, color: UI.brassDark, align: 'center' });
       return;
     }
 
@@ -339,9 +347,9 @@ export class LobbyScreen extends Screen {
     }
 
     const hint = lobby.myReady ? 'JUMP: CHANGE YOUR MIND'
-      : this.isHost && open > 1 ? 'LEFT/RIGHT: HERO    UP/DOWN: BOARD    ATTACK: READY'
-        : this.isHost ? 'LEFT/RIGHT: HERO    ATTACK: READY'
-          : 'LEFT/RIGHT: HERO    ATTACK: READY    THE HOST PICKS THE BOARD';
+      : this.isHost && open > 1 ? this.hintReadyHost
+        : this.isHost ? this.hintReadyHost1
+          : this.hintReadyGuest;
     drawText(ctx, hint, 320, BOARD_Y + PLAQUE_H + 4, { size: 1, color: UI.brass, align: 'center' });
     drawText(ctx, `ROOM ${this.net.room}    PING ${Math.round(this.net.rtt || 0)}MS    DELAY ${this.net.delay}F    ONE HERO EACH`,
       320, BOARD_Y + PLAQUE_H + 14, { size: 1, color: UI.brassDark, align: 'center' });

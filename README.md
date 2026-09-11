@@ -55,7 +55,15 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
   the wait are different for each hero (character select prints them), and breaking one keeps it down twice as
   long — it is a buffer, not a block, so the hit still lands, staggers and knocks down as usual.
 - Player 2 joins at any time by pressing any of their own keys (J K U L O I or Backspace — the arrows are
-  shared, so they don't count). Escape pauses, M mutes, F1 shows the debug overlay.
+  shared, so they don't count). Escape pauses, M mutes, F1 shows the debug overlay. The on-screen legends and
+  the "P2: PRESS J TO JOIN" hint follow whatever is actually bound, so they change if you remap keys below.
+- Keys and gamepad buttons can be remapped from **OPTIONS** (a row on the title menu, or on the pause plate
+  during a local game) → **CONTROLS**: one key per action per layout. A key already used by the other player,
+  by the arcade / co-op sibling layout for a different action, or a global key (Escape, M, F1) is refused;
+  a collision within the same layout swaps the two actions instead. OPTIONS also has MUSIC and SFX volume
+  sliders, a SCREEN SHAKE setting (off / low / full) and difficulty, and everything there persists in the
+  browser under `aetherAndBrass.options.v1` — same caveat as progress: if storage is unavailable the game
+  still plays, it just falls back to defaults every session and nothing throws.
 
 ## The heroes
 
@@ -199,7 +207,9 @@ a result is reported apart as unfinished — that is a soft-lock, not a loss.
 
 Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&chars=0,2`,
 `?skipTo=gallery`, `?bot=1`, `?botstyle=aggressive,defensive` (one archetype per slot),
-`?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=4`, `?unlockall=1`, `?resetprogress=1`.
+`?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=4`, `?unlockall=1`, `?resetprogress=1`,
+`?difficulty=easy|normal|hard` (session only — overrides the saved difficulty for this page load without
+writing it back).
 
 ### Deployment
 

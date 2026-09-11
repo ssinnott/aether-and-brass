@@ -70,8 +70,8 @@ async function playRun(ctx, port, job, max) {
       + `&chars=${chars}&bot=1&botstyle=${styles}`;
     await page.goto(url, { waitUntil: 'load' });
     await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 20000 });
-    // difficulty has no URL param (it is a title-screen choice and ?skipTo skips the title), so set it and
-    // re-enter gameplay on the same seed — that way every cell starts from an identical rng stream.
+    // difficulty is set directly on game.options and gameplay re-entered (rather than via ?difficulty=,
+    // which exists) so every cell starts from an identical rng stream.
     await page.evaluate(([d, s, cs]) => {
       const g = window.__game;
       g.game.options.difficulty = d;

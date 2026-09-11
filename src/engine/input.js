@@ -1,34 +1,18 @@
 // Keyboard + gamepad -> per-player action state with edge detection and an input buffer.
-// Bindings follow docs/RECONCILIATION.md "Final controls" (ARCHITECTURE.md section 16).
+// Bindings follow docs/RECONCILIATION.md "Final controls" (ARCHITECTURE.md section 16). The default
+// table and the rebind / conflict / sanitise machinery live in engine/bindings.js (pure, no
+// window/navigator); this file owns the mutable live `bindings` object, device polling and caching.
 import { INPUT_BUFFER } from '../constants.js';
+import {
+  DEFAULT_BINDINGS, LAYOUTS, layoutMap, cloneBindings, sanitiseBindings, rebindKey, rebindPad,
+  joinCodesFor, keyLabel, padLabel, legendFor, joinLabels,
+} from './bindings.js';
 
 /** All per-player actions. */
 export const ACTIONS = ['left', 'right', 'up', 'down', 'attack', 'jump', 'special', 'super', 'dodge', 'taunt', 'start'];
 
-/** Default bindings. Keyboard entries are KeyboardEvent.code values; gamepad entries are standard-mapping button indices. */
-export const bindings = {
-  keyboard: [
-    // Buttons form an R T Y / F G H block: one shifted-left right hand rests on it while the left hand holds WASD.
-    // This mirrors P2's U I O / J K L block finger for finger (index attack, middle jump, ring special).
-    { left: ['KeyA'], right: ['KeyD'], up: ['KeyW'], down: ['KeyS'], attack: ['KeyF'], jump: ['KeyG', 'Space'], dodge: ['KeyR'],
-      special: ['KeyH'], super: ['KeyY'], taunt: ['KeyT'], start: ['Enter', 'NumpadEnter'] },
-    { left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'], attack: ['KeyJ', 'Numpad1'],
-      jump: ['KeyK', 'Numpad2'], dodge: ['KeyU', 'Numpad4'], special: ['KeyL', 'Numpad3'], super: ['KeyO', 'Numpad6'],
-      taunt: ['KeyI', 'Numpad5'], start: ['Backspace', 'Numpad0'] },
-  ],
-  /**
-   * Extra P1 keys, active only until P2 joins (`input.setJoined(1, true)`). This is the arcade layout the title
-   * screen leads with for one player: arrows under the right hand, one contiguous Z X C V B N row under the left.
-   * Arrows are shared with P2, so they never count as a P2 join key.
-   */
-  soloAliases: { left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'], attack: ['KeyZ'], jump: ['KeyX', 'Space'],
-    dodge: ['KeyC'], special: ['KeyV'], super: ['KeyN'], taunt: ['KeyB'], start: ['Enter', 'NumpadEnter'] },
-  gamepad: { attack: [0], jump: [1], dodge: [2], special: [3], taunt: [4], super: [5], start: [9], up: [12], down: [13], left: [14], right: [15] },
-  /** Held gamepad buttons that mean "run" (RT). Exposed as `input.runHeld(player)`. */
-  gamepadRun: [7],
-  global: { pause: ['Escape'], mute: ['KeyM'], debug: ['F1'] },
-  stickDeadzone: 0.25,
-};
+/** Live bindings, mutated in place by rebind() / importBindings() / resetBindings(). Same object forever. */
+export const bindings = cloneBindings(DEFAULT_BINDINGS);
 
 const NEVER = 1e9;
 const keysDown = new Set();
@@ -38,6 +22,18 @@ let anyKeyThisStep = false;
 const globalPressed = { pause: false, mute: false, debug: false };
 let boundCodes = null;
 let joinCodes = null; // per player: keyboard codes that count as "this player pressed a key of their own"
+let bindingsVersion = 0;
+// Cached legend()/joinHint()/joinKeysHint()/keyText()/cellText() strings, cleared on refreshBindings().
+// Keyed without template-string concatenation (layout/slot/action are looked up directly) so a cache
+// HIT - the common case from per-frame draw paths (hud.js, pause.js, title.js, select.js) - allocates
+// nothing; only a cache MISS (at most once per bindings change) builds a string.
+const legendCache = new Map(); // layout -> string
+const joinHintCache = []; // slot -> string
+const joinKeysHintCache = []; // slot -> string
+const keyTextCache = new Map(); // layout -> Map(action -> string)
+const cellTextCache = new Map(); // layout -> Map(action -> string)
+let padSnapshot = null; // Set of "padIndex:button" held at beginPadCapture(), used to find the NEW press
+let virtualPads = null; // test hook: setPadVirtual() override for pollGamepads(), array indexed like navigator.getGamepads()
 
 /**
  * A per-action map. Pressed states hold booleans; the buffer map holds frame ages, so `v` is
@@ -58,12 +54,20 @@ players[0].joined = true;
 
 function rebuildBoundCodes() {
   boundCodes = new Set();
-  joinCodes = [new Set(), new Set()];
+  joinCodes = [];
   for (let p = 0; p < bindings.keyboard.length; p++) {
-    for (const a of ACTIONS) for (const c of bindings.keyboard[p][a] || []) { boundCodes.add(c); joinCodes[p].add(c); }
+    for (const a of ACTIONS) for (const c of bindings.keyboard[p][a] || []) boundCodes.add(c);
+    joinCodes[p] = joinCodesFor(bindings, p);
   }
-  for (const a of ACTIONS) for (const c of bindings.soloAliases[a] || []) { boundCodes.add(c); if (joinCodes[1]) joinCodes[1].delete(c); }
+  for (const a of ACTIONS) for (const c of bindings.soloAliases[a] || []) boundCodes.add(c);
   for (const k of Object.keys(bindings.global)) for (const c of bindings.global[k]) boundCodes.add(c);
+}
+/** Invalidate everything that is derived from `bindings` (boundCodes, joinCodes, cached hint/legend strings). */
+function refreshBindings() {
+  boundCodes = null; joinCodes = null;
+  legendCache.clear(); joinHintCache.length = 0; joinKeysHintCache.length = 0;
+  keyTextCache.clear(); cellTextCache.clear();
+  bindingsVersion++;
 }
 
 function onKeyDown(e) {
@@ -83,7 +87,7 @@ function onBlur() { keysDown.clear(); }
 let pads = null;
 function pollGamepads() {
   pads = null;
-  try { pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null; } catch { pads = null; }
+  try { pads = virtualPads || (typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null); } catch { pads = null; }
 }
 function padButton(gp, b) { const btn = gp.buttons[b]; return !!btn && (btn.pressed || btn.value > 0.5); }
 /** OR-merge gamepad `index` into `out`; returns true if any button/axis is active. Sets pl.run for the RT "run" buttons. */
@@ -257,4 +261,149 @@ export const input = {
   device(player) { return players[player].device; },
   /** Number of players supported. */
   get playerCount() { return players.length; },
+
+  // --- Rebinding (engine/bindings.js does the work; this invalidates the derived caches). ---
+
+  /** Bumped on every successful rebind / import / reset. Screens rebuild cached text when it changes. */
+  get bindingsVersion() { return bindingsVersion; },
+  /**
+   * Rebind `action` of `layout` ('solo' | 'p1' | 'p2' | ... | 'pad') to `code`: a KeyboardEvent.code
+   * string for a keyboard layout, or a gamepad button index for 'pad'.
+   * @param {string} layout
+   * @param {string} action
+   * @param {string|number} code
+   * @returns {import('./bindings.js').RebindResult}
+   */
+  rebind(layout, action, code) {
+    const r = typeof code === 'number' && layout === 'pad' ? rebindPad(bindings, action, code)
+      : typeof code === 'string' ? rebindKey(bindings, layout, action, code)
+      : { ok: false, reason: 'BAD KEY' };
+    if (r.ok) refreshBindings();
+    return r;
+  },
+  /** Plain-object snapshot of the live bindings, shaped for persistence (game/options.js). */
+  exportBindings() {
+    const c = cloneBindings(bindings);
+    return { solo: c.soloAliases, keyboard: c.keyboard, pad: c.gamepad };
+  },
+  /** Sanitise `raw` (a save's `bindings` field, or null) and copy it into the live bindings object. */
+  importBindings(raw) {
+    const s = sanitiseBindings(raw, DEFAULT_BINDINGS, ACTIONS);
+    for (const a of ACTIONS) bindings.soloAliases[a] = s.soloAliases[a];
+    for (let i = 0; i < bindings.keyboard.length; i++) for (const a of ACTIONS) bindings.keyboard[i][a] = s.keyboard[i][a];
+    for (const a of ACTIONS) bindings.gamepad[a] = s.gamepad[a];
+    refreshBindings();
+  },
+  /** Restore the default bindings. */
+  resetBindings() { this.importBindings(null); },
+  /** Cached legend line for a layout (see bindings.js legendFor). */
+  legend(layout) {
+    let v = legendCache.get(layout);
+    if (v === undefined) { v = legendFor(bindings, layout); legendCache.set(layout, v); }
+    return v;
+  },
+  /** Cached short "P{slot+1}: PRESS X TO JOIN" hint. */
+  joinHint(slot = 1) {
+    let v = joinHintCache[slot];
+    if (v === undefined) { v = `P${slot + 1}: PRESS ${joinLabels(bindings, slot).key} TO JOIN`; joinHintCache[slot] = v; }
+    return v;
+  },
+  /** Cached long "P{slot+1}: PRESS X/Y/Z OR W TO JOIN" hint (lists every joinable key). */
+  joinKeysHint(slot = 1) {
+    let v = joinKeysHintCache[slot];
+    if (v === undefined) { v = `P${slot + 1}: PRESS ${joinLabels(bindings, slot).keys} TO JOIN`; joinKeysHintCache[slot] = v; }
+    return v;
+  },
+  /** Cached label of the primary (first) code bound to `layout`/`action`, or '' if unbound. */
+  keyText(layout, action) {
+    let m = keyTextCache.get(layout);
+    if (!m) { m = new Map(); keyTextCache.set(layout, m); }
+    let v = m.get(action);
+    if (v === undefined) {
+      const map = layoutMap(bindings, layout);
+      const code = map && map[action] ? map[action][0] : undefined;
+      v = code === undefined ? '' : layout === 'pad' ? padLabel(/** @type {number} */ (code)) : keyLabel(/** @type {string} */ (code));
+      m.set(action, v);
+    }
+    return v;
+  },
+  /** Cached labels of every code bound to `layout`/`action`, joined ' / '. */
+  cellText(layout, action) {
+    let m = cellTextCache.get(layout);
+    if (!m) { m = new Map(); cellTextCache.set(layout, m); }
+    let v = m.get(action);
+    if (v === undefined) {
+      const map = layoutMap(bindings, layout);
+      const codes = map && map[action] ? map[action] : [];
+      v = codes.map((c) => (layout === 'pad' ? padLabel(/** @type {number} */ (c)) : keyLabel(/** @type {string} */ (c)))).join(' / ');
+      m.set(action, v);
+    }
+    return v;
+  },
+  /** Is `code` one of the codes bound to `layout`/`action`? Uncached (no allocation). */
+  hasKey(layout, action, code) {
+    const map = layoutMap(bindings, layout);
+    const codes = /** @type {Array<string|number>|undefined|null} */ (map && map[action]);
+    return !!(codes && codes.includes(code));
+  },
+  keyLabel,
+  padLabel,
+  LAYOUTS,
+  /**
+   * Drop the current edge for `code`: it neither fires an action / global this step nor backs out
+   * of a panel via Escape. Used by the controls panel on the key it just captured.
+   * @param {string} code
+   */
+  swallowKey(code) { keysDown.delete(code); keysPressedPending.delete(code); },
+
+  // --- Gamepad button capture (controls panel), test-driven via setPadVirtual(). ---
+
+  /** Snapshot every currently-held button of every connected pad, so capturePadButton() can find the new one. */
+  beginPadCapture() {
+    pollGamepads();
+    padSnapshot = new Set();
+    if (!pads) return;
+    for (let i = 0; i < pads.length; i++) {
+      const gp = pads[i];
+      if (!gp || !gp.connected) continue;
+      for (let b = 0; b < gp.buttons.length; b++) if (padButton(gp, b)) padSnapshot.add(`${i}:${b}`);
+    }
+  },
+  /** First button (any pad, index order) pressed now that was not held at beginPadCapture(), else -1. */
+  capturePadButton() {
+    if (!padSnapshot) return -1;
+    pollGamepads();
+    if (pads) {
+      for (let i = 0; i < pads.length; i++) {
+        const gp = pads[i];
+        if (!gp || !gp.connected) continue;
+        for (let b = 0; b < gp.buttons.length; b++) {
+          const k = `${i}:${b}`;
+          // A button that was held at beginPadCapture() but has since been released no longer
+          // blocks capture: forget it so pressing it again counts as a fresh press.
+          if (!padButton(gp, b)) { padSnapshot.delete(k); continue; }
+          if (!padSnapshot.has(k)) return b;
+        }
+      }
+    }
+    return -1;
+  },
+  /** End a capture session. */
+  endPadCapture() { padSnapshot = null; },
+  /**
+   * Test hook: override `navigator.getGamepads()[index]` with a virtual pad reporting `buttons`
+   * pressed (or remove the override with `buttons = null`), so the controls panel's gamepad column
+   * and RT refusal are headless-testable.
+   * @param {number} index
+   * @param {number[]|null} buttons
+   */
+  setPadVirtual(index, buttons) {
+    if (!virtualPads) virtualPads = [];
+    virtualPads[index] = buttons === null ? null : {
+      connected: true,
+      buttons: Array.from({ length: 16 }, (_, i) => ({ pressed: buttons.includes(i), value: buttons.includes(i) ? 1 : 0 })),
+      axes: [0, 0],
+    };
+    if (virtualPads.every((p) => !p)) virtualPads = null;
+  },
 };

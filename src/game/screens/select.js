@@ -91,7 +91,7 @@ export class SelectScreen extends Screen {
     const strap = charStrap(this.chars[p1.cursor]);
     if (strap) drawText(ctx, strap, 320, 248, { size: 1, color: UI.paper, align: 'center' });
     if (p2.joined) { const s2 = charStrap(this.chars[p2.cursor]); if (s2) drawText(ctx, `P2: ${s2}`, 320, 262, { size: 1, color: P2_CURSOR, align: 'center' }); }
-    else if ((f % 60) < 40) drawText(ctx, 'P2: PRESS J/K/U/L/O/I OR BACKSPACE TO JOIN', 320, 262, { size: 1, color: UI.p2, align: 'center' });
+    else if ((f % 60) < 40) drawText(ctx, this.game.input.joinKeysHint(1), 320, 262, { size: 1, color: UI.p2, align: 'center' });
     if (p1.cursor === p2.cursor && p2.joined) drawText(ctx, 'SAME HERO: P2 WEARS A DARKER TINT', 320, 276, { size: 1, color: UI.steel, align: 'center' });
     if (this.readyTimer >= 0) {
       const k = Math.min(1, this.readyTimer / 6), sc = 5 - Math.round(2 * k), ty = 150 - sc * 3;

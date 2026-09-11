@@ -11,7 +11,7 @@ const XFADE = 0.5;          // music crossfade seconds
 const JITTER = 0.04;        // +/- pitch variation on hit-type SFX
 const DUCK_WINDOW = 0.08;   // simultaneous-SFX window for volume ducking
 
-const S = { ctx: null, master: null, comp: null, sfxGain: null, musicGain: null, unlocked: false, muted: false, volume: 0.8, musicVolume: 0.5, recent: [] };
+const S = { ctx: null, master: null, comp: null, sfxGain: null, musicGain: null, unlocked: false, muted: false, volume: 0.8, musicVolume: 0.5, sfxVolume: 1, recent: [] };
 const M = { name: '', voices: [], timer: 0, intensity: 0, transpose: 0 };
 let gestureInstalled = false;
 const warned = new Set();
@@ -39,7 +39,7 @@ function ensureContext() {
   S.comp.threshold.value = -14; S.comp.knee.value = 6; S.comp.ratio.value = 10; S.comp.attack.value = 0.002; S.comp.release.value = 0.12;
   S.comp.connect(ctx.destination);
   S.master = ctx.createGain(); S.master.gain.value = S.muted ? 0 : S.volume; S.master.connect(S.comp);
-  S.sfxGain = ctx.createGain(); S.sfxGain.gain.value = 1; S.sfxGain.connect(S.master);
+  S.sfxGain = ctx.createGain(); S.sfxGain.gain.value = S.sfxVolume; S.sfxGain.connect(S.master);
   S.musicGain = ctx.createGain(); S.musicGain.gain.value = S.musicVolume; S.musicGain.connect(S.master);
   return true;
 }
@@ -198,14 +198,20 @@ export const audio = {
     bossPhase(n) { audio.music.play(['boss', 'boss', 'boss2', 'boss3', 'boss_final'][Math.max(1, Math.min(4, n | 0))]); },
   },
   get muted() { return S.muted; },
-  /** Toggle master mute; returns the new muted state. */
-  toggleMute() {
-    S.muted = !S.muted;
+  /** Set mute explicitly; returns the new state. */
+  setMuted(m) {
+    S.muted = !!m;
     if (S.master) S.master.gain.value = S.muted ? 0 : S.volume;
     return S.muted;
   },
+  /** Toggle master mute; returns the new muted state. */
+  toggleMute() { return audio.setMuted(!S.muted); },
   /** Master volume 0..1. */
   setVolume(v) { S.volume = Math.max(0, Math.min(1, v)); if (S.master && !S.muted) S.master.gain.value = S.volume; },
+  /** SFX bus volume 0..1. */
+  setSfxVolume(v) { S.sfxVolume = Math.max(0, Math.min(1, v)); if (S.sfxGain) S.sfxGain.gain.value = S.sfxVolume; },
+  get sfxVolume() { return S.sfxVolume; },
+  get musicVolume() { return S.musicVolume; },
   get unlocked() { return S.unlocked; },
   /** True when a track is playing (or would play once unlocked). */
   get musicPlaying() { return !!M.name; },
