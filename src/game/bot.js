@@ -123,11 +123,21 @@ export function botIntent(p, world, style) {
   return it;
 }
 
-/** An enemy projectile (team ENEMY, not yet spent) within 70px of the player and moving toward it in this z lane. */
+/**
+ * Something inbound in this z lane: an enemy projectile (team ENEMY, not yet spent) within 70px and moving toward the
+ * player or falling on it, or a ROLLING prop (the Drayman's shoved handcart, a dumped chassis, a batted barrel) within
+ * 90px coming this way — a rolling prop's hits belong to whoever rolled it, so the bot reads the cart, not the Drayman.
+ */
 function incomingShot(p, world) {
   for (const q of world.entities) {
-    if (q.kind !== 'projectile' || q.team !== TEAM.ENEMY || q.removeMe || q.style === 'explosion' || q.style === 'fire') continue;
+    if (q.removeMe) continue;
     const dx = q.x - p.x;
+    if (q.kind === 'prop') {
+      if (q.state !== 'rolling' || Math.abs(dx) > 90 || Math.abs(q.z - p.z) > 24) continue;
+      if (Math.sign(q.vx) === -Math.sign(dx)) return true;
+      continue;
+    }
+    if (q.kind !== 'projectile' || q.team !== TEAM.ENEMY || q.style === 'explosion' || q.style === 'fire') continue;
     if (Math.abs(dx) > 70 || Math.abs(q.z - p.z) > 20) continue;
     if (!q.vx || Math.sign(q.vx) === -Math.sign(dx)) return true;   // heading at us, or falling on us
   }

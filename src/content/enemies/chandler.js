@@ -1,12 +1,16 @@
 // The Chandlery of Calderwick — a ship's chandler supplies an army; a tallow chandler makes its light. Under charter
 // to whoever holds the ledger, and Vane signed them in the first week. They walk behind the fighting with handcarts of
 // grease and quicklime, patching up whatever is still standing and invoicing the estate: they are the reason the
-// Brassbound are still wound and the Sootborn still standing. Five variants (rig + shared hooks in ./chandlerRig.js):
+// Brassbound are still wound and the Sootborn still standing. Seven variants (rig + shared hooks in ./chandlerRig.js):
 //   WICKBOY  fodder   pole poke / low wick singe / RELIGHT — heals 4 every 20f AND cancels a stagger (steals your punish)
 //   TALLYMAN ranged   chalk-stave rap / reflectable plumb-weight lob / TALLY — marks a hero, the whole board re-targets
 //   LIMEBURNER bruiser shovel slam / low quicklime scoop / SLAKE — hands an ally an Iron Warden's 4-hit LIMECRUST
 //   PURSER   elite    cane into a behind-hitting backhand flick / DRAM — doses 2 allies (+35% dmg, +25% speed, -40% cd)
 //   RESURRECTIONIST grabber tong hook (drags you in) / grab / RECREW — tips whatever army is already on this board out of his cart
+//   RUNNER   rusher   taper jab / LIGHT-IT — sprints to a Chandler mid-rite and touches the lamp: the rest of that tell
+//                     plays at 2.5x, so breaking a rite is a race against the boy, not a timer (issue #28)
+//   DRAYMAN  grabber  two-hand cart-hook slam / grab (4 x 6 squeeze) / SHOVE — heaves a handcart down the lane as a
+//                     rolling hazard, at most two of his live at once (issue #28)
 // FACTION RULE: the rite dies with the ritualist, HOWEVER it died — every rite's onTick checks the source first, so a
 // Chandler rung out over a railing (items.js ringOut sets dead without calling die(), so onDeath never fires) still pops
 // every crust, dose and mend on the field in the same frame. ONE TOUCH BREAKS A RITE (BASE_HOOKS.onHitTaken). THE
@@ -14,15 +18,17 @@
 import { P, FK, frontBox, areaBox, makeEnemyDef } from './common.js';
 import {
   CH, CH_PAL, CH_PROPS, CH_PARTS, CLAN, BASE_HOOKS, makeChandlerBase, drawLamp, drawRiteRim, riteSourceGone, isClient, riteFlash,
+  lampGlass, lampState,
 } from './chandlerRig.js';
 import { celRect, celBall, celPoly, tones, band } from '../../art/shading.js';
 import { farShade } from '../../art/palettes.js';
 import { getChain } from '../../art/secondary.js';
 import { pathPoly, paint } from '../../art/shapes.js';
-import { rad, clamp } from '../../engine/math.js';
+import { floatText } from '../../art/fx.js';
+import { rad, clamp, sign } from '../../engine/math.js';
 import { particles } from '../../engine/particles.js';
 import { audio } from '../../engine/audio.js';
-import { ST } from '../../constants.js';
+import { ST, Z_SPEED_FACTOR } from '../../constants.js';
 
 const R = Math.round;
 const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
@@ -88,6 +94,36 @@ function drawTongs(ctx, rig, pose) {
   if (rig.override) return;
   band(ctx, rig, -14, -3, 18, 6, CH.rubber, 2);   // rubber grip — the biggest faked boundary on any Chandler tool
   band(ctx, rig, 16, -4, 5, 8, CH.leather, 1);    // the pivot collar
+}
+/**
+ * Runner: a 26px ash splint in a pewter drip-cup — the faction's smallest light and its only NAKED flame. The flame is a
+ * lamp with no glass: it takes the same three `rig.lamp` states (dead stub / idle / flooded with a hot core) so the boy
+ * reads in the faction's language, and the glass-less shape is what says "taper, not lamp" at a glance.
+ */
+function drawTaper(ctx, rig) {
+  celRect(ctx, rig, -6, -1.5, 24, 3, 1, WOOD, 0.4, 0.25);
+  celRect(ctx, rig, 17, -3, 6, 6, 1, CH.pewter, 0.4, 0.3);
+  if (rig.override) return;
+  // flat, no ramp (ART_STYLE 4 glow rule): a 7x6 body (over the §0.7 6 px glow floor), a tongue that flickers 2-3 px
+  // on rig.tick (draw-side only), and the 4x4 hot core the rite state adds. State 0 is a grey wick stub.
+  const s = lampState(rig);
+  ctx.fillStyle = rig.col(lampGlass(rig));
+  if (s === 0) { ctx.fillRect(23, -2, 4, 4); return; }
+  ctx.fillRect(22, -3, 7, 6); ctx.fillRect(28, -2, 2 + ((rig.tick >> 1) & 1), 4);
+  if (s === 2) { ctx.fillStyle = rig.col(CH.hot); ctx.fillRect(23, -2, 4, 4); }
+}
+/**
+ * Drayman: the cart hook — a 26px iron shaft with a curled bill and a short ash T-grip at the pommel. Two-handed for the
+ * slam: the far hand stacks onto the T-grip (weapon.grip -9, the stacked bat grip of ART_STYLE 5), which keeps the grip
+ * point inside the far arm's 28 px reach (+3 slack) on every slam key — measured 21.6 on the raised key and 28.7 on the
+ * floor key with the near elbow bent (tools/art-check.js geom/pose-audit).
+ */
+function drawCartHook(ctx, rig) {
+  celRect(ctx, rig, -13, -4, 6, 8, 1, WOOD, 0.4, 0.25);
+  celRect(ctx, rig, -8, -2, 26, 4, 2, CH.pewter, 0.4, 0.25);
+  celPoly(ctx, rig, [16, -3, 24, -6, 30, -1, 28, 6, 22, 8, 20, 4, 25, 3, 25, 0, 20, 1], CH.pewter, 0.38, 0.3);
+  if (rig.override) return;
+  band(ctx, rig, -7, -2, 8, 4, CH.leather, 1);   // the leather grip wrap: leather on iron is a material change, so it takes the line
 }
 
 // ================================================================ waist loads and lamps (accessories)
@@ -204,6 +240,41 @@ function drawCart(ctx, rig) {
   band(ctx, rig, x + 9, y - 20, 14, 4, CLAN.resurrectionist, 1);
   band(ctx, rig, x + 5, y + 5, 6, 6, CH.pewter, 1);                // the wheel hub
   ctx.fillStyle = tones(rig, CH.leather).deep; ctx.fillRect(x + 2, y - 5, 30, 2); // the plank seam
+}
+/** Runner: a dirty-canvas taper bag on the back hip with two spare splints standing out of it (hip space). */
+function drawSatchel(ctx, rig) {
+  const hw = R(rig.p.hip / 2);
+  // TARP canvas, not leather: the bag sits on a leather belt block and the rank band below needs pale ground (the clan
+  // slate is L* 43.7 - 31 under the canvas, 4 under the leather it would otherwise have been painted on)
+  celRect(ctx, rig, -hw - 13, -3, 12, 11, 2, TARP, 0.4, 0.25);
+  // the splints are outlined and stand proud of the bag, so they survive the hit flash as silhouette (§11)
+  band(ctx, rig, -hw - 11, -10, 3, 8, WOOD, 1); band(ctx, rig, -hw - 6, -11, 3, 9, WOOD, 1);
+  if (rig.override) return;
+  band(ctx, rig, -hw - 11, -1, 4, 4, CLAN.runner, 1);   // the Runner's rung: the smallest on the ladder, as the cheapest hand's should be
+  ctx.fillStyle = tones(rig, TARP).deep; ctx.fillRect(-hw - 12, 3, 10, 2);   // the flap's fold
+}
+/**
+ * Drayman: the ash yoke across the shoulders — a pushing harness, the one beam in the faction wider than the man under
+ * it — with a pewter shaft-hook at each end and the lamp swinging from the rear hook (torso space, front layer).
+ */
+function drawYoke(ctx, rig) {
+  // the beam sits ON the shoulder line (top edge 1 px above the coat), not across the chest: at -H + 1 it covered the
+  // top half of the tally-tag, and the tag's wax seal is the rank carrier every Chandler must keep visible
+  const p = rig.p, hw = R(p.torsoW / 2), y = -p.torsoH - 1;
+  // bleached ash (WOOD), so the beam clears the coat (L* 70.9 vs 81.7) and the quicklime sleeves it crosses by hue
+  celRect(ctx, rig, -hw - 12, y, p.torsoW + 24, 5, 2, WOOD, 0.4, 0.25);
+  celRect(ctx, rig, -hw - 14, y + 3, 4, 7, 1, CH.pewter, 0.4, 0.2);
+  celRect(ctx, rig, hw + 10, y + 3, 4, 7, 1, CH.pewter, 0.4, 0.2);
+  // the lamp hangs from the REAR hook at chest height: one of the faction's low lights (the Wickboy's stays the high one)
+  const ch = getChain(rig, 'lamp', 2, { joint: 'torso', rest: [0, 1], stiffness: 0.18, damping: 0.64, gain: 1.4, rotGain: 0.4, maxAng: 26 });
+  ctx.save(); ctx.translate(-hw - 12, y + 7);
+  ctx.rotate(rad(ch.ang[0])); if (!rig.override) { ctx.fillStyle = rig.col(CH.pewter); ctx.fillRect(-1, 0, 2, 4); }
+  ctx.translate(0, 4); ctx.rotate(rad(ch.ang[1]));
+  drawLamp(ctx, rig, 0, 5, 1.1);
+  ctx.restore();
+  if (rig.override) return;
+  // his rung: the padded centre of the beam where it bears on the neck, 8x5 of claret, inked (cloth on ash)
+  band(ctx, rig, -4, y, 8, 5, CLAN.drayman, 1);
 }
 
 // ================================================================ the four rites (all content-side statuses)
@@ -753,8 +824,275 @@ const resurrectionist = def({
   },
 });
 
+// ================================================================ C6 RUNNER: the one that makes breaking a rite a race
+// A boy with a lit taper and a bag of spares. His ONE behaviour: the moment any Chandler within LIGHT_SEEK starts a
+// rite tell, he sprints to it and touches the lamp, and the rest of that tell plays at 2.5x (LIT_CUT: 60 % of the
+// remaining wind-up is gone). He is not a rite (no `rites`, so nothing he does is broken by one touch and THE COMPANY
+// DOES NOT INSURE ITS OWN does not apply — he is a hand, not a policy), and he never lights a rite the player has
+// already broken (riteBroken > 0). Otherwise he is Wickboy-grade harassment: a jab, flanking, panic, a low-hp flee.
+//
+// THE SPRINT IS CONTENT-DRIVEN, THE TALLYMAN WAY. enemy.js has no "run to an ally" state, and moving him from onUpdate
+// while think() also moves him would fight the engine every frame. So the sprint is an ATTACK state playing the base
+// `run` loop (think() leaves ST.ATTACK alone; updateState ends a looping action at LOOP_ACTION_LIMIT = 60, which is
+// why SPRINT_MAX sits under it), steered here, and handed to the `lightIt` anim when he gets within LIGHT_TOUCH.
+const LIGHT_SEEK = 220, LIGHT_TOUCH = 40, LIGHT_STAND = 30, SPRINT_MAX = 50, LIGHT_CD = 200, LIT_CUT = 0.4;
+/** currentAttack markers for the two content-driven phases (frozen: the engine only reads anim / tellFrames / chain off them). */
+const SPRINT = Object.freeze({ anim: 'run', range: 999, sprint: true });
+const LIGHT_IT = Object.freeze({ anim: 'lightIt', range: 999 });
+const RUN_CARRY = { armR: [40, 60], weapon: -70, armL: [-30, -14] };
+/** A narrower, shorter-shouldered boy on the faction's limb lengths (heads-tall unchanged, so the §2 band still holds). */
+const RUN_PROPS = { ...CH_PROPS, torsoW: 20, hip: 17, shoulderX: 2 };
+// bare head AND no cap: the one Chandler whose hair shows, which is the silhouette delta against the capped Wickboy.
+// No `rites` / `find`: BASE_HOOKS drives the taper off `cool` alone (dark while LIGHT_CD runs, lit when he may light).
+const RUN_CHAND = { face: 'bare', cap: 'none', lampJoint: 'weaponTip', lampDX: -2, lampDY: 0, selfConeDX: 20, cool: (f) => f.lightCd };
+const JAB_BOX = frontBox(40, hit(5, 'light', 3, 0, 14, { id: 'jab' }));
+// the touch carries a tiny box: standing between the boy and the lamp he is running for costs you a singe
+const TAPER_BOX = frontBox(36, hit(4, 'light', 3, 0, 12, { id: 'taper' }));
+/** Is `e` a Chandler standing in a rite tell the Runner may still light? */
+function riteTelling(e, f) {
+  if (!e || e === f || e.dead || e.removeMe || !e.alive || !e.def || e.def.faction !== 'chandler' || e.state !== ST.ATTACK) return false;
+  if (e.riteBroken > 0) return false;
+  const ch = e.rig.build.chand, fr = e.anim.frame;
+  return !!(ch && ch.rites && fr && fr.tell && ch.rites.indexOf(e.anim.name) >= 0);
+}
+function findRite(f, world) {
+  let best = null, bd = LIGHT_SEEK;
+  for (const e of world.enemies) {
+    if (!riteTelling(e, f) || Math.abs(e.z - f.z) > 70) continue;
+    const d = Math.abs(e.x - f.x);
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+function startSprint(f, a) {
+  f.lightAlly = a; f.sprintT = 0;
+  f.face(a);
+  f.currentAttack = SPRINT;
+  f.setState(ST.ATTACK, 'run');
+}
+function endSprint(f) {
+  f.currentAttack = null; f.lightAlly = null;
+  f.setState(ST.IDLE, 'idle'); f.aiState = 'APPROACH'; f.releaseToken();
+  f.attackCooldown = Math.max(f.attackCooldown, 20); f.lightCd = Math.max(f.lightCd, 45);
+}
+/** One sprint step: abort if the rite ended (fired, broken, ritualist gone), touch when close, else run at the ally. */
+function sprintStep(f, world) {
+  const a = f.lightAlly;
+  if (++f.sprintT > SPRINT_MAX || !riteTelling(a, f)) { endSprint(f); return; }
+  const dx = a.x - f.x, dz = a.z - f.z, adx = Math.abs(dx);
+  if (adx > 4) f.facing = sign(dx);
+  if (adx <= LIGHT_TOUCH && Math.abs(dz) <= 14) { f.currentAttack = LIGHT_IT; f.setState(ST.ATTACK, 'lightIt'); return; }
+  const spd = f.runSpeed, zb = world.zBounds(f);
+  f.x += clamp(dx - sign(dx) * LIGHT_STAND, -spd, spd);
+  f.z = clamp(f.z + clamp(dz, -spd * Z_SPEED_FACTOR, spd * Z_SPEED_FACTOR), zb.z0, zb.z1);
+}
+/**
+ * THE LIGHT. The ally's remaining tell is cut to LIT_CUT of itself through the engine's own tellFrames plumbing
+ * (enemy.js updateTellSpeed stretches or squeezes the tell keys to currentAttack.tellFrames): a FRESH currentAttack
+ * object, never a write into the shared ai.attacks entry, so the Limeburner's slake is still 30f next time. Going
+ * through the speed rather than jumping the frame index keeps the active key's event firing the normal way.
+ */
+function lightRite(f, world) {
+  const a = f.lightAlly;
+  f.lightCd = LIGHT_CD;
+  if (!riteTelling(a, f) || Math.abs(a.x - f.x) > LIGHT_TOUCH + 20 || Math.abs(a.z - f.z) > 26) return;
+  const atk = a.currentAttack || { anim: a.anim.name };
+  let tot = 0;
+  for (const fr of a.anim.def.frames) if (fr.tell) tot += fr.dur || 1;
+  const k0 = atk.tellFrames ? atk.tellFrames / tot : ((a.ai && a.ai.tellScale) || 1) * ((world.options && world.options.tellScale) || 1);
+  a.currentAttack = { ...atk, tellFrames: Math.max(1, Math.round(tot * k0 * LIT_CUT)) };
+  a.riteHold = Math.max(a.riteHold || 0, 8);   // the ally's tether goes solid: lit
+  riteFlash(f, world);
+  world.addFx('ring', a.x, R(a.h * 0.5), a.z, { r0: 4, r1: 30, color: CH.hot });
+  particles.burst('spark', a.x, a.y + a.h * 0.6, a.z, 8, { speed: 2.4, up: 2, color: CH.lime, color2: CH.hot });
+  floatText(a.x, a.y + a.h + 10, a.z, 'LIT!', CH.hot, 1);
+  audio.play('fire');
+}
+const runnerAnims = Object.assign(makeChandlerBase(RUN_CARRY, { stoop: 16, head: 2, weaponFloor: -20, gait: 'bounce' }), {
+  // jab: the taper cocked BEHIND the head like a fencer's arm (the flame goes up and back, away from you — that is
+  // the tell), a 5f chest-height thrust with a 3px step, 14f of punish. Tiny: it is there so he is not harmless
+  // between rites. The elbow is pulled behind the shoulder on both tell keys (upper -80 / -92): with the forearm
+  // folded forward the hand sat 11 px in front of the shoulder and the shaft ran straight across the cheek.
+  jab: { loop: false, frames: [
+    FK(6, { armR: [-80, 40], weapon: 120, armL: [36, 10], torso: 4, head: -4, root: [-6, 0], legR: [4, 10], legL: [-20, 16], face: 'angry' }, { tell: true, sfx: 'whiff', ease: 'in' }),
+    FK(4, { armR: [-92, 34], weapon: 96, armL: [42, 8], torso: -2, head: -6, root: [-9, 1], legR: [2, 12], legL: [-24, 18], face: 'angry', squash: 0.97, stretch: 1.03 }, { tell: true, ease: 'out' }),
+    FK(5, { armR: [88, -4], weapon: 14, armL: [-30, 16], torso: 28, head: 4, root: [5, 1], legR: [40, 8], legL: [-30, 28], face: 'shout', squash: 1.04, stretch: 0.96 },
+      { hitbox: JAB_BOX, move: { x: 3 }, smear: { from: -110, to: -4, a: 0.3, r: 40 }, fx: [{ kind: 'slash', x: 38, y: 42, radius: 12, angle: 0, sweep: 30 }], sfx: 'whiff', ease: 'overshoot' }),
+    FK(3, { armR: [92, -2], weapon: 16, armL: [-32, 16], torso: 30, head: 4, root: [6, 1], legR: [40, 8], legL: [-30, 28], face: 'shout' }, { ease: 'out' }),
+    FK(14, { armR: [70, 10], weapon: -10, armL: [-26, 12], torso: 22, head: 0, root: [4, 2], legR: [34, 8], legL: [-26, 24], face: 'grit' }, { punish: true, ease: 'inout' }),
+    FK(6, { ...RUN_CARRY, torso: 16, head: 2, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
+  ] },
+  // LIGHT-IT: the taper shoots straight UP over his head for 10f (the flame is the highest thing on the screen — the
+  // read from across the arena is "he is about to light one"), then a low lunge that carries the flame forward and
+  // up to the ally's lamp (event 'lightIt'), 18f of winded punish, back to the carry.
+  lightIt: { loop: false, frames: [
+    FK(6, { armR: [120, 40], weapon: -30, armL: [-40, -20], torso: -6, head: -10, root: [-3, 0], legR: [10, 8], legL: [-16, 10], face: 'angry' }, { tell: true, sfx: 'fire', ease: 'in' }),
+    FK(4, { armR: [140, 30], weapon: -20, armL: [-48, -24], torso: -12, head: -14, root: [-3, -1], legR: [8, 8], legL: [-18, 12], face: 'angry', squash: 0.96, stretch: 1.04 }, { tell: true, ease: 'out' }),
+    FK(6, { armR: [110, -20], weapon: -40, armL: [-36, 20], torso: 34, head: 6, root: [6, 3], legR: [44, 26], legL: [-32, 34], face: 'shout', squash: 1.06, stretch: 0.95 },
+      { hitbox: TAPER_BOX, event: 'lightIt', move: { x: 3 }, smear: { from: -100, to: -30, a: 0.34, r: 50 }, fx: [{ kind: 'ring', x: 40, y: 56, r0: 4, r1: 20, color: CH.lime }], sfx: 'burn', ease: 'overshoot' }),
+    FK(3, { armR: [114, -22], weapon: -42, armL: [-38, 20], torso: 36, head: 6, root: [6, 3], legR: [44, 26], legL: [-32, 34], face: 'shout' }, { ease: 'out' }),
+    FK(18, { armR: [60, 30], weapon: -50, armL: [-20, 10], torso: 26, head: 12, root: [4, 2], legR: [36, 16], legL: [-28, 28], face: 'grit' }, { punish: true, ease: 'inout' }),
+    FK(6, { ...RUN_CARRY, torso: 16, head: 2, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
+  ] },
+});
+const runner = def({
+  variant: 'runner', name: 'RUNNER', role: 'rusher', hp: 35, damage: 1, speed: 1.45, score: 150, drops: 'none',
+  build: mkBuild({ scale: 0.82, clan: CLAN.runner, chand: RUN_CHAND, proportions: RUN_PROPS,
+    weapon: { attach: 'handR', length: 26, draw: drawTaper, headAt: 20 }, accessories: [{ attach: 'hip', draw: drawSatchel }] }),
+  anims: runnerAnims,
+  traits: { weight: 0.7 },
+  ai: {
+    attackRange: 40, zTolerance: 12, flank: true, attackCooldown: [30, 70], firstAttackDelay: 36, retreatChance: 0.45, retreatBudget: 120,
+    tokenGroup: 'chandler', maxAttackers: 2, panicRange: 30, panicFrames: 24, fleeHp: 9, fleeDistance: 120, tellWarnFrames: 10,
+    // lightIt is NOT in the table: it is driven from onUpdate by a rite in progress, never by the player's distance
+    attacks: [{ anim: 'jab', range: 44, weight: 1 }],
+  },
+}, {
+  onSpawn(f) { BASE_HOOKS.onSpawn(f); f.lightCd = 60; f.lightAlly = null; f.sprintT = 0; },
+  onUpdate(f, world) {
+    BASE_HOOKS.onUpdate(f, world);
+    if (f.lightCd > 0) f.lightCd--;
+    const cur = f.currentAttack, sprinting = f.state === ST.ATTACK && !!(cur && cur.sprint);
+    if (sprinting) sprintStep(f, world);
+    else if (f.lightCd <= 0 && f.actionable && f.entered && !f.grabbedBy && f.aiState !== 'STAGGER' && f.aiState !== 'FLEE' && f.aiState !== 'ENTER'
+      && !f.status.stunned && !f.status.blinded) {
+      const a = findRite(f, world);
+      if (a) startSprint(f, a);
+    }
+    // the taper floods and the tether snaps to the Chandler he is running for: the race is DRAWN, not implied
+    const lighting = f.state === ST.ATTACK && (sprinting || f.anim.name === 'lightIt');
+    if (lighting) { f.rig.lamp = 2; f.riteTarget = f.lightAlly; } else if (f.riteHold <= 0) f.riteTarget = null;
+  },
+  onAnimEvent(f, name, frame, world) {
+    if (name !== 'lightIt') return false;
+    lightRite(f, world);
+    return true;
+  },
+});
+
+// ================================================================ C7 DRAYMAN: the one that sends the cart down the lane
+// The man who pushes the handcart: a yoke across the shoulders, a cart hook, and the company's second grabber. His ONE
+// behaviour is the SHOVE — a 30f rite-style tell (lamp flooded, the floor cone lands on the lane where the cart will
+// run; ONE TOUCH BREAKS IT like every Chandler rite) and then a `handcart` prop heaves in from behind him and rolls
+// CART_ROLL px down the lane, knocking down whoever it meets. The cart stays where it stops: a breakable, re-shovable
+// prop (roll it back at him). At most CART_MAX of his carts live at once — while both are out the shove leaves his
+// attack table and he closes in with the hook and the grab instead.
+const CART_MAX = 2, CART_ROLL = 180, CART_HIT = 14;
+const DRAY_CARRY = { armR: [26, 40], weapon: -44, armL: [-30, -12], grip: 0 };
+/** A wider, thicker man on the faction's limb lengths: shoulders 26, hips 22, arm / leg radii up half a pixel. */
+const DRAY_PROPS = { ...CH_PROPS, torsoW: 26, hip: 22, shoulderX: 4, hipX: 5, armR: 5, legR: 5.5, neckR: 4 };
+// capCol: the fifth dark near-neutral on the faction's heads, a cool slate-violet no other cap uses (s18, L* 38).
+// selfConeDX +44: the cone lands on the LANE AHEAD, where the cart is about to be — the Resurrection Man's points back
+// at his cart, the Drayman's points at where his is going. `find: () => null` keeps the cone on the self spot.
+const DRAY_CHAND = { cap: 'brim', capCol: '#433E4C', rites: ['shove'], lampJoint: 'torso', lampDX: -25, lampDY: -11, selfConeDX: 44, find: () => null, cool: (f) => f.attackCooldown };
+const HOOKSLAM_BOX = frontBox(60, hit(16, 'knockdown', 5, 5, 24, { id: 'hookslam' }));
+/** The two attack tables the cart stock switches between (module-level: f.ai.attacks is reassigned, never mutated). */
+const DRAY_MELEE = Object.freeze([{ anim: 'grab', tell: 'grabTell', range: 48, weight: 3 }, { anim: 'slam', range: 62, weight: 2 }]);
+const DRAY_ALL = Object.freeze([...DRAY_MELEE, { anim: 'shove', range: 210, minRange: 80, weight: 3, tellFrames: 30 }]);
+/** Drop dead / removed carts from his list in place (no per-frame allocation) and return the live count. */
+function liveCarts(f) {
+  const list = f.carts;
+  let n = 0;
+  for (let i = 0; i < list.length; i++) { const c = list[i]; if (c.alive && !c.removeMe) list[n++] = c; }
+  list.length = n;
+  return n;
+}
+/**
+ * THE SHOVE. The cart is a real `handcart` Prop (art/props.js) with the catalogue's `release` switched off and no drops:
+ * the hazard is the drop. It spawns just BEHIND him and is rolled with startRoll, which always rolls away from the
+ * striker — so the velocity is re-signed to his facing and the cart runs forward past him down the lane (the roll hits
+ * are owned by him, team ENEMY, so it never hits him or his). A parked catalogue cart has no `roll`, so the rolling
+ * numbers go on THIS instance's info (a per-instance copy; PROP_TYPES is never written).
+ */
+function shoveCart(f, world) {
+  if (f.riteBroken > 0 || liveCarts(f) >= CART_MAX) return false;
+  const z = clamp(f.z + 6, world.floorBand.z0, world.floorBand.z1);
+  // content never imports game/items.js: the world puts the prop down (World.spawnProp), `release: null` is the
+  // stage-data contract for "nothing tips out" (the hazard IS the drop), and the rolling numbers go on this instance
+  if (!world.spawnProp) return false;
+  const cart = world.spawnProp('handcart', f.x - f.facing * 22, z, { drops: 'none', release: null });
+  if (!cart.info.roll) cart.info = { ...cart.info, roll: CART_ROLL, rollHit: CART_HIT };
+  cart.startRoll(f);
+  cart.vx = f.facing * Math.abs(cart.vx);
+  f.carts.push(cart);
+  particles.burst('dust', f.x - f.facing * 20, 0, f.z, 8, { speed: 2, up: 1 });
+  if (world.camera) world.camera.shake(4, 8);
+  return true;
+}
+const drayAnims = Object.assign(makeChandlerBase(DRAY_CARRY, { stoop: 18, head: 6, weaponFloor: -28, grab: true, gait: 'haul' }), {
+  // slam: both hands onto the hook (grip 1 — the far arm IK-solves onto the T-grip), up and BACK over the head for
+  // 22f, then the bill comes down on the floor line 56px out: 16 knockdown, 30f of punish, the faction's hardest hit
+  slam: { loop: false, frames: [
+    FK(14, { armR: [-70, -30], weapon: 10, armL: [-60, -24], grip: 1, torso: 0, head: -8, root: [-3, 0], legR: [10, 6], legL: [-16, 12], face: 'angry' }, { tell: true, sfx: 'hammer_swing', ease: 'in' }),
+    FK(8, { armR: [-120, -36], weapon: 30, armL: [-108, -30], grip: 1, torso: -12, head: -14, root: [-5, -1], legR: [8, 6], legL: [-18, 14], face: 'angry', squash: 0.95, stretch: 1.06 }, { tell: true, ease: 'out' }),
+    // the floor keys keep the near ELBOW BENT (lower -60 / -58 / -50): a straight arm put the hand 33 px ahead of the far
+    // shoulder and the T-grip out of the far arm's 28 px reach (pose-audit GRIP); bent, the grip measures 28.7 / 29 / 29.6
+    // and the bill still lands on the floor line 45-51 px out, inside the box
+    FK(10, { armR: [40, -60], weapon: 0, armL: [32, -50], grip: 1, torso: 40, head: 10, root: [6, 3], legR: [44, 28], legL: [-32, 34], face: 'shout', squash: 1.08, stretch: 0.93 },
+      { hitbox: HOOKSLAM_BOX, smear: { from: -72, to: 70, a: 0.42, r: 58 }, sfx: 'hammer_slam',
+        fx: [{ kind: 'dust', x: 48, y: 0, count: 7 }, { kind: 'ring', x: 48, y: 0, r0: 4, r1: 32, flat: true, color: CH.quicklime }], ease: 'overshoot' }),
+    FK(4, { armR: [42, -58], weapon: 2, armL: [34, -48], grip: 1, torso: 42, head: 10, root: [6, 3], legR: [44, 28], legL: [-32, 34], face: 'grit' }, { ease: 'out' }),
+    FK(30, { armR: [44, -50], weapon: -6, armL: [36, -40], grip: 1, torso: 32, head: 6, root: [4, 3], legR: [38, 22], legL: [-28, 30], face: 'grit' }, { punish: true, ease: 'inout' }),
+    FK(6, { ...DRAY_CARRY, torso: 18, head: 6, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
+  ] },
+  // SHOVE: no hitbox anywhere. 18f reaching DOWN AND BACK for the shafts behind him (the hook hangs, both arms go
+  // back, the back straightens out of the stoop), 12f of heave with the knees loading under him, then the cart bursts
+  // past on the push key (event 'shove' — both hands thrown forward-low, a wide lunge) and 28f of punish leaning on
+  // nothing. Back-low / forward-low on both arms is a shape no other Chandler key uses (§10).
+  shove: { loop: false, frames: [
+    FK(18, { armR: [-50, 10], weapon: -10, armL: [-56, 12], grip: 0, torso: -8, head: 2, root: [-1, 2], legR: [24, 18], legL: [-14, 20], face: 'angry' }, { tell: true, sfx: 'hydraulic', ease: 'in' }),
+    FK(12, { armR: [-70, 4], weapon: -14, armL: [-76, 6], grip: 0, torso: 6, head: 6, root: [-6, 1], legR: [8, 12], legL: [-28, 22], face: 'grit', squash: 1.05, stretch: 0.96 },
+      { tell: true, fx: [{ kind: 'dust', x: -26, y: 0, count: 3 }], ease: 'out' }),
+    FK(8, { armR: [60, 10], weapon: -60, armL: [66, 8], grip: 0, torso: 36, head: 8, root: [5, 5], legR: [40, 40], legL: [-30, 42], face: 'shout', squash: 1.04, stretch: 0.96 },
+      { event: 'shove', move: { x: 2 }, smear: { from: 170, to: 80, a: 0.3, r: 44 }, fx: [{ kind: 'dust', x: -20, y: 0, count: 6 }], ease: 'overshoot' }),
+    FK(4, { armR: [64, 8], weapon: -62, armL: [70, 6], grip: 0, torso: 38, head: 8, root: [6, 5], legR: [40, 40], legL: [-30, 42], face: 'shout' }, { ease: 'out' }),
+    FK(28, { armR: [44, 16], weapon: -52, armL: [48, 14], grip: 0, torso: 28, head: 4, root: [4, 4], legR: [34, 32], legL: [-26, 34], face: 'grit' }, { punish: true, ease: 'inout' }),
+    FK(8, { ...DRAY_CARRY, torso: 18, head: 6, legR: [8, 4], legL: [-8, 6] }, { ease: 'out' }),
+  ] },
+});
+const drayman = def({
+  variant: 'drayman', name: 'DRAYMAN', role: 'grabber', hp: 140, damage: 1, speed: 0.75, score: 600, drops: 'food_small',
+  elite: false, grabbable: false, grabbableByGrappler: true, lyingFrames: 50, grabOffset: 26,
+  build: mkBuild({ scale: 1.25, clan: CLAN.drayman, chand: DRAY_CHAND, proportions: DRAY_PROPS,
+    weapon: { attach: 'handR', length: 30, draw: drawCartHook, twoHanded: true, grip: -9, headAt: 24 },
+    accessories: [{ attach: 'torso', draw: drawYoke }] }),
+  anims: drayAnims,
+  traits: { flinchEvery: 2, weight: 1.6 },
+  moves: { grabHit: { damage: 6, hits: 4 }, throwFwd: { damage: 16, vx: 7, vy: 4 }, throwBack: { damage: 18, vx: 6, vy: 5 } },
+  ai: {
+    attackRange: 48, zTolerance: 15, attackCooldown: [60, 110], grabHoldHits: 4, grabHitEvery: 18, flank: false, tellWarnFrames: 14, tokenGroup: 'chandler',
+    // the shove's wide `range` raises maxAttackRange so thinkApproach fires it from across the lane; its minRange keeps
+    // the cart from being shoved point-blank (no lane to roll down), and chooseAttack(adx) still picks grab / slam up close
+    attacks: DRAY_ALL,
+  },
+}, {
+  onSpawn(f) { BASE_HOOKS.onSpawn(f); f.carts = []; f.cartFree = true; },
+  onUpdate(f, world) {
+    BASE_HOOKS.onUpdate(f, world);
+    // the attack table follows the cart stock: with CART_MAX out he has nothing to shove and stops telling it
+    const free = liveCarts(f) < CART_MAX;
+    if (free !== f.cartFree) { f.cartFree = free; f.ai.attacks = free ? DRAY_ALL : DRAY_MELEE; }
+  },
+  onAnimEvent(f, name, frame, world) {
+    if (name !== 'shove') return false;
+    riteFlash(f, world);
+    shoveCart(f, world);
+    return true;
+  },
+  // the Resurrection Man's launch rule, for the same reason: ai.launchStun is gated on `this.armor` in enemy.js and a
+  // flinchEvery brute has none, so a launcher is converted to a heavy stagger here instead of juggling 140 hp
+  onHitTaken(f, h, attacker, world) {
+    BASE_HOOKS.onHitTaken(f, h, attacker, world);
+    if (h.type === 'launch' && !f.airborne && !f.dead && f.state !== ST.KNOCKDOWN && f.state !== ST.LYING) {
+      audio.play('stagger');
+      return { ...h, type: 'heavy', stagger: true, hitstun: 15, breaksArmor: true };
+    }
+    return undefined;
+  },
+});
+
 /** The Chandlery, in wave order: two Wickboys and a Tallyman teach the tell; the rest are what they are for. */
-export const CHANDLERS = [wickboy, tallyman, limeburner, purser, resurrectionist];
+export const CHANDLERS = [wickboy, tallyman, limeburner, purser, resurrectionist, runner, drayman];
 /**
  * The rites themselves, for the faction's two Stage 3 bosses (./midboss3.js, ./boss3.js). They are exported rather
  * than re-declared so a boss can never hand out a limecrust that counts its hits differently from the Limeburner's,
