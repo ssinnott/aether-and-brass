@@ -4,7 +4,7 @@
 // The autopilot has named STYLES (?botstyle=NAME, one per slot: `aggressive,defensive`). `balanced` is the default and
 // is the behaviour every scenario in tools/playtest.js was written against; the others exist so tools/winrate.js can
 // sweep a board against more than one kind of player before anyone calls it tuned.
-import { ST, METER } from '../constants.js';
+import { ST, METER, TEAM } from '../constants.js';
 import { rng } from '../engine/rng.js';
 import { laneAroundHazards } from './hazards.js';
 
@@ -75,6 +75,8 @@ export function botIntent(p, world, style) {
   if (p.state === ST.LYING || p.state === ST.GETUP || p.state === ST.HURT) { if (f % 5 === 0) it.jump = true; return it; }
   if (p.state === ST.GRAB) { if (f % 10 === 0) { it.attack = true; it.x = p.facing; } return it; }
   if (p.state === ST.GRABBED) { if (f % 3 === 0) it.attack = true; return it; }
+  // netted (Gutter Wrangler, Riggerman): a human mashes attack to tear out of it (player.js -> status.mashNet)
+  if (p.status && p.status.netted) { if (f % 3 === 0) it.attack = true; return it; }
   const e = pickTarget(p, world);
   if (!e) {
     it.x = 1;
@@ -110,7 +112,24 @@ export function botIntent(p, world, style) {
   }
   if (p.state === ST.JUMP && f % 4 === 0) it.attack = true;
   if (f % 300 === 150 && adx < 110 && Math.abs(dz) <= Z_TOL && rng.chance(s.jumpChance)) it.jump = true;
-  if (s.dodgeChance > 0 && e.hitboxes && e.hitboxes().length && adx < 70 && Math.abs(dz) < 20 && f % 3 === 0
-      && rng.chance(s.dodgeChance) && dodgeAllowed(p, world)) { it.dodge = true; p.botDodgeSpent++; }
+  // Something is coming: a live hitbox on the target, a GRAB wind-up (the Hulk, the Resurrection Man, the Grapnel Mate,
+  // the Drayman, the Riggerman - a grab is the one hit a human never trades into), or an enemy projectile closing on
+  // this lane (a reel line, a net, a harpoon). Every style dodges at its own rate; only the dodge budget is shared.
+  const grabbing = !!(e.anim && (e.anim.name === 'grabTell' || e.pendingAttack === 'grab')) && adx < 90 && Math.abs(dz) < 24;
+  const threat = (e.hitboxes && e.hitboxes().length && adx < 70 && Math.abs(dz) < 20) || grabbing || incomingShot(p, world);
+  if (s.dodgeChance > 0 && threat && f % 3 === 0 && rng.chance(s.dodgeChance) && dodgeAllowed(p, world)) { it.dodge = true; p.botDodgeSpent++; }
+  // a cautious player who is not going to dodge a grab still steps out of its reach
+  else if (grabbing && s.spacing > 0 && f % 2 === 0) { it.x = -dir; it.attack = false; }
   return it;
+}
+
+/** An enemy projectile (team ENEMY, not yet spent) within 70px of the player and moving toward it in this z lane. */
+function incomingShot(p, world) {
+  for (const q of world.entities) {
+    if (q.kind !== 'projectile' || q.team !== TEAM.ENEMY || q.removeMe || q.style === 'explosion' || q.style === 'fire') continue;
+    const dx = q.x - p.x;
+    if (Math.abs(dx) > 70 || Math.abs(q.z - p.z) > 20) continue;
+    if (!q.vx || Math.sign(q.vx) === -Math.sign(dx)) return true;   // heading at us, or falling on us
+  }
+  return false;
 }
