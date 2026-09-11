@@ -145,7 +145,7 @@ export const stage2 = {
       /** Issue #32: she BANKS. 45f of the deck leaning over (a gale you can hear coming), then 60f of everyone on
        *  their feet sliding toward the low rail — which on this deck is a ring-out. `dir: 0` alternates, so she rolls
        *  one way and then the other rather than always dumping the fight over the same side. */
-      platform: { kind: 'tilt', period: 420, tell: 45, active: 60, slide: 0.9, dir: 0 },
+      platform: { kind: 'tilt', period: 480, tell: 45, active: 45, slide: 0.7, dir: 0 },
       // one powder tub at each gun port (they roll 50 and go off 30f after breaking), food and meter amidships
       props: [
         { type: 'powderTub', x: 3760, z: 26 }, { type: 'powderTub', x: 4080, z: 116 },
@@ -154,8 +154,8 @@ export const stage2 = {
         // issue #34: the brig hatch amidships. It lets a re-wound Footman up onto the deck every five seconds while
         // the section is live, and STANDING ON IT HOLDS IT SHUT -- the lid rattles under you and the queued unit
         // waits. That is the co-op job on this deck: one player holds the hatch while the other clears the gun crew.
-        { type: 'locker', x: 3940, z: 70, name: 'hatch', drops: null, cargoOn: 'timer', cargoEvery: 300,
-          cargo: [{ type: B, variant: 'footman' }, { type: B, variant: 'footman' }, { type: B, variant: 'halberdier' }] },
+        { type: 'locker', x: 3940, z: 70, name: 'hatch', drops: null, cargoOn: 'timer', cargoEvery: 420,
+          cargo: [{ type: B, variant: 'footman' }, { type: B, variant: 'footman' }] },
       ],
       // the aft gun at the left edge fires up the back lane (z 4..40); the forward gun at the right edge fires down the front
       // lane (z 100..136) half a cycle later. 45f of the gun running out and the lane lighting, then the shot: 12 + knockdown.

@@ -64,9 +64,24 @@ export class StageRunner {
       hazardSet: (spec) => this.hazardSet(spec),
       hazardRevert: (token) => this.hazardRevert(token),
       zoneFlash: (spec) => this.world.add(new ZoneFlash(spec)),
-      spawn: (specs) => this.queueSpawns(specs),
+      spawn: (specs) => this.eventSpawn(specs),
       prop: (spec) => this.world.spawnProp(spec.type, spec.x, spec.z, spec),
     });
+  }
+  /**
+   * An event's `spawn` action (issue #33). These are a real encounter, not strays: if a wave is running they join it
+   * as reinforcements, and if none is they START one, which locks the camera behind them.
+   *
+   * That lock is the whole point. An `onWaveClear` event fires from clearWave, which has already UNLOCKED the camera,
+   * so units queued straight into the world have the entire stage to back into — and a ranged variant in
+   * KEEP_DISTANCE (a Tallyman, a Slinger) kites away indefinitely. A human walks past it; the autopilot cannot,
+   * because it still has a live target, so it never walks right and the run never reaches the next trigger. That is
+   * a STALL rather than a loss, and tools/winrate.js counts an unfinished run as a failure.
+   */
+  eventSpawn(specs) {
+    if (!specs || !specs.length) return;
+    if (this.activeWave) { this.queueSpawns(specs); return; }
+    this.startWave({ spawns: specs }, true);
   }
   /**
    * `hazardSet` action: force every hazard tagged `name` into a phase and/or retime it, and hand back a token that
@@ -90,7 +105,11 @@ export class StageRunner {
       if (spec.period) {
         const frac = e.period ? (((this.world.frame + e.offset) % e.period) / e.period) : 0;
         e.period = spec.period;
-        e.offset = Math.round(frac * spec.period) - (this.world.frame % spec.period);
+        // Normalised to [0, period): Hazard.update does `(world.frame + offset) % period` and a NEGATIVE offset
+        // makes that expression negative in JS, which parks the hazard below its own tellStart forever -- it would
+        // simply never fire again, silently, for the rest of the board.
+        const raw = Math.round(frac * spec.period) - (this.world.frame % spec.period);
+        e.offset = ((raw % spec.period) + spec.period) % spec.period;
       }
     }
     return token.hazards.length ? token : null;
