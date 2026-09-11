@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown playthrough playthrough2 playthrough3 playthrough4 coop coop4 audio gallery botstyles options training weapons)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles platforms events cargo playthrough playthrough2 playthrough3 playthrough4 coop coop4 audio gallery botstyles options training weapons)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 // This file is already close to its ~700-line budget: further scenarios belong in their own sibling
@@ -15,6 +15,11 @@ import { weaponScenarios } from './scenarios/weapons.js';
 import { thrown } from './scenarios/thrown.js';
 import { coop4Scenarios } from './scenarios/coop4.js';
 import { training as trainingScenario } from './scenarios/training.js';
+import { entrances } from './scenarios/entrances.js';
+import { obstacles } from './scenarios/obstacles.js';
+import { platforms } from './scenarios/platforms.js';
+import { events as eventScenario } from './scenarios/events.js';
+import { cargo } from './scenarios/cargo.js';
 
 const { chromium } = loadPlaywright();
 
@@ -469,6 +474,26 @@ const scenarios = {
   // 3d. Thrown weapons: input, release, landing (pickup / shatter), bot guard (tools/scenarios/thrown.js). A
   // sibling module, same pattern as tools/scenarios/weapons.js above.
   thrown: (server) => thrown(server, { withPage, assert }),
+
+  // 3e. Wave entrances: tell -> ARRIVING approach -> punishable arrival, per entrance kind, plus the rope-drop
+  // line cut (issue #30, tools/scenarios/entrances.js).
+  entrances: (server) => entrances(server, { withPage, assert }),
+
+  // 3f. Solid obstacles: gap fall / jump / thrown ring-out, the enemy jump-over, and a barricade holding a wave
+  // lock until it is broken (issue #31, tools/scenarios/obstacles.js).
+  obstacles: (server) => obstacles(server, { withPage, assert }),
+
+  // 3g. Moving platforms: tilt / pallet / hoist against the real authored sections, plus the regression that the
+  // Brass Funicular declares none (issue #32, tools/scenarios/platforms.js).
+  platforms: (server) => platforms(server, { withPage, assert }),
+
+  // 3h. Scripted mid-board events: the ?event= jump, a real script reaching the world, and hazard overrides being
+  // handed back afterwards (issue #33, tools/scenarios/events.js). Action SEQUENCING is in tools/simtest.js.
+  events: (server) => eventScenario(server, { withPage, assert }),
+
+  // 3i. Scenery entrances: a crate tipping its cargo out, a chute on a timer that can be held shut, a smashed timer
+  // container becoming loot, and a wave that comes out of a named cart (issue #34, tools/scenarios/cargo.js).
+  cargo: (server) => cargo(server, { withPage, assert }),
 
   // 4. Full bot playthrough to the results screen.
   async playthrough(server) {

@@ -384,6 +384,16 @@ Required fields: `hp, maxHp, team (TEAM.PLAYER|TEAM.ENEMY), def (content definit
 Rules implemented ONCE in `Fighter` (players and enemies both inherit):
 - `takeHit(hit, attacker)` applies damage, hitstop to both (`HITSTOP` in constants.js: `light:3, medium:5, heavy:8, launch:8, knockdown:8, grab:6, throw:6, superFinisher:14`, per RECONCILIATION), flash, knockback (`vx = kbX * attacker.facing`, `vy = kbY`), state → `HURT` (ground, `hitstun` frames), `HURT_AIR` if airborne, `KNOCKDOWN` if `type` is `launch`/`knockdown` or if `juggleCount >= 3` or if hp <= 0. Spawns hit spark + damage text. Returns false if invulnerable / already dead / friendly (no friendly fire between players; enemies never hurt enemies unless `hit.friendly`).
 - `KNOCKDOWN` flight: gravity applies; on landing → `LYING` for `def.lyingFrames` (default 40; dead → stay & fade out), then `GETUP` (invuln 20 frames), then `IDLE`. Juggle: a `KNOCKDOWN` fighter still in the air with `y > 0` can be hit again (juggle), which resets `vy` to `hit.kbY * 0.8`; `juggleCount++`; after 4 juggles the target becomes hit-immune until it lands (anti-infinite).
+- **`plant(world)` is the only way to put a body on the floor from outside `physics()`.** `get airborne` is
+  `y > 0 || vy > 0`, so writing `y = 0; vy = 0` directly takes a body OUT of the air without ever landing it, and
+  `physics()` only reaches `onLand` on the way down. Every exit from an air state lives inside `onLand` —
+  `KNOCKDOWN`/`THROWN` → `LYING` → `GETUP`, `JUMP` → `IDLE`, and hp 0 → `ST.DEAD` — so a body planted the naive way
+  is frozen in its air state for good. Above 0 hp it also never leaves `world.waveEnemies`, and a wave that cannot
+  clear is a **soft-lock**, which `tools/winrate.js` scores as a failure rather than a loss. `Enemy.checkOffscreen`'s
+  stuck-wave rescue is the live caller: it teleports a unit that has not reached the arena to the camera lock edge,
+  and a unit can be knocked down *before* it ever gets there. Anything that repositions a fighter — a rescue, a
+  cutscene, an authored arrival — goes through `plant`, or forces a definite `setState` of its own the way the
+  `game/boss.js` phase-change and defeat paths do.
 - **Shields** (`game/shield.js`, GDD 7): a fighter with `traits.shield` carries `shield` HP in front of `hp`. Every
   damage path — `takeHit` and `takeHitRaw` — spends the shield first and applies only the overflow to `hp`; the
   reaction (hitstun, knockback, launch, armor, death) is computed from the hit exactly as before, so absorbing
@@ -466,11 +476,13 @@ export const stage1 = {
         { triggerX: 240,   // when camera.x + VIEW_W/2 >= triggerX (i.e. players reached here)
           lock: true,      // camera locks to [triggerX - VIEW_W/2, triggerX + VIEW_W/2]
           spawns: [ { type: 'typeA', variant: 'grunt', side: 'right', z: 40, delay: 0 },
-                    { type: 'typeA', variant: 'grunt', side: 'left',  z: 100, delay: 45, mods: ['holdout'] } ],
+                    { type: 'typeA', variant: 'grunt', side: 'left',  z: 100, delay: 45, mods: ['holdout'] },
+                    { type: 'typeA', variant: 'elite', z: 70, delay: 90, entrance: { kind: 'teleport', dx: -60 } } ],
           reinforcements: [ { whenRemaining: 1, spawns: [ ... ] } ]   // optional
         },
       ],
-      events: [ { atX: 1050, kind: 'midboss' | 'bossIntro' | 'text', ... } ]
+      events: [ { id: 'overfire', onWaveClear: 2, once: true, actions: [ { caption: '...' }, { wait: 120 }, ... ] },
+                { atX: 1050, kind: 'text', text: '...' } ]   // `kind: 'text'` is the old one-banner shorthand
     }, ...
   ],
   midboss: { atX: ..., def: 'midboss' },
@@ -496,11 +508,38 @@ A `rails` hazard zone (`game/hazards.js` `Zone`) may also carry `open: true` (is
 flight over the edge (`loseOverEdge`) instead of letting it land — only The Mooring Spine (stage2 `m1`) and The Lash-Up (stage4 `g2`) set it, because both boards say so explicitly ("no bulwark", "no
 bulwark anywhere"). The Brass Funicular's `rails` (stage1 `s3`) are railings, not an open edge, so it omits `open` and thrown items land on the roof as normal.
 
+A `solid` zone (issue #31) is the one thing in the game that BLOCKS movement: `{ type: 'solid', x0, x1, z0, z1,
+height, breakable? }`. A grounded fighter cannot cross `[x0, x1]` while its z is inside `[z0, z1]`; one whose y clears
+`height` passes over, and a body that is still RISING is measured by the apex its jump will reach, so committing to a
+jump that clears the obstacle clears it (without that, a jump started against a wall is blocked through its own
+ascent). Knockback into a solid wall-bounces with the same numbers the camera bound already uses (`AIR_FALL_STATES`,
+|vx| > 4, `vx *= -0.5`). `height: 0` is a floor GAP: an enemy that walks in rings out (+200), a player pays 8% of max
+HP and is set on the nearest lip — health, not a life, the same rule the Crop Loft's `netGive` squares use, and
+literally the same three ejectors (`ringOut` / `dropPlayer` / `loseOverEdge`). `breakable: true` blocks only while a
+Prop flagged `barricade: true` inside the rectangle is still standing, and `StageRunner.barricadeHolding` keeps that
+wave open until it is down. The health lives on the **Prop**, not the Zone, because a Prop is kind `'prop'` and its hp
+is hashed by `net/checksum.js`, whereas a Zone is kind `'fx'` and its state is invisible to the desync canary.
+Unlike every other zone a solid answers `dangerBox()` permanently (a wall has no quiet phase), which is what makes
+`laneAroundHazards` route mobs and the autopilot around it for free; a broken barricade reports `null` again.
+
 Hazard and zone types, their spec fields, timings, hits and `dangerBox` footprints are tabulated in the header of
 `game/hazards.js` (HAZARD TABLE / ZONE TABLE). Boards 2-4 declare `cannon`, `gasCell`, `limePit`, `wagon`,
 `tallowVat`, `kilnMouth`, `ledgerDrop` / `ballastDrop` and `gasSeep` hazards and `gust`, `spoil` and `netGive`
 zones from that table next to stage 1's six; every hazard follows the same tell / active / grace contract, so the enemy
 pathing (`laneAroundHazards`) and the autopilot read them without knowing the type.
+
+A spawn entry may carry `entrance: { kind, ... }` (issue #30, `game/entrances.js`), which replaces the walk-on from
+`side` with an authored arrival. Kinds are `teleport` | `flyIn` | `descend` | `ropeDrop`; their frame budgets, paths
+and tells are tabulated in the ENTRANCE TABLE at the head of that module. Every entrance is a tell (an `EntranceTell`
+placed *before* the unit exists, which flags `isHazard` and answers `dangerBox()` so `laneAroundHazards` steers mobs
+and the autopilot around it for free), then a scripted approach in the new **ARRIVING** ai state, then a punishable,
+grabbable recovery once the body is on the floor. `entered` stays false for the whole arrival exactly as it does while
+a side spawn walks in, so the wave lock and the enemies-remaining count are unchanged. Shared spec fields: `x`
+(absolute) or `dx` (offset from the lock centre, the convention `side: 'sky'` already uses), `from` ('left'|'right',
+which side a `flyIn` crosses from — defaults to the spec's own `side`), `speed` (a `descend`'s px/frame) and `hang`
+(frames a `descend`/`ropeDrop` holds in the air before letting go; `ropeDrop` defaults to 30). A hit on a unit still
+hanging on a rope CUTS THE LINE: the hit is rewritten to a knockdown and the body drops, which works even on a
+shielded unit whose armour swallows the reaction. `arriveT`, `aiState` and `entered` are hashed by `net/checksum.js`.
 
 A spawn entry may carry `mods: ['holdout'|'crusted'|'scrip'|'winged'|'salvaged']` (issue #28): the Enemy is built from a
 derived def (`game/traits.js` `SPAWN_MODS` / `applyMods`) at spawn time, so a modifier is part of the def the rig comes
@@ -508,6 +547,73 @@ from and lockstep netplay never sees a late coin flip. A prop entry forwards eve
 `hp`, `drops`, `solid`, `rider`, `release: { type, variant, mods? } | null` (a live enemy tips out on break), `dump:
 'chassis'` (an overhead net drops a rolling prop when a jump attack hits it) and `fire` (a breaking fire source lights gas
 seeps through `world.addFire`). `art/props.js` `PROP_FAMILIES` names which prop types belong to which board's palette.
+
+A prop entry may carry **`cargo: [spawnSpec]`** (issue #34) — spawn specs the container is holding — plus `name` (the
+author key a wave addresses it by) and `cargoOn`: `'break'` (everything climbs out when the prop is broken — the
+generalisation of `release`, which is the same idea for exactly one unit and still works unchanged) or `'timer'` (one
+every `cargoEvery` frames while the wave is live: a deck hatch, a coal chute). Everything arrives through the
+`climbOut` entrance (issue #30): on its feet where the container stands, in a long punishable recovery, because
+getting out of a box is slow. Nothing appears next to the player without a visible container.
+
+A timer container **rattles** for 40 frames before it opens, and flags `isHazard` with a `dangerBox()` live only for
+that window, so `laneAroundHazards` steers mobs and the autopilot out of the lane for free — and stops the moment it
+opens, because a permanently dangerous crate would make enemies refuse that lane for the whole board. It can also be
+**stood on to hold it shut**: a fighter on the lid stops the clock (the co-op job on a hatch). Deliberately not a
+lock — stepping off resumes from where it stopped rather than resetting, so holding buys time, it does not cancel the
+wave. Cargo that never comes out is **loot**: smashing a timer container drops one pickup per unspent entry instead
+of tipping the whole load out at once, so breaking a crate early is a trade rather than always right.
+
+A wave entry may use `entrance: { kind: 'cargo', prop: <name> }`, which has no side and no camera-relative x at all:
+the runner resolves the name to that container and hands the spawn to it, so the unit comes out wherever the prop is
+standing. A wave-supplied load is not in the container until the wave fires, so breaking it early cannot turn those
+units into loot the way a pre-loaded crate's cargo does — they climb out of the wreck instead, because a wave must
+never be an enemy short because scenery was smashed.
+
+`events` (issue #33, `game/events.js`) is a frame-stepped action script per section, armed when the trigger position
+passes `atX` (the same `reach` wave triggers use) or when the section's Nth wave clears (`onWaveClear: n`, counted
+**per section**, not stage-wide). The actions and what each one blocks for are tabulated in the ACTION TABLE at the
+head of that module: `caption`, `wait` (the only action that spends time — `wait: N` is exactly N frames), `camera`,
+`sfx`, `music`, `hazardSet`, `zoneFlash`, `spawn` and `prop`. A run of instant actions all lands on one frame, so
+`{caption}, {sfx}, {zoneFlash}` reads as a single beat.
+
+`hazardSet: { name, force?, period?, frames? }` addresses hazards by an optional author key (`name` on the hazard
+spec) because `Entity.id` differs between lockstep peers and is deliberately unhashed. It only ever touches
+per-instance fields — writing through `h.info` would retime that hazard TYPE on every board for the rest of the page
+load, since `HAZARD_TYPES` is a shared live table — and it lands in the same place the gas cell's `spent` flag does,
+because `phase` is recomputed from `(world.frame + offset) % period` every step and assigning it anywhere else is
+overwritten next frame. Retiming re-solves `offset` so the hazard keeps its place in its own cycle; setting `period`
+alone can drop a hazard straight into `active` with no tell, which GDD 6 forbids. Every override is handed back when
+its `frames` run out, when the script ends, and when the section is left.
+
+Content rules a script can break where a hazard cannot: never inside a boss arena, never during a transition, and
+every event warns before it hurts (a caption plus a `zoneFlash` or a tell SFX, with enough `wait` for a bot to walk
+out). One is a soft-lock rather than a fairness problem: **a `spawn` action must never introduce a summoner**. The
+wave lock clears on `world.waveEnemies.length === 0`, and the Chandlery's Resurrection Man tips a fresh Tin Footman
+out of his cart on a timer — in an authored wave you stop that by killing him, but dropped in from a script he is
+simply a section that cannot end.
+
+A section may declare `platform: { kind, ... }` (issue #32, `game/platforms.js`), which makes the floor band itself a
+vehicle rather than only its backdrop. Kinds and their fields are tabulated in the PLATFORM TABLE at the head of that
+module: `hoist` (the deck climbs — a body in the AIR takes `rise` px/f of extra downward velocity, because the floor
+is coming up to meet it, so a jump lands sooner than it looks like it should), `pallet` (a sub-rectangle of the floor
+slides and carries whoever is standing on it; step off and it leaves without you) and `tilt` (the deck banks on a
+tell/active cycle and every grounded body slides `slide` px/f toward the low side; `dir: 0` alternates each cycle).
+
+Three rules make this work and are not optional. **Riders are moved by writing `x`/`z` directly, never `vx`/`vz`** —
+the grounded branch of `Fighter.physics` applies `GROUND_FRICTION` and snaps anything under 0.05 to zero, so a rider
+delta put into a velocity is decayed the same frame and the rider lags the floor (`Zone.updateConveyor` and
+`Zone.updateGust` already do it this way, and their exclusion list — airborne, held, dead, boss, netted — is the one
+reused). **A hoist never raises a rider's `y`**: `get airborne` is `y > 0 || vy > 0`, so a raised deck would make every
+rider permanently airborne — unable to act (`actionable`), ungrabbable (`grabs.js`), and dragged straight back down by
+gravity with `onLand` firing every frame. **A platform stores nothing but the frame its section was entered on**: its
+whole phase is a pure function of `world.frame` and the section data, the same contract `Hazard` uses, because the
+StageRunner's own state is not hashed by `net/checksum.js` (the canary walks `world.entities`) and a platform that
+stored its position would be simulation the desync check cannot see. The effect stays visible in the fighter
+positions the canary already hashes.
+
+Note two name collisions that are *not* the same thing: a dock transition's `look: 'hoist'` (`transitions.js`
+`DOCK_LOOKS`) is the art of a landing, not a `platform.kind`; and `section.drift` is a backdrop parallax scalar, not
+platform motion. The Brass Funicular declares no `platform` at all and is unchanged.
 
 `transition` is `{ kind: 'lift'|'board'|'dock'|'descent', atX?, gateX?, banner?, look?, pies?, up? }`: a `mode: 'locked'`
 section ends in a `dock` when its last timed wave clears, showing `banner` (default the funicular's) and arriving on
@@ -550,9 +656,17 @@ An `EnemyDef` (in `content/enemies/*.js`):
 }
 ```
 Base AI state machine (in `Enemy`), tuned by `def.ai`:
-`ENTER` (walk on-screen) → `APPROACH` (align `z` within `zTolerance`, close to `attackRange` on the target's facing-agnostic side; picks the nearest player, re-targets every 90 frames or when hit) → `ATTACK` (needs an **attack token**: `World.attackTokens.max` comes from `ATTACK_TOKENS_BY_PARTY = [2, 2, 3, 4, 4]`, indexed by the number of living players (`World.alivePlayers.length`; `World.partySize` — players not yet out — drives the `WAVE_EXTRA_BY_PARTY` clones below instead) — 1 and 2 players keep today's 2, 3 players get 3, 4 players get 4 — enemies without a token `HOVER`: shuffle at distance `attackRange + 30..60`, occasionally step in `z`) → `RECOVER` (short back-off after attacking, `retreatChance`) → loop. Ranged variants use `KEEP_DISTANCE`. Elites/bosses ignore tokens. Enemies never overlap each other perfectly: apply a soft separation force between enemies within 18px in `x` and 10px in `z`. Enemies react to being hit exactly like players (shared `Fighter`).
+`ARRIVING` (issue #30, only for a spawn with an authored `entrance`: on screen, drawn and hittable, but on a scripted path from `game/entrances.js`, taking no actions and holding no attack token; ends in a punishable, grabbable recovery, then re-arms `firstAttackDelay` against the LANDING so a long flight cannot buy the unit a free swing) → `ENTER` (walk on-screen) → `APPROACH` (align `z` within `zTolerance`, close to `attackRange` on the target's facing-agnostic side; picks the nearest player, re-targets every 90 frames or when hit) → `ATTACK` (needs an **attack token**: `World.attackTokens.max` comes from `ATTACK_TOKENS_BY_PARTY = [2, 2, 3, 4, 4]`, indexed by the number of living players (`World.alivePlayers.length`; `World.partySize` — players not yet out — drives the `WAVE_EXTRA_BY_PARTY` clones below instead) — 1 and 2 players keep today's 2, 3 players get 3, 4 players get 4 — enemies without a token `HOVER`: shuffle at distance `attackRange + 30..60`, occasionally step in `z`) → `RECOVER` (short back-off after attacking, `retreatChance`) → loop. Ranged variants use `KEEP_DISTANCE`. Elites/bosses ignore tokens. Enemies never overlap each other perfectly: apply a soft separation force between enemies within 18px in `x` and 10px in `z`. Enemies react to being hit exactly like players (shared `Fighter`).
+Jump-over (issue #31): `laneAroundHazards` steers an approach around a `solid` exactly as it steers around a live
+vent, but a wall that spans the whole floor band leaves no lane to take — it returns z unchanged, and that case (and
+only that case) is where a mob goes over the top instead. `Enemy.tryJumpOver` commits within 30px of the obstacle's
+near face, or after 90 frames of failing to close on its target with one in the way, which is the anti-stick rule:
+nothing may stand grinding against a wall forever. This is the first AI-driven jump in the game — `jump` anims existed
+but nothing ever played them for an enemy. Flyers skip it: already being off the ground clears the obstacle.
 Off-screen rule: an enemy that is > 200px outside the camera for 300 frames teleports to
-the nearest lock edge (prevents stuck waves).
+the nearest lock edge (prevents stuck waves). An `ARRIVING` unit is exempt — its path is authored and bounded, and
+yanking it to a lock edge mid-flight would break it — so `game/entrances.js` carries its own watchdog instead: an
+arrival that outlives its own length by 180 frames ends as an ordinary enemy rather than holding the wave open.
 `StageRunner.queueSpawns(list, extraDelay)` appends `WAVE_EXTRA_BY_PARTY = [0, 0, 0, 1, 2]` non-sky clones (delay + `PARTY_EXTRA_DELAY`, side flipped) to every spawn list for parties of 3-4; bosses excluded, 1-2 unchanged.
 
 ## 9. Screens (`game/screens/`)
@@ -605,7 +719,10 @@ Layout: slots 0-1 only keeps the mirrored two-column strip (P1 left, P2 right); 
 URL params: `?debug=1` (hitboxes, hurtboxes, AI state labels, FPS), `?autotest=1`
 (test mode: no audio context, no rAF loop, seeded rng, `window.__game` fully populated),
 `?seed=123`, `?skipTo=gameplay&chars=0,2&section=3` (jump straight into gameplay with
-chosen characters and section), `?stage=2` (which board to play; honoured outside dev mode
+chosen characters and section), `?event=<id>` (issue #33: start in the section that owns that scripted event, just
+short of its trigger, so an author can iterate on one without replaying the board; dev-only and inert in netplay, for
+the same reason `?enemythrow=1` is — the START packet does not carry it, so a peer without the flag would simulate a
+different world), `?stage=2` (which board to play; honoured outside dev mode
 too, and it opens that board on BOARD SELECT for the page load), `?unlockall=1` (open every board for
 this page load, save untouched), `?resetprogress=1` (wipe the saved unlocks and, issue #22, the saved
 trial ticks under `aetherAndBrass.trials.v1`), `?godmode=1`, `?bot=1`
@@ -646,7 +763,12 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   followed by this.
 - `npm run build` → `node tools/build.js` → esbuild bundles `src/main.js` (IIFE, minified
   off) and inlines it + CSS into `dist/index.html` (single file, no external refs).
-- `npm test` → `node tools/playtest.js`: starts the server, launches headless Chromium
+- `npm test` → `node tools/simtest.js && node tools/playtest.js`. The first is a PURE-NODE suite (issue #33, the
+  same shape as `tools/nettest.js`: no browser, no canvas, no audio context) covering the sim modules whose
+  correctness is ORDERING rather than rendering — event action sequencing, entrance frame budgets, platform
+  defaults. It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
+  after six minutes of playthroughs. `npm run simtest` runs it alone. The second:
+  starts the server, launches headless Chromium
   via the globally installed Playwright (`NODE_PATH=/opt/node22/lib/node_modules` or
   local dep), runs scenarios and writes screenshots to `tools/screens/`:
   1. `boot`: title screen renders, START reaches BOARD SELECT and then character select, zero errors.
@@ -666,6 +788,34 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   3d. `thrown` (`tools/scenarios/thrown.js`, issue #21, blocks A-F): weapon throw direction/z-drift/durability/no-accidental-throw, open-rails re-pickup and edge loss on stage 2, a lime patch
      slowing and restoring a staggered footman, bottle/lamp lift-hold-throw-and-always-shatter, defensive-vs-aggressive bot `throwChance`, and the optional Scrap Slinger / Soot Cutthroat
      prop-throw stretch behind dev-only `?enemythrow=1` (never in netplay).
+  3e. `entrances` (`tools/scenarios/entrances.js`, issue #30): each of the four entrance kinds is queued onto an empty
+     `?nowaves=1` arena and watched frame by frame — the tell is placed before the unit exists and answers `dangerBox()`,
+     the unit then spawns in `ARRIVING` with `entered` false and takes no action for its whole approach, and the arrival
+     ends in a punishable window on the floor with `firstAttackDelay` re-armed. Plus the rope-drop line cut, checked on
+     both an unarmored unit (the hit is rewritten to a knockdown) and a shielded Marine (whose armour swallows the
+     reaction, but whose line is cut all the same).
+  3f. `obstacles` (`tools/scenarios/obstacles.js`, issue #31): against the real authored obstacles — board 1's
+     Funicular roof gap and board 2's Gas-Halls powder barricade. Walking into a gap drops the player through it for
+     health (measured on hp PLUS the hero's shield, since that buffer is spent first) and sets them on the lip; a
+     running jump clears it for nothing; an enemy standing in it rings out; an enemy walled off from its target leaves
+     the ground and reaches the far side; and a barricade blocks, holds its wave lock and answers `dangerBox()` until
+     its Prop is broken, then stops doing all three.
+  3g. `platforms` (`tools/scenarios/platforms.js`, issue #32): one block per platform kind against the real authored
+     section — the Cold Sovereign banking and the Lash-Up float dipping (a grounded body slides with the deck, an
+     airborne one does not), the Sootfoot Docks cargo pallet (a body on it is carried, one off it is left behind) and
+     the Tallow Works hoist (a climbing hoist pulls an airborne body down faster than gravity alone, and leaves a
+     grounded one alone) — plus the regression that the Brass Funicular declares no platform.
+  3h. `events` (`tools/scenarios/events.js`, issue #33): the browser half of the event system — `?event=<id>` starts
+     in the section that owns it, board 1's over-fire script warns with a `zoneFlash` BEFORE it forces all three dais
+     vents open together and hands every override back afterwards, board 2's broadside forces its two guns one after
+     the other rather than together, and an unknown id is inert rather than a crash. Action sequencing itself is in
+     `tools/simtest.js`.
+  3i. `cargo` (`tools/scenarios/cargo.js`, issue #34): against the real authored containers — a quay crate tips its
+     cargo out on break and the unit climbs out at the crate into a punishable recovery; the foundry chute is quiet
+     (no threat box), rattles (threat box live), lets one out at a time, stops its clock while it is stood on and
+     resumes rather than resets when you step off; a smashed brig hatch drops loot for what never came out instead of
+     tipping the load; and a wave entry addressed at the yard handcart spawns AT the cart, and still delivers when the
+     cart has already been broken.
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.
@@ -741,6 +891,10 @@ URL params (all only honored when `?autotest=1` or `?debug=1`):
 `window.__game` extra members: `ready` (true once the first screen entered),
 `spawnEnemy(type, variant, dx, dz)` (relative to P1), `killAllEnemies()`,
 `spawnWeapon(id, dx, dz)` (lays a settled pickup weapon at P1.x + dx, P1.z + dz, no pop, no grace),
+`spawnEntrance(type, variant, kind, { z, delay, ...entranceFields })` (issue #30: queues ONE spawn with an authored
+entrance through the stage runner's ordinary `queueSpawns` path, so a scenario can watch a tell, an ARRIVING approach
+and a punish window on an otherwise empty `?nowaves=1` arena — the runner drains its pending queue even under
+`nowaves`, which only stops it TRIGGERING waves),
 `enemyList() -> [{type, variant, name, role}]` (10 variants + `{type:'midboss'}` + `{type:'boss'}`),
 `characterList() -> [{id, name}]`, `fillMeter(p)`, `facePlayerToNearestEnemy(p)` (turns
 P1 toward and steps toward the nearest enemy — used by the enemy test), `summary().boss` =

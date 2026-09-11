@@ -5,8 +5,11 @@
 import { VIEW_W, ST, UI, WAVE_EXTRA_BY_PARTY, PARTY_EXTRA_DELAY } from '../constants.js';
 import { createBackdrop, backdropsReady } from '../art/backgrounds/index.js';
 import { Prop } from './items.js';
-import { Hazard, Zone } from './hazards.js';
+import { Hazard, Zone, ZoneFlash } from './hazards.js';
 import { Transition, drawSpotlight, VictorySpectacle } from './transitions.js';
+import { entranceFor, entranceLanding, EntranceTell, teleportShove } from './entrances.js';
+import { createPlatform } from './platforms.js';
+import { EventRunner } from './events.js';
 import { clamp } from '../engine/math.js';
 import { audio } from '../engine/audio.js';
 import { particles } from '../engine/particles.js';
@@ -24,9 +27,9 @@ export class StageRunner {
   /**
    * @param {import('./world.js').World} world
    * @param {object} stage stage data (content/stage/stage1.js)
-   * @param {{ game: object, hud: object, screen: object, nowaves?: boolean, startSection?: number }} o
+   * @param {{ game: object, hud: object, screen: object, nowaves?: boolean, startSection?: number, startEvent?: string }} o
    */
-  constructor(world, stage, { game, hud, screen, nowaves = false, startSection = 0 }) {
+  constructor(world, stage, { game, hud, screen, nowaves = false, startSection = 0, startEvent = '' }) {
     this.world = world; this.stage = stage; this.game = game; this.hud = hud; this.screen = screen;
     this.nowaves = nowaves;
     this.sections = stage.sections;
@@ -42,16 +45,99 @@ export class StageRunner {
     this.transition = null; this.plate = null; this.pendingPlate = null; this.spotlightT = -1;
     this.music = '';
     this.startSection = clamp(startSection | 0, 0, this.sections.length - 1);
+    /** `?event=<id>` (issue #33): jump to this scripted event instead of the section start. */
+    this.startEventId = startEvent || '';
+    this.forceEvents = false;
     world.stage = this;
     world.spawnEnemy = (type, variant, x, z, opts) => this.screen.spawnEnemyAt(type, variant, x, z, opts);
     world.announce = (text, sub, life) => this.hud.showBanner(text, sub, life);
     world.onBossSpawn = (b) => this.onBossSpawn(b);
+    /**
+     * Scripted mid-board events (issue #33). The runner itself imports nothing from the engine — every effect it can
+     * have is in this bag — which is what lets tools/simtest.js step a whole script in pure Node with no canvas.
+     */
+    this.events = new EventRunner({
+      caption: (text, sub, life) => this.hud.showBanner(text, sub, life),
+      camera: (shake, frames) => this.world.camera.shake(shake, frames),
+      sfx: (name) => audio.play(name),
+      music: (track) => this.playMusic(track),
+      hazardSet: (spec) => this.hazardSet(spec),
+      hazardRevert: (token) => this.hazardRevert(token),
+      zoneFlash: (spec) => this.world.add(new ZoneFlash(spec)),
+      spawn: (specs) => this.eventSpawn(specs),
+      prop: (spec) => this.world.spawnProp(spec.type, spec.x, spec.z, spec),
+    });
+  }
+  /**
+   * An event's `spawn` action (issue #33). These are a real encounter, not strays: if a wave is running they join it
+   * as reinforcements, and if none is they START one, which locks the camera behind them.
+   *
+   * That lock is the whole point. An `onWaveClear` event fires from clearWave, which has already UNLOCKED the camera,
+   * so units queued straight into the world have the entire stage to back into — and a ranged variant in
+   * KEEP_DISTANCE (a Tallyman, a Slinger) kites away indefinitely. A human walks past it; the autopilot cannot,
+   * because it still has a live target, so it never walks right and the run never reaches the next trigger. That is
+   * a STALL rather than a loss, and tools/winrate.js counts an unfinished run as a failure.
+   */
+  eventSpawn(specs) {
+    if (!specs || !specs.length) return;
+    if (this.activeWave) { this.queueSpawns(specs); return; }
+    this.startWave({ spawns: specs }, true);
+  }
+  /**
+   * `hazardSet` action: force every hazard tagged `name` into a phase and/or retime it, and hand back a token that
+   * restores exactly what was there. Writing through `h.info` would retime that hazard TYPE on every board for the
+   * rest of the page load (HAZARD_TYPES is a shared live table), so only per-instance fields are ever touched.
+   * @returns {{ hazards: Array<{h: object, forcePhase: object|null, period: number, offset: number}> }|null}
+   */
+  hazardSet(spec) {
+    const name = spec && spec.name;
+    if (!name) return null;
+    const token = { hazards: [] };
+    for (const e of this.world.entities) {
+      if (!e.isHazard || e.removeMe || e.name !== name) continue;
+      token.hazards.push({ h: e, forcePhase: e.forcePhase, period: e.period, offset: e.offset });
+      if (spec.force !== undefined) {
+        e.forcePhase = spec.force ? { phase: spec.force, until: spec.frames ? this.world.frame + spec.frames : null } : null;
+      }
+      // Retiming re-solves `offset` so the hazard stays at the same fraction of its cycle. Setting `period` alone
+      // makes (world.frame + offset) % period jump, which can drop a hazard straight into 'active' with no tell --
+      // the one thing GDD 6 says a hazard may never do.
+      if (spec.period) {
+        const frac = e.period ? (((this.world.frame + e.offset) % e.period) / e.period) : 0;
+        e.period = spec.period;
+        // Normalised to [0, period): Hazard.update does `(world.frame + offset) % period` and a NEGATIVE offset
+        // makes that expression negative in JS, which parks the hazard below its own tellStart forever -- it would
+        // simply never fire again, silently, for the rest of the board.
+        const raw = Math.round(frac * spec.period) - (this.world.frame % spec.period);
+        e.offset = ((raw % spec.period) + spec.period) % spec.period;
+      }
+    }
+    return token.hazards.length ? token : null;
+  }
+  /**
+   * Undo a `hazardSet` (its own `frames` timer, or the event ending). Restoring `period` re-solves `offset` for the
+   * SAME reason setting it does: `(world.frame + offset) % period` has moved on while the override was in force, so
+   * putting the old pair back raw can drop the hazard straight into 'active' with no tell — which GDD 6 forbids, and
+   * which is nastier on the way back than on the way out because nobody is expecting the room to change again.
+   */
+  hazardRevert(token) {
+    for (const t of (token && token.hazards) || []) {
+      t.h.forcePhase = t.forcePhase;
+      if (t.h.period !== t.period) {
+        const frac = t.h.period ? (((this.world.frame + t.h.offset) % t.h.period) / t.h.period) : 0;
+        const raw = Math.round(frac * t.period) - (this.world.frame % t.period);
+        t.h.period = t.period;
+        t.h.offset = ((raw % t.period) + t.period) % t.period;
+      } else t.h.offset = t.offset;
+    }
   }
 
   /** Place every prop / hazard / zone, position the camera, enter the first section. */
   start() {
     for (const sec of this.sections) {
       // every extra field of a prop entry (release / dump / solid / rider / fire ...) is forwarded to the Prop as-is: items.js owns the meaning
+      // every extra field of a prop row reaches the Prop through this spread, but Prop's constructor destructures a
+      // CLOSED list -- a new stage-data field (issue #34 `cargo` / `name`) has to be added there too or it is dropped
       for (const p of sec.props || []) this.world.add(new Prop(p.type, p.x, p.z, { ...p, drops: p.drops !== undefined ? p.drops : null, hp: p.hp || 0 }));
       if (!this.nowaves) for (const h of sec.hazards || []) this.world.add(new Hazard(h));
       for (const z of sec.zones || []) this.world.add(new Zone(z));
@@ -59,12 +145,22 @@ export class StageRunner {
       if (sec.transition) sec.transition._done = false;
       for (const ev of sec.events || []) ev._done = false;
     }
+    // `?event=<id>`: resolve the id to the section that owns it and start there, just short of its trigger, so an
+    // author can iterate on one event without replaying the board. `forceEvents` lets it run under ?nowaves=1 too.
+    let jumpTo = null;
+    if (this.startEventId) {
+      for (let i = 0; i < this.sections.length && !jumpTo; i++) {
+        for (const ev of this.sections[i].events || []) if (ev.id === this.startEventId) { jumpTo = { i, ev }; break; }
+      }
+      if (jumpTo) { this.startSection = jumpTo.i; this.forceEvents = true; }
+    }
     const sec = this.sections[this.startSection];
     // debug section skips start past earlier bosses
     if (this.stage.midboss && sec.x0 > this.stage.midboss.atX) this.midbossState = 'done';
     if (this.stage.boss && sec.x0 > this.stage.boss.atX) this.bossState = 'done';
-    if (this.startSection > 0) {
-      const x = sec.x0 + 40;
+    if (this.startSection > 0 || jumpTo) {
+      // land just short of an `atX` event so the walk into it is the thing being iterated on
+      const x = jumpTo && jumpTo.ev.atX != null ? Math.max(sec.x0 + 40, jumpTo.ev.atX - VIEW_W / 2 - 60) : sec.x0 + 40;
       this.world.camera.snapTo(x);
       this.world.camera.minX = Math.max(0, x);
       for (const p of this.world.players) p.x = x + 100 + (p.index || 0) * 40;
@@ -94,6 +190,16 @@ export class StageRunner {
     const track = (this.stage.music && this.stage.music[sec.backdrop]) || sec.backdrop;
     this.playMusic(track);
     this.sectionTimer = 0; this.timedIndex = 0; this.timedDone = !(sec.timedWaves && sec.timedWaves.length);
+    // waves cleared IN THIS SECTION. `wavesCleared` is a stage-wide running total, which would make an author write
+    // `onWaveClear: 14` to mean "after the second wave of the last section"; this is the number they actually mean.
+    this.sectionWaves = 0;
+    // issue #32: the section's moving floor, if it has one. Built here (the only place a section is entered from --
+    // update() and Transition.switchSection both come through here) and thrown away with the section, keyed to the
+    // world frame we arrived on so its whole phase is derivable rather than stored.
+    this.platform = createPlatform(sec, this.world.frame);
+    this.world.platform = this.platform;
+    // a script belongs to the section that authored it: leaving mid-event reverts every hazard override it made
+    if (this.events) this.events.cancel();
     if (!first || this.startSection > 0) this.hud.showBanner(sec.name || sec.id.toUpperCase(), sec.sub || '', 90);
     if (sec.mode === 'locked' && !this.nowaves) this.world.camera.lock(sec.x0, sec.x1);
   }
@@ -105,6 +211,9 @@ export class StageRunner {
     const world = this.world, cam = world.camera, center = cam.x + VIEW_W / 2;
     if (this.plate && ++this.plate.timer >= this.plate.life) this.plate = null;
     if (this.spotlightT >= 0 && ++this.spotlightT > SPOTLIGHT_FRAMES) this.spotlightT = -1;
+    // The platform is stepped BEFORE the transition early-return: a hoist does not stop climbing because the party is
+    // boarding something. `carry` is false during a transition so its clock runs on while nothing shoves a held body.
+    if (this.platform) this.platform.update(world, !this.transition);
     if (this.transition) { this.holdPlayers(); if (this.transition.update()) this.endTransition(); return; }
     // section by camera centre; a section whose exit is a scripted transition is left through that transition instead
     const next = this.sectionAt(center);
@@ -114,14 +223,22 @@ export class StageRunner {
       this.enterSection(next);
     }
     if (this.goTimer > 0) this.goTimer--;
+    // The event script is stepped HERE, above the victory / boss / nowaves returns, because checkTriggers is not
+    // frame-stepped at all -- it does not run while a wave is active, and a script driven from there would stall
+    // for the whole of its own wave. Arming still happens down there, where `reach` already exists.
+    if (this.events.running) this.events.update();
     if (this.victoryTimer >= 0) {
       if (this.spectacle) this.spectacle.update();
       if (++this.victoryTimer >= VICTORY_FRAMES && !this.finished) { this.finished = true; this.screen.onVictory(); }
       return;
     }
     if (this.bossActive) { this.updateBoss(); return; }
-    if (this.nowaves) return;
+    // The pending-spawn queue is drained even in the free-roam test arena: `nowaves` stops the runner TRIGGERING
+    // waves, and with nothing triggering them `pending` is empty, so this is a no-op there — except when a test
+    // has queued a spawn itself through `spawnEntrance` (issue #30), which is the only way to watch an entrance's
+    // tell / arrival / punish frames without a wave running on top of it.
     this.updateSpawns();
+    if (this.nowaves) return;
     // trigger position: camera centre, or the furthest living player when the camera is pinned at the stage end
     let reach = center;
     for (const p of world.players) if (p && p.alive && !p.dead && !p.out && p.x > reach) reach = p.x;
@@ -146,14 +263,56 @@ export class StageRunner {
   updateSpawns() {
     let n = 0;
     for (const s of this.pending) {
-      if (this.frame >= s.at) this.spawn(s);
-      else this.pending[n++] = s;
+      if (this.frame < s.at) { this.pending[n++] = s; continue; }
+      // issue #30: an entrance with a tell shows the tell first and lands the unit `tell` frames later
+      if (s.ent && s.ent.tell > 0 && !s.told) { this.startTell(s); this.pending[n++] = s; continue; }
+      // issue #34: a `cargo` spawn is not placed by the runner at all -- it is handed to the prop, which rattles and
+      // tips it out itself. A container that has already been broken has no cargo to give, so the unit climbs out of
+      // the wreck where it stood instead: a wave must never be one enemy short because a crate was smashed early.
+      if (s.ent && s.ent.kind === 'cargo') { this.spawnFromCargo(s); continue; }
+      this.spawn(s);
     }
     this.pending.length = n;
   }
+  /**
+   * The INTACT prop carrying `name` (issue #34), or null once it has been broken. `state` rather than `alive` is the
+   * test, the same way a barricade's `blocking` reads `prop.solid`: Prop.break() leaves the body alive through its
+   * break animation, and a crate that is currently flying apart cannot hand anybody out of it.
+   */
+  propNamed(name) {
+    if (!name) return null;
+    for (const e of this.world.entities) {
+      if (e.kind !== 'prop' || e.name !== name || !e.alive || e.removeMe) continue;
+      if (e.state !== 'idle' && e.state !== 'rolling') continue;
+      return e;
+    }
+    return null;
+  }
+  /** Hand one queued spawn to its container, or climb it out of the wreck if the container is already gone. */
+  spawnFromCargo(s) {
+    const box = this.propNamed(s.ent.prop);
+    if (box) { box.cargo = box.cargo || []; box.cargo.push(s.spec); box.releaseCargo(this.world, 1); return; }
+    this.screen.spawnEnemyAt(s.spec.type, s.spec.variant, s.x, s.z, {
+      entered: false, facing: s.facing, mods: s.spec.mods, entrance: entranceFor({ entrance: { kind: 'climbOut' } }),
+    });
+  }
+  /** Place an entrance's tell and push its spawn back by the tell's length (game/entrances.js). */
+  startTell(s) {
+    const ent = s.ent;
+    s.told = true;
+    s.at = this.frame + ent.tell;
+    this.world.add(new EntranceTell({ kind: ent.kind, x: s.x, z: s.z, frames: ent.tell, r: ent.r, look: ent.look }));
+    if (ent.tellSfx) audio.play(ent.tellSfx);
+  }
   spawn(s) {
-    // spec.mods (spawn modifiers, traits.js SPAWN_MODS) ride the pending spec and reach the Enemy constructor through spawnEnemyAt
-    const e = this.screen.spawnEnemyAt(s.spec.type, s.spec.variant, s.x, s.z, { entered: false, facing: s.facing, fromSky: s.spec.side === 'sky', mods: s.spec.mods });
+    // spec.mods (spawn modifiers, traits.js SPAWN_MODS) ride the pending spec and reach the Enemy constructor through spawnEnemyAt;
+    // s.ent (issue #30) is the resolved entrance, which sets the unit's own start pose and takes over its first frames
+    const e = this.screen.spawnEnemyAt(s.spec.type, s.spec.variant, s.x, s.z, { entered: false, facing: s.facing, fromSky: !s.ent && s.spec.side === 'sky', mods: s.spec.mods, entrance: s.ent });
+    if (s.ent) {
+      // a ring that completes under a player shoves them clear rather than landing a free hit (entrances.js)
+      if (s.ent.kind === 'teleport') teleportShove(this.world, s.x, s.z, s.ent.r);
+      return e;
+    }
     if (s.spec.side === 'sky') {
       if (e && e.mods && e.mods.includes('winged')) {
         // lowered in on a bladder (traits.js winged): a line-release hiss and rose gas, no roof to come through
@@ -185,9 +344,28 @@ export class StageRunner {
       : list;
     specs.forEach((spec, i) => {
       const side = spec.side || (i % 2 ? 'left' : 'right');
-      const x = side === 'left' ? left - SPAWN_MARGIN - (i % 3) * 14 : side === 'sky' ? (left + right) / 2 + (spec.dx || 0) : right + SPAWN_MARGIN + (i % 3) * 14;
-      this.pending.push({ at: this.frame + (spec.delay || 0) + extraDelay, spec, x, z: clamp(spec.z != null ? spec.z : 70, 10, 130), facing: side === 'left' ? 1 : -1 });
+      // issue #30: an authored `entrance` delivers to its own spot (entranceLanding) instead of just outside the lock,
+      // and a flyIn with no `from` of its own crosses in from the side the spec already names.
+      const ent = entranceFor(spec);
+      if (ent && ent.from == null) ent.from = side === 'left' ? 'left' : 'right';
+      // issue #34: a `cargo` entrance has no side and no camera-relative x at all -- it comes out of a NAMED PROP,
+      // wherever that prop is standing. Resolved here, where the prop is already in the world, rather than at spawn.
+      const box = ent && ent.kind === 'cargo' ? this.propNamed(ent.prop) : null;
+      const x = box ? box.x
+        : ent ? entranceLanding(ent, left, right)
+        : side === 'left' ? left - SPAWN_MARGIN - (i % 3) * 14 : side === 'sky' ? (left + right) / 2 + (spec.dx || 0) : right + SPAWN_MARGIN + (i % 3) * 14;
+      const z = box ? box.z : clamp(spec.z != null ? spec.z : 70, 10, 130);
+      this.pending.push({ at: this.frame + (spec.delay || 0) + extraDelay, spec, ent, box, x, z, facing: side === 'left' ? 1 : -1, told: false });
     });
+  }
+  /**
+   * Debug / test hook (ARCHITECTURE 15): queue ONE spawn with an authored entrance at the camera, through the
+   * ordinary queueSpawns path so the tell, the ARRIVING state and the punish window are exactly a wave's.
+   * @param {string} type @param {string} variant @param {object} entrance @param {{ z?: number, delay?: number }} [o]
+   */
+  spawnEntrance(type, variant, entrance, { z = 70, delay = 0 } = {}) {
+    this.queueSpawns([{ type, variant, z, delay, entrance }]);
+    return this.pending[this.pending.length - 1] || null;
   }
   lockHere() {
     const cam = this.world.camera;
@@ -207,7 +385,22 @@ export class StageRunner {
       if (alive <= (r.whenRemaining != null ? r.whenRemaining : 0)) { aw.reinforced = true; this.queueSpawns(r.spawns || []); return; }
     }
     if (alive > 0) return;
+    if (this.barricadeHolding()) return;   // issue #31: the gate is still up, so the wave is not over
     this.clearWave();
+  }
+  /**
+   * Is a breakable `solid` (issue #31) still standing inside the current camera lock? While one is, the wave it
+   * belongs to does not clear and the lock does not release — the barricade IS the wave's last enemy. Only a locked
+   * camera is considered: a barricade the party has already walked past must never hold a later wave open.
+   */
+  barricadeHolding() {
+    const cam = this.world.camera;
+    if (!cam.locked) return false;
+    for (const e of this.world.entities) {
+      if (!e.isSolid || !e.breakable || e.removeMe || !e.blocking) continue;
+      if (e.x1 >= cam.left && e.x0 <= cam.right) return true;
+    }
+    return false;
   }
   /** Total times the players have been hit this run (GDD 7 no-damage wave bonus). */
   playerHits() { let n = 0; for (const p of this.world.players) n += p.hitCount || 0; return n; }
@@ -224,6 +417,14 @@ export class StageRunner {
     this.activeWave = null;
     this.wavesCleared++;
     this.world.wavesCleared = this.wavesCleared;
+    this.sectionWaves++;
+    // issue #33: `onWaveClear: n` fires after the section's Nth wave, before the lock / unlock branch below, so a
+    // caption or a spawn cannot race the dock transition a locked section ends with.
+    for (const ev of sec.events || []) {
+      if (ev._done || ev.onWaveClear == null || ev.onWaveClear !== this.sectionWaves) continue;
+      ev._done = true;
+      this.startEvent(ev);
+    }
     const lockedSection = sec.mode === 'locked' && !this.timedDone;
     if (!lockedSection) { this.world.camera.unlock(); this.goTimer = GO_FRAMES; audio.play('go_arrow'); }
     else if (this.timedIndex >= (sec.timedWaves || []).length) {
@@ -232,6 +433,15 @@ export class StageRunner {
       this.timedDone = true;
       this.startTransition(sec.transition || { kind: 'dock' });
     } else this.updateTimed(); // next timed wave fires on clear
+  }
+  /**
+   * Begin one scripted event (issue #33). `kind: 'text'` is the shorthand board 1 already shipped and stays working:
+   * it is a one-action script with a single caption, so no existing stage data changes.
+   */
+  startEvent(ev) {
+    if (this.nowaves && !this.forceEvents) return;
+    if (ev.kind === 'text') { this.hud.showBanner(ev.text || '', ev.sub || '', ev.life || 90); return; }
+    this.events.arm(ev);
   }
   checkTriggers(center) {
     const sec = this.section, stage = this.stage;
@@ -245,9 +455,9 @@ export class StageRunner {
       return;
     }
     for (const ev of sec.events || []) {
-      if (ev._done || center < ev.atX) continue;
+      if (ev._done || ev.atX == null || center < ev.atX) continue;
       ev._done = true;
-      if (ev.kind === 'text') this.hud.showBanner(ev.text || '', ev.sub || '', ev.life || 90);
+      this.startEvent(ev);
     }
     const tr = sec.transition;
     if (tr && !tr._done && tr.atX != null && center >= tr.atX) this.startTransition(tr);
@@ -358,5 +568,10 @@ export class StageRunner {
   }
 
   /** window.__game.summary() contribution. */
-  summary() { return { sectionIndex: this.sectionIndex, wavesCleared: this.wavesCleared, transition: this.transition ? this.transition.kind : null }; }
+  summary() {
+    const pf = this.platform;
+    return { sectionIndex: this.sectionIndex, wavesCleared: this.wavesCleared, transition: this.transition ? this.transition.kind : null,
+      platform: pf ? { kind: pf.kind, phase: pf.phase, progress: pf.progress(this.world), offset: Math.round(pf.offset || 0) } : null,
+      event: this.events.running ? { id: this.events.event.id || '', step: this.events.step, t: this.events.t } : null };
+  }
 }

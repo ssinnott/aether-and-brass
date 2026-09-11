@@ -69,6 +69,9 @@ export const stage3 = {
         { type: 'wagon', x: 1780, x1: 20, z: 70, period: 600, tell: 45, speed: 4 },
         { type: 'limePit', x: 1540, z: 38, period: 180, active: 40, tell: 30, offset: 90 },
       ],
+      /** Issue #31: a slaking pit open in the road. Falling in costs an enemy the round (+200) and a player 8% of max
+       *  HP and their footing -- health, not a life. It takes the back lanes only, so the road is never actually shut. */
+      zones: [{ type: 'solid', x0: 1180, x1: 1216, z0: 16, z1: 66, height: 0 }],
       waves: [
         // the first rite you will ever see: three Wickboys, and the one you are hitting keeps getting back up (fodder only)
         { triggerX: 400, lock: true, spawns: wick(3, { z0: 40 }) },
@@ -153,12 +156,24 @@ export const stage3 = {
     // ---------------------------------------------------------------- Section 3: The Tallow Works (the company's yard)
     // MACHINES AND PEOPLE: the yard is where the Chandlery works on the Brassbound it has put back on their feet.
     { id: 'w3', name: 'THE TALLOW WORKS', x0: 2440, x1: 3600, backdrop: 'works2', floor: 'cobble',
+      /** Issue #32: the yard hoist takes the whole floor up a storey to the kiln head, where the Yardmaster is
+       *  waiting (his arena at 3120..3600 IS the top of it). Nothing on the deck moves — you are standing on the
+       *  thing that is climbing — but a body in the air is not, and the floor closes on it: a jump lands sooner than
+       *  it looks like it should for as long as the climb lasts. */
+      platform: { kind: 'hoist', frames: 1200, rise: 0.9 },
       props: [
         { type: 'keg', x: 2520, z: 120, drops: SCRIP },
         { type: 'handcart', x: 2700, z: 30, release: { type: B, variant: 'halberdier', mods: ['crusted'] } },
+        // issue #34: the yard's delivery cart. The wave below does not spawn its Brassbound from a side at all -- it
+        // addresses THIS cart by name (`entrance: { kind: 'cargo', prop: 'yardcart' }`) and they are tipped out of it
+        // where it stands. Break it first and they never arrive: the cart's load becomes loot instead.
+        // `release: null` switches off the handcart TYPE's own default load (a Tin Footman): this cart's load is the
+        // wave below, so it must not also tip out a second one of its own when it is broken.
+        { type: 'handcart', x: 2960, z: 104, name: 'yardcart', drops: null, release: null },
         { type: 'bucket', x: 2860, z: 120, drops: 'roastBird' }, { type: 'urn', x: 2960, z: 24, drops: 'brassHeart' },
         { type: 'tallyBoard', x: 3080, z: 118, drops: SCRIP },
         { type: 'keg', x: 3300, z: 30, drops: SCRIP }, { type: 'limeSack', x: 3460, z: 116, drops: 'meatPie' },
+        { type: 'handcart', x: 3086, z: 70, hp: 60, barricade: true },
       ],
       // the tallow vats boil over on both lanes, the draw-kiln in the shed wall flashes its cone across the back lane,
       // and the yard crane keeps its hook swinging over the middle of it
@@ -168,7 +183,17 @@ export const stage3 = {
         { type: 'hook', x: 2880, z: 66, period: 120 },
         { type: 'tallowVat', x: 3040, z: 34, period: 240, tell: 40, active: 30, offset: 120 },
       ],
+      /** Issue #31: a loaded handcart shoved across the yard mouth. The cart owns the health and the drops; the paired
+       *  `solid` owns the geometry, and the wave will not clear while it stands. Breaking it tips out the Tin Footman
+       *  the cart was carrying (the `handcart` type's own `release`) -- the board's whole conceit, as an obstacle. */
+      zones: [{ type: 'solid', x0: 3060, x1: 3112, z0: 0, z1: 140, height: 46, breakable: true }],
       waves: [
+        // the board 3 conceit as a wave entrance: the cart is already standing in the yard and the wave comes OUT of it
+        { triggerX: 2700, lock: true, spawns: [
+          { type: B, variant: 'footman', delay: 0, entrance: { kind: 'cargo', prop: 'yardcart' } },
+          { type: B, variant: 'footman', delay: 50, entrance: { kind: 'cargo', prop: 'yardcart' } },
+          one(C, 'wickboy', 'left', 60, 90),
+        ] },
         // the Purser: the company's dram, on a Limeburner who is about to crust a Sapper
         { triggerX: 2800, lock: true, spawns: [
           one(C, 'limeburner', 'right', 40, 0),
@@ -206,8 +231,8 @@ export const stage3 = {
       // the house drops its ledgers off the galleries (a growing shadow, then the book lands), and one lime lamp on the
       // counting floor is a pit: the lamp is the tell
       hazards: [
-        { type: 'ledgerDrop', x: 3980, z: 100, period: 240, tell: 36, active: 8 },
-        { type: 'ledgerDrop', x: 4320, z: 40, period: 240, tell: 36, active: 8, offset: 120 },
+        { type: 'ledgerDrop', name: 'galleries', x: 3980, z: 100, period: 240, tell: 36, active: 8 },
+        { type: 'ledgerDrop', name: 'galleries', x: 4320, z: 40, period: 240, tell: 36, active: 8, offset: 120 },
         { type: 'limePit', x: 4560, z: 110, period: 180, tell: 30, active: 40 },
       ],
       /** The counting floor: the desk edge vents lime as the Factor's harness eats the room (4 damage every 30f inside). */
@@ -242,7 +267,32 @@ export const stage3 = {
           one(B, 'duelist', 'left', 60, 150),
         ], reinforcements: [{ whenRemaining: 2, spawns: [...wick(2, { z0: 30, dz: 80 }), one(C, 'runner', 'left', 70, 60)] }] },
       ],
-      events: [],
+      /**
+       * THE LAMPS GO GREEN (issue #33). The company's lime lamps come up all down the counting floor and the house
+       * answers: the galleries start dropping ledgers twice as fast, and the Chandlery sends down everyone it has
+       * left -- a Resurrection Man and two Tallymen, all at once, all marking the floor. The board's whole thesis in
+       * one moment: you cannot cancel every rite, so you pick. The lamps themselves are the two-second warning, and
+       * the gallery retiming reverts with the event.
+       */
+      events: [
+        { id: 'lampsgreen', onWaveClear: 2, once: true, actions: [
+          { caption: 'THE LAMPS GO GREEN', sub: 'THE HOUSE IS COUNTING', life: 150 },
+          { sfx: 'chime' }, { music: 'midboss3' },
+          { zoneFlash: { x0: 3700, x1: 4800, z0: 0, z1: 140, frames: 240, color: '#D8FF6E' } },
+          { wait: 120 },
+          { hazardSet: { name: 'galleries', period: 120 } },
+          { camera: { shake: 5, frames: 18 } },
+          // Tallymen and a Limeburner, deliberately NOT the Resurrection Man: his RECREW tips a fresh Tin Footman out
+          // of the cart on a timer, so an event that spawns him hands the wave lock an enemy source that never runs
+          // dry and the section can never clear. See the SPAWN rule in game/events.js.
+          { spawn: [
+            { type: 'chandler', variant: 'tallyman', z: 30, delay: 0, entrance: { kind: 'teleport', dx: -110 } },
+            { type: 'chandler', variant: 'limeburner', z: 70, delay: 40, entrance: { kind: 'teleport', dx: 0 } },
+            { type: 'chandler', variant: 'tallyman', z: 116, delay: 80, entrance: { kind: 'teleport', dx: 110 } },
+          ] },
+          { wait: 600 },
+        ] },
+      ],
     },
   ],
   /** Yardmaster Marl holds the kiln head at the far end of the works. */

@@ -53,7 +53,9 @@ export class GameplayScreen extends Screen {
     // since the runner only locks when !nowaves); every other caller keeps reading game.options as before.
     const nowaves = params.nowaves != null ? !!params.nowaves : !!opt.nowaves;
     const section = params.section != null ? params.section | 0 : (opt.section || 0);
-    this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves, startSection: section });
+    // ?event=<id> (issue #33): the runner resolves the id to its section and arms it once the party is in place
+    const event = params.event != null ? params.event : (opt.event || '');
+    this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves, startSection: section, startEvent: event });
     this.runner.start();
     for (const s of opt.spawn || []) this.spawnEnemy(s.type, s.variant, s.dx, s.dz);
     if (!params.resume && !(section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);
@@ -206,6 +208,16 @@ export class GameplayScreen extends Screen {
     const p1 = this.players[0] || { x: this.world.camera.x + 200, z: 70 };
     const x = p1.x + (Number(dx) || 0), z = clamp(p1.z + (Number(dz) || 0), 0, Z_MAX);
     return this.spawnEnemyAt(type, variant, x, z, { facing: x < p1.x ? 1 : -1 });
+  }
+  /**
+   * Debug / test hook (issue #30): queue one spawn with an authored entrance through the stage runner, so a
+   * scenario can watch a `teleport` / `flyIn` / `descend` / `ropeDrop` tell, arrival and punish window on an
+   * otherwise empty `?nowaves=1` arena. Returns the queued pending entry, or null with no runner.
+   */
+  spawnEntrance(type = 'brassbound', variant = 'warden', kind = 'teleport', opts = {}) {
+    if (!this.runner) return null;
+    const { z, delay, ...entrance } = opts || {};
+    return this.runner.spawnEntrance(type, variant, { kind, ...entrance }, { z, delay });
   }
   /** Spawn an enemy from the content registry at absolute world coords. `opts.def` (training room) skips the lookup. */
   spawnEnemyAt(type, variant, x, z, opts = {}) {
