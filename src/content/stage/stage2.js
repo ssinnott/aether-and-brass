@@ -151,6 +151,11 @@ export const stage2 = {
         { type: 'powderTub', x: 3760, z: 26 }, { type: 'powderTub', x: 4080, z: 116 },
         { type: 'ballast', x: 3900, z: 118, drops: 'meatPie' }, { type: 'locker', x: 4010, z: 18, drops: 'aetherVial' },
         { type: 'bucket', x: 4170, z: 62, drops: 'roastBird' },
+        // issue #34: the brig hatch amidships. It lets a re-wound Footman up onto the deck every five seconds while
+        // the section is live, and STANDING ON IT HOLDS IT SHUT -- the lid rattles under you and the queued unit
+        // waits. That is the co-op job on this deck: one player holds the hatch while the other clears the gun crew.
+        { type: 'locker', x: 3940, z: 70, name: 'hatch', drops: null, cargoOn: 'timer', cargoEvery: 300,
+          cargo: [{ type: B, variant: 'footman' }, { type: B, variant: 'footman' }, { type: B, variant: 'halberdier' }] },
       ],
       // the aft gun at the left edge fires up the back lane (z 4..40); the forward gun at the right edge fires down the front
       // lane (z 100..136) half a cycle later. 45f of the gun running out and the lane lighting, then the shot: 12 + knockdown.

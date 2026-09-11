@@ -34,6 +34,11 @@ export const stage1 = {
         { type: 'barrel', x: 760, z: 118, drops: 'coalScrip' }, { type: 'crate', x: 1080, z: 24, drops: COGS },
         { type: 'winch', x: 1180, z: 14, drops: 'aetherVial' }, { type: 'barrel', x: 1450, z: 120, drops: 'coalScrip' },
         { type: 'crate', x: 1720, z: 40, drops: COGS },
+        // issue #34: two crates on the quay with someone in them. Break one and a Cutthroat climbs out into 26f you
+        // can punish; leave it and it is just a crate -- but the cargo is only loot if you break it, so a crate you
+        // have not opened is a fight you have not had yet.
+        { type: 'crate', x: 660, z: 26, name: 'quay1', cargo: [{ type: S, variant: 'cutthroat' }] },
+        { type: 'crate', x: 1380, z: 112, name: 'quay2', cargo: [{ type: S, variant: 'cutthroat' }] },
         { type: 'bottle', x: 520, z: 96, throwable: true }, { type: 'lamp', x: 1000, z: 110, throwable: true },
       ],
       hazards: [
@@ -64,6 +69,10 @@ export const stage1 = {
         { type: 'drum', x: 2380, z: 30, drops: 'aetherVial' }, { type: 'case', x: 2700, z: 20, drops: 'goldenSprocket' },
         { type: 'mold', x: 2760, z: 120, drops: 'brassCog' }, { type: 'bucket', x: 3100, z: 16, drops: 'roastBird' },
         { type: 'drum', x: 3150, z: 110, drops: 'aetherVial' }, { type: 'cart', x: 3480, z: 30, drops: 'meatPie' },
+        // the coal chute at the head of the row: it lets a Sootborn out every four seconds while the wave is live
+        // (`cargoOn: 'timer'`), and it can be STOOD ON to hold it shut -- the clock stops while somebody is on the lip.
+        { type: 'mold', x: 2180, z: 96, name: 'chute', drops: null, cargoOn: 'timer', cargoEvery: 240,
+          cargo: [{ type: S, variant: 'cutthroat' }, { type: S, variant: 'cutthroat' }] },
       ],
       hazards: [
         { type: 'steamVent', x: 2500, z: 110, period: 180, active: 40, tell: 30 },

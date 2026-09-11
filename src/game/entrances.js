@@ -19,6 +19,7 @@
 // flyIn      30      60       20    shallow arc in from the far parallax       landing shadow, growing         x±20, z±20
 // descend     0    derived    30    straight down under a bladder, slowly      none — it IS the tell, high and slow   null
 // ropeDrop   20      20       18    slides down a line, hangs, lets go         the line paying out from above  x±14, z±14
+// climbOut    0       0       26    stands up out of the thing it was in       the container's own tell        null (the prop is the tell)
 //
 // Shared spec fields: `x` (absolute landing x) or `dx` (offset from the lock centre — the convention a
 // `side: 'sky'` spawn already uses in queueSpawns); `from` ('left' | 'right') picks the side a flyIn crosses
@@ -64,6 +65,14 @@ export const ENTRANCES = Object.freeze({
   descend: { tell: 0, approach: 0, arrive: 30, r: 20, look: 'none', tellSfx: null, sfx: 'steam_vent', air: true, hang: 0, speed: 1.6 },
   // A line drops, the unit slides down it and hangs. A hit on the hanging unit cuts the line (see stepArrival).
   ropeDrop: { tell: 20, approach: 20, arrive: 18, r: 14, look: 'line', tellSfx: 'throw', sfx: 'land_heavy', air: true, hang: 30 },
+  // Out of a crate, a cart, a hatch (issue #34). The container IS the tell -- it rattled, or it was broken open, or
+  // the lid lifted -- so there is no floor ring to draw and no approach to walk: the unit is simply there, on its
+  // feet, in a long recovery you can punish. The longest arrival in the table, because getting out of a box is slow.
+  climbOut: { tell: 0, approach: 0, arrive: 26, r: 18, look: 'none', tellSfx: null, sfx: 'crate_drop', air: false, hang: 0 },
+  // `cargo` is climbOut addressed at a NAMED PROP (issue #34): the stage runner resolves `prop` to that container and
+  // hands the spawn to it, so the unit comes out wherever the box is standing rather than at a camera-relative spot.
+  // It shares climbOut's budget because it IS a climb-out -- the only difference is who decides where.
+  cargo: { tell: 0, approach: 0, arrive: 26, r: 18, look: 'none', tellSfx: null, sfx: 'crate_drop', air: false, hang: 0 },
 });
 
 /** Frames a `descend` takes to fall to its rest height at `speed` px/f — its approach length is derived, not authored. */
@@ -158,7 +167,8 @@ export function startArrival(e, ent) {
   e.arrivePath = pathFrames(ent);
   e.arriveLand = 0;
   e.cutLine = false;
-  if (ent.kind === 'teleport') { e.y = 0; e.vy = 0; e.setState(ST.IDLE, 'idle'); return; }
+  // grounded arrivals: already standing where they came out, straight into the recovery
+  if (ent.kind === 'teleport' || ent.kind === 'climbOut') { e.y = 0; e.vy = 0; e.setState(ST.IDLE, 'idle'); return; }
   if (ent.kind === 'flyIn') {
     const dir = ent.from === 'left' ? 1 : -1;   // the side it crosses FROM, so it faces the way it is travelling
     e.x = e.arriveX - dir * FLY_DX; e.facing = dir; e.y = FLY_ARC;

@@ -16,6 +16,7 @@ import { particles } from '../engine/particles.js';
 import { floatText, burstBreak } from '../art/fx.js';
 import { rrect, circle, gear, pathPoly, paint, line } from '../art/shapes.js';
 import { PROP_TYPES, getPropType, drawProp, drawPieces, tones } from '../art/props.js';
+import { entranceFor } from './entrances.js';
 import { WEAPONS } from './weapons.js';
 import { drawWeaponFloor } from '../art/weapons.js';
 
@@ -31,6 +32,10 @@ export const PICKUPS = Object.freeze({
 });
 /** Aliases used by enemy/stage `drops` fields. */
 const DROP_ALIASES = { none: null, meter: 'aetherVial', food_small: 'meatPie', food_big: 'roastBird', food: 'meatPie', score: 'brassCog', score_big: 'coalScrip', life: 'brassHeart' };
+/** What one unspent cargo entry is worth when the container is broken before it let that unit out (issue #34). */
+const CARGO_LOOT = 'coalScrip';
+/** How long a timer container rattles before it opens: its tell, and the window its dangerBox is live for. */
+const CARGO_RATTLE = 40;
 export const PICKUP_LIFE = 600, PICKUP_BLINK = 120;
 /** Walk-over collection box (half-widths), shared by `Pickup` and `WeaponPickup`. */
 export const PICKUP_DX = 18, PICKUP_DZ = 14;
@@ -161,13 +166,14 @@ export class Prop extends Entity {
    * @param {string} type PROP_TYPES key
    * @param {{ drops?: string|string[]|null, hp?: number, solid?: boolean, rider?: boolean, throwable?: boolean,
    *   release?: { type: string, variant?: string, mods?: string[] }|null, dump?: string|null, fire?: boolean,
-   *   barricade?: boolean }} o
+   *   barricade?: boolean, name?: string, cargo?: object[]|null, cargoOn?: 'break'|'timer', cargoEvery?: number }} o
    *   rider = travels on the cargo-bay conveyor; release / dump / fire override the type's catalogue defaults
    *   (leave them out to keep the type's own, pass null / false to switch the behaviour off on one entry);
    *   throwable (issue #21, GDD 7) = the stage row allows lifting this instance, which only actually applies when the
    *   type also carries a `throw` spec (game/throwables.js findLiftProp).
    */
-  constructor(type, x, z, { drops = null, hp = 0, solid = true, rider = false, throwable = false, release, dump, fire, barricade = false } = {}) {
+  constructor(type, x, z, { drops = null, hp = 0, solid = true, rider = false, throwable = false, release, dump, fire,
+    barricade = false, name = '', cargo = null, cargoOn = 'break', cargoEvery = 180 } = {}) {
     super('prop');
     this.type = PROP_TYPES[type] ? type : 'crate';
     this.info = getPropType(this.type);
@@ -202,6 +208,38 @@ export class Prop extends Entity {
      *  lives HERE rather than on the Zone because a Prop is kind 'prop' and its hp is hashed by net/checksum.js,
      *  while a Zone is kind 'fx' and its state is invisible to the desync canary. */
     this.barricade = !!barricade;
+    /** Author key (issue #34): what a `entrance: { kind: 'cargo', prop: name }` spawn spec addresses this prop by.
+     *  Entity.id cannot be used -- it differs between lockstep peers and is deliberately unhashed. */
+    this.name = name || '';
+    /**
+     * CARGO (issue #34): spawn specs this prop is carrying, and how they come out.
+     *   'break'  everything in it climbs out when the prop is broken (the generalisation of `release`, which is
+     *            the same idea for exactly one unit and still works unchanged)
+     *   'timer'  one every `cargoEvery` frames -- a deck hatch, a coal chute -- while the wave is live
+     * Cargo that never comes out is LOOT: `spawnDrops` gets one drop per unspent entry instead (see `cargoLoot`).
+     * Every unit arrives through the `climbOut` entrance (game/entrances.js): on its feet, in a long punishable
+     * recovery, because getting out of a box is slow.
+     */
+    this.cargo = Array.isArray(cargo) && cargo.length ? cargo.slice() : null;
+    this.cargoOn = cargoOn === 'timer' ? 'timer' : 'break';
+    this.cargoEvery = Math.max(30, cargoEvery | 0);
+    this.cargoT = 0;
+    /** Frames the hatch is being STOOD ON and cannot open (issue #34): the co-op job. */
+    this.cargoHeld = 0;
+    /**
+     * A timer container is a HAZARD in the last stretch before it opens (issue #34): it rattles, and a rattling
+     * crate is a place not to stand. `isHazard` + `dangerBox()` is the whole contract laneAroundHazards needs, so
+     * mobs and the autopilot step out of the lane for free -- and the box is null the rest of the time, because a
+     * permanently dangerous crate would make every enemy refuse that lane for the whole board.
+     */
+    this.isHazard = !!(this.cargo && this.cargoOn === 'timer');
+  }
+  /** The patch a timer container is about to put somebody in, or null while it is quiet (issue #34). */
+  dangerBox() {
+    if (!this.isHazard || !this.alive || !this.cargo || !this.cargo.length) return null;
+    if (this.cargoT < this.cargoEvery - CARGO_RATTLE) return null;
+    const r = this.w / 2 + 14;
+    return { x0: this.x - r, x1: this.x + r, z0: this.z - 20, z1: this.z + 20 };
   }
   update(world) {
     this.world = world;
@@ -231,6 +269,72 @@ export class Prop extends Entity {
       case 'held': this.updateHeld(); break;
       default: break;
     }
+    if (this.cargo && this.cargoOn === 'timer' && this.alive && this.state === 'idle') this.updateCargoTimer(world);
+  }
+  /**
+   * `cargoOn: 'timer'` (issue #34): a hatch or a chute lets one out every `cargoEvery` frames while the wave is live.
+   *
+   * STAND ON IT TO HOLD IT SHUT. A fighter on the lid stops the clock -- it rattles under them and the queued unit
+   * waits -- which is the small job the second player gets on a hatch. It is deliberately not a lock: step off and
+   * the timer picks up where it left off rather than resetting, so holding it buys time, it does not cancel the wave.
+   */
+  updateCargoTimer(world) {
+    if (!world || !world.camera || !world.camera.isVisible(this.x, 120)) return;
+    const stander = this.standingOn(world);
+    if (stander) {
+      this.cargoHeld = 6;
+      if (this.t % 12 === 0) { this.wobble = 6; particles.burst('dust', this.x, 0, this.z, 2, { speed: 0.8, up: 0.6 }); }
+      return;
+    }
+    if (this.cargoHeld > 0) { this.cargoHeld--; return; }
+    if (++this.cargoT < this.cargoEvery) {
+      // the tell: it rattles, and dangerBox() goes live with it (GDD 6 -- nothing arrives without a warning)
+      if (this.cargoT >= this.cargoEvery - CARGO_RATTLE) {
+        this.wobble = 4;
+        if (this.cargoT % 10 === 0) { audio.play('hit_light'); particles.burst('dust', this.x, 2, this.z, 2, { speed: 0.7, up: 0.5 }); }
+      }
+      return;
+    }
+    this.cargoT = 0;
+    this.releaseCargo(world, 1);
+  }
+  /** A living fighter standing on this prop's footprint (issue #34: holding a hatch shut). */
+  standingOn(world) {
+    for (const f of world.fighters) {
+      if (f.dead || f.y > 6 || f.grabbedBy || f.kind === 'boss') continue;
+      if (Math.abs(f.x - this.x) <= this.w / 2 + 6 && Math.abs(f.z - this.z) <= this.zSize / 2 + 8) return f;
+    }
+    return null;
+  }
+  /**
+   * Let `n` cargo entries out (or all of them). Each one arrives through the `climbOut` entrance, so it stands up
+   * out of the container into a recovery that can be hit and grabbed -- the same deal a teleport arrival gets.
+   * @returns {number} how many actually came out
+   */
+  releaseCargo(world, n = Infinity) {
+    if (!this.cargo || !this.cargo.length || !world.spawnEnemy) return 0;
+    let out = 0;
+    while (this.cargo.length && out < n) {
+      const spec = this.cargo.shift();
+      const z = clamp(this.z + (out % 2 ? 8 : -8), world.floorBand.z0, world.floorBand.z1);
+      let near = null;
+      for (const p of world.players) if (p.alive && !p.dead && !p.removeMe && (!near || Math.abs(p.x - this.x) < Math.abs(near.x - this.x))) near = p;
+      const facing = near ? (Math.sign(near.x - this.x) || -1) : -1;
+      world.spawnEnemy(spec.type, spec.variant, this.x + (out % 2 ? 10 : -10), z, {
+        entered: false, facing, mods: spec.mods || null,
+        // resolved here rather than inline so a cargo entry may override the climb-out's own fields the same way a
+        // wave spec can (`entrance: { arrive: 40 }` on a heavy unit that takes longer to get out of the box)
+        entrance: entranceFor({ entrance: { kind: 'climbOut', ...(spec.entrance || {}) } }),
+      });
+      out++;
+    }
+    if (!out) return 0;
+    this.wobble = 12;
+    particles.burst('debris', this.x, this.yOff * 0.5, this.z, 6, { speed: 2, up: 1.4, color: this.info.color || '#8a6a40' });
+    world.addFx('dust', this.x, 0, this.z, { count: 8 });
+    if (world.camera) world.camera.shake(3, 8);
+    audio.play('crate_drop');
+    return out;
   }
   /** Guard only (issue #21 decision 6): the real per-frame position comes from the HOLDER's own updateGrab
    *  (game/grabs.js -> throwables.js updateHeldProp) every frame while held. This just notices a holder that
@@ -310,6 +414,14 @@ export class Prop extends Entity {
     const puff = this.info.puff;   // quicklime / rose gas: a coloured cloud instead of just splinters
     if (puff) particles.burst('steam', this.x, this.h * 0.5, this.z, puff.count, { speed: 1.6, up: 1.2, spread: 1.2, sizeJitter: 1.5, color: puff.color });
     if (this.release && world && world.spawnEnemy) this.releaseEnemy(world);
+    // Cargo (issue #34). A `break` container tips its whole load out; a `timer` one that is smashed before it has
+    // finished letting them out is LOOT instead -- one drop per entry that never came out, plus the score. Breaking
+    // the crate early is therefore always a decision rather than always the right answer: you trade the enemies you
+    // would have had to fight for the pickups they were sitting on.
+    if (this.cargo && this.cargo.length && world) {
+      if (this.cargoOn === 'break') this.releaseCargo(world);
+      else { for (let i = 0; i < this.cargo.length; i++) spawnDrops(world, this.x + (i % 2 ? 12 : -12), this.z, CARGO_LOOT); this.cargo.length = 0; }
+    }
     if (this.fire) { this.lightFire(world, FIRE_R); particles.burst('ember', this.x, this.yOff + 8, this.z, 8, { speed: 2.5, up: 2.5 }); }
     if (this.info.fall) { this.state = 'falling'; this.t = 0; audio.play('hydraulic'); return; }
     if (this.info.explode) { this.state = 'fuse'; this.t = 0; audio.play('bomb_fuse'); return; }

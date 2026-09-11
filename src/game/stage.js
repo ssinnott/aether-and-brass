@@ -104,6 +104,8 @@ export class StageRunner {
   start() {
     for (const sec of this.sections) {
       // every extra field of a prop entry (release / dump / solid / rider / fire ...) is forwarded to the Prop as-is: items.js owns the meaning
+      // every extra field of a prop row reaches the Prop through this spread, but Prop's constructor destructures a
+      // CLOSED list -- a new stage-data field (issue #34 `cargo` / `name`) has to be added there too or it is dropped
       for (const p of sec.props || []) this.world.add(new Prop(p.type, p.x, p.z, { ...p, drops: p.drops !== undefined ? p.drops : null, hp: p.hp || 0 }));
       if (!this.nowaves) for (const h of sec.hazards || []) this.world.add(new Hazard(h));
       for (const z of sec.zones || []) this.world.add(new Zone(z));
@@ -232,9 +234,35 @@ export class StageRunner {
       if (this.frame < s.at) { this.pending[n++] = s; continue; }
       // issue #30: an entrance with a tell shows the tell first and lands the unit `tell` frames later
       if (s.ent && s.ent.tell > 0 && !s.told) { this.startTell(s); this.pending[n++] = s; continue; }
+      // issue #34: a `cargo` spawn is not placed by the runner at all -- it is handed to the prop, which rattles and
+      // tips it out itself. A container that has already been broken has no cargo to give, so the unit climbs out of
+      // the wreck where it stood instead: a wave must never be one enemy short because a crate was smashed early.
+      if (s.ent && s.ent.kind === 'cargo') { this.spawnFromCargo(s); continue; }
       this.spawn(s);
     }
     this.pending.length = n;
+  }
+  /**
+   * The INTACT prop carrying `name` (issue #34), or null once it has been broken. `state` rather than `alive` is the
+   * test, the same way a barricade's `blocking` reads `prop.solid`: Prop.break() leaves the body alive through its
+   * break animation, and a crate that is currently flying apart cannot hand anybody out of it.
+   */
+  propNamed(name) {
+    if (!name) return null;
+    for (const e of this.world.entities) {
+      if (e.kind !== 'prop' || e.name !== name || !e.alive || e.removeMe) continue;
+      if (e.state !== 'idle' && e.state !== 'rolling') continue;
+      return e;
+    }
+    return null;
+  }
+  /** Hand one queued spawn to its container, or climb it out of the wreck if the container is already gone. */
+  spawnFromCargo(s) {
+    const box = this.propNamed(s.ent.prop);
+    if (box) { box.cargo = box.cargo || []; box.cargo.push(s.spec); box.releaseCargo(this.world, 1); return; }
+    this.screen.spawnEnemyAt(s.spec.type, s.spec.variant, s.x, s.z, {
+      entered: false, facing: s.facing, mods: s.spec.mods, entrance: entranceFor({ entrance: { kind: 'climbOut' } }),
+    });
   }
   /** Place an entrance's tell and push its spawn back by the tell's length (game/entrances.js). */
   startTell(s) {
@@ -288,9 +316,14 @@ export class StageRunner {
       // and a flyIn with no `from` of its own crosses in from the side the spec already names.
       const ent = entranceFor(spec);
       if (ent && ent.from == null) ent.from = side === 'left' ? 'left' : 'right';
-      const x = ent ? entranceLanding(ent, left, right)
+      // issue #34: a `cargo` entrance has no side and no camera-relative x at all -- it comes out of a NAMED PROP,
+      // wherever that prop is standing. Resolved here, where the prop is already in the world, rather than at spawn.
+      const box = ent && ent.kind === 'cargo' ? this.propNamed(ent.prop) : null;
+      const x = box ? box.x
+        : ent ? entranceLanding(ent, left, right)
         : side === 'left' ? left - SPAWN_MARGIN - (i % 3) * 14 : side === 'sky' ? (left + right) / 2 + (spec.dx || 0) : right + SPAWN_MARGIN + (i % 3) * 14;
-      this.pending.push({ at: this.frame + (spec.delay || 0) + extraDelay, spec, ent, x, z: clamp(spec.z != null ? spec.z : 70, 10, 130), facing: side === 'left' ? 1 : -1, told: false });
+      const z = box ? box.z : clamp(spec.z != null ? spec.z : 70, 10, 130);
+      this.pending.push({ at: this.frame + (spec.delay || 0) + extraDelay, spec, ent, box, x, z, facing: side === 'left' ? 1 : -1, told: false });
     });
   }
   /**

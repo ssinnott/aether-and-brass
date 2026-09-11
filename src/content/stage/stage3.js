@@ -164,6 +164,12 @@ export const stage3 = {
       props: [
         { type: 'keg', x: 2520, z: 120, drops: SCRIP },
         { type: 'handcart', x: 2700, z: 30, release: { type: B, variant: 'halberdier', mods: ['crusted'] } },
+        // issue #34: the yard's delivery cart. The wave below does not spawn its Brassbound from a side at all -- it
+        // addresses THIS cart by name (`entrance: { kind: 'cargo', prop: 'yardcart' }`) and they are tipped out of it
+        // where it stands. Break it first and they never arrive: the cart's load becomes loot instead.
+        // `release: null` switches off the handcart TYPE's own default load (a Tin Footman): this cart's load is the
+        // wave below, so it must not also tip out a second one of its own when it is broken.
+        { type: 'handcart', x: 2960, z: 104, name: 'yardcart', drops: null, release: null },
         { type: 'bucket', x: 2860, z: 120, drops: 'roastBird' }, { type: 'urn', x: 2960, z: 24, drops: 'brassHeart' },
         { type: 'tallyBoard', x: 3080, z: 118, drops: SCRIP },
         { type: 'keg', x: 3300, z: 30, drops: SCRIP }, { type: 'limeSack', x: 3460, z: 116, drops: 'meatPie' },
@@ -182,6 +188,12 @@ export const stage3 = {
        *  the cart was carrying (the `handcart` type's own `release`) -- the board's whole conceit, as an obstacle. */
       zones: [{ type: 'solid', x0: 3060, x1: 3112, z0: 0, z1: 140, height: 46, breakable: true }],
       waves: [
+        // the board 3 conceit as a wave entrance: the cart is already standing in the yard and the wave comes OUT of it
+        { triggerX: 2700, lock: true, spawns: [
+          { type: B, variant: 'footman', delay: 0, entrance: { kind: 'cargo', prop: 'yardcart' } },
+          { type: B, variant: 'footman', delay: 50, entrance: { kind: 'cargo', prop: 'yardcart' } },
+          one(C, 'wickboy', 'left', 60, 90),
+        ] },
         // the Purser: the company's dram, on a Limeburner who is about to crust a Sapper
         { triggerX: 2800, lock: true, spawns: [
           one(C, 'limeburner', 'right', 40, 0),

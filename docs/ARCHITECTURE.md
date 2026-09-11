@@ -538,6 +538,27 @@ from and lockstep netplay never sees a late coin flip. A prop entry forwards eve
 'chassis'` (an overhead net drops a rolling prop when a jump attack hits it) and `fire` (a breaking fire source lights gas
 seeps through `world.addFire`). `art/props.js` `PROP_FAMILIES` names which prop types belong to which board's palette.
 
+A prop entry may carry **`cargo: [spawnSpec]`** (issue #34) — spawn specs the container is holding — plus `name` (the
+author key a wave addresses it by) and `cargoOn`: `'break'` (everything climbs out when the prop is broken — the
+generalisation of `release`, which is the same idea for exactly one unit and still works unchanged) or `'timer'` (one
+every `cargoEvery` frames while the wave is live: a deck hatch, a coal chute). Everything arrives through the
+`climbOut` entrance (issue #30): on its feet where the container stands, in a long punishable recovery, because
+getting out of a box is slow. Nothing appears next to the player without a visible container.
+
+A timer container **rattles** for 40 frames before it opens, and flags `isHazard` with a `dangerBox()` live only for
+that window, so `laneAroundHazards` steers mobs and the autopilot out of the lane for free — and stops the moment it
+opens, because a permanently dangerous crate would make enemies refuse that lane for the whole board. It can also be
+**stood on to hold it shut**: a fighter on the lid stops the clock (the co-op job on a hatch). Deliberately not a
+lock — stepping off resumes from where it stopped rather than resetting, so holding buys time, it does not cancel the
+wave. Cargo that never comes out is **loot**: smashing a timer container drops one pickup per unspent entry instead
+of tipping the whole load out at once, so breaking a crate early is a trade rather than always right.
+
+A wave entry may use `entrance: { kind: 'cargo', prop: <name> }`, which has no side and no camera-relative x at all:
+the runner resolves the name to that container and hands the spawn to it, so the unit comes out wherever the prop is
+standing. A wave-supplied load is not in the container until the wave fires, so breaking it early cannot turn those
+units into loot the way a pre-loaded crate's cargo does — they climb out of the wreck instead, because a wave must
+never be an enemy short because scenery was smashed.
+
 `events` (issue #33, `game/events.js`) is a frame-stepped action script per section, armed when the trigger position
 passes `atX` (the same `reach` wave triggers use) or when the section's Nth wave clears (`onWaveClear: n`, counted
 **per section**, not stage-wide). The actions and what each one blocks for are tabulated in the ACTION TABLE at the
@@ -779,6 +800,12 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      vents open together and hands every override back afterwards, board 2's broadside forces its two guns one after
      the other rather than together, and an unknown id is inert rather than a crash. Action sequencing itself is in
      `tools/simtest.js`.
+  3i. `cargo` (`tools/scenarios/cargo.js`, issue #34): against the real authored containers — a quay crate tips its
+     cargo out on break and the unit climbs out at the crate into a punishable recovery; the foundry chute is quiet
+     (no threat box), rattles (threat box live), lets one out at a time, stops its clock while it is stood on and
+     resumes rather than resets when you step off; a smashed brig hatch drops loot for what never came out instead of
+     tipping the load; and a wave entry addressed at the yard handcart spawns AT the cart, and still delivers when the
+     cart has already been broken.
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.
