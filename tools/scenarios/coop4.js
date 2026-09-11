@@ -11,8 +11,8 @@
 //       pad-only slot (3).
 //   C - pad-claim slot assignment on the title (23.4).
 //   D - four cursors through character select into gameplay (23.4).
-//   E - the netplay guard: local slots above NET_PLAYERS never reach a match, pads never claim the
-//       peer's slot (23.5).
+//   E - the netplay guard: local slots beyond the online party never reach a match, pads never
+//       claim another player's slot (23.5).
 /**
  * @param {{ withPage: Function, withPair: Function, assert: Function, readyUp: Function }} deps
  * @returns {{ coop4: Function }}
@@ -175,7 +175,7 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         assert(new Set(s.players.map((p) => p.id)).size === 4, `four distinct heroes chosen (ids ${s.players.map((p) => p.id).join()})`);
       });
 
-      // Part E: the netplay guard. Local slots above NET_PLAYERS never make it into a match, and a
+      // Part E: the netplay guard. Local slots beyond the online party never make it into a match, and a
       // pad pressed mid-match still drives the local player but can never claim the peer's slot.
       await withPair(server, 'room=NET4P&transport=broadcast&host=1', 'room=NET4P&transport=broadcast', async (hostPage, guestPage, H, G) => {
         for (const p of [hostPage, guestPage]) await p.evaluate(() => window.__game.startLoop());
@@ -187,7 +187,7 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         await guestPage.waitForFunction(() => ((window.__game.netState() || {}).frame || -1) > 60, null, { timeout: 20000 });
         for (const [p, label] of [[hostPage, 'host'], [guestPage, 'guest']]) {
           const st = await p.evaluate(() => ({ joined2: window.__game.input.joined(2), joined3: window.__game.input.joined(3), players: window.__game.summary().players.length }));
-          assert(!st.joined2 && !st.joined3, `${label}: the session un-joins every local slot above NET_PLAYERS (${JSON.stringify(st)})`);
+          assert(!st.joined2 && !st.joined3, `${label}: the session un-joins every local slot beyond the two-player party (${JSON.stringify(st)})`);
           assert(st.players === 2, `${label}: the match stays a two-player session (got ${st.players})`);
         }
         // The pad must be held across real frames -- installing and removing it inside one evaluate

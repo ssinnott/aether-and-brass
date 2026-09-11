@@ -11,46 +11,120 @@ Constraint: **no backend we own or operate.** The game must stay a single static
 
 ## What shipped
 
-Online co-op works: two browsers run the same simulation at 60Hz and exchange only 16-bit
-input masks over a WebRTC data channel, with no server we operate.
+Online co-op works for **two to four players**: every browser in the room runs the same simulation
+at 60Hz and they exchange only 16-bit input masks over WebRTC data channels, with no server we
+operate.
 
 | Piece | Module | Notes |
 |---|---|---|
 | Deterministic trig | `src/engine/trig.js` | Matches `Math.sin`/`cos` to 5.6e-16 using only IEEE-exact ops |
-| Wire format | `src/net/protocol.js` | 11 actions + run in a uint16; an INPUT packet with 8 frames of redundancy is 22 bytes |
-| Frame scheduler | `src/net/lockstep.js` | Delay applied at record time; `resend()` while stalled |
-| Desync canary | `src/net/checksum.js` | FNV-1a over `rng.state` + per-entity sim fields |
-| Peer connection | `src/net/peer.js` | Unreliable, unordered channel; queues early ICE candidates |
-| Signalling | `src/net/signal.js` | Room codes over MQTT/WSS; BroadcastChannel for the e2e test |
+| Wire format | `src/net/protocol.js` | 11 actions + run in a uint16; a slot-tagged INPUT packet with 8 frames of redundancy is 23 bytes |
+| Frame scheduler | `src/net/lockstep.js` | One ring per seat; delay applied at record time; `resend()` and tail-forwarding while stalled |
+| Desync canary | `src/net/checksum.js` | FNV-1a over `rng.state` + per-entity sim fields, compared against every peer |
+| Peer connection | `src/net/peer.js` | One link of the mesh: unreliable, unordered channel; queues early ICE candidates |
+| Signalling | `src/net/signal.js` | Room codes over MQTT/WSS, split into a channel per pairing by `createSignalMux`; BroadcastChannel for the e2e test |
 | MQTT subset | `src/net/mqtt-codec.js` | Streaming parser: a WebSocket frame does not align with an MQTT packet |
-| Session | `src/net/session.js` | Signalling → lobby → match, and the per-frame pump |
-| UI | `src/game/screens/lobby.js` | Host/join by room code, hero pick, host's board pick, ready; `?room=CODE` invite links |
+| Session | `src/net/session.js` | Roster, mesh, relay, signalling → lobby → match, and the per-frame pump |
+| UI | `src/game/screens/lobby.js` | Host/join by room code, a cursor and a status column per seat, host's board pick, ready; `?room=CODE` invite links |
 | Hero cards | `src/game/screens/charcards.js` | The 140x200 cards, shared by the lobby and the local CHOOSE YOUR FIGHTER |
 | Board plaques | `src/game/screens/boardcards.js` | The plaque art and vignettes, shared by BOARD SELECT and the lobby's compact row |
-| Tests | `tools/nettest.js`, `tools/playtest.js` | Pure-Node suites plus a two-page end-to-end match |
+| Tests | `tools/nettest.js`, `tools/playtest.js` | Pure-Node suites plus two-page and four-page end-to-end matches |
+
+### Topology: a mesh, with the host as the fallback courier
+
+Every player holds a direct link to every other one where a direct link can be formed — four
+players are six links — and each peer sends only its **own** input, to everyone, once per frame.
+The mesh is what keeps the input delay honest: routing a guest's input through the host would put
+two network hops between two players who are sitting on fast connections, and the delay has to
+cover the slowest pair in the room.
+
+Without a TURN relay some pairs simply cannot see each other (symmetric NAT at both ends). Rather
+than fail the match, **any packet that has no direct link to travel down is wrapped in `RELAY` and
+handed to the host**, who unwraps it and passes it on. This is decided per packet, not negotiated:
+`sendToSlot` uses the direct link the moment it is open and the relay whenever it is not, so a pair
+whose link is still forming starts out relayed and quietly switches over. That is why every packet
+carrying simulation data names the slot it came **from** rather than relying on the channel it
+arrived on, and why `PING`/`PONG` name the slot too — a relayed ping is answered to the player who
+sent it, not to the courier. `?netrelay=1` (dev only) refuses direct guest-to-guest links so this
+path can be exercised on one machine.
+
+The host is the one peer everybody must reach. They are also the authority for the roster, the
+board and the START parameters, and if they leave the session ends for everyone (each player keeps
+their run with the bots taking over the other seats). Host migration is not implemented.
+
+### The roster: how a room fills
+
+The host seats itself in slot 0 the moment it has a rendezvous, and publishes an announcement on
+the room topic while there are seats free. A guest that hears it opens a link to the host and sends
+`HELLO` (protocol version + player id); the host checks the version, seats them in the first free
+slot, hands them a hero nobody else is holding, and broadcasts the roster. Everyone else in that
+roster is somebody to be in lockstep with, so each peer opens links to the ones it does not have —
+which is also what stops a fifth player meshing into a full room, since guests only ever link to
+peers the host has seated.
+
+- **The host arbitrates picks.** A guest asks (`LOBBY` with a request and a sequence number); the
+  host applies it unless somebody else is holding that hero, and the roster it broadcasts back is
+  the answer. Each peer adopts the host's word for its own seat only when the roster is answering
+  its latest request, so a roster in flight cannot rubber-band a cursor that is being moved.
+- **A new arrival clears everybody's ready flag.** Readying up for a two-player match and being
+  dropped into a four-player one is a different game; the party is asked again.
+- **The match starts when every seated player is ready** — so a party of two never waits for a
+  fourth — and never before the latency measurement is in, because the input delay must exceed
+  the one-way latency. Every peer measures its own worst round trip (through the relay where that
+  is the path) and reports it to the host, who takes the worst in the room.
+- Seats stay dense: a party of three is slots 0-2, never 0, 2 and 3, or the HUD grows a hole and
+  `stage.js` scales its waves for a player who is not there.
+
+### Losing a player mid-match
+
+With two players a disconnect simply ends the session. With three or four the rest should play on,
+and that is only sound if every remaining machine retires the empty seat **on the same frame** —
+three peers each noticing a silence at their own moment is three different simulations.
+
+So the host names the frame (`DROP`), and the frame it names is the one the party has come to a
+halt on. That is the only safe choice: a frame further ahead is unreachable, because the departed
+player never sent input for it and every machine would sit waiting for it forever, and a frame
+chosen while the match was still running could land behind a peer that had buffered further ahead
+than the host. The host therefore only declares after the party has actually stalled on that slot —
+two seconds when the connection is known to be gone, the full eight when they have merely fallen
+quiet.
+
+Getting everyone to the *same* halting frame needs one more thing: a packet only its sender can
+produce is lost with its sender, so peers would otherwise stop at whatever the last thing they
+personally heard was. While stalled, every peer therefore **forwards the tail of what it last heard
+from whoever the frame is waiting for** (`lockstep.tailOf`), and the party converges on the last
+frame that player actually played. The same mechanism covers a peer that momentarily cannot hear a
+third player while another peer can.
+
+From the drop frame on, the empty seat reads as pressing nothing and the bot takes it over — the
+bot draws from the seeded `rng` like everything else, so all three machines play it identically.
+When the last other player goes, the session ends and the survivor plays on alone, exactly as a
+pair does today.
 
 ### Shared state: board unlocks are per-group
 
-Board unlocks (`src/game/progress.js`) live in each player's own `localStorage`, so the two
-peers genuinely disagree about what is playable — and a lockstep peer cannot simulate a board it
-will not load. Rather than have one player's save leak into the other's, **co-op is its own
-campaign**: progress is namespaced by scope, and a pairing earns its own way up from board 1.
+Board unlocks (`src/game/progress.js`) live in each player's own `localStorage`, so the peers
+genuinely disagree about what is playable — and a lockstep peer cannot simulate a board it will not
+load. Rather than have one player's save leak into another's, **co-op is its own campaign**:
+progress is namespaced by scope, and a party earns its own way up from board 1.
 
-- Each install mints a stable random **player id** (`localStorage`, never sent anywhere but to
-  the peer). The **group scope** is a hash of the two ids sorted, so the same two people land in
-  the same scope every time they play — no accounts, no server.
-- `HELLO` exchanges the ids; both peers derive the same key and call `progress.setScope()`. The
-  lobby's board picker then reads *the group's* unlocks, not either player's solo save.
-- A new pairing starts on board 1 however far either player has got alone. Clearing a board
-  together opens the next one **for that group**.
+- Each install mints a stable random **player id** (`localStorage`, never sent anywhere but to the
+  other players). The **group scope** is a hash of the party's ids sorted, so the same people land
+  in the same scope every time they play — no accounts, no server. A different fourth player is a
+  different group.
+- `HELLO` carries the ids to the host and the roster carries them back out, so every peer derives
+  the same key and calls `progress.setScope()`. The lobby's board picker then reads *the group's*
+  unlocks, not anyone's solo save.
+- A new party starts on board 1 however far any of them has got alone. Clearing a board together
+  opens the next one **for that group**.
 - `results.js` records the clear into whichever scope is active, so a co-op clear advances the
-  group and touches neither player's solo progress. `net.end()` restores the solo scope.
-- The host's board choice still wins on any drift (one player closed the tab before results):
-  the guest gets a page-load-only key, **scoped to the group** so it cannot show up unlocked on
-  their own BOARD SELECT. `?stage=N` links stay global — a link is a key whoever is playing.
+  group and touches nobody's solo progress. `net.end()` restores the solo scope.
+- The host's board choice still wins on any drift (a player closed the tab before results): the
+  others get a page-load-only key, **scoped to the group** so it cannot show up unlocked on their
+  own BOARD SELECT. `?stage=N` links stay global — a link is a key whoever is playing.
 
-The identity is per-browser-profile: clearing site data, or playing from another machine, mints
-a new id and the pairing reads as a new group. Unavoidable without accounts.
+The identity is per-browser-profile: clearing site data, or playing from another machine, mints a
+new id and the party reads as a new group. Unavoidable without accounts.
 
 Anything else in `progress` stays local — it is read at screen boundaries, never inside the
 simulation, so it cannot desync a match.
@@ -63,56 +137,86 @@ flavours are gone — three doors onto one feature is three things to explain an
 working. `?transport=broadcast` still drives BroadcastChannel for `tools/playtest.js`, and is not
 offered in the UI.
 
+One room topic now carries up to six pairings' signalling, so a peer publishes under its own short
+id and addresses each message to one other peer; `createSignalMux` splits that back into the
+one-pairing channel `peer.js` expects. Two things there are load-bearing: a message addressed to
+somebody else must be **ignored**, not answered (handing another pair's offer to our own connection
+answers a negotiation that was never ours and wrecks both), and exactly one end of each link
+offers — whichever has the lower peer id, a rule both ends work out for themselves.
+
 Hero picking is the local CHOOSE YOUR FIGHTER screen: the same brass card row, busts, stat pips and
-gear-ring cursors (`src/game/screens/charcards.js`), with **both** cursors on it — P1 white, P2
-cyan, exactly as they read in the match. The peer's cursor is driven by their `LOBBY` packet.
+gear-ring cursors (`src/game/screens/charcards.js`), with **every seated player's** cursor on it —
+P1 white, P2 cyan, P3 and P4 their own colours, exactly as they read in the match. The other
+cursors are driven by the host's roster.
 
 Board picking is BOARD SELECT, on the same screen underneath: the same plaques, vignettes, padlocks
 and gear cursor (`src/game/screens/boardcards.js`), drawn compact so both rows fit. They show **the
-group's** unlocks, so a new pairing sees board 1 open and the rest sealed behind their padlocks
-however far either player has got alone. The host's cursor picks and the guest watches it move —
-the session runs on the host's unlocks, and the guest gets a key to that board for the session.
+group's** unlocks, so a new party sees board 1 open and the rest sealed behind their padlocks
+however far any of them has got alone. The host's cursor picks and everyone else watches it move —
+the session runs on the host's unlocks, and the rest get a key to that board for the session.
 
-Unlike the couch screen, the two players may **not** share a hero. On a sofa "you're the darker
-one" works; online, two identical fighters with no shared screen to point at do not. So
-`net/session.js` owns the rule: `setChar` refuses the hero the peer is holding, `nextChar` steps the
-cursor over their card (drawn greyed out), and if two picks cross in flight the **guest** yields to
-the next free hero and drops its ready, so the two never chase each other and no match starts on a
-fighter someone did not choose.
+Unlike the couch screen, two players may **not** share a hero. On a sofa "you're the darker one"
+works; online, two identical fighters with no shared screen to point at do not. So
+`net/session.js` owns the rule: `setChar` refuses a hero somebody else is holding, `nextChar` steps
+the cursor over their card (drawn greyed out), and the host refuses a request that collides — the
+roster it sends back still shows the hero the asker had, so nobody starts a match on a fighter they
+did not choose.
 
 While the room code is being typed the lobby reads the keyboard raw and the action bindings are
 ignored: half the code alphabet (B, C, N, V, X, Z) is also a P1 arcade key, and `C` is dodge, so a code
 with a `C` in it used to back the player out of the screen mid-word.
 
-**Deferred from v1**, deliberately: rollback (M2), state-transfer resync after a desync (a
-desync ends the session and hands P2 to the bot), more than two players online, and the MQTT
-transport is untested against a live broker from this environment — BroadcastChannel is the
-verified path.
+**Deferred**, deliberately: rollback (M2), state-transfer resync after a desync (a desync still
+ends the session and hands the other seats to the bot), host migration, more than four players,
+and the MQTT transport is untested against a live broker from this environment — BroadcastChannel
+is the verified path.
 
-**Local co-op grew to four slots (issue #23) while the session stays two-slot.** `engine/input.js` now
-owns four player records (`MAX_PLAYERS = 4`), but the lockstep session, the two-slot INPUT packet and
-`src/net/checksum.js` are unchanged (`NET_PLAYERS = 2`) — no new sim state was added, so the checksum
-needs no new fields. `session.js beginMatch` calls `input.resetClaims(); input.setPadClaiming(false)` and
-un-joins any local slot `>= NET_PLAYERS` before the match starts, so an online match is always exactly two
-players regardless of how many were joined locally beforehand. With claiming off, `pollRaw(player)` reads
-the pad bound to that slot plus every unbound pad, so a pad drives the local player whether it was pressed
-before or after the keyboard, and a pad pressed mid-match can never claim the peer's slot.
+**Local co-op and the session are now the same size.** `engine/input.js` owns four player records
+(`MAX_PLAYERS = 4`) and an online room seats at most as many (`NET_PLAYERS = 4`, minimum
+`NET_MIN_PLAYERS = 2`); no new sim state was added for any of it, so `src/net/checksum.js` needs no
+new fields. `session.js beginMatch` calls `input.resetClaims(); input.setPadClaiming(false)` and
+un-joins any local slot beyond the party before the match starts, so an online match is exactly the
+party the lobby seated regardless of how many slots were joined locally beforehand. With claiming
+off, `pollRaw(player)` reads the pad bound to that slot plus every unbound pad, so a pad drives the
+local player whether it was pressed before or after the keyboard, and a pad pressed mid-match can
+never claim somebody else's slot.
+
+### The match boundary
+
+Three things are reset as the match starts, and each is there because skipping it desyncs peers
+that are otherwise identical: `Entity.resetIds()` (a host who played solo first would start the id
+counter higher), `rng.seed()` (the boot seed is `Date.now()`-derived), and `input.clearBuffers()`.
+
+The last one is the subtlest. The lobby reads the local player through binding set 0 whatever seat
+they hold, so the READY press that starts the match lands in **slot 0's** buffer on every machine —
+and on everyone but the host, slot 0 is somebody else's character. The buffer is `INPUT_BUFFER`
+frames deep, so whether that press survives into frame 0 depends on how many frames pass between
+the press and the start: on a loaded machine, few. The result is a match that dies on its first
+checksum for everyone, with no input mask having ever said attack. Clearing every seat's buffer at
+the boundary is the fix, and `nettest buffers` holds the line.
 
 ### What testing actually proved
 
-- `npm run nettest` — two simulated peers consume byte-identical input across 3000 frames at
-  up to 70% packet loss with jitter and reordering; the checksum catches string state, `vz`,
-  hitstop and animation-cursor divergence while ignoring `-0`, differing entity ids and
-  visual-only entities.
-- `node tools/playtest.js netplay` — two real headless pages, a real data channel: invite link
-  to lobby, host on slot 0 and guest on slot 1, 120+ frames with no desync and peers within
-  delay+2, a key press on the guest moving player 2 **on the host's machine** with both
-  agreeing on the position, a disconnect handing slot 2 to the bot (from either side), and a
-  guest playing the host's board without their own solo progress or save being touched, and
-  `npm run nettest progress` covering scope isolation, the v1 save migration and the
-  storage-blocked fallback.
-- The full existing suite (200 checks) passes unchanged, so the determinism work is invisible
-  in single player.
+- `npm run nettest` — the match boundary forgets every buffered menu press; parties of two, three
+  and four simulated peers consume byte-identical input
+  across 3000 frames at up to 70% packet loss with jitter and reordering; a party that loses a
+  player mid-match retires the seat on one agreed frame and the survivors stay identical for
+  thousands of frames afterwards; the checksum catches string state, `vz`, hitstop and
+  animation-cursor divergence (against each of three peers separately) while ignoring `-0`,
+  differing entity ids and visual-only entities; the signalling mux keeps six pairings apart.
+- `node tools/playtest.js netplay` — two real headless pages, a real data channel: invite link to
+  lobby, host on slot 0 and guest on slot 1, 120+ frames with no desync and peers within delay+2, a
+  key press on the guest moving player 2 **on the host's machine** with both agreeing on the
+  position, a disconnect handing slot 2 to the bot (from either side), and a guest playing the
+  host's board without their own solo progress or save being touched.
+- `node tools/playtest.js netquad` — **four** real headless pages and a real mesh: four distinct
+  seats and four distinct heroes, all four peers holding the same roster, a match with no desync
+  and all four within delay+2, and a key press moving that player on all four machines — made by
+  the peer that is **relayed**, with no direct link to two of the others. Then players leave: the
+  match plays on for the remaining three (every survivor retiring the seat on the same frame, the
+  bot taking it over, nobody losing their own character), then for two, and the last player is
+  handed the session's end and keeps playing with bots.
+- The full existing suite passes unchanged, so the determinism work is invisible in single player.
 
 ### Two bugs the work found in the existing game
 

@@ -1,9 +1,14 @@
 // Signalling strategies: the small out-of-band channel two browsers use to exchange WebRTC
 // descriptions before they can talk directly (docs/MULTIPLAYER.md section 3).
 //
-// A strategy is { send(obj), onMessage(fn), close() }: a live rendezvous both peers can publish to
+// A strategy is { send(obj), onMessage(fn), close() }: a live rendezvous every peer can publish to
 // before they talk directly. Room codes over MQTT are the one the game offers; BroadcastChannel
-// reaches two tabs of a single origin and exists for the end-to-end test.
+// reaches several tabs of a single origin and exists for the end-to-end test.
+//
+// A room holds up to four players, so one rendezvous carries the traffic of up to six pairings. Each
+// peer publishes under its own short id and addresses a message to one other peer with `to`;
+// createSignalMux() below splits that single channel back into a private channel per pairing, which
+// is what net/peer.js expects. A message with no `to` is an announcement meant for the whole room.
 //
 // Both avoid a server we operate. Note the page is served over HTTPS, so every socket here
 // MUST be wss:// - a ws:// URL is blocked as mixed content with no visible error.
@@ -27,12 +32,12 @@ export function makeRoomCode(len = 6) {
  * Two tabs of the same origin. Zero infrastructure and always available, so it is the transport
  * the end-to-end playtest uses (`?transport=broadcast`); the game's UI only offers room codes.
  */
-export function broadcastSignal(room, role) {
+export function broadcastSignal(room, id) {
   const bc = new BroadcastChannel('aether-brass-net:' + room);
   let handler = null;
-  bc.onmessage = (e) => { const m = e.data; if (m && m.role !== role && handler) handler(m); };
+  bc.onmessage = (e) => { const m = e.data; if (m && m.from !== id && handler) handler(m); };
   return {
-    send(obj) { try { bc.postMessage({ role, ...obj }); } catch { /* channel closed */ } },
+    send(obj) { try { bc.postMessage({ from: id, ...obj }); } catch { /* channel closed */ } },
     onMessage(fn) { handler = fn; },
     close() { try { bc.close(); } catch { /* already closed */ } },
   };
@@ -46,12 +51,12 @@ export const MQTT_BROKERS = [
 ];
 
 /**
- * Rendezvous through a public MQTT broker. Both peers subscribe to the room topic and publish
- * there; QoS 0 means a message sent before the other side subscribed is simply lost, which is why
- * peer.js repeats its hello until the exchange happens.
+ * Rendezvous through a public MQTT broker. Every peer in the room subscribes to the one room topic
+ * and publishes there; QoS 0 means a message sent before another peer subscribed is simply lost,
+ * which is why the session repeats its announcement until the exchange happens.
  * @returns {Promise<object>} a signal channel, once CONNACK has arrived
  */
-export function mqttSignal(room, role, brokers = MQTT_BROKERS) {
+export function mqttSignal(room, id, brokers = MQTT_BROKERS) {
   const topic = `aether-and-brass/${room}`;
   return new Promise((resolve, reject) => {
     let i = 0;
@@ -69,7 +74,7 @@ export function mqttSignal(room, role, brokers = MQTT_BROKERS) {
 
       ws.onerror = fail;
       ws.onclose = fail;
-      ws.onopen = () => ws.send(encodeConnect(`ab-${role}-${makeRoomCode(8)}`));
+      ws.onopen = () => ws.send(encodeConnect(`ab-${id}-${makeRoomCode(4)}`));
       ws.onmessage = (e) => {
         for (const p of parser.push(new Uint8Array(e.data))) {
           if (p.type === PKT.CONNACK) {
@@ -83,7 +88,7 @@ export function mqttSignal(room, role, brokers = MQTT_BROKERS) {
             settled = true;
             ping = setInterval(() => { try { ws.send(encodePingReq()); } catch { /* ignore */ } }, 30000);
             const chan = {
-              send(obj) { try { ws.send(encodePublish(topic, JSON.stringify({ role, ...obj }))); } catch { /* ignore */ } },
+              send(obj) { try { ws.send(encodePublish(topic, JSON.stringify({ from: id, ...obj }))); } catch { /* ignore */ } },
               onMessage(fn) { handler = fn; },
               close() { clearInterval(ping); try { ws.close(); } catch { /* ignore */ } },
               /** Set by the caller to hear about the rendezvous dying (a broker drop is invisible otherwise). */
@@ -95,11 +100,62 @@ export function mqttSignal(room, role, brokers = MQTT_BROKERS) {
           } else if (p.type === PKT.PUBLISH && p.topic === topic && handler) {
             let m = null;
             try { m = JSON.parse(p.payload); } catch { /* not ours */ }
-            if (m && m.role !== role) handler(m);   // the broker echoes our own publishes back
+            if (m && m.from !== id) handler(m);   // the broker echoes our own publishes back
           }
         }
       };
     };
     tryNext();
   });
+}
+
+/**
+ * Split one room rendezvous into a private channel per pairing.
+ *
+ * net/peer.js was written against a channel that carries exactly one pairing's offer, answer and
+ * candidates, and that is still what it gets: `channel(peerId)` hands it a view of the shared
+ * rendezvous that tags everything it sends with `to` and only delivers what that peer addressed
+ * back. Closing such a view unsubscribes the pairing and leaves the rendezvous up for the others -
+ * a peer connection failing must never take the room's signalling down with it.
+ *
+ * Anything with no `to` is an announcement (who is here, and whether the room is still open) and
+ * goes to onAnnounce instead; those are how a peer learns an id to open a channel for at all.
+ *
+ * @param {{ send: (o: object) => void, onMessage: (fn: (m: object) => void) => void, close: () => void }} signal
+ * @param {string} myId this peer's id, which is what `to` is checked against
+ */
+export function createSignalMux(signal, myId) {
+  const chans = new Map();
+  let onAnnounce = null;
+  signal.onMessage((m) => {
+    if (!m || !m.from) return;
+    if (!m.to) { if (onAnnounce) onAnnounce(m); return; }
+    // Addressed, and not to us: a room's rendezvous is one broadcast channel, so every peer sees
+    // every pairing's offers and candidates. Handing another pair's offer to our own peer object
+    // answers a negotiation that was never ours and wrecks both of them.
+    if (m.to !== myId) return;
+    const c = chans.get(m.from);
+    if (c && c.handler) c.handler(m);
+  });
+  return {
+    /** Hear the room's announcements: { from, ...payload } from a peer we may not know yet. */
+    onAnnounce(fn) { onAnnounce = fn; },
+    /** Publish to the whole room (no `to`), for those announcements. */
+    announce(obj) { signal.send(obj); },
+    /** True once a channel for this peer exists, so an announcement does not open a second one. */
+    has(peerId) { return chans.has(peerId); },
+    /** A peer.js-shaped signal channel private to one pairing. */
+    channel(peerId) {
+      const c = {
+        handler: null,
+        send(obj) { signal.send({ to: peerId, ...obj }); },
+        onMessage(fn) { c.handler = fn; },
+        close() { chans.delete(peerId); },
+      };
+      chans.set(peerId, c);
+      return c;
+    },
+    /** Tear down the rendezvous itself, once the room no longer needs it. */
+    close() { chans.clear(); try { signal.close(); } catch { /* already closed */ } },
+  };
 }

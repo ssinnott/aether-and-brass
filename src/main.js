@@ -68,6 +68,11 @@ export function parseOptions(search = window.location.search) {
     room: (q.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8),
     host: flag('host'),
     transport: q.get('transport') === 'broadcast' ? 'broadcast' : 'mqtt',
+    // Dev-only: refuse to open a direct link to another guest, so this peer's traffic to them has
+    // to go through the host's relay. It is the only way to exercise that path on one machine,
+    // where every link forms - and on a real network it is the pair of players behind symmetric
+    // NATs (tools/playtest.js netquad, net/session.js MSG.RELAY).
+    netrelay: devOnly && flag('netrelay'),
     // open every board on BOARD SELECT for this page load; `resetprogress` wipes the saved unlocks instead.
     unlockall: flag('unlockall'),
     resetprogress: flag('resetprogress'),
@@ -220,7 +225,18 @@ function boot() {
     facePlayerToNearestEnemy: delegate('facePlayerToNearestEnemy', undefined),
     toggleDebug() { showDebug = !showDebug; return showDebug; },
     /** Online co-op state for tools/playtest.js. */
-    netState() { return net ? { state: net.state, room: net.room, slot: net.localSlot, delay: net.delay, waiting: net.waiting, frame: net.ls ? net.ls.frame : -1, desync: net.ls ? net.ls.desync : null, reason: net.endReason } : null; },
+    netState() {
+      if (!net) return null;
+      return {
+        state: net.state, room: net.room, slot: net.localSlot, players: net.players, delay: net.delay,
+        waiting: net.waiting, missing: net.missing.slice(), frame: net.ls ? net.ls.frame : -1,
+        desync: net.ls ? net.ls.desync : null, reason: net.endReason,
+        // Who is seated, and how each of them is reached: a link that never formed rides the host's
+        // relay instead, and the four-player playtest checks both paths carry a match.
+        party: net.lobby.members.map((m) => ({ slot: m.slot, char: m.char, ready: m.ready, local: !!m.local, gone: !!m.gone, direct: !!(net.links.get(m.pid) || {}).open })),
+        dropped: net.ls ? net.lobby.members.filter((m) => net.ls.dropFrameOf(m.slot) >= 0).map((m) => m.slot) : [],
+      };
+    },
     /** Board-unlock state, for tools/playtest.js. `solo` and `saved` prove co-op left the solo save alone. */
     progressState() {
       let saved = null;

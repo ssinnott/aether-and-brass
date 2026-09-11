@@ -61,28 +61,41 @@ export class GameplayScreen extends Screen {
     if (!params.resume && !(section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);
   }
   /**
-   * Netplay status over the scene: a stall while the peer's input is late, and the banner shown
-   * when a session ends and the bot takes over slot 2.
+   * Netplay status over the scene: a stall while somebody's input is late, the note when one player
+   * of a larger party drops out mid-match, and the banner shown when the session itself ends and
+   * the bots take over every seat but this one.
    */
   drawNetStatus(ctx) {
     const net = this.game.net;
     if (!net) return;
     if (net.active && net.waiting) {
       const f = this.frame;
+      const late = (net.missing || []).filter((s) => s !== net.localSlot).map((s) => s + 1);
+      const who = late.length > 1 ? `WAITING FOR PLAYERS ${late.join(' AND ')}` : `WAITING FOR PLAYER ${late[0] || net.remoteSlot + 1}`;
       ctx.fillStyle = 'rgba(10,6,20,0.55)'; ctx.fillRect(0, VIEW_H / 2 - 22, VIEW_W, 44);
-      drawTextOutlined(ctx, 'WAITING FOR PLAYER ' + (net.remoteSlot + 1), VIEW_W / 2, VIEW_H / 2 - 14, { size: 2, color: '#4DF0E0', outline: '#0a3a38', align: 'center' });
+      drawTextOutlined(ctx, who, VIEW_W / 2, VIEW_H / 2 - 14, { size: 2, color: '#4DF0E0', outline: '#0a3a38', align: 'center' });
       drawTextOutlined(ctx, '.'.repeat(1 + ((f >> 4) % 3)), VIEW_W / 2, VIEW_H / 2 + 6, { size: 2, color: '#4DF0E0', outline: '#0a3a38', align: 'center' });
     } else if (net.state === 'ended' && net.endReason && this.frame - (this.netEndedAt || (this.netEndedAt = this.frame)) < 240) {
+      const bots = (this.players || []).map((p, i) => (p && i !== net.localSlot ? i + 1 : 0)).filter(Boolean);
       ctx.fillStyle = 'rgba(10,6,20,0.6)'; ctx.fillRect(0, 40, VIEW_W, 30);
       drawTextOutlined(ctx, String(net.endReason).toUpperCase(), VIEW_W / 2, 44, { size: 1, color: UI.red, outline: '#2a0808', align: 'center' });
-      drawTextOutlined(ctx, 'PLAYER 2 IS NOW A BOT', VIEW_W / 2, 58, { size: 1, color: UI.paper, outline: '#2a0808', align: 'center' });
+      const line = bots.length > 1 ? `PLAYERS ${bots.join(' AND ')} ARE NOW BOTS` : `PLAYER ${bots[0] || 2} IS NOW A BOT`;
+      drawTextOutlined(ctx, line, VIEW_W / 2, 58, { size: 1, color: UI.paper, outline: '#2a0808', align: 'center' });
+    } else if (net.active && net.lastDrop && performance.now() - net.lastDrop.at < 4000) {
+      // One player of three or four lost: the match plays on, so say who the bot has taken over.
+      ctx.fillStyle = 'rgba(10,6,20,0.6)'; ctx.fillRect(0, 40, VIEW_W, 16);
+      drawTextOutlined(ctx, `PLAYER ${net.lastDrop.slot + 1} LEFT - THE BOT TAKES OVER`, VIEW_W / 2, 44, { size: 1, color: UI.red, outline: '#2a0808', align: 'center' });
     }
   }
   /** Swap the backdrop (StageRunner calls this on section changes). */
   setBackdrop(b) { this.backdrop = b; this.world.backdrop = b; }
-  /** Slots this run may fill: two under netplay (the lockstep session owns them), four for couch co-op.
-   *  A method (not a constant) so #22's training arena can override it to cap the run at one. */
-  maxPlayers() { return this.game.options.netplay ? NET_PLAYERS : MAX_PLAYERS; }
+  /** Slots this run may fill: the party the lockstep session seated under netplay (two to four),
+   *  four for couch co-op. A method (not a constant) so #22's training arena can cap the run at one. */
+  maxPlayers() {
+    if (!this.game.options.netplay) return MAX_PLAYERS;
+    const net = this.game.net;
+    return Math.min(NET_PLAYERS, (net && net.players) || NET_PLAYERS);
+  }
   /** Add a player for character index `ci` in slot `slot`. */
   addPlayer(ci, slot) {
     const def = this.game.characters[ci] || this.game.characters[0];
@@ -102,7 +115,7 @@ export class GameplayScreen extends Screen {
   update() {
     super.update();
     const inp = this.game.input, world = this.world;
-    // Under netplay both slots are established by the lobby and every input arrives through the
+    // Under netplay every seat is established by the lobby and every input arrives through the
     // lockstep mask. joinPressed() and globalPressed() are local keyboard edges that never reach
     // the peer, so acting on them here would advance one peer's simulation and not the other's.
     const online = !!(this.game.net && this.game.net.active);
