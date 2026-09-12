@@ -120,6 +120,8 @@ export class Enemy extends Fighter {
     // Soot Cutthroat throttle between prop-throw attempts on this cooldown (hashed in net/checksum.js).
     this.propThrowCooldown = 0;
     this.retreating = false; this.grabHitTimer = 0; this.stalled = false;
+    /** Anti-stall (StageRunner.checkWaveStall): this unit has been told to stop keeping its distance. */
+    this.pressed = false;
     // issue #31 jump-over: frames spent failing to close on the target with a solid in the way, and the x it last
     // made progress from. Both are plain counters off the sim, so they cost the rng stream nothing.
     this.stuckT = 0; this.lastGapX = null;
@@ -313,7 +315,7 @@ export class Enemy extends Fighter {
   thinkApproach(world, t) {
     const ai = this.ai;
     const dx = t.x - this.x, adx = Math.abs(dx), adz = Math.abs(t.z - this.z);
-    if (ai.ranged && this.retreatBudget > 0 && adx <= ai.ranged.maxRange + 40 && adx > ai.attackRange + 10) { this.aiState = 'KEEP_DISTANCE'; return; }
+    if (ai.ranged && !this.pressed && this.retreatBudget > 0 && adx <= ai.ranged.maxRange + 40 && adx > ai.attackRange + 10) { this.aiState = 'KEEP_DISTANCE'; return; }
     this.face(t);
     if (adx <= ai.attackRange && adz <= ai.zTolerance) {
       if (this.attackCooldown <= 0 && this.acquireToken(world)) {
@@ -395,7 +397,7 @@ export class Enemy extends Fighter {
     const ai = this.ai, r = ai.ranged, cam = world.camera;
     const dx = t.x - this.x, adx = Math.abs(dx), adz = Math.abs(t.z - this.z);
     this.face(t);
-    if (adx > r.maxRange + 40 || this.retreatBudget <= 0) { this.aiState = 'APPROACH'; return; }
+    if (this.pressed || adx > r.maxRange + 40 || this.retreatBudget <= 0) { this.aiState = 'APPROACH'; return; }
     // melee fallback when the player is on top of us
     if (adx <= ai.attackRange + 6 && adz <= ai.zTolerance && this.attackCooldown <= 0 && ai.attacks.length) {
       const atk = this.chooseAttack(adx); if (atk && this.acquireToken(world)) { this.startAttack(atk, t); return; }
@@ -413,6 +415,19 @@ export class Enemy extends Fighter {
       if (nx > scrLo && nx < scrHi) { this.retreatBudget--; this.moveToward(away * 40, 0, 0.6, true); return; }
     } else if (adx > keep + 40) { this.moveToward(dx, 0, 0.8); return; }
     this.stand();
+  }
+  /**
+   * Come in and fight (StageRunner.checkWaveStall). A wave holds the camera lock until it is empty, and a ranged
+   * variant tops its retreat budget back up on every shot it lands, so one left alone with the party inside a lock
+   * can keep its distance for the rest of the run: the section never clears and there is nowhere to walk. Pressed, it
+   * gives up the stand-off and approaches like anything else — it keeps its ranged attack, it just stops backing away
+   * to buy room for it. Nothing un-presses it: the stand-off is what stalled, and a wave only gets told once.
+   */
+  pressIn() {
+    if (this.pressed) return;
+    this.pressed = true;
+    this.retreatBudget = 0;
+    if (this.aiState === 'KEEP_DISTANCE' || this.aiState === 'HOVER') this.aiState = 'APPROACH';
   }
   thinkFlee(world) {
     const cam = world.camera;
@@ -549,12 +564,12 @@ export class Enemy extends Fighter {
   finishAttack(world) {
     const ai = this.ai, cd = ai.attackCooldown;
     this.attackCooldown = rng.int(cd[0], cd[1]);
-    this.retreatBudget = Math.min(ai.retreatBudget, this.retreatBudget + 40);
+    if (!this.pressed) this.retreatBudget = Math.min(ai.retreatBudget, this.retreatBudget + 40);
     this.attackCount++;
     this.releaseToken(world);
     if (ai.stallEvery && this.attackCount % ai.stallEvery === 0) { this.enterStall(ai.stallFrames, ai.stallDamageMult, ai.stallGrabbable); audio.play('valve_blow'); return; }
     if (ai.retreatChance > 0 && rng.chance(ai.retreatChance)) { this.aiState = 'RECOVER'; this.aiTimer = rng.int(20, 40); this.retreating = true; }
-    else { this.aiState = ai.ranged && this.retreatBudget > 0 ? 'KEEP_DISTANCE' : 'APPROACH'; }
+    else { this.aiState = ai.ranged && !this.pressed && this.retreatBudget > 0 ? 'KEEP_DISTANCE' : 'APPROACH'; }
   }
   onAnimEvent(name, frame, world) {
     if (name === 'aim') { const t = this.target; if (t) this.aimAtTarget(t); return; }

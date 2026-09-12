@@ -147,6 +147,25 @@ export async function obstacles(server, { withPage, assert }) {
     await g.step(2);
     assert(await holding(), 'a standing barricade inside the camera lock holds the wave open');
 
+    // ...but only WHOLLY inside it. A lock whose edge cuts the barricade leaves the party asked to break something
+    // half off the screen they cannot walk past, which reads as a cleared room that never opens (board 3's yard gate
+    // sits 6px outside the lock the first Tallow Works wave takes). One that far out belongs to the next wave.
+    // (the lock is always at least one screen wide, so each of these is anchored on the edge being tested)
+    const mid = Math.round((b0.x0 + b0.x1) / 2);
+    await g.eval((m) => window.__game.world.camera.lock(m - 640, m), mid);
+    await g.step(2);
+    assert(!(await holding()), 'a barricade straddling the right edge of the lock does not hold the wave');
+    await g.eval((m) => window.__game.world.camera.lock(m, m + 640), mid);
+    await g.step(2);
+    assert(!(await holding()), 'nor does one the party has already walked most of the way past');
+    await g.eval(([x0, x1]) => {
+      const w = window.__game.world;
+      w.players[0].x = (x0 + x1) / 2 - 80;
+      w.camera.lock(x0 - 200, x1 + 200);
+    }, [b0.x0, b0.x1]);
+    await g.step(2);
+    assert(await holding(), 'and it holds again once the whole gate is back inside the lock');
+
     // break it: the block lifts, and so does the lock
     await g.eval(() => {
       const z = window.__game.world.entities.find((e) => e.isSolid && e.breakable && !e.removeMe);
