@@ -244,9 +244,14 @@ before it did not do.
 - **Setting:** the topmost mooring gantry of Calderwick, above a sea of cloud, with the blockade hanging in the weather.
 - **Parallax:** *Far* (0.2x): storm gradient indigo → bruised violet → dawn amber, an anvil cloud wall, three banks of
   lit cloud tops, three fleet hulls drifting, and **lightning that lights the whole sky** every ~7s. *Mid* (0.5x):
-  lattice masts every 300px with gantry arms, mooring rings, sagging cables and hanging lanterns. *Near* (1.2x): rope
-  rails on stanchions, coiled rope; wind-driven rain over everything.
-- **Floor:** wet iron grating under raised walkway plates, hazard chevrons along the back edge, standing water.
+  lattice masts every 300px with gantry arms, mooring rings, sagging cables and hanging lanterns. *Near* (1.2x): the
+  walkway's FRONT rope rail along the bottom of the frame, coiled rope; wind-driven rain over everything.
+- **Floor:** wet iron grating under raised walkway plates, hazard chevrons along the back edge, standing water — and
+  the walkway's BACK rope rail, on the floor's own parallax (1.0) and drawn in the back pass. **Both edges of this
+  walkway are railed, and which pass a rail is drawn in follows which side of the fight it stands on:** the back rail
+  goes down before the fighters, so the back lane stands in front of it, and only the front rail — the one the camera
+  is outboard of — is in the near layer, kept below the feet of the frontmost lane. Nothing in a near layer sits at
+  fighter height on any board (`glean2.js`): a full-width bar across the arena hides whoever is standing behind it.
 - **Props:** crates (2x Brass Cog), **powder kegs** (they go off 30f after they break: 20, r 40 — bat one into a
   boarding party; Coal Scrip), **ballast bags** (Meat Pie), a **signal locker** (Golden Sprocket).
 - **Hazards:** **lightning conductors** at x 700 (z 96) and x 1620 (z 40, half a cycle behind): a 40f violet ring,
@@ -294,7 +299,10 @@ before it did not do.
 - **Parallax:** *Far* (0.2x): a black storm wall, a cold seam of light on the horizon, the rest of the blockade heeled
   over with violet running lights, and **forked lightning** redrawn from a seed on every strike. *Mid* (0.5x): the
   bulwark with gun ports and run-out cannon, hinged lids, powder tubs and shot, shrouds climbing out of the rail.
-  *Near* (1.2x): the leeward rail and rigging falls; rain, spray and the flash.
+  *Near* (1.2x): rigging falls across the TOP of the frame and the leeward rail along the BOTTOM of it — the camera
+  stands outboard of the leeward rail, so it is the one piece of the ship drawn in front of the fight, and it sits
+  under the front edge of the floor band so it covers no one; the weather rail is the mid layer's bulwark cap, behind
+  the fight. Rain, spray and the flash over everything.
 - **Floor:** holystoned planking, treenails, caulked butt seams with brass inlay, ring bolts, wet patches.
 - **Props:** a **powder tub at each gun port** (x 3760 z 26 aft, x 4080 z 116 forward), a ballast bag (Meat Pie), the
   signal locker (Aether Vial) and a bucket (Roast Bird) amidships — food and meter for the densest screen on the board.

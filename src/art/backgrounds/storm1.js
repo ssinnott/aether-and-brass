@@ -4,7 +4,15 @@
 //            drifting, and lightning that lights the whole sky for a few frames.
 // Mid (0.5): the spine — lattice masts every 300px with gantry arms, mooring cables, swinging lanterns.
 // Floor: wet iron grating with hazard chevrons, rivet seams and standing water.
-// Near (1.2, drawFront): rope rails at the screen edges; wind-driven rain over everything.
+// Deck rail (1.0, drawBack): the walkway's BACK rope rail, bolted to the deck and drawn behind the fight.
+// Near (1.2, drawFront): the FRONT rope rail along the bottom of the frame, coiled rope; wind-driven rain.
+//
+// THE TWO RAILS. This walkway is open air on both edges, so it is railed on both — and which pass a rail is drawn in
+// is decided by which side of the fight it stands on, never by how it is painted. The back rail scrolls with the
+// floor (1.0) and goes down in `drawBack`, so a fighter on the back lane stands IN FRONT of it; the front rail is
+// the only one the camera is on the near side of, so it is the only one in the near layer, and it is kept down at
+// the bottom of the frame (glean2's rule: nothing in a near layer at fighter height — a full-width bar across the
+// arena hides whoever is standing behind it).
 import {
   VIEW_W, FLOOR_TOP, Z_MAX, PARALLAX, BLEED, SKY_H, FLOOR_H, INK,
   makeLayer, blitTiled, blitAt, layerSpace, drawDarkBand, vGradient, radialGlow, makeGlowSprite,
@@ -16,7 +24,12 @@ const FAR_W = 1280;
 const FLOOR_TILE = 480;
 const MAST_STEP = 300;
 const RAIN_N = 70;
-const NEAR_Y = 150;
+/** The front rope rail sits along the bottom of the frame: its cap is below the feet of the frontmost lane. */
+const NEAR_Y = 296;
+/** The back rope rail is tiled with the deck (floor parallax), just above the floor band's back edge. */
+const RAIL_TILE = 480, RAIL_H = 34, RAIL_Y = FLOOR_TOP - 22;
+/** Stanchion pitch, shared by both rails so they read as the same railing seen from two sides. */
+const STANCHION_STEP = 96;
 /** Lightning: a strike every ~7s, three quick flashes then a long dark. */
 const BOLT_PERIOD = 430;
 
@@ -139,26 +152,31 @@ function paintFloor(g, w, h, rnd) {
   for (let i = 0; i < 26; i++) { g.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,0.16)' : 'rgba(255,255,255,0.07)'; g.fillRect(Math.round(rnd() * w), Math.round(rnd() * h), 8 + Math.round(rnd() * 30), 1 + Math.round(rnd() * 2)); }
   g.fillStyle = '#12161E'; g.fillRect(0, Z_MAX, w, h - Z_MAX);
 }
+/** Stanchions with two slack ropes, from `y0`: the one railing both edges of the walkway carry. */
+function paintRopeRail(g, w, y0) {
+  for (let x = 0; x < w; x += STANCHION_STEP) {
+    boxOutlined(g, x, y0, 5, 30, '#2A3040', INK, 2);
+    g.fillStyle = '#3E4654'; g.fillRect(x + 1, y0 + 1, 2, 28);
+  }
+  for (const [color, width] of [['#1A1E28', 4], ['#8A7A5A', 2]]) {
+    g.strokeStyle = color; g.lineWidth = width;
+    for (const y of [y0 + 8, y0 + 20]) {
+      // every bay starts and ends on a stanchion, so the back rail's tile repeats without a kink at the seam
+      g.beginPath(); g.moveTo(0, y);
+      for (let x = 0; x < w; x += STANCHION_STEP) g.quadraticCurveTo(x + STANCHION_STEP / 2, y + 5, x + STANCHION_STEP, y);
+      g.stroke();
+    }
+  }
+}
+/** The BACK rail: tiled with the deck and drawn in the back pass, so the fight walks in front of it. */
+function paintDeckRail(g, w) {
+  paintRopeRail(g, w, 2);
+}
 function paintNear(g, w, h, rnd) {
-  // rope rail along the front of the walkway: stanchions with two slack ropes
-  for (let x = 0; x < w; x += 96) {
-    boxOutlined(g, x, 30, 5, 30, '#2A3040', INK, 2);
-    g.fillStyle = '#3E4654'; g.fillRect(x + 1, 31, 2, 28);
-  }
-  g.strokeStyle = '#1A1E28'; g.lineWidth = 4;
-  for (const y of [38, 50]) {
-    g.beginPath(); g.moveTo(-10, y);
-    for (let x = 0; x < w + 96; x += 96) g.quadraticCurveTo(x + 48, y + 5, x + 96, y);
-    g.stroke();
-  }
-  g.strokeStyle = '#8A7A5A'; g.lineWidth = 2;
-  for (const y of [38, 50]) {
-    g.beginPath(); g.moveTo(-10, y);
-    for (let x = 0; x < w + 96; x += 96) g.quadraticCurveTo(x + 48, y + 5, x + 96, y);
-    g.stroke();
-  }
-  // coiled rope and a cleat here and there
-  for (let x = 40; x < w; x += 260) {
+  // the FRONT rope rail, along the bottom of the frame — the camera is on the near side of this one
+  paintRopeRail(g, w, 30);
+  // coiled rope and a cleat here and there, lying at its foot
+  for (let x = 40; x < w; x += 240) {
     const y = 56 + Math.round(rnd() * 6);
     g.strokeStyle = '#8A7A5A'; g.lineWidth = 3;
     g.beginPath(); g.ellipse(x, y, 14, 5, 0, 0, Math.PI * 2); g.stroke();
@@ -173,6 +191,7 @@ export function create(section) {
   const midL = makeLayer(mid.width, SKY_H, paintMid, 52);
   const floorL = makeLayer(FLOOR_TILE, FLOOR_H, paintFloor, 53);
   const nearL = makeLayer(near.width, 70, paintNear, 54);
+  const railL = makeLayer(RAIL_TILE, RAIL_H, paintDeckRail, 55);
   const sunGlow = makeGlowSprite(26, 'rgba(255,214,150,0.30)');
 
   const hulls = [
@@ -212,6 +231,8 @@ export function create(section) {
       if (flash > 0) { ctx.globalAlpha = flash * 0.5; ctx.fillStyle = '#C8D4FF'; ctx.fillRect(0, 0, VIEW_W, FLOOR_TOP + sy); ctx.globalAlpha = 1; }
       blitAt(ctx, midL, mid.originX(cam), -BLEED + sy);
       blitTiled(ctx, floorL, Math.round(-cam.x + shx), FLOOR_TOP + sy);
+      // the back rail rides the deck's own parallax (1.0) so it stays bolted to the walkway it stands on
+      blitTiled(ctx, railL, Math.round(-cam.x + shx), RAIL_Y + sy);
       drawDarkBand(ctx);
     },
     drawFront(ctx, cam) {
