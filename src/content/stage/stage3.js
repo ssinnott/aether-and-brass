@@ -188,7 +188,7 @@ export const stage3 = {
       /** Issue #31: a loaded handcart shoved across the yard mouth. The cart owns the health and the drops; the paired
        *  `solid` owns the geometry, and the wave will not clear while it stands. Breaking it tips out the Tin Footman
        *  the cart was carrying (the `handcart` type's own `release`) -- the board's whole conceit, as an obstacle. */
-      zones: [{ type: 'solid', x0: 3060, x1: 3112, z0: 0, z1: 140, breakable: true, look: 'limeSack' }],
+      zones: [{ type: 'solid', x0: 3060, x1: 3112, z0: 0, z1: 140, height: 46, breakable: true }],
       waves: [
         // the board 3 conceit as a wave entrance: the cart is already standing in the yard and the wave comes OUT of it
         { triggerX: 2700, lock: true, spawns: [

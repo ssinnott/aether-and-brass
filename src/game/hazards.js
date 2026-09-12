@@ -40,11 +40,10 @@
 // spoil   x0,x1,z0,z1         per-frame movement of grounded fighters inside is damped to 55%
 // netGive x0,x1 squares[{x,z,w 60,d 30}]   a knockdown / thrown landing in a square sags it 10f then opens it 60f: enemies standing
 //                             in it ring out (+200), players lose 8% max HP, are knocked down and set on the nearest edge
-// solid   x0,x1,z0,z1[,height][,breakable][,look]   the first thing in the game that BLOCKS movement (issue #31). A grounded
-//                             fighter cannot cross [x0,x1] while its z is inside [z0,z1]; one whose y clears `height` passes over.
-//                             Drawn as a body STANDING on the near lip of the band, exactly `height` tall (drawSolid). `look` is a
-//                             PROP_TYPES key (art/props.js) drawn repeated along the span -- the board's own furniture as the
-//                             obstacle's art -- and it sets `height` from that prop unless the spec says otherwise.
+// solid   x0,x1,z0,z1,height[,breakable]   the first thing in the game that BLOCKS movement (issue #31). A grounded fighter
+//                             cannot cross [x0,x1] while its z is inside [z0,z1]; one whose y clears `height` passes over.
+//                             Drawn as a body STANDING on the near lip of the band, exactly `height` tall (drawSolid), and kept
+//                             under the 64px enemy jump-over apex (Enemy.tryJumpOver) or a walled-off mob grinds against it.
 //                             Knockback into it wall-bounces (the camera-bound idiom: AIR_FALL_STATES + vx *= -0.5).
 //                             height 0 = a floor GAP: walk in and you fall (enemies ring out +200, players lose 8% max HP
 //                             and are set on the nearest edge, cargo is lost over the edge). `breakable` blocks only while
@@ -62,7 +61,7 @@ import { rng, makeRng } from '../engine/rng.js';
 import { clamp } from '../engine/math.js';
 import { floatText, drawWind, windDrag, WIND_COLOR, WIND_BANNER } from '../art/fx.js';
 import { rrect, circle, poly, pathPoly, line } from '../art/shapes.js';
-import { tones, drawProp, getPropType } from '../art/props.js';
+import { tones } from '../art/props.js';
 import { dsin } from '../engine/trig.js';
 
 // Visual-only PRNG for draw(). The gameplay `rng` singleton must never be touched from render code:
@@ -914,19 +913,7 @@ export class Zone extends Entity {
     // reaction, the drops and the break FX, and (unlike a Zone, which is kind 'fx') its hp is hashed by the
     // desync canary. `isSolid` is what fighter.js / enemy.js / bot.js scan for; `fell` de-dupes gap drops.
     this.isSolid = this.type === 'solid';
-    // `look` is the board's own furniture used as the wall's art: a PROP_TYPES key (art/props.js), drawn repeated
-    // along the span and standing on the near lip. An obstacle then looks like something somebody left in the way
-    // rather than like an engine primitive in a grey no board uses, and it costs no new art. The ART IS THE TRUTH:
-    // `height` defaults to that prop's own height, so what the eye measures is what hitSolid enforces. A zone with
-    // no `look` keeps the plain steel barrier.
-    this.look = spec.look || '';
-    this.lookInfo = this.look ? getPropType(this.look) : null;
-    this.height = spec.height != null ? spec.height : (this.lookInfo ? this.lookInfo.h : SOLID_HEIGHT);
-    // A stand-in for drawProp's Prop: `info` picks the draw, w/h size it, `x` is what the animated types (handcart,
-    // spoilHeap) take their phase from, so repeated copies do not pulse in lockstep. It is never added to the world.
-    this.lookProp = this.lookInfo
-      ? { info: this.lookInfo, w: this.lookInfo.w, h: this.lookInfo.h, x: this.x, state: 'idle', angle: 0, flashTimer: 0 }
-      : null;
+    this.height = spec.height != null ? spec.height : SOLID_HEIGHT;
     this.breakable = !!spec.breakable;
     this.prop = null; this.propChecked = false;
     // A wall is drawn as a standing body (drawSolid), so it has to SORT like one -- at its own back edge, which is
@@ -1325,20 +1312,6 @@ export class Zone extends Entity {
     // the contact shadow that puts the barrier ON the deck rather than in front of it
     ctx.globalAlpha = 0.35; ctx.fillStyle = '#000000'; ctx.fillRect(x0 - 2, foot - 1, w + 4, 3);
     ctx.globalAlpha = 1;
-    if (this.lookProp) {
-      // the board's own furniture, repeated along the span. The tiling is worked in WORLD x: spacing off the
-      // screen-clamped x0/x1 would slide the copies along the barrier as the camera scrolls.
-      const span = this.x1 - this.x0, n = Math.max(1, Math.round(span / this.lookInfo.w)), step = span / n;
-      for (let i = 0; i < n; i++) {
-        const wx = this.x0 + step * (i + 0.5);
-        this.lookProp.x = wx;
-        drawProp(ctx, Math.round(cam.toScreenX(wx)), foot, this.lookProp, f);
-      }
-      // a barricade keeps a live lashing over the stack, because the paired Prop standing in it is the way through
-      if (this.breakable) { ctx.fillStyle = (f & 8) ? '#e2b34a' : '#8a5a1c'; ctx.fillRect(x0 + 1, top + 2, w - 2, 1); }
-      ctx.restore();
-      return;
-    }
     // the standing face, with uprights and a footing band so it is structure rather than one painted panel
     rrect(ctx, x0, face, w, foot - face, 2, t.base, OL, 1);
     ctx.fillStyle = t.sh;

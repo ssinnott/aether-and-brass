@@ -512,7 +512,7 @@ flight over the edge (`loseOverEdge`) instead of letting it land — only The Mo
 bulwark anywhere"). The Brass Funicular's `rails` (stage1 `s3`) are railings, not an open edge, so it omits `open` and thrown items land on the roof as normal.
 
 A `solid` zone (issue #31) is the one thing in the game that BLOCKS movement: `{ type: 'solid', x0, x1, z0, z1,
-height?, breakable?, look? }`. A grounded fighter cannot cross `[x0, x1]` while its z is inside `[z0, z1]`; one whose y clears
+height, breakable? }`. A grounded fighter cannot cross `[x0, x1]` while its z is inside `[z0, z1]`; one whose y clears
 `height` passes over, and a body that is still RISING is measured by the apex its jump will reach, so committing to a
 jump that clears the obstacle clears it (without that, a jump started against a wall is blocked through its own
 ascent). Knockback into a solid wall-bounces with the same numbers the camera bound already uses (`AIR_FALL_STATES`,
@@ -535,18 +535,21 @@ on the deck, which still says which lanes are shut. It is side-on with a shallow
 (the house idiom for a solid object, `art/props.js` `mold` / `cart`): this projection has no x foreshortening, so a
 top face the depth of the band reads as a second floor rather than as a volume.
 
-That plain steel barrier is the fallback. **`look` is how an obstacle gets a face**: it names a `PROP_TYPES` key
-(`art/props.js`) and the zone is drawn as that prop repeated along its span, so the thing in the way is the board's
-own furniture — the Foundry Row cart (`cart`), the Mooring Spine's winches (`winch`), the Gas-Halls' own powder
-(`keg`), the Chandlery's lime sacks (`limeSack`) — at no cost in new art. The tiling is worked in world x, never in
-the screen-clamped x0/x1, or the copies slide along the barrier as the camera scrolls. **The art is the truth:**
-`height` defaults to the named prop's own height, so the silhouette the player measures is the one `hitSolid`
-enforces, and a board that wants a different clearance should pick a different prop rather than override it. Because it is a standing body it
+Keep a wall under **64px**, the enemy jump-over apex — `Enemy.tryJumpOver` leaves the ground at `JUMP_OVER_VY` 8, so
+`8² / (2 × GRAVITY)` — or a mob walled off from the party grinds against it until the wave stalls. The `obstacles`
+scenario measures every authored wall against that ceiling (section 15 3f). Because it is a standing body it
 also sorts like one — a solid with `height > 0` takes `z = z0` instead of the `-5` every other zone parks at, which
 is the one depth that hides what is genuinely behind it and lets everything from its back edge forward (a fighter
 walking past its face, one mid-jump over it) draw over it. A gap keeps `z = -5`: it is a hole in the deck, and
 everything that walks on it draws on top. Nothing but the depth sort reads a Zone's `z`, and `fx` is not hashed by
 `net/checksum.js`, so this is render order and nothing else.
+
+**What the boards place.** Solids are gaps and gates, not furniture to hop: board 1's Funicular roof gap, board 3's
+Rite Yard gap and board 4's three tailings gaps (`height: 0`), plus the two breakable gates — the Gas-Halls powder
+barricade and the Chandlery's yard-mouth handcart. Three non-breakable walls were authored on boards 1 and 2 (a
+Foundry Row cart, two Mooring Spine booms) and have been removed: a lane-blocker you hop is a cost in art, in enemy
+pathing and in the player's read of what is breakable, for a beat that neither board missed. The type keeps its
+`height > 0` path for the gates, which earn it — they hold their wave open until the Prop inside them is down.
 
 Hazard and zone types, their spec fields, timings, hits and `dangerBox` footprints are tabulated in the header of
 `game/hazards.js` (HAZARD TABLE / ZONE TABLE). Boards 2-4 declare `lightning`, `cannon`, `gasCell`, `limePit`,
@@ -910,7 +913,9 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      running jump clears it for nothing; an enemy standing in it rings out; an enemy walled off from its target leaves
      the ground and reaches the far side; and a barricade blocks, holds its wave lock and answers `dangerBox()` until
      its Prop is broken, then stops doing all three — plus the edge rule: a lock whose left or right edge cuts the
-     barricade does not hold the wave, and moving the whole gate back inside the lock holds it again.
+     barricade does not hold the wave, and moving the whole gate back inside the lock holds it again. It also measures
+     every authored wall on every board — built from the content through the real `Zone` constructor, so a height a
+     board takes from a default counts too — against the 64px enemy jump-over apex.
   3g. `stall` (`tools/scenarios/stall.js`): the wave anti-stall, on the real cart lane. The room is taken down to one
      Tallyman with the hero standing still; he keeps his distance, the lock stays shut, and within 900 frames
      `checkWaveStall` presses him in — budget spent, out of KEEP_DISTANCE — and he actually closes to melee range.

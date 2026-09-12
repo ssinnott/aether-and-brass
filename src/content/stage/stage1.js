@@ -85,11 +85,6 @@ export const stage1 = {
       zones: [
         { type: 'molten', x0: 1800, x1: 3920 },
         { type: 'conveyor', x0: 3280, x1: 3920, z0: 100 },
-        // issue #31: a loaded coal cart stands across the two front lanes -- the empties get smashed, this one is
-        // full and stays where it is. Step back into the middle lane to go round it, or jump it: the molten channel
-        // closes the back lane, so there is a real choice to make rather than a free detour. `look` names the art
-        // (art/props.js PROP_TYPES) and with it the height, so the cart you see is the cart the jump has to clear.
-        { type: 'solid', x0: 3044, x1: 3092, z0: 70, z1: 140, look: 'cart' },
       ],
       waves: [
         { triggerX: 2100, lock: true, spawns: [{ type: S, variant: 'firebrand', side: 'right', z: 40, delay: 0 }, { type: S, variant: 'firebrand', side: 'left', z: 100, delay: 30 }, ...cut(3, { z0: 60, delay0: 20 })] },

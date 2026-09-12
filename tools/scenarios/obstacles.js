@@ -122,6 +122,26 @@ export async function obstacles(server, { withPage, assert }) {
     const zAfter = await p1();
     assert(Math.abs(zAfter.x - zBefore.x) < 20, `walking into a wall along z does not eject the body in x (${zBefore.x} -> ${zAfter.x})`);
     assert(!(zAfter.z > wall.z0 && zAfter.z < wall.z1), `and it stops on the z face rather than inside the wall (z=${zAfter.z})`);
+
+    // (f) EVERY AUTHORED WALL has to stay under the enemy jump-over apex, or a mob walled off from the party grinds
+    // against it until the wave stalls. `Enemy.tryJumpOver` leaves the ground at JUMP_OVER_VY 8, which is
+    // 8^2 / (2 * GRAVITY) = 64px. Measured from the content itself through the real Zone constructor -- so it covers
+    // every board rather than the two sections this scenario walks, and a height a board picks up from a default
+    // rather than from its own spec is measured as the game will actually build it.
+    const walls = await g.eval(async () => {
+      const [{ createZones }, { STAGES }] = await Promise.all([import('/src/game/hazards.js'), import('/src/content/stage/index.js')]);
+      const out = [];
+      for (const st of STAGES) for (const sec of st.sections || []) {
+        for (const z of createZones((sec.zones || []).filter((q) => q.type === 'solid'))) {
+          if (z.height > 0) out.push({ where: `${st.id}/${sec.id}`, h: z.height });
+        }
+      }
+      return out;
+    });
+    assert(walls.length > 0, `the boards declare solid walls to check (${walls.length})`);
+    const tooTall = walls.filter((w) => w.h > 64);
+    assert(tooTall.length === 0, `every authored wall stays under the enemy jump-over apex of 64px${
+      tooTall.length ? ': ' + tooTall.map((w) => `${w.where} h=${w.h}`).join(', ') : ` (tallest ${Math.max(...walls.map((w) => w.h))}px)`}`);
   });
 
   // ---------------------------------------------------------------- barricades (board 2, the Gas-Halls)
