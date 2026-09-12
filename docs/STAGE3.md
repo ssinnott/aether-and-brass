@@ -64,9 +64,13 @@ how the board says whose side a body is on without a word of text:
   Slinger or Wrangler who took the company's coal scrip stands and dies for it. Ten of them on the board, all in the
   first three sections; the Ledger House has no Sootborn left to pay.
 - **`crusted`** on Brassbound the Limeburners have already worked on — one hit of frame armour at spawn, the
-  Limeburner's quicklime shell pre-applied (never on a shielded Iron Warden). Six crusted Tin Footmen walk in on
-  their own feet across sections 2–4, and three more machines tip **out of the handcarts** standing in the works: a
-  Tin Footman, a crusted Tin Footman and a crusted Brass Halberdier (`handcart` props with a `release`).
+  Limeburner's quicklime shell pre-applied (never on a shielded Iron Warden), and a quicklime **rim round the body**
+  over the tint, so the hit it is about to eat is readable before you throw it. Eight crusted Tin Footmen walk in on
+  their own feet across sections 2–4 — two in the cart lane, two in the yard, two at the Ledger House door and two
+  more the house tips out when its last wave is nearly over — and four more machines tip **out of the handcarts**
+  standing about the board: a Tin Footman and a crusted Tin Footman in the lane, a crusted Brass Halberdier in the
+  yard, and a Tin Footman in the counting house itself (`handcart` props, whose catalogue `release` is a plain Tin
+  Footman unless the stage names another).
 
 **Faction rules (all three are the board's counterplay):** *one touch breaks a rite* — a single hit during the
 wind-up cancels it and locks the lamp out for 90 frames; *the rite dies with the ritualist, however it died* — kill
@@ -77,11 +81,13 @@ of people with no one to work on.
 **The rule that shapes the board:** *the closer to the ledger, the more machines and the fewer people.* The
 ritualists stay the same; the recipients escalate. Section 1 is Chandlers working on **Sootborn** who took the
 company's coal scrip — nineteen people and not one machine. Section 2 is the cart lane, where the **first Brassbound
-on the board** walk in, tip out of the carts and get crusted in front of you. Section 3 is the yard, Chandlers
-working on the Brassbound they have just put back on their feet. Section 4 is the Ledger House, where the
-**re-wound machines outnumber the people** for the first time — Vane's soldiery, right up to an Iron Warden and a
-Chrome Duelist, re-wound, crusted and invoiced. The last wave of the board is the war being restarted in front of
-you, which is the argument the whole game has been making.
+on the board** walk in, tip out of the carts and get crusted in front of you: six machines in sixteen. Section 3 is
+the yard, Chandlers working on the Brassbound they have just put back on their feet — six in fourteen. Section 4 is
+the Ledger House, where the **re-wound machines outnumber the people** for the first time, **fifteen to seven** —
+Vane's soldiery, right up to an Iron Warden and a Chrome Duelist, re-wound, crusted and invoiced. Both halves of the
+rule hold the whole way down the board (`tools/stage-census.js` measures both): the machines' share of each section
+runs **0%, 38%, 43%, 68%**, and the living hands standing over them run **19, 10, 8, 7**. The last wave of the board
+is the war being restarted in front of you, which is the argument the whole game has been making.
 
 # 3. Mid-boss: Yardmaster Marl & the Lime Kiln
 
@@ -152,8 +158,8 @@ with a book, in a room he owns.
 
 **Stage name:** *The Reckoning of Calderwick.* World x runs 0–5300. Four sections; camera, wave locks and the GO
 arrow work exactly as in Stages 1 and 2, and the second section is the board's one **locked screen** with timed
-waves (the Brass Funicular's format). `tools/stage-census.js` measures it at 72 enemies in 15 waves, 16 distinct
-variants (a modifier counts), the top variant (Wickboy) at 19%, 14 mixed-faction waves, one reinforcement wave, and
+waves (the Brass Funicular's format). `tools/stage-census.js` measures it at 71 enemies in 15 waves, 16 distinct
+variants (a modifier counts), the top variant (Wickboy) at 17%, 14 mixed-faction waves, one reinforcement wave, and
 a hazard layout no other section in the game shares.
 
 **Intro card:**
@@ -220,7 +226,9 @@ a hazard layout no other section in the game shares.
   swinging at x 2880 over the middle lane.
 - **Waves (14, plus the one out of the cart):** (1) 1x Limeburner + 1x **Purser** + 1x Wickboy + 1x Copper Sapper —
   the company's dram, on a Limeburner who is about to crust a Sapper. (2) 1x Drayman + 1x Tallyman + 2x Tin Footman
-  (crusted) + 1x Runner. (3) 1x Resurrection Man + 2x **Brass Halberdier** + 1x Wickboy + 1x Soot Cutthroat (scrip) —
+  (crusted) + 1x Tin Footman — the Drayman sends the carts down and the tin walks off them; no Wickboy in the wave
+  means no rite to light and so no Runner either, and it is the first wave on the board the company crews with more
+  machines than men. (3) 1x Resurrection Man + 2x **Brass Halberdier** + 1x Wickboy + 1x Soot Cutthroat (scrip) —
   the first re-wound Brassbound with a reach, out of the Resurrection Man's cart. The Purser and the Resurrection Man
   are never in the same wave here: the elite pair is held for the last section.
 - **Mid-boss** (x 3400): Yardmaster Marl & the Lime Kiln, at the kiln head (`arena: 3120..3600`).
@@ -236,17 +244,22 @@ a hazard layout no other section in the game shares.
   *Near* (1.2x): pillars passing in front of the fight; paper dust turning in the lamp light.
 - **Floor:** waxed board with brass inlay lines and lime tracked in from the yard.
 - **Props:** cabinets (a Golden Sprocket; the second, at x 4760, an Aether Vial), two **ledger stacks** (Brass Cogs),
-  a case (Golden Sprocket), a tally board, urns (Meat Pie — one of them out on the counting floor, for the fight).
+  a case (Golden Sprocket), a tally board, urns (Meat Pie — one of them out on the counting floor, for the fight),
+  and the last **handcart** up from the yard at x 4820, stood short of the counting floor: break it and the company
+  loses the Tin Footman inside it before it can tip him out itself.
 - **Hazards:** two **ledger drops** (x 3980 on the front lane, x 4320 on the back lane, half a cycle apart) — the
   house drops its ledgers off the galleries: a shadow grows on the floor for 36f and then the book lands, 10
   knockdown — and one **lime pit** at x 4560 on the front lane, where the lime lamp on the floor is the tell.
 - **Zone:** `daisVents` over the counting floor (4880–5300), in rite lime.
-- **Waves (23):** (1) 1x Resurrection Man + 1x Wickboy + 2x Tin Footman (crusted) + 1x Runner. (2) 1x Purser + 1x
-  Limeburner + 2x Brass Halberdier + 1x **Chrome Duelist** — the company has got as far as Vane's officers. (3) 1x
-  Tallyman + 1x Copper Sapper + 1x **Iron Warden** + 1x Drayman. (4) 1x Resurrection Man + 1x Purser + 2x Tin Footman
-  + 1x Iron Warden + 1x Chrome Duelist — *the war, restarted, in one wave*: the company's elite pair together for the
-  only time on the board, and Vane's iron and chrome with them — and when two are left standing **the company sends
-  more hands**: 2x Wickboy + 1x Runner come in from the doors.
+- **Waves (22):** (1) 1x Resurrection Man + 1x Wickboy + 2x Tin Footman (crusted) + 1x Brass Halberdier — the door
+  of the house: two men to keep them up, and three machines already on their feet. (2) 1x Purser + 1x Limeburner +
+  2x Brass Halberdier + 1x **Chrome Duelist** — the company has got as far as Vane's officers. (3) 1x Tallyman + 1x
+  Copper Sapper + 1x **Iron Warden** + 1x Tin Footman — the counting floor down to one Chandler: the company sends
+  no carters this far in, only what the carters brought up from the yard. (4) 1x Resurrection Man + 1x Purser + 2x
+  Tin Footman + 1x Iron Warden + 1x Chrome Duelist — *the war, restarted, in one wave*: the company's elite pair
+  together for the only time on the board, and Vane's iron and chrome with them — and when two are left standing the
+  company has **no hands left to send**, so it tips the carts instead: 2x Tin Footman, crusted in the yard before
+  they were ever loaded.
 - **Final boss** (x 5200): Factor Oriel Hasp.
 
 # 6. Audio

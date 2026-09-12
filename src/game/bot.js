@@ -85,10 +85,18 @@ export function botIntent(p, world, style) {
   // a netted partner within reach: a teammate's swing cuts them free (fighter.js takeHit), so walk over and cut
   const mate = nettedMate(p, world);
   if (mate) {
+    // the walk to the mate is not a safe corridor: the Riggerman nets one partner and works the other. Read the threat
+    // here too, or the rescuer crosses up to 140px pressing nothing but a direction (the dodge block is below this return).
+    if (s.dodgeChance > 0 && threatNear(p, world) && f % 3 === 0 && rng.chance(s.dodgeChance) && dodgeAllowed(p, world)) {
+      it.dodge = true; p.botDodgeSpent++; return it;
+    }
     const mx = mate.x - p.x, mz = mate.z - p.z;
     if (Math.abs(mx) > 34) it.x = Math.sign(mx); else if (Math.sign(mx) && Math.sign(mx) !== p.facing) it.x = Math.sign(mx);
     if (Math.abs(mz) > 8) it.y = Math.sign(mz);
-    if (Math.abs(mx) <= 44 && Math.abs(mz) <= 12 && f % 6 === 0) it.attack = true;
+    // Same rule as the in-range branch below: a held weapon throws on ANY direction pressed with attack
+    // (game/player.js startWeaponThrow), so an armed rescuer must never combine the walk-in or the turn with the
+    // swing — it would hurl the weapon over the netted mate instead of cutting them out of the net.
+    if (Math.abs(mx) <= 44 && Math.abs(mz) <= 12 && f % 6 === 0 && !(p.weaponId && (it.x || it.y))) it.attack = true;
     return it;
   }
   // issue #31: a barricade holding the wave lock open outranks everything — nothing else the autopilot could be
@@ -180,6 +188,21 @@ export function botIntent(p, world, style) {
   // a cautious player who is not going to dodge a grab still steps out of its reach
   else if (grabbing && s.spacing > 0 && f % 2 === 0) { it.x = -dir; it.attack = false; }
   return it;
+}
+
+/**
+ * Anything about to land on `p` right now, read WITHOUT a picked target: a live enemy hitbox already in reach, or an
+ * inbound shot / rolling prop. The main loop below reads the same threat off its chosen target; the netted-mate rescue
+ * has no target of its own and still has to see what is coming while it crosses the floor.
+ */
+function threatNear(p, world) {
+  if (incomingShot(p, world)) return true;
+  for (const q of world.enemies) {
+    if (!q.alive || q.dead || q.removeMe) continue;
+    if (Math.abs(q.x - p.x) >= 70 || Math.abs(q.z - p.z) >= 20) continue;
+    if (q.hitboxes && q.hitboxes().length) return true;
+  }
+  return false;
 }
 
 /**

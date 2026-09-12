@@ -174,11 +174,14 @@ export const stage2 = {
         { at: 22, spawns: [{ type: B, variant: 'halberdier', side: 'right', z: 50, delay: 0 }, { type: B, variant: 'halberdier', side: 'left', z: 100, delay: 30 },
           { type: C, variant: 'grapnel', side: 'right', z: 70, delay: 60 },
           { type: C, variant: 'corsair', z: 20, delay: 90, entrance: { kind: 'flyIn', from: 'left', dx: -60 } }] },
-        // the brig below the gun deck opens: the Warden and the two Footmen the Wing kept bolted down there
-        { at: 50, banner: 'THE BRIG OPENS', spawns: [{ type: B, variant: 'warden', side: 'right', z: 70, delay: 0 },
+        // the brig below the gun deck opens and an Ironwing Marine walks the two Footmen the Wing kept bolted down there up
+        // onto his deck: the gun deck is the Wing's machines under the WING's elites, not under Brassbound ones
+        { at: 50, banner: 'THE BRIG OPENS', spawns: [{ type: C, variant: 'marine', side: 'right', z: 70, delay: 0 },
           holdout('footman', 'left', 40, 30), holdout('footman', 'left', 110, 60), ...crimp(2, { z0: 20, dz: 100, delay0: 90 })] },
-        { at: 80, spawns: [{ type: C, variant: 'galewright', side: 'left', z: 60, delay: 0 }, { type: B, variant: 'warden', side: 'right', z: 80, delay: 30 },
-          { type: B, variant: 'sapper', side: 'right', z: 20, delay: 70 }, ...crimp(2, { z0: 40, dz: 80, delay0: 100 })] },
+        // the second gun crew closes up under the Galewright's coil — the Wardens are the Admiral's own and wait on the bridge
+        { at: 80, spawns: [{ type: C, variant: 'galewright', side: 'left', z: 60, delay: 0 }, { type: B, variant: 'sapper', side: 'right', z: 80, delay: 30 },
+          { type: B, variant: 'sapper', side: 'left', z: 20, delay: 70 }, { type: B, variant: 'footman', side: 'right', z: 100, delay: 100 },
+          ...crimp(1, { z0: 40, delay0: 130 })] },
       ],
       /**
        * BROADSIDE (issue #33). A call comes off the bridge and the whole gun deck fires down one lane, then down
@@ -219,23 +222,31 @@ export const stage2 = {
       ],
       /** The bridge dais: the deck edge vents as the Admiral's coil eats the ship — the glow is the board's storm violet. */
       zones: [{ type: 'daisVents', x0: 4760, x1: 5200, color: '#9B7BFF' }],
+      // THE HIGHER YOU BOARD, THE MORE CLOCKWORK ends here: two thirds of this deck is machines, the most of any section.
+      // The bridge is the Admiral's own clockwork closed around her — her Duelists, the Wardens on the tower door, the
+      // Footmen of the tower guard and the Sappers up from the gun ports — with her rated Stormcrows over them and no
+      // pressed crew at all: the Deckhands and Crimpers never got this far up the ship.
       waves: [
-        // the Admiral's second: a Chrome Duelist the Wing re-wound to fence beside a Marine
+        // the head of the companion ladder: a Chrome Duelist as the Admiral's second — the first of the two faces this deck
+        // still owes you, the Iron Warden off the tower door being the other — with the tower guard's Footmen and a
+        // Halberdier behind him, and one Marine officer calling them on
         { triggerX: 4600, lock: true, spawns: [{ type: C, variant: 'marine', side: 'right', z: 60, delay: 0 },
-          { type: C, variant: 'corsair', side: 'left', z: 20, delay: 40 }, { type: C, variant: 'corsair', side: 'right', z: 120, delay: 70 },
-          { type: B, variant: 'duelist', side: 'left', z: 80, delay: 100 }, ...crimp(1, { z0: 100, delay0: 130 })] },
-        // the elite pair, together for the only time on the board: the Galewright's arc over the Marine's plate.
-        // Marines board the weather deck the way marines do (issue #30 `ropeDrop`): a line off the rigging, a 30f
-        // hang on it — cut the line with anything and the plate comes down in a knockdown — then 18f on the deck.
+          { type: B, variant: 'duelist', side: 'left', z: 80, delay: 40 }, { type: B, variant: 'footman', side: 'right', z: 120, delay: 70 },
+          { type: B, variant: 'footman', side: 'left', z: 20, delay: 100 }, { type: B, variant: 'halberdier', side: 'right', z: 100, delay: 130 }] },
+        // the elite pair, together for the only time on the board: the Galewright's arc over the Marine's plate — and behind
+        // them the Sappers up from the gun ports and the first Iron Warden off the tower door. Marines board the weather
+        // deck the way marines do (issue #30 `ropeDrop`): a line off the rigging, a 30f hang on it — cut the line with
+        // anything and the plate comes down in a knockdown — then 18f on the deck.
         { triggerX: 4740, lock: true, spawns: [{ type: C, variant: 'galewright', side: 'right', z: 40, delay: 0 },
           { type: C, variant: 'marine', z: 90, delay: 40, entrance: { kind: 'ropeDrop', dx: -50 } },
           { type: B, variant: 'sapper', side: 'right', z: 120, delay: 70 },
-          { type: B, variant: 'sapper', side: 'left', z: 20, delay: 100 }, { type: C, variant: 'bosun', side: 'right', z: 70, delay: 130 }] },
-        // the last line before the dais
+          { type: B, variant: 'sapper', side: 'left', z: 20, delay: 100 }, { type: B, variant: 'warden', side: 'right', z: 70, delay: 130 }] },
+        // the last line before the dais: two Duelists and the second Warden, with the Grapnel Mate at the rail and a Bosun
+        // lobbing over them — five bodies, and only two of them are people
         { triggerX: 4860, lock: true, spawns: [
           { type: B, variant: 'duelist', side: 'right', z: 50, delay: 0 }, { type: B, variant: 'duelist', side: 'left', z: 100, delay: 30 },
-          { type: C, variant: 'galewright', side: 'right', z: 118, delay: 70 }, { type: C, variant: 'grapnel', side: 'left', z: 70, delay: 100 },
-          { type: C, variant: 'deckhand', side: 'right', z: 20, delay: 130 },
+          { type: B, variant: 'warden', side: 'right', z: 20, delay: 70 }, { type: C, variant: 'grapnel', side: 'left', z: 70, delay: 100 },
+          { type: C, variant: 'bosun', side: 'right', z: 118, delay: 130 },
         ] },
       ],
       events: [],

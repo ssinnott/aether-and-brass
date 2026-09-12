@@ -3,12 +3,17 @@
 // the tailings field west of the city, the guild's float drifting over it on its forty bladders (one locked screen), the
 // press end of that float where the Reeve bales the crop, and the crop loft inside the biggest bag the guild owns.
 // Enemy slugs come from content/enemies; spawn modifiers from game/traits.js SPAWN_MODS. THE RATIO RULE (issue #28): THE
-// SKY FILLS UP AS YOU GO. The Gleaning are the board. The Sootborn who have picked these heaps since before the guild had
-// a name work the ground in the field; the whole Stormcrow roster fights GROUNDED on the float (the Ninth Wing came down
-// in the sea a week ago and flies for whoever is buying); from the press onward the guild flies the Concordat's own
-// machine — `winged` Brassbound and Sootborn with a salvage bladder strapped on — and walks `salvaged` Brassbound it has
-// re-plated in its own colours; the loft is the guild and its scrap and nothing else. Four factions, and the one that
-// was behind the other three the whole time is not keeping them standing, it is carrying them away.
+// SKY FILLS UP AS YOU GO — and it is counted, not asserted: a third of the field hangs under a bladder (6/18), a third of
+// the float (7/20), a little over a third of the press (7/19) and nearly three quarters of the loft (13/18). What counts
+// is a bag of its own, not an arrival: a `winged` body comes in off the sky, LANDS and fights on its feet, so the press
+// reads as more sky than it is if you count wings. The Gleaning are the board. The Sootborn who have picked these heaps
+// since before the guild had a name work the ground in the field; the whole Stormcrow roster — all seven of them — fights
+// GROUNDED on the float and down the press end (the Ninth Wing came down in the sea a week ago and flies for whoever is
+// buying), which is what holds the middle of the board on the deck while the Gleaners fill the air above it; from the
+// press onward the guild flies the Concordat's own machine — `winged` Brassbound and Sootborn with a salvage bladder
+// strapped on — and walks `salvaged` Brassbound it has re-plated in its own colours; the loft is the guild and its scrap
+// and nothing else. Four factions, and the one that was behind the other three the whole time is not keeping them
+// standing, it is carrying them away.
 const G = 'gleaning', S = 'sootborn', C = 'stormcrow', B = 'brassbound';
 /**
  * Helper: n spawns of one enemy, alternating sides, spread over z lanes and delays. `mods` (traits.js SPAWN_MODS)
@@ -40,6 +45,8 @@ const pick = (n, o) => group(G, 'picker', n, { ddelay: 26, ...o });
 const cut = (n, o) => group(S, 'cutthroat', n, { ddelay: 20, ...o });
 /** Deck Crimpers, grounded: the Wing's pressure, fighting off a raft instead of a deck. */
 const crimp = (n, o) => group(C, 'crimper', n, { ddelay: 22, ...o });
+/** Deckhands: the Wing's own fodder, off a ship at the bottom of the sea - they work the guild's lines for the wages now. */
+const deck = (n, o) => group(C, 'deckhand', n, { ddelay: 24, ...o });
 /** Tin Footmen the guild has re-plated in plum and hemp (SPAWN_MODS.salvaged): gear-slip on the third hit, a cog when they drop. */
 const salvaged = (n, o) => group(B, 'footman', n, { ddelay: 30, mods: ['salvaged'], ...o });
 const SCRIP = ['coalScrip'];
@@ -52,7 +59,7 @@ export const stage4 = {
   // BOARD SELECT vignette (game/screens/boardselect.js): sky ramp, ground band, accent light, motif to draw.
   // groundH 0: the `crop` motif paints its own spoil line, so the loaded net can hang ACROSS it rather than on top
   // of a band drawn over it (game/screens/boardcards.js drawCropMotif).
-  preview: { skyTop: '#2E1F3E', skyBot: '#E8956A', ground: '#4E5A55', groundH: 0, accent: ROSE, motif: 'crop', blurb: 'THE GLEANING' },
+  preview: { skyTop: '#2E1F3E', skyBot: '#E8956A', ground: '#4E5A55', groundH: 0, accent: ROSE, motif: 'crop', blurb: 'GLEANING & STORMCROWS' },
   introLines: [
     'THREE POWERS ARE DOWN AND THE FIELD IS FULL OF THEM.',
     'SOMEBODY HAS BEEN FOLLOWING YOU THE WHOLE WAY, PICKING IT UP.',
@@ -65,8 +72,10 @@ export const stage4 = {
   banners: { midbossDown: 'REEVE DEFEATED', clear: 'THE CROP GOES UP' },
   sections: [
     // ---------------------------------------------------------------- Section 1: The Tailings (rose dusk, open field)
-    // THE GROUND: Pickers and Sootborn on the spoil, and the first bladders over it. The seeps are harmless rose gas until
-    // something burning touches one — the Firebrand's flame, a broken lantern, a keg going off — and then they are not.
+    // THE GROUND: Pickers and Sootborn on the spoil, and the first bladders over it — and only the first. This is the
+    // thinnest sky on the board (6 of 18 off the ground) because the rule has to start somewhere: the field is a dozen
+    // bodies standing in the slag with a few bags over them. The seeps are harmless rose gas until something burning
+    // touches one — the Firebrand's flame, a broken lantern, a keg going off — and then they are not.
     { id: 'g1', name: 'THE TAILINGS', x0: 0, x1: 1800, backdrop: 'glean1', floor: 'spoil',
       // the board-4 family on the field: spoil heaps (the guild's scrip), a salvage line going up (cut it for meter), and the
       // guild's pole lantern at x 580 — break it and the spilt oil lights the seep beside it, on purpose
@@ -93,16 +102,15 @@ export const stage4 = {
         // flame is the first fire on the field: the seep at x 1400 is in this wave's view
         { triggerX: 1260, lock: true, spawns: [
           one(G, 'winnow', 'right', 24, 0),
-          ...chaff(2, { z0: 60, delay0: 30 }),
           one(S, 'slinger', 'left', 108, 60),
           one(S, 'firebrand', 'right', 90, 90),
         ] },
-        // the section's exam: something is stealing at your feet while something else is aiming at them, on spoil that
-        // will not let you run, with a Hulk and a Wrangler in it - and when one is left the bladder goes up and the next wave
-        // comes down: two Chaff out of the sky
+        // the section's exam, and it is a GROUND exam: something is stealing at your feet while the two goblins who take
+        // hold of you work the spoil that will not let you run - the Hulk on the sinking patch, the Wrangler's whip off it -
+        // and when one is left the bladder goes up and the next wave comes down: two Chaff out of the sky, which is all the
+        // sky the field gets
         { triggerX: 1640, lock: true, spawns: [
           one(G, 'sickle', 'right', 60, 0),
-          one(G, 'winnow', 'left', 118, 30),
           ...pick(1, { z0: 30, delay0: 60 }),
           one(S, 'hulk', 'right', 70, 100),
           one(S, 'wrangler', 'left', 40, 130),
@@ -120,7 +128,10 @@ export const stage4 = {
     // ---------------------------------------------------------------- Section 2: The Lash-Up (the float, one locked screen, timed waves)
     // THE SET PIECE: a raft of other people's wrecks hanging on forty bladders and DRIFTING (`drift`, glean2.js) toward the
     // press end. No bulwark anywhere on it, and the crop coming up onto it on lines drops ballast bags where the lines land.
-    // The Wing comes down here: the whole Stormcrow roster, grounded, fighting for the guild's wages.
+    // The Wing comes down here, and all of it: the whole Stormcrow roster - Deckhand, Crimper, Corsair, Bosun, Galewright,
+    // Grapnel Mate and Marine, twelve bodies of it - grounded on the deck, fighting for the guild's wages. They are why the
+    // float is barely more sky than the field was: the Gleaners are over your head, but most of what is on the raft is
+    // standing on it.
     { id: 'g2', name: 'THE LASH-UP', x0: 1800, x1: 2440, backdrop: 'glean2', floor: 'plank', mode: 'locked',
       /** Issue #32: forty bladders and no keel. The float dips slower and further than a ship banks, and there is no
        *  bulwark anywhere on it — so the slide and the plank gaps (issue #31) are the same problem twice. */
@@ -152,10 +163,12 @@ export const stage4 = {
       ],
       waves: [],
       timedWaves: [
-        // the first Thresher, with the ground crew and the first Stormcrow on the board, grounded and working
+        // the first Thresher, with the ground crew and the first Stormcrows on the board: two Deckhands working the lines
+        // and a Crimper off them, all three on their feet on the deck
         { at: 0, spawns: [
           one(G, 'thresher', 'right', 40, 0),
-          ...pick(2, { z0: 80, dz: 40, delay0: 30 }),
+          ...pick(1, { z0: 80, delay0: 30 }),
+          ...deck(2, { z0: 100, dz: 40, delay0: 60 }),
           ...crimp(1, { z0: 116, side: 'left', delay0: 90 }),
         ] },
         // the Harvestman, a section early: he hangs and calls the crop down while a Bosun's keg is in the air
@@ -165,19 +178,23 @@ export const stage4 = {
           one(C, 'bosun', 'left', 100, 100),
           ...crimp(1, { z0: 20, side: 'right', delay0: 130 }),
         ] },
-        // the Ninth Wing, for hire: a Galewright's coil on a raft with no rails and two Crimpers to walk you toward the edge
+        // the Ninth Wing, for hire, and the whole of it on one deck: a Galewright's coil, two Crimpers to walk you toward the
+        // edge, a Corsair's line - and the Grapnel Mate to take you the last step off a raft with no rails
         { at: 50, banner: 'THE WING COMES DOWN', spawns: [
           one(C, 'galewright', 'right', 50, 0),
           ...crimp(2, { z0: 20, dz: 100, delay0: 30 }),
           one(C, 'corsair', 'left', 70, 90),
+          one(C, 'grapnel', 'right', 100, 130),
         ] },
         // the Marine comes down out of the bladders above the raft on a line, the Thresher off a second one beside it
-        // (issue #30 `ropeDrop`: both hang 30f, and a hit on either cuts it); the Winnow lowers itself on its own silk
+        // (issue #30 `ropeDrop`: both hang 30f, and a hit on either cuts it); the Winnow lowers itself on its own silk,
+        // and a Deckhand walks in under the three of them
         { at: 80, spawns: [
           { type: G, variant: 'thresher', z: 40, delay: 0, entrance: { kind: 'ropeDrop', dx: -80 } },
           { type: G, variant: 'winnow', z: 100, delay: 30, entrance: { kind: 'descend', dx: 90 } },
           { type: C, variant: 'marine', z: 70, delay: 60, entrance: { kind: 'ropeDrop', dx: 0 } },
           ...chaff(1, { z0: 60, side: 'left', delay0: 100 }),
+          ...deck(1, { z0: 20, side: 'right', delay0: 140 }),
         ] },
       ],
       /**
@@ -204,9 +221,11 @@ export const stage4 = {
       transition: { kind: 'dock', banner: 'THE PRESS END', look: 'hoist', pies: 2 },
     },
     // ---------------------------------------------------------------- Section 3: The Press (the float's press end, decked in)
-    // THE GUILD FLIES THE CONCORDAT'S OWN MACHINE: winged Footmen and a winged Cutthroat out of the sky, salvaged Footmen and
-    // a salvaged Halberdier in guild plate, over the Gleaners. Decked in - no rails, no net squares - because the Reeve's
-    // arena is at the end of it and a ring-out zone inside a boss arena only ever takes a player's life.
+    // THE GUILD FLIES THE CONCORDAT'S OWN MACHINE: winged Footmen and a winged Cutthroat out of the sky and salvaged Footmen
+    // in guild plate, over the Gleaners - and the Wing is still here, seven of them working the press for wages, which is
+    // why the press is only a little more sky than the float. The winged bodies LAND: they are the Concordat on the guild's
+    // bags, not the guild's own air. Decked in - no rails, no net squares - because the Reeve's arena is at the end of it
+    // and a ring-out zone inside a boss arena only ever takes a player's life.
     { id: 'g3', name: 'THE PRESS', x0: 2440, x1: 3600, backdrop: 'glean2', floor: 'plank',
       // the urn holds the board's Brass Heart (1-UP); a gas bag (pie) and a salvage line (meter) stand in the Reeve's arena,
       // and the lantern at x 3012 is the fire that lights the seep beside it
@@ -224,26 +243,31 @@ export const stage4 = {
         { type: 'gasSeep', x: 3060, z: 110 },
       ],
       waves: [
-        // "meet the salvage": two Tin Footmen re-plated in plum and hemp, walking in under a Sickle and a Chaff
+        // "meet the salvage": two Tin Footmen re-plated in plum and hemp, walking in under a Sickle and a Chaff, with two of
+        // the Wing's Deckhands behind them working the press lines
         { triggerX: 2660, lock: true, spawns: [
           one(G, 'sickle', 'right', 60, 0),
           ...salvaged(2, { z0: 30, dz: 80, delay0: 30 }),
           ...chaff(1, { z0: 100, side: 'left', delay0: 90 }),
+          ...deck(2, { z0: 20, dz: 90, delay0: 120 }),
         ] },
-        // the guild flying the Concordat's own machine: two winged Footmen sink in out of the sky on salvage bladders
+        // the guild flying the Concordat's own machine: two winged Footmen sink in out of the sky on salvage bladders - and
+        // then stand on the deck with the Corsair and the Crimper who are still drawing the Wing's wages
         { triggerX: 2880, lock: true, spawns: [
           one(G, 'thresher', 'right', 40, 0),
           winged(B, 'footman', -80, 30, 30), winged(B, 'footman', 80, 110, 60),
           one(C, 'corsair', 'left', 70, 90),
-          ...pick(1, { z0: 118, side: 'right', delay0: 120 }),
+          ...crimp(1, { z0: 118, side: 'right', delay0: 120 }),
+          ...chaff(1, { z0: 60, side: 'left', delay0: 150 }),
         ] },
-        // the last line before the Reeve: a salvaged Halberdier's reach under a Winnow, a winged Cutthroat, and a Bosun
+        // the last line before the Reeve: a winged Cutthroat down over two Chaff, a Bosun's keg, and two Crimpers to walk you
+        // into both - the guild's re-plated Halberdier is held back for the loft, where the heavy salvage is stacked
         { triggerX: 3080, lock: true, spawns: [
           one(G, 'winnow', 'right', 40, 0),
-          one(B, 'halberdier', 'left', 90, 30, ['salvaged']),
           winged(S, 'cutthroat', 60, 60, 60),
           ...chaff(2, { z0: 20, dz: 100, delay0: 90 }),
           one(C, 'bosun', 'right', 110, 150),
+          ...crimp(2, { z0: 70, dz: 40, side: 'left', delay0: 180 }),
         ] },
       ],
       events: [],
@@ -251,8 +275,11 @@ export const stage4 = {
       transition: { kind: 'board', atX: 3540, gateX: 3600 },
     },
     // ---------------------------------------------------------------- Section 4: The Crop Loft (inside the great bag)
-    // ONLY THE GUILD, AND ITS SCRAP: the Riggerman's nets, the elite pair together for the only time on the board, and
-    // the winged / salvaged Brassbound the guild has made its own. No floor to speak of: marked net squares give way.
+    // ONLY THE GUILD, AND ITS SCRAP: the Riggerman's nets, the two role-'elite' bodies this room owes the player - the
+    // Harvestman and a Brass Warden the guild has re-plated in its own colours - and the winged / salvaged Brassbound it
+    // has made its own. The Riggerman is NOT half of that pair: gleaning.js builds him role 'grabber', elite false, and a
+    // net is not an elite. No floor to speak of either: marked net squares give way, and 13 of the 18 bodies in here hang
+    // under a bag of their own, which is where the rule has been going since the field.
     { id: 'g4', name: 'THE CROP LOFT', x0: 3600, x1: 5300, backdrop: 'glean3', floor: 'net',
       // two cargo nets overhead (a jump attack opens one and its chassis comes down rolling), a case, a salvage line (meter),
       // an urn and a gas bag (pies) before the hang line, and one lantern on the sorting line - the only fire in a bag of gas
@@ -286,28 +313,30 @@ export const stage4 = {
           ...chaff(2, { z0: 30, dz: 80, delay0: 40 }),
           ...pick(1, { z0: 110, side: 'left', delay0: 100 }),
         ] },
-        // the Concordat's machine on the guild's bladders, over a net floor: two winged Footmen between a Winnow and a Thresher
+        // the Concordat's machine on the guild's bladders, over a net floor: two winged Footmen between a Winnow and a
+        // Thresher - the bags carry them in and then let them down, and they fight the rest of the wave on the netting
         { triggerX: 4260, lock: true, spawns: [
           one(G, 'winnow', 'right', 40, 0),
           one(G, 'thresher', 'left', 100, 30),
           winged(B, 'footman', -70, 30, 60), winged(B, 'footman', 70, 110, 90),
-          one(G, 'sickle', 'right', 70, 120),
         ] },
-        // the elite pair, together for the first time: the Harvestman's call over the Riggerman's net
+        // the elite pair, in the room the game ends in: the Harvestman's call over an Iron Warden the guild has re-plated in
+        // plum and hemp - the heaviest thing in the nets, standing on a floor that gives. The Riggerman with them is a
+        // grabber, not an elite; his net is the wave's other job.
         { triggerX: 4560, lock: true, spawns: [
           one(G, 'harvestman', 'right', 60, 0),
           one(G, 'riggerman', 'left', 90, 40),
           ...chaff(2, { z0: 20, dz: 100, delay0: 70 }),
-          one(B, 'halberdier', 'right', 118, 130, ['salvaged']),
+          one(B, 'warden', 'right', 118, 130, ['salvaged']),
         ] },
-        // the last wave of the campaign: everything in the room in the air at the same time
+        // the last wave of the campaign: everything the guild has in the air at the same time, with the loft's own salvaged
+        // Halberdier on the netting under it - the last thing the Concordat does on this board is hold a floor for them
         { triggerX: 4820, lock: true, spawns: [
           one(G, 'harvestman', 'right', 50, 0),
           one(G, 'thresher', 'left', 118, 30),
-          one(G, 'sickle', 'right', 90, 60),
           one(G, 'riggerman', 'left', 40, 90),
-          ...chaff(1, { z0: 30, side: 'right', delay0: 120 }),
-          one(G, 'winnow', 'left', 20, 150),
+          one(G, 'winnow', 'right', 20, 150),
+          one(B, 'halberdier', 'right', 90, 120, ['salvaged']),
         ] },
       ],
       events: [],

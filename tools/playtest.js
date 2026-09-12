@@ -651,7 +651,19 @@ const scenarios = {
       await g.press(0, { right: true }, 2, 20);
       await g.shot('32-gallery-attack');
       const list = await g.enemyList();
-      assert(Array.isArray(list) && list.length >= 12, `enemy registry has 10 variants + 2 bosses (got ${list && list.length})`);
+      // The roster IS what this scenario is for, so name the variants. A bare `length >= N` cannot tell a deleted
+      // variant from a renamed one, and the per-variant loop below is generated from this same list — so deleting a
+      // variant used to shrink both halves together and the scenario still passed.
+      const REQUIRED = [
+        'brassbound:footman', 'brassbound:duelist', 'sootborn:cutthroat', 'sootborn:hulk',
+        'stormcrow:crimper', 'gleaning:chaff', 'chandler:wickboy',
+        // the six issue #28 added, one pair per home faction
+        'stormcrow:deckhand', 'stormcrow:grapnel', 'chandler:runner', 'chandler:drayman', 'gleaning:picker', 'gleaning:riggerman',
+      ];
+      const have = new Set(list.map((e) => `${e.type}:${e.variant}`));
+      const missing = REQUIRED.filter((k) => !have.has(k));
+      assert(missing.length === 0, `enemy registry carries every named variant (missing: ${missing.join(', ') || 'none'})`);
+      assert(Array.isArray(list) && list.length >= 39, `enemy registry has 31 variants + 8 bosses (got ${list && list.length})`);
       const chars = await g.characterList();
       assert(Array.isArray(chars) && chars.length === 4, `4 playable characters registered (got ${chars && chars.length})`);
     });
