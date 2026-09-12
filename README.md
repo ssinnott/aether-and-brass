@@ -5,8 +5,8 @@
 A steampunk high-fantasy side-scrolling beat-em-up in the spirit of *Golden Axe*, the *TMNT*
 arcade games and *TMNT: Shredder's Revenge*. **Four complete boards** end to end, four playable
 heroes, five enemy factions (thirty-one variants, plus five spawn modifiers that re-dress them per
-board), four mid-bosses and four multi-phase final bosses. Co-op for up to four players, on the couch
-(two keyboard halves plus gamepads, or four gamepads) or online through a room code, with no server
+board), four mid-bosses and four multi-phase final bosses. Co-op for two on the couch (a nine-key
+block each, or a gamepad) and up to four online through a room code, with no server
 behind it: the browsers talk to each other directly and run the same simulation in lockstep
 (docs/MULTIPLAYER.md).
 
@@ -83,10 +83,12 @@ Playing online, everybody is on the first block: the keys are the same on every 
   two players, so there is never any doubt about who pressed what. Escape pauses, M mutes, F1 shows the debug
   overlay. The on-screen legends and the "P2: PRESS V TO JOIN" hint follow whatever is actually bound, so they
   change if you remap keys below.
-- Players 3 and 4 use gamepads: press any button on a pad and it takes the next free slot, on the title,
-  character select, pause or mid-run. A pad is never tied to a fixed slot — whichever one you press first
-  becomes P1 if nobody else has, and a pad you set down keeps its slot until you return to the title screen,
-  where every claim resets.
+- **The couch seats two.** One keyboard, two nine-key blocks, and a gamepad can take either seat: press any
+  button on a pad and it claims the lowest seat nobody is using, on the title, character select, pause or
+  mid-run. A pad is never tied to a fixed slot — whichever one you press first becomes P1 if nobody else has,
+  and a pad you set down keeps its seat until you return to the title screen, where every claim resets. A
+  third or fourth pad has nothing to claim: **three and four players is an online room**, where the lobby
+  hands out seats and nobody has to share a keyboard.
 - **COMMANDS** on either pause plate opens a one-page reference: every command (move, run, attack, jump,
   dodge, special, super, taunt, throw, pause, mute) with the key and gamepad button actually bound to it
   and a line on what it does, plus MUSIC / SFX / MUTE sliders you can move without leaving the run. Like

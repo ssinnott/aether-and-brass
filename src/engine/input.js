@@ -2,7 +2,7 @@
 // Bindings follow docs/RECONCILIATION.md "Final controls" (ARCHITECTURE.md section 16). The default
 // table and the rebind / conflict / sanitise machinery live in engine/bindings.js (pure, no
 // window/navigator); this file owns the mutable live `bindings` object, device polling and caching.
-import { INPUT_BUFFER, MAX_PLAYERS } from '../constants.js';
+import { INPUT_BUFFER, MAX_PLAYERS, LOCAL_PLAYERS } from '../constants.js';
 import {
   DEFAULT_BINDINGS, BINDINGS_LAYOUT, LAYOUTS, layoutMap, cloneBindings, sanitiseBindings, rebindKey,
   rebindPad, joinCodesFor, keyLabel, padLabel, legendFor, moveLabelFor, joinLabels,
@@ -93,7 +93,11 @@ function padButton(gp, b) { const btn = gp.buttons[b]; return !!btn && (btn.pres
 
 // --- Pad claiming (ARCHITECTURE.md section 3, docs/RECONCILIATION.md "Final controls"): an unbound
 // pad's first BUTTON edge (axes ignored -- stick drift must never drop a phantom hero in) claims the
-// lowest slot with no pad, whose keyboard half has not been used, and that is not netplay-virtual.
+// lowest LOCAL slot (below LOCAL_PLAYERS) with no pad, whose keyboard half has not been used, and
+// that is not netplay-virtual. The cap is what keeps couch play at two: a third pad finds no slot to
+// claim rather than seating a player nobody can hand a keyboard to, and it is the single reason the
+// old "is this press a join, a menu confirm or somebody else's hero lock?" ambiguity cannot arise
+// for slots 2/3 -- those seats now only ever come from the lobby.
 // A pad that disconnects releases its slot (the slot itself stays joined); on reconnect it claims
 // again by the same rule, which can land it in a different slot. All claims are released wholesale by
 // resetClaims() (called when the title screen is entered). Netplay turns claiming off with
@@ -136,7 +140,7 @@ function claimPads() {
     // beginPadCapture()/endPadCapture()) must rebind that pad, not silently claim a slot and drop an
     // unwanted player in on the button's NEXT press.
     if (rising && claiming && !padSnapshot && !padSlot.has(k)) {
-      const s = players.findIndex((pl) => pl.pad < 0 && !pl.kbSeen && !pl.virtual);
+      const s = players.findIndex((pl, i) => i < LOCAL_PLAYERS && pl.pad < 0 && !pl.kbSeen && !pl.virtual);
       if (s >= 0) { players[s].pad = k; padSlot.set(k, s); claimed.add(s); unboundPads--; }
     }
   }
@@ -180,11 +184,12 @@ function keyHeld(codes) {
 /** Touch-control state, OR-ed into player 1's input each step (see engine/touch.js). */
 let touchActions = null;
 
-/** Input singleton (ARCHITECTURE.md section 3 / 16). Players are 0..3 (MAX_PLAYERS); slots 0 and 1
- *  own a nine-key keyboard block each, slots 2/3 are pad or netplay-virtual only; gamepads claim
- *  slots on their first button press (never index-bound); claims reset when the title screen is
- *  entered (resetClaims()); netplay turns claiming off (setPadClaiming(false)) and reads unbound
- *  pads as slot 0's local player. */
+/** Input singleton (ARCHITECTURE.md section 3 / 16). Players are 0..3 (MAX_PLAYERS), but couch play
+ *  fills only the first LOCAL_PLAYERS of them: slots 0 and 1 own a nine-key keyboard block each and
+ *  a pad claims one of those two, never beyond. Slots 2/3 are an online room's seats (or a test
+ *  virtual). Gamepads are not index-bound -- they claim on their first button press; claims reset
+ *  when the title screen is entered (resetClaims()); netplay turns claiming off (setPadClaiming(false))
+ *  and reads unbound pads as slot 0's local player. */
 export const input = {
   bindings,
   ACTIONS,
@@ -295,8 +300,10 @@ export const input = {
     for (const a of ACTIONS) if (pl.pressedNow[a]) return true;
     return false;
   },
-  /** True if this player pressed one of their OWN keys/buttons this step (P2 drop-in; the blocks are disjoint, so no key is ambiguous). */
-  joinPressed(player) { return !!players[player].joinNow; },
+  /** True if this player pressed one of their OWN keys/buttons this step (P2 drop-in; the blocks are
+   *  disjoint, so no key is ambiguous). Always false for a slot beyond the couch cap: those seats are
+   *  the lobby's to hand out, and every caller of this is a local drop-in path. */
+  joinPressed(player) { return player < LOCAL_PLAYERS && !!players[player].joinNow; },
   /** Mark a player as joined. P1's own keys are the same either way -- joining changes nothing about them. */
   setJoined(player, joined = true) { players[player].joined = !!joined; },
   /** Has the player joined? (P1 is always joined.) */
@@ -305,19 +312,20 @@ export const input = {
   padOf(player) { return players[player].pad; },
   /** Does this slot have a keyboard half at all? (Slots 2/3 have none: gamepad or virtual only.) */
   hasKeyboard(player) { return !!bindings.keyboard[player]; },
-  /** Slots 1..MAX_PLAYERS-1 that have not joined yet. Allocates -- call only on a joinState() change. */
+  /** Local slots (1..LOCAL_PLAYERS-1) that have not joined yet -- the ones a hint may still invite.
+   *  Allocates -- call only on a joinState() change. */
   freeSlots() {
     const out = [];
-    for (let p = 1; p < players.length; p++) if (!players[p].joined) out.push(p);
+    for (let p = 1; p < LOCAL_PLAYERS; p++) if (!players[p].joined) out.push(p);
     return out;
   },
   /** Connected pads not yet claimed by any slot. 0 while claiming is off (netplay): no press can
    *  claim a slot then, so hints must not advertise "ANY PAD BUTTON" during that window. */
   get unboundPads() { return claiming ? unboundPads : 0; },
-  /** Slot a fresh unbound pad press would claim right now (mirrors claimPads()'s own rule: the
-   *  lowest slot with no pad, an unused keyboard half and not virtual), or -1 if none. Read-only --
+  /** Slot a fresh unbound pad press would claim right now (mirrors claimPads()'s own rule: the lowest
+   *  LOCAL slot with no pad, an unused keyboard half and not virtual), or -1 if none. Read-only --
    *  used to phrase join hints correctly when a keyboard slot (e.g. P2) is still poachable by a pad. */
-  nextPadSlot() { return players.findIndex((pl) => pl.pad < 0 && !pl.kbSeen && !pl.virtual); },
+  nextPadSlot() { return players.findIndex((pl, i) => i < LOCAL_PLAYERS && pl.pad < 0 && !pl.kbSeen && !pl.virtual); },
   /** Small integer summarising joined slots (bit p) plus an unbound-pad bit (bit MAX_PLAYERS). No
    *  allocation -- screens compare this to a cached value and rebuild their hint strings on change. */
   joinState() {
@@ -379,8 +387,10 @@ export const input = {
   clearVirtual(player) { players[player].virtual = null; },
   /** Last device that produced input for the player ('keyboard' | 'gamepad' | 'virtual' | 'none'). */
   device(player) { return players[player].device; },
-  /** Number of players supported. */
+  /** Number of player slots the engine holds (four: an online room seats four). */
   get playerCount() { return players.length; },
+  /** How many of them couch play may fill. Slots at or above this only ever hold a remote peer. */
+  get localPlayers() { return LOCAL_PLAYERS; },
 
   // --- Rebinding (engine/bindings.js does the work; this invalidates the derived caches). ---
 

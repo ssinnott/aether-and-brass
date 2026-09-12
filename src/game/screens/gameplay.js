@@ -1,6 +1,6 @@
 // Gameplay screen: World + players + HUD + StageRunner (ARCHITECTURE.md sections 7, 9, 12, 15).
 // Exposes spawnEnemy / spawnEnemyAt / killAllEnemies / fillMeter / facePlayerToNearestEnemy / summary for window.__game.
-import { VIEW_W, VIEW_H, TEAM, ST, Z_MAX, METER, UI, MAX_PLAYERS, NET_PLAYERS } from '../../constants.js';
+import { VIEW_W, VIEW_H, TEAM, ST, Z_MAX, METER, UI, MAX_PLAYERS, LOCAL_PLAYERS, NET_PLAYERS } from '../../constants.js';
 import { Screen } from '../game.js';
 import { World } from '../world.js';
 import { Player } from '../player.js';
@@ -57,7 +57,11 @@ export class GameplayScreen extends Screen {
     this.continues = params.continues != null ? params.continues : this.difficulty.continues;
     this.continuesUsed = 0;
     this.hud = new Hud(this.world, game);
-    chars.slice(0, this.maxPlayers()).forEach((ci, i) => { if (ci != null && ci >= 0) this.addPlayer(ci, i); });
+    // The party you arrive with is the party you play: online the lobby seated it (session.js already
+    // trims to the room size), and couch play cannot hand over more than LOCAL_PLAYERS because nothing
+    // local can join past that. A longer local list therefore only ever comes from the `?chars=` debug
+    // hook, which is how the four-player party scaling an online room needs stays headlessly testable.
+    chars.slice(0, MAX_PLAYERS).forEach((ci, i) => { if (ci != null && ci >= 0) this.addPlayer(ci, i); });
     this.players.forEach((p, i) => { if (p && i > 0) game.input.setJoined(i, true); });
     game.players = this.players;
     this.gameOverTimer = 0; this.gameOverShown = false;
@@ -102,10 +106,12 @@ export class GameplayScreen extends Screen {
   }
   /** Swap the backdrop (StageRunner calls this on section changes). */
   setBackdrop(b) { this.backdrop = b; this.world.backdrop = b; }
-  /** Slots this run may fill: the party the lockstep session seated under netplay (two to four),
-   *  four for couch co-op. A method (not a constant) so #22's training arena can cap the run at one. */
+  /** Slots a DROP-IN may still fill: the party the lockstep session seated under netplay (two to
+   *  four), LOCAL_PLAYERS on the couch. A method (not a constant) so #22's training arena can cap
+   *  the run at one. The party a run ARRIVES with is a separate thing (see enter()): online the
+   *  lobby has already seated it, and couch play cannot produce more than two anyway. */
   maxPlayers() {
-    if (!this.game.options.netplay) return MAX_PLAYERS;
+    if (!this.game.options.netplay) return LOCAL_PLAYERS;
     const net = this.game.net;
     return Math.min(NET_PLAYERS, (net && net.players) || NET_PLAYERS);
   }
@@ -137,7 +143,7 @@ export class GameplayScreen extends Screen {
     // a pause press. A Set per update is fine -- this is the sim tick, not a per-frame draw path.
     const joinedNow = new Set();
     if (!online) {
-      for (let s = 1; s < MAX_PLAYERS; s++) {
+      for (let s = 1; s < LOCAL_PLAYERS; s++) {
         if (inp.joined(s) || this.players[s] || !inp.joinPressed(s)) continue;
         if (this.players.filter(Boolean).length >= this.maxPlayers()) break;
         inp.setJoined(s, true); joinedNow.add(s);

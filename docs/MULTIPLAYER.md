@@ -172,10 +172,13 @@ ends the session and hands the other seats to the bot), host migration, more tha
 and the MQTT transport is untested against a live broker from this environment — BroadcastChannel
 is the verified path.
 
-**Local co-op and the session are now the same size.** `engine/input.js` owns four player records
+**Three or four players is an online room.** `engine/input.js` owns four player records
 (`MAX_PLAYERS = 4`) and an online room seats at most as many (`NET_PLAYERS = 4`, minimum
-`NET_MIN_PLAYERS = 2`); no new sim state was added for any of it, so `src/net/checksum.js` needs no
-new fields. `session.js beginMatch` calls `input.resetClaims(); input.setPadClaiming(false)` and
+`NET_MIN_PLAYERS = 2`), but couch play fills only the first `LOCAL_PLAYERS = 2` of them: two people
+share one keyboard, a nine-key block each, and a pad never claims past the second seat. Slots 2/3
+therefore only ever hold a remote peer, which is what makes seating unambiguous — a seat here is
+handed out by the lobby, never guessed from which button somebody pressed. No new sim state was
+added for any of it, so `src/net/checksum.js` needs no new fields. `session.js beginMatch` calls `input.resetClaims(); input.setPadClaiming(false)` and
 un-joins any local slot beyond the party before the match starts, so an online match is exactly the
 party the lobby seated regardless of how many slots were joined locally beforehand. With claiming
 off, `pollRaw(player)` reads the pad bound to that slot plus every unbound pad, so a pad drives the
