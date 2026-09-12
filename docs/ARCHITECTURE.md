@@ -527,6 +527,19 @@ is hashed by `net/checksum.js`, whereas a Zone is kind `'fx'` and its state is i
 Unlike every other zone a solid answers `dangerBox()` permanently (a wall has no quiet phase), which is what makes
 `laneAroundHazards` route mobs and the autopilot around it for free; a broken barricade reports `null` again.
 
+A wall is **drawn as a body standing on the deck** (`Zone.drawSolid`), not as its footprint: a plate in the floor is
+something the picture says you can walk on, so it never reads as something to jump. The barrier stands on the near
+lip of `[z0, z1]` and rises exactly `height` px — the same number `Fighter.hitSolid` measures a jump's apex against,
+so the edge the eye picks is the edge the jump has to clear — with the footprint behind it kept as a stepped shadow
+on the deck, which still says which lanes are shut. It is side-on with a shallow top cap rather than a full top face
+(the house idiom for a solid object, `art/props.js` `mold` / `cart`): this projection has no x foreshortening, so a
+top face the depth of the band reads as a second floor rather than as a volume. Because it is a standing body it
+also sorts like one — a solid with `height > 0` takes `z = z0` instead of the `-5` every other zone parks at, which
+is the one depth that hides what is genuinely behind it and lets everything from its back edge forward (a fighter
+walking past its face, one mid-jump over it) draw over it. A gap keeps `z = -5`: it is a hole in the deck, and
+everything that walks on it draws on top. Nothing but the depth sort reads a Zone's `z`, and `fx` is not hashed by
+`net/checksum.js`, so this is render order and nothing else.
+
 Hazard and zone types, their spec fields, timings, hits and `dangerBox` footprints are tabulated in the header of
 `game/hazards.js` (HAZARD TABLE / ZONE TABLE). Boards 2-4 declare `lightning`, `cannon`, `gasCell`, `limePit`,
 `wagon`, `tallowVat`, `kilnMouth`, `ledgerDrop` / `ballastDrop` and `gasSeep` hazards and `gust`, `spoil` and
