@@ -21,6 +21,7 @@ import { entrances } from './scenarios/entrances.js';
 import { obstacles } from './scenarios/obstacles.js';
 import { platforms } from './scenarios/platforms.js';
 import { events as eventScenario } from './scenarios/events.js';
+import { beats as beatScenario } from './scenarios/beats.js';
 import { cargo } from './scenarios/cargo.js';
 import { stall } from './scenarios/stall.js';
 import { hazards } from './scenarios/hazards.js';
@@ -509,6 +510,8 @@ const scenarios = {
   // 3h. Scripted mid-board events: the ?event= jump, a real script reaching the world, and hazard overrides being
   // handed back afterwards (issue #33, tools/scenarios/events.js). Action SEQUENCING is in tools/simtest.js.
   events: (server) => eventScenario(server, { withPage, assert }),
+  // Story beats and companion dialogue (issue #25): the intro beat is playable, and the harness skips it.
+  beats: (server) => beatScenario(server, { withPage, assert }),
 
   // 3i. Scenery entrances: a crate tipping its cargo out, a chute on a timer that can be held shut, a smashed timer
   // container becoming loot, and a wave that comes out of a named cart (issue #34, tools/scenarios/cargo.js).

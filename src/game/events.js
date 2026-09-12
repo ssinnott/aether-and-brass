@@ -22,6 +22,14 @@
 // { zoneFlash: { x0, x1, z0?, z1?, frames?, color? } }  0         a warning patch on the floor BEFORE anything hurts
 // { spawn: [spawnSpec] }                       0                 a wave entry, entrances (issue #30) and all
 // { prop: { type, x, z, ...opts } }            0                 put a prop down (the Gleaning's dropped carcass)
+// ---- story beats (issue #25), all of them scenery: none is a fight, none is hashed -----------------------------
+// { actor: { id, def, variant?, x, z, facing?, anim?, vx?, vz?, frames?, life? } }  0   a scripted body (actors.js)
+// { walk: { id, vx?, vz?, frames?, anim?, face? } }  0           retarget an actor already on stage
+// { sign: { text, sub?, x, z?, style?, life? } }     0           the board's subtitle, lettered on a thing in-world
+// { say: { trigger, focus? } }                 0                 raise a companion exchange (game/dialogue.js)
+//
+// There is deliberately no `hold`: `wait` already is one, and a second name for it would be two ways to spell the
+// only action that spends time. Nor does any beat action freeze the player — see the fairness note below.
 //
 // RULES THE CONTENT MUST KEEP (GDD 6 fairness, restated because a script can break them where a hazard cannot):
 // never inside a boss arena, never during a transition, and every event warns before it hurts — a caption plus a
@@ -42,7 +50,18 @@
 // hands it. That is what lets tools/simtest.js step a whole script in pure Node with no canvas and no audio context.
 
 /** Actions in the order the table above documents them. A script may repeat any of them. */
-export const EVENT_ACTIONS = Object.freeze(['caption', 'wait', 'camera', 'sfx', 'music', 'hazardSet', 'zoneFlash', 'spawn', 'prop']);
+export const EVENT_ACTIONS = Object.freeze([
+  'caption', 'wait', 'camera', 'sfx', 'music', 'hazardSet', 'zoneFlash', 'spawn', 'prop',
+  'actor', 'walk', 'sign', 'say',
+]);
+
+/**
+ * The beat actions (issue #25). Split out because they share one property the combat actions do not: every one of
+ * them is SCENERY. None spawns a fight, none changes a hazard, none is hashed by net/checksum.js, and none of them
+ * is required to run for the section to be completable — which is exactly what lets `?bot=1` and the test harness
+ * skip a whole beat on one peer while the other plays it.
+ */
+export const BEAT_ACTIONS = Object.freeze(['actor', 'walk', 'sign', 'say']);
 
 /**
  * Runs one section's events. The StageRunner owns exactly one of these and steps it every sim frame.
@@ -57,6 +76,10 @@ export const EVENT_ACTIONS = Object.freeze(['caption', 'wait', 'camera', 'sfx', 
  *   zoneFlash: (spec: object) => void,
  *   spawn: (specs: object[]) => void,
  *   prop: (spec: object) => void,
+ *   actor?: (spec: object) => void,
+ *   walk?: (spec: object) => void,
+ *   sign?: (spec: object) => void,
+ *   say?: (spec: object) => void,
  * }} host every effect the script can have, injected so this module imports nothing
  */
 export class EventRunner {
@@ -121,6 +144,12 @@ export class EventRunner {
     if (a.hazardSet) { const token = this.host.hazardSet(a.hazardSet); if (token) this.pending.push(token); }
     if (a.spawn) this.host.spawn(Array.isArray(a.spawn) ? a.spawn : [a.spawn]);
     if (a.prop) this.host.prop(a.prop);
+    // Beat actions. `host.actor` and friends are optional: a host that does not implement them (the pure-Node
+    // recorder in tools/simtest.js used to be one) simply stages no scenery, and the script's timing is unchanged.
+    if (a.actor && this.host.actor) this.host.actor(a.actor);
+    if (a.walk && this.host.walk) this.host.walk(a.walk);
+    if (a.sign && this.host.sign) this.host.sign(a.sign);
+    if (a.say && this.host.say) this.host.say(a.say);
     return 0;
   }
 

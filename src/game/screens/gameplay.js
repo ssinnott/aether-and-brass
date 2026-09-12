@@ -71,7 +71,15 @@ export class GameplayScreen extends Screen {
     this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves, startSection: section, startEvent: event });
     this.runner.start();
     for (const s of opt.spawn || []) this.spawnEnemy(s.type, s.variant, s.dx, s.dz);
-    if (!params.resume && !(section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);
+    // The opening banner. Its subtitle is normally the first section's name — but when story beats are on that name
+    // is already lettered on a hoarding in the world a few strides ahead (issue #25), so the room's own STINGER goes
+    // here instead of repeating it. Without this the four section-1 stingers would be written and never displayed:
+    // StageRunner.enterSection suppresses its own banner for the first section precisely because this one exists.
+    if (!params.resume && !(section > 0)) {
+      const s0 = this.stage.sections[0];
+      const sub = (this.runner.beats && s0.stinger) || s0.name || '';
+      this.hud.showBanner(this.stage.name, sub, 120);
+    }
   }
   /**
    * Netplay status over the scene: a stall while somebody's input is late, the note when one player

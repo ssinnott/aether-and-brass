@@ -87,9 +87,51 @@ export const stage2 = {
           holdout('footman', 'left', 100, 110),
         ] },
       ],
-      events: [],
+      /** Issue #25 stinger: the spine's own line, under the section name plate. */
+      stinger: 'NOTHING UP HERE IS BOLTED TO THE GROUND',
+      /**
+       * OFF THE MOORING LADDER (issue #25). The party steps off the ladder onto the spine as the storm front comes
+       * over, and the board's name is on the nameplate bolted to the rail rather than on a title card. A Stormcrow
+       * deckhand walks the spine ahead of them and turns for the rail before the first wave -- the board saying,
+       * before it ever fights you, that people go off this thing.
+       *
+       * See the `holdWaves` note on board 1: the wave director waits for the script rather than the level being
+       * re-cut to make room for it.
+       */
+      events: [
+        { id: 'intro2', atX: 40, once: true, beat: true, holdWaves: true, actions: [
+          { sign: { text: 'THE MOORING SPINE', sub: 'NINTH WING - NO BOARDING', x: 340, z: 4, style: 'nameplate', life: 900, color: '#f4e8c8' } },
+          // the deckhand starts INSIDE the opening view (the camera spans 0..640) and walks away up the spine, so
+          // the party watches him go rather than never seeing him at all
+          { actor: { id: 'hand', def: 'stormcrow', variant: 'deckhand', x: 430, z: 26, facing: 1, vx: 0.5, frames: 260, anim: 'walk' } },
+          // The stage banner (gameplay.js) holds the screen for its first 120 frames, and `showBanner` is one slot:
+          // a caption raised before then would delete the board's own title. The scenery goes up straight away; the
+          // words wait their turn.
+          { wait: 130 },
+          { caption: 'THE SKY IS OPEN', sub: 'THE NINTH WING HAS DECIDED TO CLOSE IT AGAIN', life: 170 },
+          { wait: 140 },
+          { sfx: 'gale' },
+          { camera: { shake: 3, frames: 40 } },
+          { wait: 60 },
+          // the deckhand turns for the rail as the front hits
+          { walk: { id: 'hand', vz: -0.5, frames: 60, anim: 'walk', face: 1 } },
+          { caption: 'THE FRONT IS COMING OVER', sub: '', life: 140 },
+          { wait: 80 },
+          { sfx: 'thunder_strike' },
+          { wait: 140 },
+        ] },
+      ],
       /** The freighter warps in against the spine and the cargo gate comes down: the players board. */
-      transition: { kind: 'board', atX: 1840, gateX: 1900 },
+      transition: { kind: 'board', atX: 1840, gateX: 1900,
+        /**
+         * Issue #25 vignette: the cargo gate is 50 frames, so the moment has to be one image rather than a scene.
+         * A wing peels off overhead -- the Ninth Wing noticing the party, which is what the next section is about.
+         */
+        vignette: { cues: [
+          { at: 12, caption: 'A WING PEELS OFF OVERHEAD', sub: '', life: 100 },
+          { at: 18, sfx: 'crow_call' },
+          { at: 30, actor: { id: 'wing', def: 'stormcrow', variant: 'corsair', dx: 600, z: 2, facing: -1, vx: -5, frames: 120, anim: 'walk' } },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 2: The Gas-Halls (interior, soft light)
     { id: 'm2', name: 'THE GAS-HALLS', x0: 1900, x1: 3600, backdrop: 'storm2', floor: 'plank',
@@ -135,9 +177,17 @@ export const stage2 = {
           { type: B, variant: 'footman', side: 'right', z: 120, delay: 130 }, { type: B, variant: 'footman', side: 'left', z: 30, delay: 160 },
         ] },
       ],
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'ALL THAT HOLDS THIS UP IS GAS IN A BAG',
       events: [],
       /** Past the winch bay the hull is open to the weather: a boarding ramp across to the flagship. */
-      transition: { kind: 'board', atX: 3540, gateX: 3600 },
+      transition: { kind: 'board', atX: 3540, gateX: 3600,
+        /** Issue #25 vignette: the Cold Sovereign's boarding gate, and the marine standing watch on it. */
+        vignette: { cues: [
+          { at: 10, caption: 'SHE TAKES YOU ABOARD', sub: 'NOBODY ON THIS SHIP STOPS YOU', life: 100 },
+          { at: 20, actor: { id: 'watch', def: 'stormcrow', variant: 'marine', dx: 520, z: 12, facing: -1, anim: 'idle' } },
+          { at: 30, sfx: 'crow_call' },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 3: The Cold Sovereign (the gun deck, one locked screen)
     /** The flagship comes about with the party aboard: the camera locks to the screen, the far sky slides past
@@ -197,6 +247,8 @@ export const stage2 = {
        * question about where you are standing rather than a thing to out-run. Each barrel's own 45f run-out tell
        * still plays, and the `zoneFlash` over its lane goes up two seconds before the first of them.
        */
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'A SHIP THAT HAS NOT BEEN RELIEVED IN A YEAR',
       events: [
         { id: 'broadside', onWaveClear: 2, once: true, actions: [
           { caption: 'BROADSIDE', sub: 'CLEAR THE LANES', life: 140 },
@@ -214,7 +266,13 @@ export const stage2 = {
         ] },
       ],
       /** The ship steadies on her new heading; a companion ladder up to the bridge deck with two Meat Pies at its foot. */
-      transition: { kind: 'dock', banner: 'THE SHIP COMES ABOUT', look: 'ladder', pies: 2 },
+      transition: { kind: 'dock', banner: 'THE SHIP COMES ABOUT', look: 'ladder', pies: 2,
+        /** Issue #25 vignette: the ship comes about, and the whole storm swings across the rail with it. */
+        vignette: { cues: [
+          { at: 6, sfx: 'gale' },
+          { at: 10, caption: 'THE SHIP COMES ABOUT', sub: 'THE BRIDGE IS FORWARD', life: 90 },
+          { at: 18, camera: { shake: 6, frames: 20 } },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 4: The Bridge (the flagship's upper deck)
     { id: 'm4', name: 'THE BRIDGE', x0: 4240, x1: 5200, backdrop: 'storm3', floor: 'deck',
@@ -260,6 +318,8 @@ export const stage2 = {
           { type: C, variant: 'bosun', side: 'right', z: 118, delay: 130 },
         ] },
       ],
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'THE ORDER WAS NEVER CANCELLED. NOBODY CAME UP TO CANCEL IT',
       events: [],
     },
   ],

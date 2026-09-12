@@ -168,6 +168,12 @@ a hazard layout no other section in the game shares.
 > **THE BRASSGUARD ARE GOING DOWN THE LIME ROAD TO CLOSE THE ACCOUNT.**
 
 ## Section 1, The Lime Road (x 0–1800; flat morning light, open ground)
+- **The opening beat (issue #25):** the board does not open on a title card. The party comes UP the road past the
+  wagon train going down it — a drayman at the head of the load and a tallyman walking it, both on company time — and
+  the board's name is chalked on the Chandlery's own **tally board** at the weighbridge rather than shown on a plate.
+  The caption is the board's thesis stated flat (*the war is over; the company is still billing for it*), and the
+  stinger under the section plate is this doc's own line: *everything here keeps the thing that kills you standing
+  up*. Six seconds, no enemies, and the player has control throughout.
 - **Setting:** the cart road up to the works, white with spilled lime, wagon trains standing in it and the works'
   four chimneys drawing smoke straight up ahead of you.
 - **Parallax:** *Far* (0.2x): a chalk sky with no sun in it, the low line of the works and its chimneys, the city on

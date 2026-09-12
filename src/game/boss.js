@@ -222,6 +222,9 @@ export class Boss extends Enemy {
       // The bestiary (issue #26) reveals a phase's codex block only once that phase has been REACHED, so the
       // person inside the machine is not spoiled by a card for a fight the player has only half seen.
       if (world.onBossPhase) world.onBossPhase(this, this.phaseIndex);
+      // The boss says what breaking cost it (issue #25). After `announce`, so the name plate is what the player
+      // reads first and the line arrives under it rather than competing with it.
+      if (world.bossLine) world.bossLine(this, 'phase', this.phaseIndex);
     }
     this.callHook('onPhase', this.phaseIndex, world);
   }
@@ -235,7 +238,10 @@ export class Boss extends Enemy {
     this.y = 0; this.vy = 0; this.vx = 0;
     this.setState(ST.SPECIAL, 'defeat', { fallback: 'hurt' });
     audio.play('boss_defeat');
-    if (this.world) { this.world.camera.shake(12, 16); this.world.addFx('flash', this.x, 0, this.z, { color: '#ffffff' }); this.world.resetBand(); }
+    if (this.world) {
+      this.world.camera.shake(12, 16); this.world.addFx('flash', this.x, 0, this.z, { color: '#ffffff' }); this.world.resetBand();
+      if (this.world.bossLine) this.world.bossLine(this, 'defeat');
+    }
   }
   onActionDone(world) {
     if (this.defeated) {

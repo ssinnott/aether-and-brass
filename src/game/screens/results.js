@@ -17,6 +17,9 @@ import { drawShadowScreen } from '../../art/fx.js';
 import { AnimPlayer } from '../animation.js';
 import { progress } from '../progress.js';
 import { getStage, stageIndex } from '../../content/stage/index.js';
+import { CHARACTERS } from '../../content/characters/index.js';
+import { BANTER, SOLO } from '../../content/characters/lines.js';
+import { drawSpeechPlate, pairKey } from '../dialogue.js';
 
 const ROWS = [['ENEMIES DEFEATED', 'kills'], ['MAX COMBO', 'maxCombo'], ['DAMAGE TAKEN', 'damageTaken'], ['CONTINUES USED', 'continues'], ['TIME', 'time'], ['SCORE', 'score']];
 const ROW_FRAMES = 20, ROLL_FRAMES = 16;
@@ -28,6 +31,16 @@ const LABEL_X = 64, COL_X = 250, COL_W = 120, ROW_Y = 104;
 // and a four-rig hero row (last rig's right edge ~585, inside the plaque's inner edge 594).
 const COL_X_QUAD = 176, COL_W_QUAD = 80;
 const HERO_X = [470, 560], HERO_X_QUAD = [400, 456, 512, 568], HERO_Y = 322;
+/** Issue #25: the run's last exchange comes up this many stamp-frames after the rank lands, and its reply follows. */
+const RESULTS_LINE_AT = 24, RESULTS_LINE_GAP = 26;
+/**
+ * Rows the exchange plates sit on, and the gap between the two speakers' rows.
+ *
+ * The plaque has no spare space and these are the only rows left: the stat rows finish around 203, the NEW BOARD
+ * OPEN plate owns 262..296 and the bestiary entry list starts at 262 — and BOTH of those are drawn AFTER the
+ * exchange, so a plate that overlapped them would simply be painted over rather than competing with them.
+ */
+const RESULTS_LINE_Y = 238, RESULTS_LINE_ROW = 15;
 
 // New-entry list (issue #26). It shares the plaque with the hero rigs (from x ~370 in quad mode), the NEW BOARD
 // OPEN plate (rows 262..296) and PRESS START (centred on row 312), so it lives in the left column and is kept
@@ -88,13 +101,43 @@ export class ResultsScreen extends Screen {
       if (!def) return null;
       const anim = new AnimPlayer(def.anims || {});
       anim.play(this.defeat ? 'lying' : 'win', { fallback: 'idle' });
-      return { rig: buildRig(def.build || {}), anim };
+      return { rig: buildRig(def.build || {}), anim, def };
     });
+    // The last companion exchange of the run (issue #25), over the victory poses. It is chosen here rather than
+    // drawn live because the results screen has no world and no sim frame: `this.frame` is its own, and picking
+    // once on entry means the plate cannot change while the player is reading it.
+    this.exchange = this.pickExchange();
     this.game.audio.music.play(this.defeat ? 'gameover' : 'results');
     particles.clear();
   }
+  /**
+   * The `results` exchange: the first two heroes on the plaque, from the same tables the run used. Nothing about a
+   * results screen is simulation, so this may use any clock it likes — but it uses the score anyway, which keeps a
+   * netplay pair showing the same line and costs nothing.
+   *
+   * @returns {{ lines: Array<{ i: number, text: string }> }|null}
+   */
+  pickExchange() {
+    if (this.defeat || this.game.options.bot) return null;
+    const live = this.heroes.map((h, i) => (h && h.def ? { i, id: h.def.id } : null)).filter(Boolean);
+    if (!live.length) return null;
+    const pick = (n, seed) => (n <= 1 ? 0 : ((seed | 0) % n + n) % n);
+    if (live.length >= 2) {
+      const order = CHARACTERS.map((c) => c.id);
+      const [x, y] = [live[0], live[1]].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+      const rows = (BANTER[pairKey(x.id, y.id, order)] || {}).results;
+      if (rows && rows.length) {
+        const row = rows[pick(rows.length, this.total)];
+        return { lines: [{ i: x.i, text: row.a }, { i: y.i, text: row.b }] };
+      }
+    }
+    const solo = (SOLO[live[0].id] || {}).results;
+    return solo && solo.length ? { lines: [{ i: live[0].i, text: solo[pick(solo.length, this.total)] }] } : null;
+  }
+
   /** Keep the stage bookkeeping visible to window.__game.summary() after the run. */
-  summary() { return { ...this.summaryExtra, stageId: this.stage ? this.stage.id : '', unlockedStageId: this.unlocked ? this.unlocked.id : '' }; }
+  summary() { return { ...this.summaryExtra, stageId: this.stage ? this.stage.id : '', unlockedStageId: this.unlocked ? this.unlocked.id : '',
+    resultsLines: this.exchange ? this.exchange.lines.map((l) => l.text) : [] }; }
   update() {
     super.update();
     for (const h of this.heroes) if (h) { h.anim.tick(); if (h.anim.done) h.anim.play(this.defeat ? 'lying' : 'win', { restart: true, fallback: 'idle' }); }
@@ -173,6 +216,14 @@ export class ResultsScreen extends Screen {
       drawShadowScreen(ctx, heroX[i], HERO_Y, 34 * h.rig.scale, 0.45);
       drawRig(ctx, h.rig, h.anim.pose, { x: heroX[i], y: HERO_Y, facing });
     });
+    // The run's last exchange, over the poses. It comes up AFTER the rank stamp has landed (the plaque is what the
+    // player is reading until then) and the reply follows the opening line, the same beat the in-game plates use.
+    if (this.exchange && this.stamp > RESULTS_LINE_AT) {
+      this.exchange.lines.forEach((l, k) => {
+        if (this.stamp < RESULTS_LINE_AT + k * RESULTS_LINE_GAP) return;
+        drawSpeechPlate(ctx, heroX[l.i], RESULTS_LINE_Y - (l.i % 2) * RESULTS_LINE_ROW, l.text);
+      });
+    }
     // rank stamp: 6f slam from big to final size, then a 6f shake (scaled by the SCREEN SHAKE option)
     if (this.stamp >= 0) {
       const t = Math.min(1, this.stamp / 6), sc = 5 + Math.round((1 - t) * 6);

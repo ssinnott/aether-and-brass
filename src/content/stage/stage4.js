@@ -124,9 +124,49 @@ export const stage4 = {
           { type: G, variant: 'chaff', z: 100, delay: 30, entrance: { kind: 'descend', dx: 70 } },
         ] }] },
       ],
-      events: [],
+      /** Issue #25 stinger: the tailings' own line, under the section name plate. */
+      stinger: 'EVERY PIECE OF THIS WAS SOMEBODY ELSE\'S',
+      /**
+       * UP THE SPOIL HEAP (issue #25). The party climbs the tailings while a salvage bladder goes up in front of
+       * them with a load under it, and the board's name is stencilled on a bale at the top of the climb. The last
+       * board opens on its own thesis: everything you broke on the first three boards is being carried away, and
+       * the carrying is happening whether or not you are here.
+       *
+       * See the `holdWaves` note on board 1.
+       */
+      events: [
+        { id: 'intro4', atX: 40, once: true, beat: true, holdWaves: true, actions: [
+          { sign: { text: 'THE TAILINGS', sub: 'GLEANING - LOT 41', x: 340, z: 8, style: 'bale', life: 900, color: '#efe4c6' } },
+          // a picker working the heap, and the bladder going up in front of you with what it has found
+          { actor: { id: 'picker', def: 'gleaning', variant: 'picker', x: 620, z: 30, facing: -1, vx: -0.35, frames: 420, anim: 'walk' } },
+          // The stage banner (gameplay.js) holds the screen for its first 120 frames, and `showBanner` is one slot:
+          // a caption raised before then would delete the board's own title. The scenery goes up straight away; the
+          // words wait their turn.
+          { wait: 130 },
+          { caption: 'EVERYTHING YOU BROKE', sub: 'IS BEING CARRIED AWAY', life: 170 },
+          { wait: 130 },
+          { sfx: 'hydraulic' },
+          { actor: { id: 'lift', def: 'gleaning', variant: 'winnow', x: 760, z: 10, facing: -1, vx: -0.4, vz: -0.06, frames: 230, anim: 'idle' } },
+          { wait: 90 },
+          { caption: 'A BLADDER GOES UP AHEAD OF YOU', sub: 'SOMETHING IS UNDER IT', life: 150 },
+          { wait: 160 },
+        ] },
+      ],
       /** The guild's own cargo hoist takes the party UP off the field (`up: true`: the shaft runs the other way). */
-      transition: { kind: 'lift', atX: 1740, gateX: 1800, up: true },
+      transition: { kind: 'lift', atX: 1740, gateX: 1800, up: true,
+        /**
+         * Issue #25 vignette: the Gleaning stripping a fallen Iron Warden on the way up. The guild does not fight
+         * the Brassguard for the field -- it waits for the field to stop moving and then works it, and the ride up
+         * is the one place the party can watch that happen without being able to reach it.
+         */
+        vignette: { cues: [
+          { at: 70, caption: 'THEY ARE STRIPPING A WARDEN', sub: 'IT WAS STANDING THIS MORNING', life: 120 },
+          { at: 110, actor: { id: 'carcass', def: 'brassbound', variant: 'warden', dx: 430, z: 22, facing: 1, anim: 'idle' } },
+          { at: 130, actor: { id: 'gleaner1', def: 'gleaning', variant: 'picker', dx: 390, z: 30, facing: 1, anim: 'idle' } },
+          { at: 140, actor: { id: 'gleaner2', def: 'gleaning', variant: 'riggerman', dx: 490, z: 16, facing: -1, anim: 'idle' } },
+          { at: 150, sfx: 'gear_slip' },
+          { at: 200, sfx: 'brass_death' },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 2: The Lash-Up (the float, one locked screen, timed waves)
     // THE SET PIECE: a raft of other people's wrecks hanging on forty bladders and DRIFTING (`drift`, glean2.js) toward the
@@ -207,6 +247,8 @@ export const stage4 = {
        * carcass is the best weapon on the raft -- `chassis` rolls when it is struck -- so the beat is a question
        * about whether you spend the time using it or the time stopping her taking it away.
        */
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'A FLOOR MADE OF WHAT THE FIELD GAVE UP TODAY',
       events: [
         { id: 'bladders', onWaveClear: 2, once: true, actions: [
           { caption: 'THE BLADDERS LET GO', sub: 'SOMETHING IS COMING DOWN', life: 140 },
@@ -222,7 +264,13 @@ export const stage4 = {
         ] },
       ],
       /** The raft noses in against the press end; the hemp hoist platform is the landing, two pies on it. */
-      transition: { kind: 'dock', banner: 'THE PRESS END', look: 'hoist', pies: 2 },
+      transition: { kind: 'dock', banner: 'THE PRESS END', look: 'hoist', pies: 2,
+        /** Issue #25 vignette: the press end, and the bale that comes off it already has a Warden's plate in it. */
+        vignette: { cues: [
+          { at: 8, caption: 'THE PRESS END', sub: 'IT DOES NOT STOP FOR THE FIGHT, OR FOR YOU', life: 90 },
+          { at: 16, sfx: 'piston' },
+          { at: 22, camera: { shake: 5, frames: 16 } },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 3: The Press (the float's press end, decked in)
     // THE GUILD FLIES THE CONCORDAT'S OWN MACHINE: winged Footmen and a winged Cutthroat out of the sky and salvaged Footmen
@@ -276,9 +324,17 @@ export const stage4 = {
           ...crimp(2, { z0: 70, dz: 40, side: 'left', delay0: 180 }),
         ] },
       ],
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'IT BALES WHATEVER IS PUT IN FRONT OF IT',
       events: [],
       /** Past the press the loft hatch comes down against the float and the party goes in. */
-      transition: { kind: 'board', atX: 3540, gateX: 3600 },
+      transition: { kind: 'board', atX: 3540, gateX: 3600,
+        /** Issue #25 vignette: the loft, and the bladders lifting the day's take up past you into the dark. */
+        vignette: { cues: [
+          { at: 10, caption: 'THE DAY IS GOING UP AHEAD OF YOU', sub: '', life: 100 },
+          { at: 20, actor: { id: 'haul', def: 'gleaning', variant: 'winnow', dx: 300, z: 6, facing: 1, vz: -0.05, frames: 90, anim: 'idle' } },
+          { at: 28, sfx: 'hydraulic' },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 4: The Crop Loft (inside the great bag)
     // ONLY THE GUILD, AND ITS SCRAP: the Riggerman's nets, the two role-'elite' bodies this room owes the player - the
@@ -349,6 +405,8 @@ export const stage4 = {
           one(B, 'halberdier', 'right', 90, 120, ['salvaged']),
         ] },
       ],
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'NO FLOOR TO SPEAK OF. ONLY NET, AND THE DROP',
       events: [],
     },
   ],
