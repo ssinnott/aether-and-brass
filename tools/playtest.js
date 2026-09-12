@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles platforms events cargo playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad audio gallery botstyles options training weapons)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles stall platforms events cargo playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad audio gallery botstyles options training weapons)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 // This file is already close to its ~700-line budget: further scenarios belong in their own sibling
@@ -21,6 +21,7 @@ import { obstacles } from './scenarios/obstacles.js';
 import { platforms } from './scenarios/platforms.js';
 import { events as eventScenario } from './scenarios/events.js';
 import { cargo } from './scenarios/cargo.js';
+import { stall } from './scenarios/stall.js';
 
 const { chromium } = loadPlaywright();
 
@@ -493,6 +494,10 @@ const scenarios = {
   // 3f. Solid obstacles: gap fall / jump / thrown ring-out, the enemy jump-over, and a barricade holding a wave
   // lock until it is broken (issue #31, tools/scenarios/obstacles.js).
   obstacles: (server) => obstacles(server, { withPage, assert }),
+
+  // 3g. The wave anti-stall: one ranged survivor may not kite a locked screen open forever
+  // (StageRunner.checkWaveStall / Enemy.pressIn, tools/scenarios/stall.js).
+  stall: (server) => stall(server, { withPage, assert }),
 
   // 3g. Moving platforms: tilt / pallet / hoist against the real authored sections, plus the regression that the
   // Brass Funicular declares none (issue #32, tools/scenarios/platforms.js).

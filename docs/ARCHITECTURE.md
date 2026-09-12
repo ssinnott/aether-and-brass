@@ -518,7 +518,9 @@ ascent). Knockback into a solid wall-bounces with the same numbers the camera bo
 HP and is set on the nearest lip — health, not a life, the same rule the Crop Loft's `netGive` squares use, and
 literally the same three ejectors (`ringOut` / `dropPlayer` / `loseOverEdge`). `breakable: true` blocks only while a
 Prop flagged `barricade: true` inside the rectangle is still standing, and `StageRunner.barricadeHolding` keeps that
-wave open until it is down. The health lives on the **Prop**, not the Zone, because a Prop is kind `'prop'` and its hp
+wave open until it is down — but only while the barricade is WHOLLY inside the camera lock. A wave that locks the
+screen with the gate straddling an edge would ask the party to break something half off the screen they are locked to,
+which reads as a room emptied of enemies that never opens; a gate that far out belongs to the next wave. The health lives on the **Prop**, not the Zone, because a Prop is kind `'prop'` and its hp
 is hashed by `net/checksum.js`, whereas a Zone is kind `'fx'` and its state is invisible to the desync canary.
 Unlike every other zone a solid answers `dangerBox()` permanently (a wall has no quiet phase), which is what makes
 `laneAroundHazards` route mobs and the autopilot around it for free; a broken barricade reports `null` again.
@@ -671,7 +673,14 @@ near face, or after 90 frames of failing to close on its target with one in the 
 nothing may stand grinding against a wall forever. This is the first AI-driven jump in the game — `jump` anims existed
 but nothing ever played them for an enemy. Flyers skip it: already being off the ground clears the obstacle.
 Off-screen rule: an enemy that is > 200px outside the camera for 300 frames teleports to
-the nearest lock edge (prevents stuck waves). An `ARRIVING` unit is exempt — its path is authored and bounded, and
+the nearest lock edge (prevents stuck waves). Anti-stall rule (the same failure from the other end, one an enemy can
+arrange while standing in plain sight): a wave holds the camera lock until it is empty and a `mode: 'locked'` section
+has nothing to walk past, while `finishAttack` tops the retreat budget back up by 40 on every landed shot — so a
+ranged variant that lobs, backs off and lobs again keeps its distance for the rest of the run. `StageRunner.checkWaveStall`
+watches the wave's own hp total; nothing hurt and nothing killed for 600 frames and the survivors take
+`Enemy.pressIn()`, which spends the retreat budget, stops `finishAttack` refilling it and drops KEEP_DISTANCE for
+APPROACH for the rest of the wave (the ranged attack itself is untouched — it just stops buying room for it).
+The test is hashed state on a deterministic frame counter, so every peer in a netplay room presses on the same frame. An `ARRIVING` unit is exempt — its path is authored and bounded, and
 yanking it to a lock edge mid-flight would break it — so `game/entrances.js` carries its own watchdog instead: an
 arrival that outlives its own length by 180 frames ends as an ordinary enemy rather than holding the wave open.
 `StageRunner.queueSpawns(list, extraDelay)` appends `WAVE_EXTRA_BY_PARTY = [0, 0, 0, 1, 2]` non-sky clones (delay + `PARTY_EXTRA_DELAY`, side flipped) to every spawn list for parties of 3-4; bosses excluded, 1-2 unchanged.
@@ -814,18 +823,22 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      health (measured on hp PLUS the hero's shield, since that buffer is spent first) and sets them on the lip; a
      running jump clears it for nothing; an enemy standing in it rings out; an enemy walled off from its target leaves
      the ground and reaches the far side; and a barricade blocks, holds its wave lock and answers `dangerBox()` until
-     its Prop is broken, then stops doing all three.
-  3g. `platforms` (`tools/scenarios/platforms.js`, issue #32): one block per platform kind against the real authored
+     its Prop is broken, then stops doing all three — plus the edge rule: a lock whose left or right edge cuts the
+     barricade does not hold the wave, and moving the whole gate back inside the lock holds it again.
+  3g. `stall` (`tools/scenarios/stall.js`): the wave anti-stall, on the real cart lane. The room is taken down to one
+     Tallyman with the hero standing still; he keeps his distance, the lock stays shut, and within 900 frames
+     `checkWaveStall` presses him in — budget spent, out of KEEP_DISTANCE — and he actually closes to melee range.
+  3h. `platforms` (`tools/scenarios/platforms.js`, issue #32): one block per platform kind against the real authored
      section — the Cold Sovereign banking and the Lash-Up float dipping (a grounded body slides with the deck, an
      airborne one does not), the Sootfoot Docks cargo pallet (a body on it is carried, one off it is left behind) and
      the Tallow Works hoist (a climbing hoist pulls an airborne body down faster than gravity alone, and leaves a
      grounded one alone) — plus the regression that the Brass Funicular declares no platform.
-  3h. `events` (`tools/scenarios/events.js`, issue #33): the browser half of the event system — `?event=<id>` starts
+  3i. `events` (`tools/scenarios/events.js`, issue #33): the browser half of the event system — `?event=<id>` starts
      in the section that owns it, board 1's over-fire script warns with a `zoneFlash` BEFORE it forces all three dais
      vents open together and hands every override back afterwards, board 2's broadside forces its two guns one after
      the other rather than together, and an unknown id is inert rather than a crash. Action sequencing itself is in
      `tools/simtest.js`.
-  3i. `cargo` (`tools/scenarios/cargo.js`, issue #34): against the real authored containers — a quay crate tips its
+  3j. `cargo` (`tools/scenarios/cargo.js`, issue #34): against the real authored containers — a quay crate tips its
      cargo out on break and the unit climbs out at the crate into a punishable recovery; the foundry chute is quiet
      (no threat box), rattles (threat box live), lets one out at a time, stops its clock while it is stood on and
      resumes rather than resets when you step off; a smashed brig hatch drops loot for what never came out instead of
