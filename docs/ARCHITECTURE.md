@@ -608,6 +608,17 @@ is coming up to meet it, so a jump lands sooner than it looks like it should), `
 slides and carries whoever is standing on it; step off and it leaves without you) and `tilt` (the deck banks on a
 tell/active cycle and every grounded body slides `slide` px/f toward the low side; `dir: 0` alternates each cycle).
 
+**A whole-band shove has to be attributable.** A `tilt` and a `gust` (`Zone.updateGust`) are the two forces on these
+boards that move every grounded body at once with no object on screen to point at, so both go through one telegraph
+(`art/fx.js` `drawWind`, drawn by `World.drawWeather`) and answer the same three questions: *what* — the banner each
+names itself with the first time it tells, once per platform or zone (`warn` / `warnSub`); *which way* — a chevron row
+pinned to the edge it is pushing toward, which **holds solid through the active phase** rather than stopping at the
+moment of effect, since that is exactly when the question gets asked; and *is it me* — `windDrag` dust off the feet of
+the bodies actually being moved. The wind draws in `World.drawWeather`, over the backdrop's own front layer, because
+an open deck's front rope rail (`storm1.js` `NEAR_Y`) covers the band edge the chevrons want. **One wind per
+section**: the Cold Sovereign used to declare a `gust` zone *and* a tilt, on two clocks and two axes, which is
+unreadable however well either one is drawn; it now keeps only the gust, whose axis is the one its gun lanes run down.
+
 Three rules make this work and are not optional. **Riders are moved by writing `x`/`z` directly, never `vx`/`vz`** —
 the grounded branch of `Fighter.physics` applies `GROUND_FRICTION` and snaps anything under 0.05 to zero, so a rider
 delta put into a velocity is decayed the same frame and the rider lags the floor (`Zone.updateConveyor` and
@@ -829,10 +840,11 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      Tallyman with the hero standing still; he keeps his distance, the lock stays shut, and within 900 frames
      `checkWaveStall` presses him in — budget spent, out of KEEP_DISTANCE — and he actually closes to melee range.
   3h. `platforms` (`tools/scenarios/platforms.js`, issue #32): one block per platform kind against the real authored
-     section — the Cold Sovereign banking and the Lash-Up float dipping (a grounded body slides with the deck, an
-     airborne one does not), the Sootfoot Docks cargo pallet (a body on it is carried, one off it is left behind) and
-     the Tallow Works hoist (a climbing hoist pulls an airborne body down faster than gravity alone, and leaves a
-     grounded one alone) — plus the regression that the Brass Funicular declares no platform.
+     section — the Lash-Up float dipping (a grounded body slides with the deck, an airborne one does not, and the dip
+     names itself on the HUD), the Sootfoot Docks cargo pallet (a body on it is carried, one off it is left behind)
+     and the Tallow Works hoist (a climbing hoist pulls an airborne body down faster than gravity alone, and leaves a
+     grounded one alone) — plus the Mooring Spine gust, the same telegraph on the other axis, and two regressions:
+     the Brass Funicular declares no platform, and the Cold Sovereign declares none either (one wind per deck).
   3i. `events` (`tools/scenarios/events.js`, issue #33): the browser half of the event system — `?event=<id>` starts
      in the section that owns it, board 1's over-fire script warns with a `zoneFlash` BEFORE it forces all three dais
      vents open together and hands every override back afterwards, board 2's broadside forces its two guns one after

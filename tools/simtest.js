@@ -149,6 +149,12 @@ function suitePlatforms() {
     'a tilt spends more of its cycle level than banking (the bank is an event, not the weather)');
   ok(PLATFORMS.hoist.rise > 0, 'a hoist rises');
   ok(PLATFORMS.pallet.travel > 0 && PLATFORMS.pallet.period > 0, 'a pallet travels over a period');
+  // A tilt is the one kind that moves a body with NOTHING ON SCREEN TO POINT AT: a hoist bends an arc the player is
+  // already watching and a pallet is a piece of floor they chose to stand on, but a bank just shoves you. So it is
+  // also the one kind that has to introduce itself, and the default has to carry that -- an author who writes
+  // `{ kind: 'tilt' }` and nothing else must still get a deck that says what it is doing.
+  ok(!!PLATFORMS.tilt.warn, 'a tilt names itself on the HUD by default (a shove with no object to point at must)');
+  ok(!PLATFORMS.hoist.warn && !PLATFORMS.pallet.warn, 'a hoist and a pallet do not: they are visible on their own');
 }
 
 

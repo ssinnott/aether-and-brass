@@ -55,7 +55,7 @@ import { particles } from '../engine/particles.js';
 import { audio } from '../engine/audio.js';
 import { rng, makeRng } from '../engine/rng.js';
 import { clamp } from '../engine/math.js';
-import { floatText } from '../art/fx.js';
+import { floatText, drawWind, windDrag, WIND_COLOR, WIND_BANNER } from '../art/fx.js';
 import { rrect, circle, pathPoly, line } from '../art/shapes.js';
 import { tones } from '../art/props.js';
 import { dsin } from '../engine/trig.js';
@@ -819,7 +819,7 @@ const MOLTEN_EJECT = 12, MOLTEN_EJECT_VZ = 4;
 const EDGE_LANE = 30, EDGE_VZ = 2.4;
 const MOLTEN_HIT = { damage: 10, type: 'knockdown', kbX: 0, kbY: 5, hitstun: 20, sfx: 'burn' };
 /** Gust defaults (issue #27 Mooring Spine): a 45f rising wind, then 40f of `push` px/f drift in z for grounded fighters. */
-const GUST = { period: 420, tell: 45, active: 40, push: 1.3 };
+const GUST = { period: 420, tell: 45, active: 40, push: 1.3, warn: 'GALE', warnSub: 'THE WIND HAS THE DECK' };
 /** Spoil: grounded movement inside the patch keeps this fraction of itself per frame (the ground gives under every step). */
 const SPOIL_DAMP = 0.55;
 /** Net decking: a heavy landing sags a square NET_SAG frames, then it is open NET_OPEN frames. Players who drop lose NET_DROP_FRAC
@@ -849,8 +849,8 @@ function loseOverEdge(world, e) {
 export class Zone extends Entity {
   /**
    * @param {{ type: 'molten'|'rails'|'daisVents'|'conveyor'|'gust'|'spoil'|'netGive', x0: number, x1: number, z0?: number, z1?: number, active?: boolean, color?: string, open?: boolean,
-   *   period?: number, tell?: number, push?: number, dir?: number, offset?: number, squares?: {x:number, z:number, w?:number, d?:number}[] }} spec
-   *   gust { period 420, tell 45, active (frames) 40, push 1.3, dir 0|1|-1 } | spoil { z0, z1 } | netGive { squares }
+   *   period?: number, tell?: number, push?: number, dir?: number, offset?: number, warn?: string, warnSub?: string, squares?: {x:number, z:number, w?:number, d?:number}[] }} spec
+   *   gust { period 420, tell 45, active (frames) 40, push 1.3, dir 0|1|-1, warn 'GALE', warnSub } | spoil { z0, z1 } | netGive { squares }
    *   rails { open: true } (issue #21) also discards thrown weapons / props and weapon pickups that drift over the edge (loseOverEdge)
    */
   constructor(spec) {
@@ -874,6 +874,10 @@ export class Zone extends Entity {
     this.push = spec.push != null ? spec.push : GUST.push; this.dir = spec.dir || 0; this.offset = spec.offset || 0;
     if (this.type === 'gust') this.forced = false;
     this.phase = 'idle'; this.phaseT = 0; this.gustDir = 1;
+    // the one-shot "this is the wind, not you" banner (updateGust); '' on `warn` turns it off for that zone
+    this.warn = spec.warn != null ? spec.warn : GUST.warn;
+    this.warnSub = spec.warnSub != null ? spec.warnSub : GUST.warnSub;
+    this.announced = false;
     // spoil: the z band, and where every grounded fighter inside it stood last frame
     this.z1 = spec.z1 != null ? spec.z1 : Z_MAX;
     this.last = new Map();
@@ -1056,6 +1060,14 @@ export class Zone extends Entity {
    * for `active` frames, clamped to the floor band. It never throws anyone: on a railed deck the rails zone clamps at the
    * rail (and only a THROWN / airborne knockdown body goes over), so the gust is what walks you toward the edge, not over it.
    * `dir` 0 alternates per cycle so the deck is never pushed the same way twice running.
+   *
+   * NAMING IT. A shove nobody can attribute is not a mechanic, it is a controller fault: the first time a gust tells
+   * WITH ITS SPAN ON SCREEN it puts its name on the HUD (`warn` / `warnSub`) and then never again. Once per zone, not
+   * once per section: StageRunner.start builds every section's zones up front and they live for the whole board, so a
+   * per-section flag would be a lie — but a board that authors a gust per section (stage2 does, and gives them
+   * different words) gets one banner per gust, which is the behaviour that was wanted anyway. That, `drawWind`'s
+   * chevrons holding through the active phase, and `windDrag`'s dust off the feet of whoever is being moved are three
+   * answers to one question, and the player needs all three: what, which way, and is it happening to ME.
    */
   updateGust(world) {
     const g = (world.frame + this.offset) % this.period, prev = this.phase;
@@ -1064,13 +1076,17 @@ export class Zone extends Entity {
     this.phaseT = this.phase === 'active' ? g - activeAt : this.phase === 'tell' ? g - tellAt : g;
     if (this.phase !== 'idle' && prev === 'idle') this.gustDir = this.dir || ((Math.floor((world.frame + this.offset) / this.period) & 1) ? -1 : 1);
     const heard = this.onScreen(world.camera);
-    if (this.phase === 'tell' && prev !== 'tell' && heard) audio.play('gale', { volume: 0.5 });
+    if (this.phase === 'tell' && prev !== 'tell' && heard) {
+      audio.play('gale', { volume: 0.5 });
+      if (!this.announced && this.warn && typeof world.announce === 'function') { this.announced = true; world.announce(this.warn, this.warnSub, WIND_BANNER); }
+    }
     if (this.phase === 'active' && prev !== 'active' && heard) audio.play('gale');
     if (this.phase !== 'active') return;
     const band = world.floorBand, dz = this.push * this.gustDir;
     for (const f of world.fighters) {
       if (!this.inX(f) || f.y > 0 || f.grabbedBy || f.dead || f.kind === 'boss' || f.status.netted) continue;
       f.z = clamp(f.z + dz, band.z0, band.z1);
+      windDrag(f, world.frame, 0, this.gustDir);
     }
   }
   /**
@@ -1167,20 +1183,6 @@ export class Zone extends Entity {
       for (let x = x0 - 24 + (24 - off); x < x1; x += 24) { pathPoly(ctx, [x, y + 6, x + 8, y + 6, x + 16, y + h / 2, x + 8, y + h - 6, x, y + h - 6, x + 8, y + h / 2]); ctx.fill(); }
       for (let x = x0 + 4; x < x1; x += 60) rrect(ctx, x, y - 4, 8, h + 8, 3, '#4a4a52', OL, 1);
       ctx.globalAlpha = 1;
-    } else if (this.type === 'gust') {
-      if (this.phase === 'idle') return;
-      // wind streaks running the push direction (z = down the screen), thickening through the tell; chevrons on the
-      // deck edges say which way before anyone moves. Deterministic per index: a flickering random field reads as noise.
-      const k = this.phase === 'tell' ? this.phaseT / Math.max(1, this.tell) : 1, dir = this.gustDir, n = 8 + Math.round(16 * k);
-      ctx.globalAlpha = 0.18 + 0.3 * k; ctx.strokeStyle = this.color || '#d8d0ff'; ctx.lineWidth = 1; ctx.beginPath();
-      for (let i = 0; i < n; i++) {
-        const x = x0 + ((i * 97 + 13) % Math.max(1, x1 - x0)), len = 8 + (i % 3) * 5, sp = 2 + (i % 3);
-        const y = sy0 + (((f * sp * dir + i * 31) % Z_MAX) + Z_MAX) % Z_MAX;
-        ctx.moveTo(x, y); ctx.lineTo(x + 2, y + dir * len);
-      }
-      ctx.stroke();
-      if (this.phase === 'tell' && (f & 8)) { ctx.fillStyle = STORM; const ey = dir > 0 ? sy0 + Z_MAX - 6 : sy0 + 2; for (let x = x0 + 20; x < x1 - 10; x += 60) { pathPoly(ctx, dir > 0 ? [x, ey, x + 10, ey, x + 5, ey + 5] : [x, ey + 5, x + 10, ey + 5, x + 5, ey]); ctx.fill(); } }
-      ctx.globalAlpha = 1;
     } else if (this.type === 'spoil') {
       // a patch of slumped tailings: dark slag with rose glints, inked like a prop so it reads as ground, not a shadow
       const y = sy0 + this.z0, h = this.z1 - this.z0, slag = tones('#4a2f3c');
@@ -1212,6 +1214,24 @@ export class Zone extends Entity {
     } else if (this.isSolid) {
       this.drawSolid(ctx, cam, sy0, x0, x1, f);
     }
+  }
+  /**
+   * A gust's telegraph (art/fx.js `drawWind`): streaks running the push direction plus a chevron row on the edge the
+   * wind is pushing TOWARD, which holds through the active phase instead of stopping at the moment of effect. A
+   * banking deck (game/platforms.js) draws the identical thing rotated into x, so the two read as one piece of
+   * weather rather than as two unexplained shoves.
+   *
+   * This is `drawWeather`, not `draw`: World runs it over the backdrop's front layer, because the front rope rail on
+   * an open deck covers the very band edge a chevron row wants (see World.drawWeather).
+   */
+  drawWeather(ctx, cam) {
+    if (this.type !== 'gust' || this.phase === 'idle') return;
+    const x0 = Math.max(0, cam.toScreenX(this.x0)), x1 = Math.min(VIEW_W, cam.toScreenX(this.x1));
+    drawWind(ctx, {
+      x0, x1, y0: FLOOR_TOP + cam.shakeY, axis: 'z', dir: this.gustDir, frame: this.t,
+      k: this.phase === 'tell' ? this.phaseT / Math.max(1, this.tell) : 1,
+      active: this.phase === 'active', color: this.color || WIND_COLOR,
+    });
   }
   /**
    * A gap is a hole in the deck: the floor simply is not there, so it is drawn as the dark underneath with a lit

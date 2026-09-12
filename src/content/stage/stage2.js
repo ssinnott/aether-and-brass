@@ -57,6 +57,9 @@ export const stage2 = {
       ],
       /** No bulwark up here: the front and back 12px are open air. Anything thrown over goes into the cloud (+200) — and the
        *  cloud tears sideways: every 7s a gust (45f of gale first) drags everyone on their feet toward one edge or the other.
+       *  It is the player's first meeting with the board's wind, so it is also where the gust introduces itself: the default
+       *  `warn` banner fires once, the first time it tells on this section, and the chevrons on the edge it is pushing toward
+       *  stay up while it drags (art/fx.js `drawWind`).
        *  `open: true` (issue #21): a thrown weapon / prop, or a dropped weapon pickup, that drifts past the same edge falls
        *  into the cloud too -- lost, not landed. */
       zones: [{ type: 'rails', x0: 0, x1: 1900, open: true }, { type: 'gust', x0: 0, x1: 1900, dir: 0 },
@@ -142,10 +145,13 @@ export const stage2 = {
     /** The flagship comes about with the party aboard: the camera locks to the screen, the far sky slides past
      *  (`drift`, storm3.js), the deck banks every 7s (a 1.3 px/f gust, 52px either way) and both gun ports are live. */
     { id: 'm3', name: 'THE COLD SOVEREIGN', x0: 3600, x1: 4240, backdrop: 'storm3', floor: 'deck', mode: 'locked', drift: 0.6,
-      /** Issue #32: she BANKS. 45f of the deck leaning over (a gale you can hear coming), then 60f of everyone on
-       *  their feet sliding toward the low rail — which on this deck is a ring-out. `dir: 0` alternates, so she rolls
-       *  one way and then the other rather than always dumping the fight over the same side. */
-      platform: { kind: 'tilt', period: 480, tell: 45, active: 45, slide: 0.7, dir: 0 },
+      // ONE WIND PER DECK. This section used to declare BOTH the `gust` zone below and a `tilt` platform (issue #32),
+      // on two different clocks (420f and 480f) and two different axes, each shoving every grounded body and each
+      // playing the same `gale` — so the deck moved you up, down and sideways with nothing on screen tying any of it
+      // to anything. The gust is the one the board is designed around: it is the wind STAGE2.md 5 authors here, and
+      // it pushes along z, which is the axis the two gun lanes run down ("the gust is what puts you in one"). A bank
+      // along x has no such conversation with the cannons, so it has gone; `tilt` still ships on board 4's Lash-Up
+      // float, which has the plank gaps to make a sideways slide mean something.
       // one powder tub at each gun port (they roll 50 and go off 30f after breaking), food and meter amidships
       props: [
         { type: 'powderTub', x: 3760, z: 26 }, { type: 'powderTub', x: 4080, z: 116 },
@@ -163,8 +169,11 @@ export const stage2 = {
         { type: 'cannon', name: 'aft', x: 3604, z: 22, dir: 1, lane: 36, period: 360 },
         { type: 'cannon', name: 'forward', x: 4236, z: 118, dir: -1, lane: 36, period: 360, offset: 180 },
       ],
-      /** Rails both sides (throw-overs ring out) and the bank: the gust alternates direction each cycle. */
-      zones: [{ type: 'rails', x0: 3600, x1: 4240 }, { type: 'gust', x0: 3600, x1: 4240, dir: 0 }],
+      /** Rails both sides (throw-overs ring out) and the bank: the gust alternates direction each cycle, and names
+       *  itself on the HUD the first time it tells — on a deck with two live gun lanes, "why am I in that lane" has
+       *  to have an answer the player can see. */
+      zones: [{ type: 'rails', x0: 3600, x1: 4240 },
+        { type: 'gust', x0: 3600, x1: 4240, dir: 0, warn: 'SHE BANKS', warnSub: 'THE GUN LANES ARE LIVE' }],
       waves: [],
       timedWaves: [
         // the gun crew: re-wound Sappers and Footmen under one Deckhand

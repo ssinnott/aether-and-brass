@@ -178,7 +178,22 @@ export class World {
     this.drawFx(ctx, cam);
     particles.draw(ctx, cam, 'front');
     if (this.backdrop && this.backdrop.drawFront) this.backdrop.drawFront(ctx, cam, this.frame);
+    this.drawWeather(ctx, cam);
     if (this.cutsceneTimer > 0 && this.cutsceneDraw) this.cutsceneDraw(ctx, this, 1 - this.cutsceneTimer / Math.max(1, this.cutsceneLen));
+  }
+  /**
+   * Weather between the camera and the deck: a gale's streaks and the chevrons that say which way it is pushing —
+   * a `gust` Zone (game/hazards.js) or a banking `tilt` (game/platforms.js).
+   *
+   * It goes OVER the backdrop's own front layer, not into the depth-sorted pass with everything else, and that is
+   * deliberate: storm1's front rope rail occupies the bottom third of the floor band, which is exactly where a
+   * chevron row pinned to the front edge sits, so a wind drawn underneath it is a telegraph the scenery can hide.
+   * The backdrops already draw their rain here for the same reason. The platform comes along because the StageRunner
+   * owns it rather than the entity list, so it has nowhere else to be drawn.
+   */
+  drawWeather(ctx, cam) {
+    for (const e of this.entities) if (e.drawWeather) e.drawWeather(ctx, cam);
+    if (this.platform && this.platform.draw) this.platform.draw(ctx, cam);
   }
   /** Shrunk floor band: steam-vent strips along the closed edges (GDD 5.2 dais). */
   drawBandEdges(ctx, cam) {

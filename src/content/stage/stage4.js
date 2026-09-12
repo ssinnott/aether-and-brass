@@ -134,8 +134,11 @@ export const stage4 = {
     // standing on it.
     { id: 'g2', name: 'THE LASH-UP', x0: 1800, x1: 2440, backdrop: 'glean2', floor: 'plank', mode: 'locked',
       /** Issue #32: forty bladders and no keel. The float dips slower and further than a ship banks, and there is no
-       *  bulwark anywhere on it — so the slide and the plank gaps (issue #31) are the same problem twice. */
-      platform: { kind: 'tilt', period: 540, tell: 60, active: 80, slide: 0.6, dir: 0 },
+       *  bulwark anywhere on it — so the slide and the plank gaps (issue #31) are the same problem twice. `warn` is
+       *  the once-per-section banner every tilt owes the player (a shove with nothing on screen to point at reads as
+       *  a controller fault otherwise); this raft dips rather than banks, and what it dips you toward is a hole. */
+      platform: { kind: 'tilt', period: 540, tell: 60, active: 80, slide: 0.6, dir: 0,
+        warn: 'THE FLOAT DIPS', warnSub: 'MIND THE GAPS' },
       /** Auto-scroll of the far parallax (px per frame, glean2.js): the field a long way below slides past under the raft. */
       drift: 0.4,
       // two salvage lines (meter, either end), a gas bag (a pie, and a rose puff - never a fire source) and a ballast bag;
