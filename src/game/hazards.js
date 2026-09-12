@@ -29,6 +29,8 @@
 // gasSeep        360 (recharge) — 10  110  12 knockdown fire + burn, ONLY when lit  rose haze, harmless until any fire touches it -> explosion   null until lit, then x±r, z±r
 // `drop` with look:'ledger'|'ballast' is an alias of ledgerDrop / ballastDrop. Every hit carries fromX where the hazard has
 // a side (the knockback throws the body clear); the crossbar and kiln cone have none in x / throw sideways respectively.
+// Every section's hazards are in the world from Stage.start(), so a hazard is only STEPPED while the camera is on it
+// (Hazard.onCamera) -- which for the travelling wagon means anywhere on its track, not wherever its wheels happen to be.
 // ================================ ZONE TABLE ==========================================================================
 // molten  x0,x1 (z<20)        10 knockdown + burn, players ejected to z 32; airborne enemies ring out
 // rails   x0,x1 (12px edges)  clamps; thrown / airborne-knockdown enemies over the edge ring out
@@ -124,6 +126,8 @@ const PISTON_UP = 130, CROSSBAR_UP = 260, DROP_UP = 230, DROP_FALL = 14, DROP_FA
 const HOOK_CHAIN = 172;
 /** Wagon: how far ahead of the rolling wagon the dangerBox reaches (mobs clear the road in front of it, not behind). */
 const WAGON_LOOKAHEAD = 120;
+/** How far off screen a hazard still counts as the camera's business (Hazard.onCamera). */
+const CAM_MARGIN = 120;
 
 const HAZARD_CLEARANCE = 10;   // z margin an enemy leaves around a hazard footprint
 
@@ -289,6 +293,22 @@ export class Hazard extends Entity {
   get wagonDir() { return Math.sign(this.x1 - this.x) || 1; }
   /** World x of the part that matters for the camera's visibility gate (the moving bit, where there is one). */
   get liveX() { return this.type === 'wagon' ? this.wagonX : this.type === 'gasCell' ? this.cloudX : this.x; }
+  /**
+   * Is the camera near enough that this hazard should be STEPPED at all? Stage.start() puts every section's hazards
+   * in the world at once, so this gate is also what keeps the Ledger House's drops quiet while the party is still on
+   * the Lime Road: a hazard only runs while the camera is on it.
+   *
+   * For every type but one "on it" is a POINT — the thing stands where it stands, and a spot nobody can be standing
+   * on costs nothing to skip. The runaway WAGON travels: gating it on where its wheels are this frame froze the run
+   * the moment the camera lost them, so the wagon rocked on its chocks, blinked its brake lamp, sounded its tell —
+   * and then never came down the road (and, the other way round, a cycle that went active off camera rolled into view
+   * later with no tell at all). It is stepped while the camera is anywhere over the TRACK it rolls down, which is
+   * exactly the stretch it is a hazard to, and which is what lets you hear it coming from off screen (stage3.js).
+   */
+  onCamera(cam) {
+    if (this.type !== 'wagon') return cam.isVisible(this.liveX, CAM_MARGIN);
+    return Math.max(this.x, this.x1) >= cam.x - CAM_MARGIN && Math.min(this.x, this.x1) <= cam.x + VIEW_W + CAM_MARGIN;
+  }
   update(world) {
     this.world = world;
     if (this.type === 'gasSeep') { this.updateSeep(world); return; }
@@ -306,8 +326,7 @@ export class Hazard extends Entity {
       else if (this.forcePhase.phase) this.phase = this.forcePhase.phase;
     }
     if (this.phase === 'idle') { this.wagonX = this.x; this.cloudX = this.x; }
-    const visible = world.camera.isVisible(this.liveX, 120);
-    if (!visible) return;
+    if (!this.onCamera(world.camera)) return;
     if (this.phase === 'tell' && prev !== 'tell' && this.info.tellSfx) audio.play(this.info.tellSfx);
     if (this.phase === 'active' && prev !== 'active') this.onActiveStart(world);
     if (this.type === 'hook') { this.hitSweep(world); return; }
@@ -403,6 +422,9 @@ export class Hazard extends Entity {
   updateWagon(world) {
     const dir = this.wagonDir;
     this.wagonX += dir * this.speed;
+    // The RUN is simulation (see onCamera) but the dust and the hit are not: the far end of this track is within a
+    // screen of the next section, and a wagon finishing its run down there must not knock anyone down off camera.
+    if (!world.camera.isVisible(this.wagonX, CAM_MARGIN)) return;
     if (this.t % 4 === 0) particles.burst('dust', this.wagonX - dir * 16, 0, this.z + 8, 1, { speed: 0.8, up: 0.5 });
     if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; this.arm(world, world.spawnAreaHit(null, this.wagonX, this.z, this.r, this.hitFrom(this.wagonX - dir * this.r))); }
   }
