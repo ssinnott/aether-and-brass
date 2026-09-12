@@ -321,12 +321,14 @@ Global: Escape pauses/unpauses, M mutes, F1 debug overlay. Any free slot joins b
   Sootborn, Stormcrows, Chandlery, Gleaning, Bosses) each carrying its own seen/total; a two-column grid of brass
   cards; and the selected entry large on the right with its rig looping idle → walk → attack → hurt beside its
   defeat, throw and ring-out counts, the hero who has beaten it most, and two or three lines in the board doc's
-  voice on what it is, the tell you watch for and the weakness you use. An enemy you have never beaten is a black
-  silhouette and "? ? ?" — with the board and section it first appears in, so a book three entries short still
-  tells you where to go. A boss is one card with a phase strip: each phase stays "? ? ?" until you have actually
-  reached it, so the person inside the machine is never spoiled by the book. **Unlock moment:** the first defeat of
-  anything new raises a small NEW ENTRY plate on the HUD mid-fight. Counts are kept per scope exactly as board
-  progress is, so a co-op pairing's book is its own and neither player's solo book is touched by it.
+  voice on what it is, the tell you watch for and the weakness you use. **It shows only what you have killed** —
+  an enemy you have never beaten has no card at all, and a faction you have not fought is an empty tab that names
+  itself and how many entries it holds. The book is a record of what you have done, not a checklist of what you
+  have not; the counts and the completion percentage are what tell you how much is left. A boss is one card with a
+  phase strip: each phase stays "? ? ?" until you have actually reached it, so the person inside the machine is
+  never spoiled by the book. **Unlock moment:** the first defeat of anything new raises a small NEW ENTRY plate on
+  the HUD mid-fight. Counts are kept per scope exactly as board progress is, so a co-op pairing's book is its own
+  and neither player's solo book is touched by it.
 - **Training room:** TRAINING on the title menu opens character select into the Brass Funicular roof
   stripped of its props, hazards, waves and the rails ring-out, holding one standing practice dummy. Its
   own pause plate swaps the dummy between standing still, blocking with an armored stagger, or fighting

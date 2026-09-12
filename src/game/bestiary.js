@@ -1,8 +1,10 @@
 // The BESTIARY (issue #26): which enemies and bosses the player has beaten, how many of each, and how.
 //
 // One entry per registered enemy variant and one per boss (content/enemies/index.js ENEMY_LIST), unlocked on first
-// defeat. Until then the entry is a silhouette and '? ? ?' on screens/bestiary.js, the same padlock convention
-// BOARD SELECT uses for a board that has not been opened.
+// defeat. Until then it is not shown at all: screens/bestiary.js draws a card only for an entry `isSeen()` is true
+// for, so the book is a record of what the player has actually killed rather than a checklist of what they have
+// not. The counts here (completion(), and the per-faction totals the screen adds up) are what answer "how many are
+// left" without naming them.
 //
 // SCOPES. Counts are namespaced exactly as board progress is, and by the SAME key: this module reads
 // `progress.scope` rather than keeping a scope of its own, so a co-op pairing's kills can never leak into either

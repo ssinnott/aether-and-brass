@@ -3,7 +3,7 @@
 //
 // The COUNTING RULES are covered in pure Node by tools/simtest.js, which needs no canvas and runs in a second.
 // What can only be checked in a browser is the wiring: that `?skipTo=bestiary` opens a screen that draws without
-// errors on a save with nothing in it, that a defeat in the real sim reaches the book through all three of its
+// errors on a save with nothing in it (and draws NO CARDS on one -- the book holds only what has been beaten), that a defeat in the real sim reaches the book through all three of its
 // hooks (the death path, a ring-out, a boss phase), that the book survives a page reload, and that a bot run of
 // board 1 opens the entries the board actually contains.
 const BOOK = 'seed=1&skipTo=bestiary';
@@ -21,6 +21,8 @@ const BESTIARY_FLUSH_EVERY = 300;
 export async function bestiaryScenarios(server, { withPage, assert }) {
   const book = (g) => g.eval(() => window.__game.bestiary());
   const entry = async (g, id) => (await book(g)).entries.find((e) => e.id === id) || null;
+  /** How many cards the open tab is drawing. Only beaten entries get one, so this is the tab's real content. */
+  const cards = (g) => g.eval(() => (window.__game.game.screen.cards || []).length);
   /** Step until `fn` is truthy, up to `max` frames; returns frames spent or -1. */
   const until = async (g, fn, max = 600) => {
     for (let i = 0; i <= max; i++) { if (await fn()) return i; await g.step(1); }
@@ -52,15 +54,16 @@ export async function bestiaryScenarios(server, { withPage, assert }) {
     const b = await book(g);
     assert(b.entries.length === 39, `every registered variant and boss has a card (${b.entries.length})`);
     assert(b.seen === 0 && b.pct === 0, `a fresh save has opened nothing (${b.seen}/${b.total}, ${b.pct}%)`);
-    assert(b.entries.every((e) => !e.seen), 'so every card is a silhouette');
+    assert(b.entries.every((e) => !e.seen), 'with nothing beaten in it');
+    assert(await cards(g) === 0, 'and the grid draws no cards at all: the book holds only what you have beaten');
     assert(b.scope === 'solo', `and the book is on the solo scope (${b.scope})`);
     await g.shot('26-bestiary-locked');
 
     // walking the screen must not throw: every tab builds its own rigs, and the boss tab builds the most
     for (let i = 0; i < 6; i++) { await g.press(0, { down: true }, 2, 4); }
-    assert(await g.screen() === 'bestiary', 'the faction tabs wrap all the way round');
+    assert(await g.screen() === 'bestiary', 'the faction tabs wrap all the way round, empty though they all are');
     for (let i = 0; i < 9; i++) { await g.press(0, { right: true }, 2, 4); }
-    assert(await g.screen() === 'bestiary', 'and the cards wrap inside a tab');
+    assert(await g.screen() === 'bestiary', 'and walking an empty tab is harmless');
     await g.shot('26-bestiary-tabs');
   });
 
@@ -120,6 +123,8 @@ export async function bestiaryScenarios(server, { withPage, assert }) {
     await g.step(10);
     const kept = await entry(g, 'brassbound:footman');
     assert(kept && kept.seen && kept.n === 2, `the book survives a reload (seen ${kept && kept.seen}, beaten ${kept && kept.n})`);
+    // The Brassbound tab has five entries and exactly one has been beaten, so exactly one card is drawn.
+    assert(await cards(g) === 1, `the beaten entry is the only card in its tab (${await cards(g)} of 5)`);
     await g.shot('26-bestiary-open');
 
     // ...and it is cleared with the rest of the save family, not left behind by it.
@@ -127,6 +132,7 @@ export async function bestiaryScenarios(server, { withPage, assert }) {
     await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 15000 });
     await g.step(10);
     assert((await book(g)).seen === 0, '?resetprogress=1 wipes the book along with the board unlocks and trial ticks');
+    assert(await cards(g) === 0, 'and the tab goes back to drawing nothing');
   });
 
   // ---------------------------------------------------------------- a ring-out is a defeat too

@@ -1,10 +1,17 @@
 // The BESTIARY screen (issue #26): the book of everything you have beaten.
 //
 // A faction tab row across the top, a grid of brass-plate cards for the tab below it, and the selected entry large
-// on the right with its rig playing idle -> walk -> attack -> hurt on a loop. Entries the player has never beaten
-// are a SILHOUETTE and '? ? ?', the same padlock convention BOARD SELECT uses for a board that has not been opened,
-// with one hint: the board and section that enemy first appears in, so a player three entries short knows where to
-// go. Counts, unlock state and the codex text all come from game/bestiary.js; nothing on this screen writes.
+// on the right with its rig playing idle -> walk -> attack -> hurt on a loop.
+//
+// THE BOOK HOLDS ONLY WHAT YOU HAVE BEATEN. An enemy you have never killed has no card at all -- not a silhouette,
+// not a '? ? ?' placeholder, nothing. A tab you have not opened anything in is empty, and a fresh book is six empty
+// tabs. This is deliberately NOT the BOARD SELECT padlock convention: a locked board is a thing you are being told
+// to go and unlock, where the bestiary is a record of what you have actually done, and a page of silhouettes is a
+// list of homework. What survives of the "how many are there" question is the counts -- the header total, the
+// per-tab n/total and the completion percentage on the title row -- which say how much is left without drawing a
+// card for each of them.
+//
+// Counts, unlock state and the codex text all come from game/bestiary.js; nothing on this screen writes.
 //
 // CONTROLS follow the one menu scheme (game/menuinput.js): LEFT/RIGHT walks the cards, UP/DOWN changes faction tab,
 // BACK returns to the title. CONFIRM cycles a BOSS entry through the phases it has reached -- a boss is three
@@ -13,8 +20,8 @@
 //
 // RIGS ARE BUILT PER TAB, not per book. buildRig() walks a whole part tree and 39 of them at once is the kind of
 // hitch the debug gallery already has to live with (screens/gallery.js builds its grid up front because it is a
-// developer tool). Here only the visible tab's cards are built, and only the selected entry's animated rig on top
-// of that, so changing tabs costs at most eight builds and changing selection costs one.
+// developer tool). Here only the visible tab's BEATEN entries are built, and only the selected entry's animated rig
+// on top of that, so changing tabs costs at most eight builds and changing selection costs one.
 import { VIEW_W, VIEW_H, UI } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
@@ -38,14 +45,11 @@ const PANEL_X = 320, PANEL_Y = 46, PANEL_W = 312, PANEL_H = VIEW_H - PANEL_Y - 8
 const PAD = 10, TEXT_X = PANEL_X + PAD, TEXT_W = PANEL_W - PAD * 2;
 const RIG_CX = PANEL_X + 74, RIG_FLOOR = 168;
 const STAT_X = PANEL_X + 150;
-const STAT_W = PANEL_X + PANEL_W - PAD - STAT_X;
 const LINE = 10;
 /** The detail rig's animation loop, in order. A rig without one of these simply skips it. */
 const LOOP = ['idle', 'walk', 'attack1', 'hurt'];
 /** Frames a completed animation holds before the loop moves on. */
 const LOOP_HOLD = 24;
-/** Silhouette fill for an entry that has never been beaten. */
-const SILHOUETTE = '#0d0812';
 
 /** The bestiary. Read-only: it shows the book game/bestiary.js keeps, and never records anything itself. */
 export class BestiaryScreen extends Screen {
@@ -98,15 +102,18 @@ export class BestiaryScreen extends Screen {
   /** The selected entry, or null when a tab is somehow empty. */
   get entry() { const c = this.cards[this.cursor]; return c ? c.entry : null; }
 
-  /** Build the visible tab's card rigs (and nothing else's), then the detail rig for the first card. */
+  /**
+   * Build the cards for the visible tab: one per entry in it the player HAS BEATEN, and nothing for the rest. A tab
+   * with nothing beaten in it builds no rigs at all, which is also why a fresh book costs nothing to open.
+   */
   buildTab() {
-    const list = entriesOf(FACTIONS[this.tab].id);
+    const list = entriesOf(FACTIONS[this.tab].id).filter((e) => bestiary.isSeen(e.id));
     this.cards = list.map((entry) => {
       // One AnimPlayer per card, parked on the first frame of `idle` and never ticked: cards are a still row and
       // `anim.pose` is always a full pose, where a def whose idle has no frames would hand back a null one.
       const anim = new AnimPlayer(entry.anims || {});
       anim.play('idle', { fallback: 'idle' });
-      return { entry, seen: bestiary.isSeen(entry.id), rig: buildRig(entry.build || {}), pose: anim.pose, stats: bestiary.stats(entry.id) };
+      return { entry, rig: buildRig(entry.build || {}), pose: anim.pose, stats: bestiary.stats(entry.id) };
     });
     this.cursor = Math.min(this.cursor, Math.max(0, this.cards.length - 1));
     this.buildDetail(0);
@@ -127,7 +134,7 @@ export class BestiaryScreen extends Screen {
     const fs = e.firstSeen;
     this.detail = {
       entry: e, phase: p, block, reached,
-      seen: bestiary.isSeen(e.id), stats: bestiary.stats(e.id), top: bestiary.topHero(e.id),
+      stats: bestiary.stats(e.id), top: bestiary.topHero(e.id),
       rig: buildRig(build || {}), anim, loop: 0, hold: 0,
       name: block ? block.name : e.name,
       codex,
@@ -137,8 +144,8 @@ export class BestiaryScreen extends Screen {
         text: codex ? wrapText(codex.text, TEXT_W) : [],
         tells: codex ? wrapText(codex.tells, TEXT_W) : [],
         weakness: codex ? wrapText(codex.weakness, TEXT_W) : [],
-        where: fs ? [...wrapText(`BOARD ${fs.board}, SECTION ${fs.section}`, STAT_W), ...wrapText(fs.sectionName, STAT_W)] : [],
       },
+      first: fs ? `B${fs.board} S${fs.section}` : '',
       // Phase 0 is the entry itself; the rest are the boss's later silhouettes. Numbered by POSITION IN THE STRIP,
       // not by raw phase index: a phase with no rig of its own is not a card (the Hoister's OVERHEAT is the same
       // machine, angrier), and numbering round it would print "1." then "3." and read as a missing entry. Both
@@ -214,8 +221,10 @@ export class BestiaryScreen extends Screen {
     ctx.globalAlpha = 0.16; gear(ctx, 70, 320, 90, 13, '#3a2a48', null, 0, f * 0.003, 28); gear(ctx, 600, 300, 60, 11, '#3a2a48', null, 0, -f * 0.004, 20); ctx.globalAlpha = 1;
     this.drawHeader(ctx, f);
     this.drawTabs(ctx);
-    for (let i = 0; i < this.cards.length; i++) this.drawCard(ctx, this.cards[i], i, f);
-    this.drawPanel(ctx, f);
+    if (this.cards.length) {
+      for (let i = 0; i < this.cards.length; i++) this.drawCard(ctx, this.cards[i], i);
+      this.drawPanel(ctx, f);
+    } else this.drawEmptyTab(ctx, f);   // no cards means no entry to detail either: one plate, not two empty frames
     for (let i = 0; i < this.hints.length; i++) drawText(ctx, this.hints[i], GRID_X, VIEW_H - 26 + i * 11, { size: 1, color: UI.brassDark });
   }
   drawHeader(ctx, f) {
@@ -241,8 +250,8 @@ export class BestiaryScreen extends Screen {
       drawText(ctx, t.count, x + w - 9, TAB_Y + 4, { size: 1, color: t.done ? UI.teal : on ? UI.brass : UI.brassDark, align: 'right' });
     }
   }
-  /** One card: a small rig (silhouetted when unseen), the name or '? ? ?', the role, and the defeat count. */
-  drawCard(ctx, card, i, f) {
+  /** One card: a small rig, the name, the role and the defeat count. Only beaten entries ever get one. */
+  drawCard(ctx, card, i) {
     const col = i % COLS, row = Math.floor(i / COLS);
     const x = GRID_X + col * (CARD_W + CARD_GAP_X), y = GRID_Y + row * CARD_PITCH_Y;
     const sel = i === this.cursor;
@@ -252,61 +261,59 @@ export class BestiaryScreen extends Screen {
     const fx = x + 26, fy = y + CARD_H - 6;
     const fit = Math.min(1, (CARD_H - 12) / ((card.rig.height + 10) * card.rig.scale));
     drawShadowScreen(ctx, fx, fy, 22 * card.rig.scale * fit, 0.4);
-    drawRig(ctx, card.rig, card.pose, { x: fx, y: fy, facing: 1, scale: fit, still: true, ...(card.seen ? {} : { tint: SILHOUETTE, tintAlpha: 1 }) });
+    drawRig(ctx, card.rig, card.pose, { x: fx, y: fy, facing: 1, scale: fit, still: true });
     const tx = x + 50;
-    if (card.seen) {
-      drawText(ctx, fitName(card.entry.name, CARD_W - 56), tx, y + 10, { size: 1, color: sel ? UI.brassLight : UI.paper });
-      drawText(ctx, card.entry.role.toUpperCase(), tx, y + 22, { size: 1, color: UI.steel });
-      drawText(ctx, `BEATEN ${card.stats.n}`, tx, y + 34, { size: 1, color: UI.brass });
-    } else {
-      drawText(ctx, '? ? ?', tx, y + 16, { size: 1, color: (f % 60) < 40 ? UI.brassDark : UI.steel });
-      drawText(ctx, 'NOT YET BEATEN', tx, y + 30, { size: 1, color: UI.brassDark });
-    }
+    drawText(ctx, fitName(card.entry.name, CARD_W - 56), tx, y + 10, { size: 1, color: sel ? UI.brassLight : UI.paper });
+    drawText(ctx, card.entry.role.toUpperCase(), tx, y + 22, { size: 1, color: UI.steel });
+    drawText(ctx, `BEATEN ${card.stats.n}`, tx, y + 34, { size: 1, color: UI.brass });
   }
   /** The selected entry, large. */
   drawPanel(ctx, f) {
     rrect(ctx, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 5, 'rgba(60,40,24,0.55)', UI.brass, 2);
     rrect(ctx, PANEL_X + 4, PANEL_Y + 4, PANEL_W - 8, PANEL_H - 8, 3, null, UI.brassDark, 1);
     const d = this.detail;
-    if (!d) return;
+    if (!d) return;   // an empty tab: drawEmptyTab has already said so on the card side
     // name / subtitle
-    drawTextOutlined(ctx, d.seen ? d.name : '? ? ?', PANEL_X + PANEL_W / 2, PANEL_Y + 12, { size: 1, color: UI.brassLight, outline: '#3a2010', thickness: 1, align: 'center' });
-    const sub = d.seen ? (d.block ? `PHASE ${d.phase + 1}` : d.entry.subtitle || '') : 'NO ENTRY';
+    drawTextOutlined(ctx, d.name, PANEL_X + PANEL_W / 2, PANEL_Y + 12, { size: 1, color: UI.brassLight, outline: '#3a2010', thickness: 1, align: 'center' });
+    const sub = d.block ? `PHASE ${d.phase + 1}` : d.entry.subtitle || '';
     if (sub) drawText(ctx, sub, PANEL_X + PANEL_W / 2, PANEL_Y + 24, { size: 1, color: UI.steel, align: 'center' });
-    // the rig, playing its loop (silhouetted while the entry is locked)
+    // the rig, playing its loop
     const fit = Math.min(1, 92 / ((d.rig.height + 16) * d.rig.scale));
     drawShadowScreen(ctx, RIG_CX, RIG_FLOOR, 32 * d.rig.scale * fit, 0.45);
-    drawRig(ctx, d.rig, d.anim.pose, { x: RIG_CX, y: RIG_FLOOR, facing: 1, scale: fit, ...(d.seen ? {} : { tint: SILHOUETTE, tintAlpha: 1 }) });
-    if (d.seen) drawText(ctx, LOOP[d.loop % LOOP.length].toUpperCase(), RIG_CX, RIG_FLOOR + 6, { size: 1, color: UI.brassDark, align: 'center' });
+    drawRig(ctx, d.rig, d.anim.pose, { x: RIG_CX, y: RIG_FLOOR, facing: 1, scale: fit });
+    drawText(ctx, LOOP[d.loop % LOOP.length].toUpperCase(), RIG_CX, RIG_FLOOR + 6, { size: 1, color: UI.brassDark, align: 'center' });
     this.drawStats(ctx, d);
     this.drawBody(ctx, d, f);
+  }
+  /**
+   * A tab with nothing beaten in it. The book draws no card for an enemy the player has never killed, so this is
+   * what a fresh tab looks like. It takes the WHOLE content area rather than leaving an empty card grid beside an
+   * empty detail panel -- two empty frames read as a screen that failed to load, where one plate reads as an
+   * answer. It names the faction and its total, so "nothing here yet" never looks like "nothing here ever".
+   */
+  drawEmptyTab(ctx, f) {
+    const t = this.tabs[this.tab];
+    const w = 400, h = 86, x = Math.round((VIEW_W - w) / 2), y = 132;
+    rrect(ctx, x, y, w, h, 5, 'rgba(30,22,34,0.85)', UI.brassDark, 1);
+    rivetLine(ctx, x + 10, y + 7, x + w - 10, y + 7, 16, 1, UI.brassDark);
+    const cx = VIEW_W / 2;
+    drawText(ctx, 'NOTHING BEATEN YET', cx, y + 22, { size: 1, color: (f % 70) < 46 ? UI.brass : UI.brassDark, align: 'center' });
+    drawText(ctx, `NO ${t.name} HAVE FALLEN TO YOU.`, cx, y + 42, { size: 1, color: UI.paper, align: 'center' });
+    drawText(ctx, `${t.count} ENTRIES IN THIS FACTION.`, cx, y + 58, { size: 1, color: UI.steel, align: 'center' });
   }
   /** The kill columns, beside the rig. */
   drawStats(ctx, d) {
     let y = PANEL_Y + 44;
     const row = (label, value, color) => { drawText(ctx, label, STAT_X, y, { size: 1, color: UI.steel }); drawText(ctx, value, PANEL_X + PANEL_W - PAD, y, { size: 1, color: color || UI.paper, align: 'right' }); y += LINE + 2; };
-    if (!d.seen) {
-      // The hunt hint: a locked entry is only useful if it says where to go and find one.
-      drawText(ctx, 'WHERE TO FIND IT', STAT_X, y, { size: 1, color: UI.brass }); y += LINE + 2;
-      const where = d.lines.where;
-      if (!where.length) { drawText(ctx, 'NOT ON ANY BOARD', STAT_X, y, { size: 1, color: UI.brassDark }); return; }
-      for (let i = 0; i < where.length; i++) { drawText(ctx, where[i], STAT_X, y, { size: 1, color: i ? UI.brassLight : UI.paper }); y += LINE; }
-      return;
-    }
     row('DEFEATED', String(d.stats.n));
     row('THROWN', String(d.stats.thrown));
     row('RING-OUTS', String(d.stats.ring));
-    const fs = d.entry.firstSeen;
-    if (fs) row('FIRST SEEN', `B${fs.board} S${fs.section}`, UI.brass);
+    if (d.first) row('FIRST SEEN', d.first, UI.brass);
     if (d.top) { drawText(ctx, 'BEST HUNTER', STAT_X, y, { size: 1, color: UI.steel }); y += LINE; drawText(ctx, d.top, STAT_X, y, { size: 1, color: UI.brassLight }); }
   }
   /** Codex text, tells, weakness, and the phase strip on a boss. */
   drawBody(ctx, d, f) {
     let y = RIG_FLOOR + 18;
-    if (!d.seen) {
-      drawText(ctx, 'BEAT ONE TO OPEN THIS ENTRY.', TEXT_X, y, { size: 1, color: UI.brassDark });
-      return;
-    }
     if (d.codex) {
       for (const line of d.lines.text) { drawText(ctx, line, TEXT_X, y, { size: 1, color: UI.paper }); y += LINE; }
       y += 4;
@@ -327,7 +334,8 @@ export class BestiaryScreen extends Screen {
     drawText(ctx, this.phaseHint, TEXT_X, y, { size: 1, color: UI.brass });
     y += LINE;
     for (const p of d.phaseRows) {
-      const reached = p.index === 0 ? d.seen : bestiary.phaseSeen(d.entry.id, p.index);
+      // Row 0 is the entry itself and every card is a beaten entry, so only the later phases can still be hidden.
+      const reached = p.index === 0 || bestiary.phaseSeen(d.entry.id, p.index);
       const on = p.index === d.phase;
       drawText(ctx, reached ? p.label : p.hidden, TEXT_X + 6, y, { size: 1, color: !reached ? UI.brassDark : on ? ((f % 60) < 40 ? UI.brassLight : UI.brass) : UI.paper });
       y += LINE;

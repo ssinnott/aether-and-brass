@@ -755,12 +755,17 @@ MUTE rows write the same `game/options.js` settings the OPTIONS plate writes (an
 `drawVolumeRow`), so this is a second door onto one setting, never a second copy.
 `title → bestiary` (issue #26): `BestiaryScreen` (`screens/bestiary.js`) is the player-facing book — a faction tab
 row (five factions plus BOSSES, each with its own seen/total), a two-column grid of brass-plate cards, and the
-selected entry large on the right with its rig looping idle → walk → attack → hurt. An entry never beaten is drawn
-as a SILHOUETTE (`drawRig`'s `tint` at full alpha) with '? ? ?' and one hint: the board and section it first
-appears in. LEFT/RIGHT walks the cards, UP/DOWN changes tab, BACK returns to the title, and CONFIRM cycles a boss
-through the phases it has **reached** (on anything else it closes the book, so it is never a dead key). Rigs are
-built per tab rather than per book: 39 `buildRig()` calls up front is the hitch the debug gallery lives with
-because it is a developer tool. The screen only reads `game/bestiary.js`; nothing on it records.
+selected entry large on the right with its rig looping idle → walk → attack → hurt.
+**The book holds only what has been beaten**: an enemy never killed gets no card — not a silhouette, not a
+placeholder — and a tab with nothing beaten in it draws an empty-state naming the faction and its total. This is
+deliberately *not* BOARD SELECT's padlock convention: a locked board is a thing you are told to go and unlock,
+where the bestiary is a record of what you have done, and a page of silhouettes is a list of homework. The counts
+(header total, per-tab n/total, the title row's percentage) are what say how much is left without drawing a card
+for each of them. LEFT/RIGHT walks the cards, UP/DOWN changes tab, BACK returns to the title, and CONFIRM cycles a
+boss through the phases it has **reached** — an unreached phase stays '? ? ?' so the person inside the machine is
+not spoiled (on anything else CONFIRM closes the book, so it is never a dead key). Rigs are built per tab, and only
+for beaten entries, so a fresh book costs nothing to open. The screen only reads `game/bestiary.js`; nothing on it
+records.
 
 `title | pause → options`: `OptionsScreen` (`screens/options.js`) is a transparent overlay pushed on top
 of either opener and popped on back (both openers freeze underneath exactly like `pause` freezes
@@ -906,7 +911,7 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      tipping the load; and a wave entry addressed at the yard handcart spawns AT the cart, and still delivers when the
      cart has already been broken.
   3k. `bestiary` (`tools/scenarios/bestiary.js`, issue #26): the browser half of the book — `?skipTo=bestiary` on a
-     fresh save draws 39 silhouettes at 0% and walks every tab and card without throwing; a real defeat in the sim
+     fresh save draws NO cards at 0% and walks every (empty) tab without throwing; a real defeat in the sim
      opens an entry, raises the NEW ENTRY plate and counts a punched kill apart from a thrown one; the book survives
      a page RELOAD (the periodic flush, since navigating away never runs the screen's `exit()`); an enemy put over
      the Mooring Spine's rail records as a ring-out (the hook `world.onDeath` never fires for); driving the Hoister
