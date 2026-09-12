@@ -319,8 +319,8 @@ tools/         dev server, single-file build, playtest harness, contact-sheet ge
 
 Aether & Brass is a hobby project built around a day job. It is free, it has no ads and no
 tracking, and it will stay that way. If you enjoyed it and feel like putting something in the
-tip jar, there is a Sponsor button at the top of this repository — entirely optional, and a bug
-report or a note saying you played it is worth just as much.
+tip jar, there is [Ko-fi](https://ko-fi.com/seansinnott) — entirely optional, and a bug report
+or a note saying you played it is worth just as much.
 
 ## License
 
