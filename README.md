@@ -315,6 +315,13 @@ src/content/   characters, enemies and stage data (pure data + small draw hooks)
 tools/         dev server, single-file build, playtest harness, contact-sheet generator
 ```
 
+## Support
+
+Aether & Brass is a hobby project built around a day job. It is free, it has no ads and no
+tracking, and it will stay that way. If you enjoyed it and feel like putting something in the
+tip jar, there is a Sponsor button at the top of this repository — entirely optional, and a bug
+report or a note saying you played it is worth just as much.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Use it, fork it, ship it; just keep the copyright notice.
