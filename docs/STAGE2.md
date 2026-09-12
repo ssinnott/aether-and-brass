@@ -260,7 +260,10 @@ before it did not do.
   (+200), the cheapest damage on the board and by far the most satisfying — and a **`gust`** over the whole section:
   every 7s (420f) a 45f gale, then 40f in which everyone on their feet drifts 1.3 px/f toward one rail or the other
   (the direction alternates each cycle, ~52px a gust). The gust never rings anyone out by itself; with the rails live
-  it decides who is standing where when the next swing lands.
+  it decides who is standing where when the next swing lands. This is where the board's wind introduces itself, so it
+  is also where it has to be readable: the first gale of the section puts **GALE / THE WIND HAS THE DECK** on the HUD,
+  the streaks thicken through the 45f tell, and a row of violet chevrons on the edge it is pushing toward stays up for
+  the whole 40f it is pushing — a shove you cannot attribute reads as a broken controller, not as weather.
 - **Waves (20):** (1) 3x Deckhand — fodder only, learn the rail. (2) 2x Deckhand + 2x Crimper + 1x Corsair.
   (3) "meet the holdout": 1x Bosun + 2x Crimper + **1x Tin Footman (holdout)** off the gantry; **reinforcements** —
   2x Deckhand come up the lines once the wave is down. (4) 1x Bosun + 2x Corsair + 2x Crimper + 1x Tin Footman
@@ -314,7 +317,11 @@ before it did not do.
 - **Zones:** `rails` both sides — an **enemy** thrown over the edge rings out (+200), and a player cannot go over at
   all: `hazards.js` rings out enemies only and clamps everyone else back onto the planking. The Grapnel Mate at 22s is
   here to drag you back down a deck you cannot leave, not to put you over the side. And the **bank**: a `gust` every
-  7s (420f), 45f of gale then 40f at **1.3 px/f** — 52px toward one rail or the other, alternating.
+  7s (420f), 45f of gale then 40f at **1.3 px/f** — 52px toward one rail or the other, alternating. It announces
+  itself once as **SHE BANKS / THE GUN LANES ARE LIVE**, which is the whole relationship between the two systems on
+  this screen said out loud. The bank is a `gust` and nothing else: a `tilt` platform (issue #32) sat on this deck as
+  well for a while, on its own clock and pushing along x, and two unrelated shoves at once is not a mechanic anybody
+  can read. `tilt` lives on board 4's Lash-Up float now.
 - **Timed waves (19)** — each fires at its time or the moment the one before it is cleared, whichever is first:
   - **0s:** the gun crew — 2x Copper Sapper + 2x Tin Footman + 1x Deckhand.
   - **22s:** 2x Brass Halberdier + 1x Grapnel Mate + 1x Corsair.
