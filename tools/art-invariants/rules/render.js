@@ -103,6 +103,10 @@ const BOOTSTRAP = `async () => {
   const chars = await import('/src/content/characters/index.js');
   const enemies = await import('/src/content/enemies/index.js');
   const anim = await import('/src/game/animation.js');
+  // spawn modifiers live in the game layer and are applied at spawn, so a modded subject's rig only exists once
+  // applyMods has run. Without this the page rebuilt every 'enemy-mod' subject from its BASE def and all four pixel
+  // rules silently measured the unmodded rig — two subjects with byte-identical readings and nothing to show for it.
+  const traits = await import('/src/game/traits.js');
 
   // One canvas, big enough for the tallest rig (boss:vane, 203 device px) plus its weapon and accessories.
   const W = 256, H = 288, FX = 128, FY = 256;
@@ -113,8 +117,9 @@ const BOOTSTRAP = `async () => {
 
   function resolve(spec) {
     if (spec.kind === 'character') { const d = chars.getCharacter(spec.id); return { def: d, build: d.build, anims: d.anims }; }
-    const d = enemies.getEnemyDef(spec.type, spec.variant);
-    if (spec.kind === 'boss-phase') { const ph = (d.phases || [])[spec.phase] || {}; return { def: d, build: ph.build || d.build, anims: ph.anims || d.anims }; }
+    const base = enemies.getEnemyDef(spec.type, spec.variant);
+    if (spec.kind === 'boss-phase') { const ph = (base.phases || [])[spec.phase] || {}; return { def: base, build: ph.build || base.build, anims: ph.anims || base.anims }; }
+    const d = spec.mods && spec.mods.length ? traits.applyMods(base, spec.mods) : base;
     return { def: d, build: d.build, anims: d.anims };
   }
   function entry(spec) {
@@ -284,7 +289,9 @@ const BOOTSTRAP = `async () => {
 
 /** The JSON-safe description of a subject the page needs to rebuild its rig. */
 function specOf(s) {
-  return { id: s.id, kind: s.kind, type: s.type, variant: s.variant, phase: s.phase, scale: (s.rig && s.rig.scale) || 1 };
+  return { id: s.id, kind: s.kind, type: s.type, variant: s.variant, phase: s.phase, scale: (s.rig && s.rig.scale) || 1,
+    // an 'enemy-mod' subject is a base def plus these; the page re-applies them, or it draws the wrong rig
+    mods: (s.def && s.def.mods) || null };
 }
 
 /** Group key for silhouette distinctness: heroes are one faction, every enemy type is its own. */
@@ -349,11 +356,12 @@ async function silhouetteDistinctness(subjects, page, findings) {
   const groups = new Map();
   for (const s of subjects) {
     if (s.class === 'boss' || s.kind === 'boss-phase') continue;
-    // A spawn modifier re-dresses a variant it is not a sibling of: it repaints a body and pins an accessory to it
-    // WITHOUT changing the outline, so every modded rig scores IoU 1.000 against the rig it came from and buries the
-    // authored pairs this rule exists to compare. §0.8 is about five variants sharing one shape, not one variant
-    // wearing a badge. (An accessory that does change the silhouette, like the winged bladder, is still measured on
-    // the base rig it hangs off; nothing here is left unmeasured that the rule was written for.)
+    // A modded rig is not a SIBLING VARIANT, which is the only thing §0.8 is about: "five variants, one silhouette" is
+    // a complaint that you cannot tell a Crimper from a Corsair, and a holdout Footman is not something you are meant to
+    // tell from a Footman — it IS one, re-dressed at spawn. Comparing the two only ever reports the mod's own base
+    // (IoU 1.000 for holdout / crusted / scrip / salvaged, which repaint without touching the outline), which would bury
+    // the authored pairs the rule exists to find. Note this is the not-a-variant argument, NOT "mods never change the
+    // shape": the winged bladder does (idle#0 bbox 33x37 -> 33x48), and the other pixel rules still measure it.
     if (s.kind === 'enemy-mod') continue;
     const k = factionOf(s);
     if (!groups.has(k)) groups.set(k, []);

@@ -156,31 +156,42 @@ export const SPAWN_MODS = Object.freeze({
       }
     },
     hooks: {
-      onSpawn(f) { f.wingedHang = WINGED_HANG_FRAMES; f.bladderGone = false; },
+      onSpawn(f) { f.wingedHang = WINGED_HANG_FRAMES; f.bladderGone = false; f.rig.gasDead = false; f.rig.gasDeadAt = null; },
+      /** The bag goes out with the body, the way the Gleaning's own BASE_HOOKS stamp it (gleaningRig.js onDeath). */
+      onDeath(f) { f.rig.gasDead = true; f.rig.gasDeadAt = f.rig.tick | 0; },
       onUpdate(f) {
         const r = f.rig;
         // drawBladder falls back to the pose face when nothing drives gasDead, and every non-Brassbound faction poses
-        // `dazed` on its stagger keys — which deflated the bag a third and put the gas out on any stagger. Drive it here.
-        r.gasDead = false; r.gasDeadAt = null;
-        if (f.bladderGone || !f.airborne) { r.gas = 0.25; return; }
+        // `dazed` on its stagger keys — which deflated the bag a third and put the gas out on any stagger. Drive it here
+        // WHILE IT CARRIES only: once the bag is holed, the burst stamp onHitTaken wrote is the thing being drawn, and a
+        // blanket reset here erased it on the next frame (and, since fighter.js skips onUpdate once dead, left a killed
+        // body's bladder lit for its whole death animation).
+        if (!f.bladderGone) { r.gasDead = false; r.gasDeadAt = null; }
+        // Releasing the pin is not optional on any path. fighter.js only DECREMENTS noGravity, and it zeroes vy while the
+        // counter is armed, so a pin left set eats the knockback of the very hit that took the body off the line — the
+        // Gleaning idiom this copies always pairs `noGravity = 2` with an explicit `else 0` (gleaning.js:200, 466, 655).
+        if (f.bladderGone || !f.airborne) { r.gas = 0.25; f.noGravity = 0; return; }
         r.gas = 0.8;   // the bag glows while it carries
-        if (!WINGED_HANG_STATES.has(f.state)) return;   // hurt / knocked down / thrown: the body falls on its own terms
+        if (!WINGED_HANG_STATES.has(f.state)) { f.noGravity = 0; return; }   // hurt / knocked down / thrown: it falls
         if (f.wingedHang == null) f.wingedHang = WINGED_HANG_FRAMES;
-        if (f.y > WINGED_HANG) { if (f.vy < -WINGED_DROP) f.vy = -WINGED_DROP; return; }
+        if (f.y > WINGED_HANG) { f.noGravity = 0; if (f.vy < -WINGED_DROP) f.vy = -WINGED_DROP; return; }
         // on the line: re-arm noGravity every step to pin the altitude (physics decrements it), the way the Gleaning hangs
         if (f.wingedHang > 0) { f.wingedHang--; f.noGravity = 2; f.y = WINGED_HANG; f.vy = 0; }
-        else if (f.vy < -WINGED_SINK) f.vy = -WINGED_SINK;   // the bag vents and it settles onto the deck
+        else { f.noGravity = 0; if (f.vy < -WINGED_SINK) f.vy = -WINGED_SINK; }   // the bag vents and it settles
       },
       onHitTaken(f, h) {
         if (!f.airborne || f.dead) return undefined;
         const hit = { ...h, damage: Math.round((h.damage || 0) * 1.25) };   // the Gleaning's shot-down rule
-        // the weak point: hole the bag while it carries and the bladder gives — it comes down instead of settling
+        // The weak point: hole the bag while it carries and the hang ENDS — the body stops being pinned and comes down
+        // now instead of riding out the rest of its untouchable float. That plus the hurtPart's own x1.6 is the whole
+        // payoff; do NOT rewrite hit.type to 'knockdown' here, which reads well and does nothing: fighter.js takes the
+        // juggle branch for any airborne target before it ever looks at 'knockdown', so the type would be discarded.
         const part = f.hitPart;
         if (!f.bladderGone && part && (part.name === 'bag' || part.name === 'bags')) {
-          f.bladderGone = true; f.wingedHang = 0; f.noGravity = 0;
+          f.bladderGone = true; f.wingedHang = 0;
           f.rig.gasDead = true; f.rig.gasDeadAt = f.rig.tick | 0;
-          hit.type = 'knockdown';
         }
+        f.noGravity = 0;   // whatever was hit, the body owns its own velocity from here
         return hit;
       },
     },

@@ -24,10 +24,12 @@ Gleaning, the Chandlery, the stage-3 and stage-4 boss rigs and the seven spawn-m
 
 The three defects this suite was written to catch (§2) have since been fixed in the Stormcrow art, and the data and
 geometry tiers are now silent on them. **`node tools/art-check.js --render` reports 0 errors and 47 warnings and
-exits 0** as well. `render/silhouette-distinctness` skips spawn-modifier subjects: a modifier repaints a body and
-pins an accessory to it without changing its outline, so a modded rig scores IoU 1.000 against the rig it re-dresses
-and would bury the authored pairs the rule exists to compare — §0.8 is about five variants sharing one shape, not
-one variant wearing a badge. No two authored siblings breach the bound; the worst real pair in the game is
+exits 0** as well. `render/silhouette-distinctness` skips spawn-modifier subjects, because a modded rig is not a
+sibling *variant*: §0.8's complaint is that you cannot tell a Crimper from a Corsair, and a holdout Footman is not
+something you are meant to tell from a Footman — it is one, re-dressed at spawn. The four pixel rules do otherwise
+measure the modded rig: the page re-applies `SPAWN_MODS` before it builds the rig, so a winged Footman reads 736px
+and a 33x48 bbox against the base Footman's 547px and 33x37. No two authored siblings breach the bound; the worst
+real pair in the game is
 `stormcrow:bosun` vs `stormcrow:grapnel` at 0.757 against a bound of 0.79. CI should run `npm run art-check` plus
 `node tools/art-invariants/selftest.js`. Do not narrow a full run with `--only` — some rules are pairwise (§3).
 
@@ -157,7 +159,8 @@ history is kept because it is the calibration: these are the three cases the bou
    blanket: it fired on crimper/corsair/galewright as one shape while `bosun` and `marine` were legitimately
    distinct and correctly did not. The faction now runs seven variants whose worst sibling pair is
    `bosun` vs `grapnel` at IoU 0.757 against the 0.79 bound, so no authored pair fires and the rule is silent on
-   the whole cast. Spawn-modifier subjects are skipped by it (§1): a re-dress does not change an outline.
+   the whole cast. Spawn-modifier subjects are skipped by it (§1): a modded rig is the same variant re-dressed, not a
+   sibling to tell apart from it.
 
 ---
 

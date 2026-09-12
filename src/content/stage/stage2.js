@@ -178,8 +178,9 @@ export const stage2 = {
       // Footmen of the tower guard and the Sappers up from the gun ports — with her rated Stormcrows over them and no
       // pressed crew at all: the Deckhands and Crimpers never got this far up the ship.
       waves: [
-        // the head of the companion ladder: a Chrome Duelist as the Admiral's second (the last new face on the board), the
-        // tower guard's Footmen and a Halberdier with them, and one Marine officer calling them on
+        // the head of the companion ladder: a Chrome Duelist as the Admiral's second — the first of the two faces this deck
+        // still owes you, the Iron Warden off the tower door being the other — with the tower guard's Footmen and a
+        // Halberdier behind him, and one Marine officer calling them on
         { triggerX: 4600, lock: true, spawns: [{ type: C, variant: 'marine', side: 'right', z: 60, delay: 0 },
           { type: B, variant: 'duelist', side: 'left', z: 80, delay: 40 }, { type: B, variant: 'footman', side: 'right', z: 120, delay: 70 },
           { type: B, variant: 'footman', side: 'left', z: 20, delay: 100 }, { type: B, variant: 'halberdier', side: 'right', z: 100, delay: 130 }] },
