@@ -63,11 +63,13 @@ export const stage2 = {
        *  `open: true` (issue #21): a thrown weapon / prop, or a dropped weapon pickup, that drifts past the same edge falls
        *  into the cloud too -- lost, not landed. */
       zones: [{ type: 'rails', x0: 0, x1: 1900, open: true }, { type: 'gust', x0: 0, x1: 1900, dir: 0 },
-        // issue #31: two mooring booms cross the spine at head height. The back one is paired with a `crossbar`
-        // hazard on the same lane (hazards list above) so it SWEEPS as well as blocks -- the timing half of a boom is
-        // the crossbar's job, the blocking half is the solid's, and neither needed to learn the other's trick.
-        { type: 'solid', x0: 960, x1: 984, z0: 0, z1: 46, height: 40 },
-        { type: 'solid', x0: 1520, x1: 1544, z0: 96, z1: 140, height: 40 },
+        // issue #31: two mooring winches sit bolted across the spine, one to a lane. The back one is paired with a
+        // `crossbar` hazard on the same lane (hazards list above) so its boom SWEEPS as well as blocks -- the timing
+        // half is the crossbar's job, the blocking half is the solid's, and neither needed to learn the other's
+        // trick. `look` names the art (art/props.js PROP_TYPES) and with it the height, so the winch you see is the
+        // winch the jump has to clear.
+        { type: 'solid', x0: 950, x1: 994, z0: 0, z1: 46, look: 'winch' },
+        { type: 'solid', x0: 1510, x1: 1554, z0: 96, z1: 140, look: 'winch' },
       ],
       waves: [
         // the pressed crew first: three Deckhands, no wing-packs, throwable - learn the rail
@@ -118,7 +120,7 @@ export const stage2 = {
       /** Issue #31: the powder barricade across the hall. It spans the whole band, so there is no walking round it —
        *  and `StageRunner.barricadeHolding` keeps the wave it belongs to open until the keg is down, which is the
        *  point: the Wing's own powder is the door, and the Bosuns keep coming from behind it while you work on it. */
-      zones: [{ type: 'solid', x0: 2640, x1: 2690, z0: 0, z1: 140, height: 46, breakable: true }],
+      zones: [{ type: 'solid', x0: 2640, x1: 2690, z0: 0, z1: 140, breakable: true, look: 'keg' }],
       waves: [
         // the coil arrives: two Galewrights behind a pair of Deckhands
         { triggerX: 2260, lock: true, spawns: [{ type: C, variant: 'galewright', side: 'right', z: 40, delay: 0 },

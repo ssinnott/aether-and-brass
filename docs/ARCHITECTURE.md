@@ -512,7 +512,7 @@ flight over the edge (`loseOverEdge`) instead of letting it land — only The Mo
 bulwark anywhere"). The Brass Funicular's `rails` (stage1 `s3`) are railings, not an open edge, so it omits `open` and thrown items land on the roof as normal.
 
 A `solid` zone (issue #31) is the one thing in the game that BLOCKS movement: `{ type: 'solid', x0, x1, z0, z1,
-height, breakable? }`. A grounded fighter cannot cross `[x0, x1]` while its z is inside `[z0, z1]`; one whose y clears
+height?, breakable?, look? }`. A grounded fighter cannot cross `[x0, x1]` while its z is inside `[z0, z1]`; one whose y clears
 `height` passes over, and a body that is still RISING is measured by the apex its jump will reach, so committing to a
 jump that clears the obstacle clears it (without that, a jump started against a wall is blocked through its own
 ascent). Knockback into a solid wall-bounces with the same numbers the camera bound already uses (`AIR_FALL_STATES`,
@@ -533,7 +533,15 @@ lip of `[z0, z1]` and rises exactly `height` px — the same number `Fighter.hit
 so the edge the eye picks is the edge the jump has to clear — with the footprint behind it kept as a stepped shadow
 on the deck, which still says which lanes are shut. It is side-on with a shallow top cap rather than a full top face
 (the house idiom for a solid object, `art/props.js` `mold` / `cart`): this projection has no x foreshortening, so a
-top face the depth of the band reads as a second floor rather than as a volume. Because it is a standing body it
+top face the depth of the band reads as a second floor rather than as a volume.
+
+That plain steel barrier is the fallback. **`look` is how an obstacle gets a face**: it names a `PROP_TYPES` key
+(`art/props.js`) and the zone is drawn as that prop repeated along its span, so the thing in the way is the board's
+own furniture — the Foundry Row cart (`cart`), the Mooring Spine's winches (`winch`), the Gas-Halls' own powder
+(`keg`), the Chandlery's lime sacks (`limeSack`) — at no cost in new art. The tiling is worked in world x, never in
+the screen-clamped x0/x1, or the copies slide along the barrier as the camera scrolls. **The art is the truth:**
+`height` defaults to the named prop's own height, so the silhouette the player measures is the one `hitSolid`
+enforces, and a board that wants a different clearance should pick a different prop rather than override it. Because it is a standing body it
 also sorts like one — a solid with `height > 0` takes `z = z0` instead of the `-5` every other zone parks at, which
 is the one depth that hides what is genuinely behind it and lets everything from its back edge forward (a fighter
 walking past its face, one mid-jump over it) draw over it. A gap keeps `z = -5`: it is a hole in the deck, and
