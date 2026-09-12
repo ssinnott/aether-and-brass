@@ -12,10 +12,19 @@ import { EventRunner, eventLength, EVENT_ACTIONS } from '../src/game/events.js';
 import { ENTRANCES, entranceFor, entranceLength, entranceLanding } from '../src/game/entrances.js';
 import { PLATFORMS } from '../src/game/platforms.js';
 import { SFX_DEFS, CANONICAL_SFX } from '../src/engine/audio/sfx.js';
+import { getEnemyDef } from '../src/content/enemies/index.js';
+import { getCharacter } from '../src/content/characters/index.js';
 import { TRACKS, compileTrack, scheduleSteps } from '../src/engine/audio/music.js';
 import { bestiary, sanitiseRecords, ENTRIES, entriesOf, FACTIONS } from '../src/game/bestiary.js';
 import { CODEX, CODEX_MAX_CHARS } from '../src/content/enemies/codex.js';
+import { readFileSync } from 'node:fs';
 import { progress, SOLO_SCOPE } from '../src/game/progress.js';
+import { Dialogue, pairKey, TRIGGERS, PLATE_LIFE, PLATE_COOLDOWN, REPLY_DELAY } from '../src/game/dialogue.js';
+import { measureText } from '../src/engine/text.js';
+import { VIEW_W } from '../src/constants.js';
+import { BANTER, SOLO, BOSS_LINES } from '../src/content/characters/lines.js';
+import { CHARACTERS } from '../src/content/characters/index.js';
+import { STAGES } from '../src/content/stage/index.js';
 
 let failures = 0;
 const ok = (cond, msg) => { console.log((cond ? '  ok:   ' : '  FAIL: ') + msg); if (!cond) failures++; };
@@ -35,6 +44,11 @@ function recorder() {
     zoneFlash: (spec) => log.push(`zoneFlash:${spec.x0}-${spec.x1}`),
     spawn: (specs) => log.push(`spawn:${specs.length}`),
     prop: (spec) => log.push(`prop:${spec.type}`),
+    // story-beat actions (issue #25)
+    actor: (spec) => log.push(`actor:${spec.id || spec.def || spec.hero}`),
+    walk: (spec) => log.push(`walk:${spec.id}:${spec.vx || 0}`),
+    sign: (spec) => log.push(`sign:${spec.text}`),
+    say: (spec) => log.push(`say:${spec.trigger}`),
   };
 }
 
@@ -301,7 +315,276 @@ function suiteBestiary() {
   ok(bestiary.completion().seen === 0, 'reset() empties every scope');
 }
 
-const SUITES = { events: suiteEvents, entrances: suiteEntrances, platforms: suitePlatforms, audio: suiteAudio, bestiary: suiteBestiary };
+
+// ================================================================ story beats and companion dialogue (issue #25)
+//
+// Two things are tested here and they are different in kind. The DIALOGUE tests are about sequencing and the rules
+// the system promises — one plate at a time, a cooldown, the same line on both peers — and they run the real
+// Dialogue against stub players, no canvas. The CONTENT tests are about the writing: every pairing covered at every
+// trigger, every line short enough to draw. A missing table is silent at runtime (the speaker just says nothing),
+// which is exactly the class of mistake tools/simtest.js exists to catch.
+const ORDER = CHARACTERS.map((c) => c.id);
+/** StageRunner's own boss-reply delay, re-derived here so the test fails if the two ever drift apart. */
+const BOSS_REPLY_DELAY = PLATE_COOLDOWN + 24;
+/** A stub player: what Dialogue actually reads off one. */
+const stub = (id, index) => ({ def: { id }, index, x: 100, y: 0, z: 70, h: 60, out: false, removeMe: false });
+
+function suiteBeats() {
+  console.log('\n== beats ==');
+
+  // (a) an exchange is one plate, then the reply REPLY_DELAY frames later — never both at once
+  {
+    const d = new Dialogue({ banter: BANTER, solo: SOLO, order: ORDER });
+    ok(d.say('sectionStart', [stub('brunhild', 0), stub('sael', 1)], 0), 'an exchange is raised');
+    ok(d.plates.length === 1, `the opening line is alone on screen (${d.plates.length} plates)`);
+    for (let i = 0; i < REPLY_DELAY; i++) d.update();
+    ok(d.plates.length === 2, `the reply lands ${REPLY_DELAY} frames later (${d.plates.length} plates)`);
+  }
+
+  // (b) the cooldown: a lower-ranked trigger during an exchange is DROPPED, not queued
+  {
+    const d = new Dialogue({ banter: BANTER, solo: SOLO, order: ORDER });
+    const ps = [stub('brunhild', 0), stub('sael', 1)];
+    d.say('sectionStart', ps, 0);
+    const before = d.plates[0].text;
+    ok(!d.say('combo20', ps, 1), 'combo20 is refused while a section line is speaking');
+    ok(d.plates[0].text === before, 'the line already up is not replaced');
+  }
+
+  // (c) ...but a HIGHER-ranked trigger takes the floor: a partner going out beats a combo
+  {
+    const d = new Dialogue({ banter: BANTER, solo: SOLO, order: ORDER });
+    const ps = [stub('brunhild', 0), stub('sael', 1)];
+    d.say('combo20', ps, 0);
+    ok(d.say('partnerDown', ps, 1), 'partnerDown interrupts a combo line');
+    ok(d.plates.length === 1, 'the interrupted line is cleared rather than stacked');
+  }
+
+  // (d) the floor is given back: after the cooldown, anything may speak again
+  {
+    const d = new Dialogue({ banter: BANTER, solo: SOLO, order: ORDER });
+    const ps = [stub('brunhild', 0), stub('sael', 1)];
+    d.say('combo20', ps, 0);
+    for (let i = 0; i < PLATE_COOLDOWN + REPLY_DELAY + PLATE_LIFE; i++) d.update();
+    ok(d.plates.length === 0 && d.cool === 0, 'plates expire and the cooldown runs out');
+    ok(d.say('combo20', ps, 500), 'a later combo speaks again');
+  }
+
+  // (e) DETERMINISM, which is the netplay contract: the same frame picks the same line, and no rng is touched
+  {
+    const a = new Dialogue({ banter: BANTER, solo: SOLO, order: ORDER });
+    const b = new Dialogue({ banter: BANTER, solo: SOLO, order: ORDER });
+    let same = true;
+    for (const f of [0, 1, 7, 99, 1234, 60001]) {
+      const x = a.pickBanter('combo20', stub('brunhild', 0), stub('sael', 1), f);
+      const y = b.pickBanter('combo20', stub('brunhild', 0), stub('sael', 1), f);
+      if (JSON.stringify(x) !== JSON.stringify(y)) same = false;
+    }
+    ok(same, 'two peers on the same frame pick the same line');
+    // The strong form of the same claim: the module cannot draw from the shared stream because it never imports it.
+    // A single `rng.pick` behind a peer-local cooldown would desync a match, so this is the line worth guarding.
+    const src = readFileSync(new URL('../src/game/dialogue.js', import.meta.url), 'utf8');
+    ok(!/^\s*import[^;]*\brng\b/m.test(src), 'game/dialogue.js never imports the rng');
+  }
+
+  // (f) the cast is in the pairing's canonical order, so `a` is always spoken before `b`
+  {
+    const d = new Dialogue({ banter: BANTER, solo: SOLO, order: ORDER });
+    const cast = d.cast([stub('pip', 0), stub('brunhild', 1)], null).map((p) => p.def.id);
+    ok(cast.join('>') === 'brunhild>pip', `cast is canonical whatever the slot order (${cast.join('>')})`);
+    ok(pairKey('pip', 'brunhild', ORDER) === 'brunhild+pip', 'pairKey is order-free');
+  }
+
+  // (g) a hero who is OUT never speaks — and in a two-player run that turns partnerDown into a solo line
+  {
+    const d = new Dialogue({ banter: BANTER, solo: SOLO, order: ORDER });
+    const down = stub('sael', 1); down.out = true;
+    d.say('partnerDown', [stub('brunhild', 0), down], 0);
+    ok(d.plates.length === 1 && !d.pending, 'the hero who went out gets no line and no reply is queued');
+    ok(SOLO.brunhild.partnerDown.includes(d.plates[0].text), 'the survivor falls back to their solo line');
+  }
+
+  // (h) the harness gate: disabled, every trigger is a no-op
+  {
+    const d = new Dialogue({ banter: BANTER, solo: SOLO, order: ORDER }, { enabled: false });
+    const ps = [stub('brunhild', 0), stub('sael', 1)];
+    let any = false;
+    for (const t of TRIGGERS) if (d.say(t, ps, 0)) any = true;
+    ok(!any && d.plates.length === 0, 'no trigger speaks while dialogue is off');
+  }
+
+  // (h2) A BOSS SPEAKS FIRST, AND THE HEROES STILL GET TO ANSWER. This is the regression test for the one bug the
+  //      whole design makes easy: `shout` takes the floor for PLATE_COOLDOWN frames and outranks every hero
+  //      trigger, so a reply SCHEDULED inside that window is dropped rather than delayed, and the answer to every
+  //      boss in the game silently never plays. StageRunner derives its delay from the cooldown for this reason.
+  {
+    const d = new Dialogue({ banter: BANTER, solo: SOLO, order: ORDER });
+    const ps = [stub('brunhild', 0), stub('sael', 1)];
+    const boss = { x: 300, y: 0, z: 70, h: 80 };
+    d.shout(boss, 'THE VALVES STAY SHUT.');
+    ok(!d.say('bossIntro', ps, 0), 'a reply inside the boss cooldown is refused');
+    for (let i = 0; i < BOSS_REPLY_DELAY; i++) d.update();
+    ok(d.say('bossIntro', ps, BOSS_REPLY_DELAY), `the heroes answer the boss once its floor is up (at ${BOSS_REPLY_DELAY}f)`);
+    ok(BOSS_REPLY_DELAY > PLATE_COOLDOWN, `the scheduled reply clears the cooldown (${BOSS_REPLY_DELAY} > ${PLATE_COOLDOWN})`);
+  }
+
+  // (i) CONTENT: every pairing is written at every trigger, and so is every solo table
+  {
+    const gaps = [];
+    for (let i = 0; i < ORDER.length; i++) {
+      for (let j = i + 1; j < ORDER.length; j++) {
+        const k = pairKey(ORDER[i], ORDER[j], ORDER);
+        for (const t of TRIGGERS) if (!((BANTER[k] || {})[t] || []).length) gaps.push(`${k}.${t}`);
+      }
+    }
+    for (const h of ORDER) for (const t of TRIGGERS) if (!((SOLO[h] || {})[t] || []).length) gaps.push(`solo.${h}.${t}`);
+    ok(gaps.length === 0, `every pairing and solo table covers all ${TRIGGERS.length} triggers${gaps.length ? ' (missing ' + gaps.join(', ') + ')' : ''}`);
+  }
+
+  // (j) CONTENT: no line is wider than a plate can be. Past this a speaker at the screen edge is unreadable.
+  {
+    const MAX = 42, over = [];
+    const check = (label, text) => { if (typeof text === 'string' && text.length > MAX) over.push(`${label} (${text.length})`); };
+    for (const [k, table] of Object.entries(BANTER)) {
+      for (const [t, rows] of Object.entries(table)) rows.forEach((r, n) => { check(`${k}.${t}[${n}].a`, r.a); check(`${k}.${t}[${n}].b`, r.b); });
+    }
+    for (const [h, table] of Object.entries(SOLO)) for (const [t, rows] of Object.entries(table)) rows.forEach((l, n) => check(`solo.${h}.${t}[${n}]`, l));
+    for (const [id, l] of Object.entries(BOSS_LINES)) { l.phase.forEach((x, n) => check(`${id}.phase[${n}]`, x)); check(`${id}.defeat`, l.defeat); }
+    ok(over.length === 0, `every line fits a plate at ${MAX} characters${over.length ? ' (over: ' + over.join(', ') + ')' : ''}`);
+  }
+
+  // (k) CONTENT: every boss and mid-boss has one line per phase and a defeat line. A short `phase` array is silent
+  //     at runtime rather than an error, so the count is checked against the def's own phases.
+  {
+    const bad = [];
+    for (const [id, lines] of Object.entries(BOSS_LINES)) {
+      if (!lines.defeat) bad.push(`${id}: no defeat line`);
+      if (!lines.phase.length) bad.push(`${id}: no phase lines`);
+    }
+    ok(bad.length === 0, `all ${Object.keys(BOSS_LINES).length} boss units have phase and defeat lines${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
+  }
+
+  // (l) STAGES: every board has an intro beat, and every transition has a vignette. This is the issue's own
+  //     acceptance line, and it is data rather than behaviour, so it belongs here rather than in the browser.
+  {
+    const missing = [];
+    for (const st of STAGES) {
+      const s0 = st.sections[0];
+      if (!(s0.events || []).some((e) => e.beat)) missing.push(`${st.id}: no intro beat`);
+      for (const sec of st.sections) {
+        if (!sec.stinger) missing.push(`${st.id}/${sec.id}: no stinger`);
+        const tr = sec.transition;
+        if (tr && !(tr.vignette && (tr.vignette.cues || []).length)) missing.push(`${st.id}/${sec.id}: transition without a vignette`);
+      }
+    }
+    ok(missing.length === 0, `every board opens on a beat and every transition carries a vignette${missing.length ? ' (' + missing.join('; ') + ')' : ''}`);
+  }
+
+  // (m) an intro beat runs for the six to ten seconds issue #25 asks for, and holds the wave director while it does
+  {
+    const bad = [];
+    for (const st of STAGES) {
+      const ev = (st.sections[0].events || []).find((e) => e.beat);
+      if (!ev) continue;
+      const n = eventLength(ev);
+      if (n < 360 || n > 600) bad.push(`${st.id}: ${n} frames`);
+      if (!ev.holdWaves) bad.push(`${st.id}: does not hold the wave director`);
+    }
+    ok(bad.length === 0, `every intro beat runs 6-10s and holds its waves${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
+  }
+
+  // (m2) CONTENT: every caption a beat writes fits the banner it is drawn in. This is measured rather than counted
+  //      in characters, because the banner draws at SIZE 3 (game/hud.js drawBanner) — 18px a glyph — and 36 glyphs
+  //      is already wider than the 640px view. An over-wide caption is not clipped, it is drawn off both edges.
+  {
+    const MAR = 12, MAX = VIEW_W - MAR * 2, SIGN_MAX = 300, over = [];
+    const fits = (label, text, size, max) => { if (typeof text === 'string' && text) { const w = measureText(text, size); if (w > max) over.push(`${label} ${w}px`); } };
+    for (const st of STAGES) {
+      for (const sec of st.sections) {
+        fits(`${st.id}/${sec.id} stinger`, sec.stinger, 1, MAX);
+        for (const ev of sec.events || []) {
+          (ev.actions || []).forEach((a, i) => {
+            fits(`${st.id}/${ev.id}[${i}] caption`, a.caption, 3, MAX);
+            fits(`${st.id}/${ev.id}[${i}] sub`, a.sub, 1, MAX);
+            // a sign is lettered on a board standing in the world, so its budget is the board, not the view
+            if (a.sign) { fits(`${st.id}/${ev.id}[${i}] sign`, a.sign.text, a.sign.size || 1, SIGN_MAX); fits(`${st.id}/${ev.id}[${i}] sign sub`, a.sign.sub, 1, SIGN_MAX); }
+          });
+        }
+        const v = sec.transition && sec.transition.vignette;
+        if (v) (v.cues || []).forEach((c, i) => { fits(`${st.id}/${sec.id} vignette[${i}] caption`, c.caption, 3, MAX); fits(`${st.id}/${sec.id} vignette[${i}] sub`, c.sub, 1, MAX); });
+      }
+    }
+    ok(over.length === 0, `every caption, sub, stinger and sign fits what draws it${over.length ? ' (over: ' + over.join(', ') + ')' : ''}`);
+  }
+
+  // (m3) CONTENT: every sound a beat names actually exists. `audio.play` on an unknown name is a silent no-op, so a
+  //      typo here is a cue that simply never plays and nothing anywhere reports it — 'thunder' for 'thunder_strike'
+  //      cost board 2 its storm-front crack and left no trace at all.
+  {
+    const bad = [];
+    const named = (where, n) => { if (n && !(n in SFX_DEFS)) bad.push(`${where}: ${n}`); };
+    for (const st of STAGES) {
+      for (const sec of st.sections) {
+        for (const ev of sec.events || []) (ev.actions || []).forEach((a, i) => named(`${st.id}/${ev.id}[${i}]`, a.sfx));
+        const v = sec.transition && sec.transition.vignette;
+        if (v) (v.cues || []).forEach((c, i) => named(`${st.id}/${sec.id} vignette[${i}]`, c.sfx));
+      }
+    }
+    ok(bad.length === 0, `every sound a beat names is registered${bad.length ? ' (unknown: ' + bad.join(', ') + ')' : ''}`);
+  }
+
+  // (m4) CONTENT: every body a beat stages resolves to a real def, and every animation it names exists on it. A bad
+  //      slug or anim is the same class of silent failure: the actor is simply never seen.
+  {
+    const bad = [];
+    for (const st of STAGES) {
+      for (const sec of st.sections) {
+        const specs = [];
+        for (const ev of sec.events || []) for (const a of ev.actions || []) if (a.actor) specs.push([`${st.id}/${ev.id}`, a.actor]);
+        const v = sec.transition && sec.transition.vignette;
+        if (v) for (const c of v.cues || []) if (c.actor) specs.push([`${st.id}/${sec.id} vignette`, c.actor]);
+        for (const [where, spec] of specs) {
+          const def = spec.hero ? getCharacter(spec.hero) : getEnemyDef(spec.def, spec.variant);
+          if (!def || (spec.def && def.type && spec.def !== def.type)) { bad.push(`${where}: ${spec.def || spec.hero}/${spec.variant || ''} does not resolve`); continue; }
+          for (const an of [spec.anim, 'idle', 'walk']) if (an && !(def.anims || {})[an]) bad.push(`${where}: ${def.id} has no '${an}' animation`);
+        }
+      }
+    }
+    ok(bad.length === 0, `every staged body resolves and can stand and walk${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
+  }
+
+  // (n) a beat script steps through the runner exactly like a combat one: the beat actions are just more actions
+  {
+    const h = recorder(), r = new EventRunner(h);
+    const ev = { id: 'b', beat: true, actions: [
+      { sign: { text: 'DOCKS' } }, { caption: 'HELLO' }, { actor: { id: 'x', def: 'sootborn' } },
+      { wait: 4 }, { walk: { id: 'x', vx: -1 } }, { say: { trigger: 'sectionStart' } },
+    ] };
+    r.arm(ev);
+    r.update();
+    ok(h.log.join(',') === 'sign:DOCKS,caption:HELLO||90,actor:x', `a beat's opening actions land on one frame, in script order (${h.log.join(',')})`);
+    let frames = 1;
+    while (r.update()) { frames++; if (frames > 50) break; }
+    ok(h.log.includes('walk:x:-1') && h.log.includes('say:sectionStart'), 'the later cues run');
+    ok(frames + 1 === eventLength(ev), `eventLength(${eventLength(ev)}) still counts a beat correctly (${frames + 1})`);
+  }
+
+  // (o) a host with no beat methods is not an error: the script keeps its timing and simply stages nothing. This is
+  //     what lets the same script step identically on a peer that has beats switched off.
+  {
+    const bare = recorder();
+    for (const k of ['actor', 'walk', 'sign', 'say']) delete bare[k];
+    const r = new EventRunner(bare);
+    const ev = { actions: [{ actor: { id: 'x' } }, { sign: { text: 'Y' } }, { wait: 3 }, { caption: 'Z' }] };
+    r.arm(ev);
+    let frames = 0;
+    while (r.update()) { frames++; if (frames > 50) break; }
+    ok(bare.log.join(',') === 'caption:Z||90', `only the actions the host implements run (${bare.log.join(',')})`);
+    ok(frames + 1 === eventLength(ev), 'the script still takes exactly as long');
+  }
+}
+
+const SUITES = { events: suiteEvents, entrances: suiteEntrances, platforms: suitePlatforms, audio: suiteAudio, bestiary: suiteBestiary, beats: suiteBeats };
 const pick = process.argv.slice(2).filter((a) => SUITES[a]);
 for (const name of (pick.length ? pick : Object.keys(SUITES))) SUITES[name]();
 console.log(`\n${failures ? failures + ' failure(s)' : 'all sim tests passed'}`);

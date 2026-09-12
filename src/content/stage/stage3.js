@@ -97,9 +97,47 @@ export const stage3 = {
           one(S, 'wrangler', 'right', 70, 150, ['scrip']),
         ] },
       ],
-      events: [],
+      /** Issue #25 stinger: the board's whole thesis, in the doc's own words (docs/STAGE3.md section 2). */
+      stinger: 'EVERYTHING HERE KEEPS THE THING THAT KILLS YOU STANDING UP',
+      /**
+       * THE FOOT OF THE LIME ROAD (issue #25). The party comes up past the wagon train waiting to go down, and the
+       * board's name is chalked on the company's own tally board. The cart that passes them is loaded, and what is
+       * on it is the war -- which is the board's argument made before a single Chandler has been met.
+       *
+       * See the `holdWaves` note on board 1.
+       */
+      events: [
+        { id: 'intro3', atX: 40, once: true, beat: true, holdWaves: true, actions: [
+          { sign: { text: 'THE LIME ROAD', sub: 'CHANDLERY OF CALDERWICK - WEIGHBRIDGE', x: 350, z: 6, style: 'tally', life: 900, color: '#cfe0a8' } },
+          // the wagon train: a drayman at the head of it and a tallyman walking the load, both going down as you come up
+          { actor: { id: 'dray', def: 'chandler', variant: 'drayman', x: 700, z: 20, facing: -1, vx: -0.5, frames: 420, anim: 'walk' } },
+          { actor: { id: 'tally', def: 'chandler', variant: 'tallyman', x: 762, z: 34, facing: -1, vx: -0.45, frames: 420, anim: 'walk' } },
+          // The stage banner (gameplay.js) holds the screen for its first 120 frames, and `showBanner` is one slot:
+          // a caption raised before then would delete the board's own title. The scenery goes up straight away; the
+          // words wait their turn.
+          { wait: 130 },
+          { caption: 'THE WAR IS OVER', sub: 'THE COMPANY IS STILL BILLING FOR IT', life: 170 },
+          { wait: 150 },
+          { sfx: 'crate_drop' },
+          { wait: 60 },
+          { caption: 'BUSY IN BOTH DIRECTIONS', sub: 'ONLY ONE OF THEM IS PAID FOR', life: 150 },
+          { wait: 170 },
+        ] },
+      ],
       /** The works' cargo lift takes the road party down into the yard — onto the cart lane. */
-      transition: { kind: 'lift', atX: 1740, gateX: 1800 },
+      transition: { kind: 'lift', atX: 1740, gateX: 1800,
+        /**
+         * Issue #25 vignette: the Chandlery's handcarts going past on the lift ride. What is being carried down is
+         * a chained Brassbound, tipped out of the cart at the bottom -- the company's supply of things that can be
+         * put back on their feet, arriving for work.
+         */
+        vignette: { cues: [
+          { at: 70, caption: 'THE HANDCARTS GO DOWN LOADED', sub: '', life: 110 },
+          { at: 110, actor: { id: 'cart', def: 'chandler', variant: 'drayman', dx: 640, z: 18, facing: -1, vx: -2.2, frames: 150, anim: 'walk' } },
+          { at: 150, actor: { id: 'stock', def: 'brassbound', variant: 'footman', dx: 560, z: 34, facing: -1, anim: 'idle' } },
+          { at: 156, sfx: 'brass_hit' },
+          { at: 160, camera: { shake: 4, frames: 14 } },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 2: The Cart Lane (one locked screen, timed waves)
     // THE SET PIECE: the company's traverser belt runs the front of the lane and carries everything on it — carts,
@@ -150,9 +188,17 @@ export const stage3 = {
           ...wick(1, { z0: 50, delay0: 90 }),
         ] },
       ],
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'THE LANE BELONGS TO THE COMPANY. SO DOES WHAT COMES DOWN IT',
       events: [],
       /** The belt stops at the yard gate; the counting-house's yard door is shown open and you go through it. */
-      transition: { kind: 'dock', banner: 'THE YARD GATE', look: 'door', pies: 1 },
+      transition: { kind: 'dock', banner: 'THE YARD GATE', look: 'door', pies: 1,
+        /** Issue #25 vignette: 40 frames at the gate, and what is standing in it is a rite already under way. */
+        vignette: { cues: [
+          { at: 8, caption: 'THE YARD GATE', sub: 'THE LAMPS ARE LIT - THE RITE STARTED WITHOUT YOU', life: 90 },
+          { at: 14, actor: { id: 'rite', def: 'chandler', variant: 'limeburner', dx: 470, z: 24, facing: -1, anim: 'idle' } },
+          { at: 20, sfx: 'burn' },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 3: The Tallow Works (the company's yard)
     // MACHINES AND PEOPLE: the yard is where the Chandlery works on the Brassbound it has put back on their feet.
@@ -220,9 +266,17 @@ export const stage3 = {
           ...scrip(1, { z0: 90, delay0: 120 }),
         ] },
       ],
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'THEY RENDER WHAT THE ROAD BRINGS IN. ALL OF IT',
       events: [],
       /** Past the kiln head the counting-house doors come up and you go in. */
-      transition: { kind: 'board', atX: 3540, gateX: 3600 },
+      transition: { kind: 'board', atX: 3540, gateX: 3600,
+        /** Issue #25 vignette: the counting-house doors, and a purser going in ahead of you with the day book. */
+        vignette: { cues: [
+          { at: 10, caption: 'THE LEDGER HOUSE TAKES DELIVERY', sub: '', life: 100 },
+          { at: 20, actor: { id: 'purser', def: 'chandler', variant: 'purser', dx: 420, z: 20, facing: 1, vx: 1.4, frames: 80, anim: 'walk' } },
+          { at: 34, sfx: 'crate_drop' },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 4: The Ledger House (interior)
     // MACHINES, AND THE PEOPLE WHO WOUND THEM: the Brassbound outnumber everyone else for the first time on the board,
@@ -291,6 +345,8 @@ export const stage3 = {
        * one moment: you cannot cancel every rite, so you pick. The lamps themselves are the two-second warning, and
        * the gallery retiming reverts with the event.
        */
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'EVERY NAME IN HERE IS AN ACCOUNT, NOT A PERSON',
       events: [
         { id: 'lampsgreen', onWaveClear: 2, once: true, actions: [
           { caption: 'THE LAMPS GO GREEN', sub: 'THE HOUSE IS COUNTING', life: 150 },

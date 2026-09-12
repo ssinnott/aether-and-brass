@@ -598,8 +598,76 @@ never be an enemy short because scenery was smashed.
 passes `atX` (the same `reach` wave triggers use) or when the section's Nth wave clears (`onWaveClear: n`, counted
 **per section**, not stage-wide). The actions and what each one blocks for are tabulated in the ACTION TABLE at the
 head of that module: `caption`, `wait` (the only action that spends time — `wait: N` is exactly N frames), `camera`,
-`sfx`, `music`, `hazardSet`, `zoneFlash`, `spawn` and `prop`. A run of instant actions all lands on one frame, so
-`{caption}, {sfx}, {zoneFlash}` reads as a single beat.
+`sfx`, `music`, `hazardSet`, `zoneFlash`, `spawn` and `prop`, plus the story-beat actions `actor`, `walk`, `sign` and
+`say` (issue #25, below). A run of instant actions all lands on one frame, so `{caption}, {sfx}, {zoneFlash}` reads as
+a single beat.
+
+### Story beats and companion dialogue (issue #25)
+
+The event runner carries a second family of actions, and they differ from the combat ones in a single property that
+decides everything else about them: **a beat is scenery**. `actor` puts a scripted body on stage, `walk` retargets
+one already there, `sign` letters the board's name on a thing in the world (a dockside hoarding, a ship's nameplate,
+the Chandlery's tally board, a stencil on a bale) and `say` raises a companion exchange. None of them spawns a fight,
+changes a hazard or is hashed by `net/checksum.js`. There is no `hold`: `wait` already is one.
+
+An event marked `beat: true` does not arm at all when beats are off — under `?bot=1` and `?nowaves`. That is a
+stronger gate than making the actions no-ops, and it has to be: a beat also carries `holdWaves`, which holds the wave
+director for as long as its script runs, so a bot that stepped a beat and staged nothing would still wait six seconds
+for its first wave and every `npm run winrate` number would move with it.
+
+`holdWaves` is what buys an intro beat its six to ten seconds. Every board triggers its first wave about two seconds'
+walk from the spawn point, and rather than re-cut four levels to make room, the wave director waits while the script
+runs. Nothing else waits: the player walks under their own control the whole time, and hazards, platforms and weather
+all keep running.
+
+It holds the SECTION as well as the wave, and it has to: with no waves to stop them a player who runs rather than
+walks covers about 1900px in the eight seconds of board 1's opening, and section 1 ends at 1800 — they would cross
+into Foundry Row having skipped every fight on the quay. The bound on that is `outrunAt()`: however fast the party
+moves, the beat stands down the moment the trigger position passes the section's last authored wave, and the section
+plays out normally from wherever they are. So the hold cannot deadlock on either axis — it is read only while
+`events.running`, a runner stops the frame its script runs out of actions, `events.cancel()` clears it on a section
+change, and the outrun valve ends it early for a party that has left everything behind.
+
+An `Actor` (`game/actors.js`) is a `Fighter` subclass with `kind: 'fx'`, `team: TEAM.NONE` and `think()` overridden,
+and those choices buy five properties at once: it is absent from `world.enemies` (so no wave lock waits on it and the
+autopilot never targets it), absent from `world.fighters`, un-hittable (`combat.js` `TARGET_KINDS` does not include
+`'fx'`), unhashed, and — the one that matters most — it **draws no rng**. That last is why it is not an `Enemy`: the
+`Enemy` constructor draws `rng.sign()`, and since the rng is one shared stream whose draw count is part of the
+checksum, a peer that staged a beat the other skipped would desync. Content hooks are stripped rather than trusted,
+so a beat can stage any def in the roster without auditing what its `onSpawn` does.
+
+Between-section **vignettes** ride a `transition`'s own timeline instead of the event runner, because
+`StageRunner.update()` returns above `events.update()` for the whole of a transition — a script armed there would not
+advance a frame until the party already had control back. A section's `transition` may carry
+`vignette: { cues: [{ at, ... }] }`, where `at` is counted from the first frame of the transition across all its
+phases, and a cue takes the same keys a beat action does. Actor positions there are written as `dx` (from the left
+edge of the view) rather than `x`, since a transition parks the camera wherever it began and the same lift is a
+different place on every board. One caveat for authors: a boss `descent` runs under `world.cutscene`, which
+early-returns the whole world update, so captions and camera work there but an actor will not walk.
+
+**Companion dialogue** (`game/dialogue.js`) is drawn as a plate over a fighter's head from `StageRunner.draw` — the
+one pass above every entity, particle and weather effect and still below all HUD. It never blocks input, never
+touches `busy`, `freeze` or `cutscene`, and never uses `hud.showBanner`, which is a single slot already spoken for by
+waves, boss plates and CONTINUE!. One plate per hero, a global cooldown, and a trigger that lands while something is
+already speaking is **dropped rather than queued** — a queue would spend the cooldown replaying a fight that finished
+ten seconds ago. Ranked triggers break a tie on one frame: `partnerDown` outranks `combo20`, and a boss speaking
+outranks both.
+
+Which line comes out is `(world.frame + slot * 7) % rows.length`. `world.frame` is hashed and identical on both
+peers, so two peers say the same thing with nothing new going over the wire, and no rng is drawn at all — which is
+what makes the peer-local `?bot=1` gate free. The seven triggers are `sectionStart`, `midbossIntro`, `bossIntro`,
+`partnerDown`, `partnerContinue`, `combo20` and `results`. Three of them are edges in player state rather than events
+anybody raises and are polled in one place (`StageRunner.pollDialogue`); note that `combo20` must be a **crossing**
+test, because an air hit adds 2 and a combo can go 19 → 21 without ever equalling 20.
+
+Lines live in `content/characters/lines.js` — `BANTER` keyed by pairing (`brunhild+sael`, in `CHARACTERS` order) then
+by trigger, `SOLO` per hero for single-player and for a pairing with nothing written, and `BOSS_LINES` merged onto the
+boss defs by `content/enemies/index.js` the way `CODEX` is. A boss's lines are read from `boss.baseDef.lines`, never
+`boss.def.lines`: `mergePhase` replaces every non-`ai` key of the def on a phase change. `phase[0]` is raised by
+`showPlate` rather than `nextPhase`, since phase 0 is entered by the constructor and never passes through
+`nextPhase` at all. Every line is capped at 42 characters — past that a plate is wider than the space a body has to
+stand in — and `tools/simtest.js` (suite `beats`) fails the build on a long line, a missing pairing or a board whose
+transition has no vignette.
 
 `hazardSet: { name, force?, period?, frames? }` addresses hazards by an optional author key (`name` on the hazard
 spec) because `Entity.id` differs between lockstep peers and is deliberately unhashed. It only ever touches
@@ -869,7 +937,13 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   correctness is ORDERING rather than rendering — event action sequencing, entrance frame budgets, platform
   defaults, and (issue #26) the bestiary's counting rules plus the completeness of its 39 codex entries: every
   registered variant and boss phase has a block, no block runs past `CODEX_MAX_CHARS`, no block keys a def that no
-  longer exists, and every entry's first appearance is derivable from the stage data. It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
+  longer exists, and every entry's first appearance is derivable from the stage data. Issue #25 adds the `beats`
+  suite: the dialogue system's own rules (one plate at a time, the cooldown, a higher-ranked trigger taking the
+  floor, a hero who is out never speaking, the same line on both peers, and that `game/dialogue.js` never imports
+  the rng) plus the completeness of the writing — every one of the six pairings written at all seven triggers, every
+  solo table likewise, all eight boss units carrying phase and defeat lines, no line over the 42 characters a plate
+  can draw, and every board opening on a beat with every section carrying a stinger and every transition a vignette.
+  It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
   after six minutes of playthroughs. `npm run simtest` runs it alone. The second:
   starts the server, launches headless Chromium
   via the globally installed Playwright (`NODE_PATH=/opt/node22/lib/node_modules` or
@@ -918,6 +992,13 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      vents open together and hands every override back afterwards, board 2's broadside forces its two guns one after
      the other rather than together, and an unknown id is inert rather than a crash. Action sequencing itself is in
      `tools/simtest.js`.
+  3i2. `beats` (`tools/scenarios/beats.js`, issue #25): the browser half of the story beats — board 1's intro beat
+     arms on the first frames of the run, letters the board's name on a sign in the world and stages its two dockers;
+     for the six to ten seconds it runs the party keeps control and walks under its own power with NO enemy on
+     screen at any point; the cast is struck when the script ends and the wave it was holding arrives immediately
+     after. The second half is the gate: under `?bot=1` the beat does not arm, nothing is staged, and the bot reaches
+     its first fight on the frame it always did — which is what keeps `npm run winrate` comparable across the change.
+     The dialogue rules and the completeness of the writing are in `tools/simtest.js`.
   3j. `cargo` (`tools/scenarios/cargo.js`, issue #34): against the real authored containers — a quay crate tips its
      cargo out on break and the unit climbs out at the crate into a punishable recovery; the foundry chute is quiet
      (no threat box), rattles (threat box live), lets one out at a time, stops its clock while it is stood on and

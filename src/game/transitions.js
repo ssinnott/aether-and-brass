@@ -49,7 +49,8 @@ export class Transition {
   /**
    * @param {import('./stage.js').StageRunner} runner
    * @param {'lift'|'board'|'dock'|'descent'} kind
-   * @param {{ gateX?: number, nextSection?: number, boss?: object, stairX?: number, banner?: string, look?: 'stairs'|'ladder'|'door'|'hoist'|'none', pies?: number, up?: boolean }} spec
+   * @param {{ gateX?: number, nextSection?: number, boss?: object, stairX?: number, banner?: string, look?: 'stairs'|'ladder'|'door'|'hoist'|'none', pies?: number, up?: boolean,
+   *           vignette?: { cues: Array<{ at: number, actor?: object, walk?: object, caption?: string, sub?: string, life?: number, sfx?: string, camera?: object, say?: string }> } }} spec
    *   dock: look (default 'stairs') + pies (default 2; 0 allowed); the runner shows `banner`. lift: up = the shaft scrolls the other way (the party rises).
    */
   constructor(runner, kind, spec = {}) {
@@ -87,10 +88,25 @@ export class Transition {
       audio.play('chime');
     }
   }
+  /**
+   * Cues of the section's `vignette` (issue #25) whose frame has come. `this.frame` counts the whole transition
+   * rather than the current phase, so an author writes one timeline across the gate, the ride and the dock — which
+   * is how the moment actually reads on screen.
+   *
+   * Note for authors on `descent`: the boss descent runs under `world.cutscene`, which early-returns the entire
+   * world update, so an ACTOR staged there will not walk. Captions and camera work fine; choreography does not.
+   */
+  cues() {
+    const v = this.spec.vignette;
+    if (!v || !v.cues) return;
+    for (const c of v.cues) if ((c.at | 0) === this.frame) this.runner.vignetteCue(c);
+  }
+
   /** Advance one frame; returns true when the transition finished. */
   update() {
     if (this.done) return true;
     this.frame++; this.t++;
+    this.cues();
     const ph = this.phase;
     if (ph === 'fadeOut') this.fade = this.k;
     else if (ph === 'fadeIn') this.fade = 1 - this.k;
