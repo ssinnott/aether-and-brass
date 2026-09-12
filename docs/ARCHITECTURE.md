@@ -537,19 +537,20 @@ top face the depth of the band reads as a second floor rather than as a volume.
 
 Keep a wall under **64px**, the enemy jump-over apex — `Enemy.tryJumpOver` leaves the ground at `JUMP_OVER_VY` 8, so
 `8² / (2 × GRAVITY)` — or a mob walled off from the party grinds against it until the wave stalls. The `obstacles`
-scenario measures every authored wall against that ceiling (section 15 3f). Because it is a standing body it
+scenario measures every authored wall against that ceiling (section 13 3f). Because it is a standing body it
 also sorts like one — a solid with `height > 0` takes `z = z0` instead of the `-5` every other zone parks at, which
 is the one depth that hides what is genuinely behind it and lets everything from its back edge forward (a fighter
 walking past its face, one mid-jump over it) draw over it. A gap keeps `z = -5`: it is a hole in the deck, and
 everything that walks on it draws on top. Nothing but the depth sort reads a Zone's `z`, and `fx` is not hashed by
 `net/checksum.js`, so this is render order and nothing else.
 
-**What the boards place.** Solids are gaps and gates, not furniture to hop: board 1's Funicular roof gap, board 3's
-Rite Yard gap and board 4's three tailings gaps (`height: 0`), plus the two breakable gates — the Gas-Halls powder
-barricade and the Chandlery's yard-mouth handcart. Three non-breakable walls were authored on boards 1 and 2 (a
-Foundry Row cart, two Mooring Spine booms) and have been removed: a lane-blocker you hop is a cost in art, in enemy
-pathing and in the player's read of what is breakable, for a beat that neither board missed. The type keeps its
-`height > 0` path for the gates, which earn it — they hold their wave open until the Prop inside them is down.
+**What the boards place.** Solids are gaps and gates, not furniture to hop: the Brass Funicular's roof gap (board 1
+`s3`), the Lime Road's slaking pit (board 3 `w1`) and board 4's three — two missing planks in the Lash-Up float
+(`g2`) and the Crop Loft's missing square of decking (`g4`) — all `height: 0`, plus the two breakable gates, the
+Gas-Halls powder barricade (board 2 `m2`) and the Tallow Works yard gate (board 3 `w3`). Three non-breakable walls
+were authored on Foundry Row and the Mooring Spine and have been removed: a lane blocker you hop is a cost in art,
+in enemy pathing and in the player's read of what is breakable, for a beat that neither board missed. The type keeps
+its `height > 0` path for the gates, which earn it — they hold their wave open until the Prop inside them is down.
 
 Hazard and zone types, their spec fields, timings, hits and `dangerBox` footprints are tabulated in the header of
 `game/hazards.js` (HAZARD TABLE / ZONE TABLE). Boards 2-4 declare `lightning`, `cannon`, `gasCell`, `limePit`,
