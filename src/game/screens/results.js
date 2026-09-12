@@ -5,6 +5,9 @@
 // Clearing a board records it in game/progress.js, which is what opens the next board on BOARD SELECT; when this run
 // opened one, a plate announces it under the totals and dismissing the plaque hands off to BOARD SELECT so the
 // unlock plays out on the newly opened board's own plaque instead of dropping straight back to the title.
+// An ONLINE run is recorded against the party's own campaign (the scope the match was played in, passed in by
+// game/screens/gameplay.js) and dismissing the plaque hands the party back to their lobby, where the board they
+// just opened is waiting under the host's cursor - the room outlives the match (docs/MULTIPLAYER.md).
 import { VIEW_W, VIEW_H, UI, MAX_PLAYERS, PLAYER_COLORS } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
@@ -91,7 +94,18 @@ export class ResultsScreen extends Screen {
     this.rank = this.defeat ? rankFor(0) : rankFor(this.total);
     // Which board this was, and - on a clear - the board that clear just opened (null when nothing new opened).
     this.stage = params.stage || getStage(this.game.options.stage);
-    this.unlocked = this.defeat || !this.stage ? null : progress.markCleared(this.stage.id, { score: this.total, rank: this.rank.letter });
+    /**
+     * The co-op group this run belonged to ('' for a solo run). A co-op clear belongs to the PARTY's
+     * campaign (docs/MULTIPLAYER.md), and the scope is passed in rather than read from `progress`
+     * because the match screen has already left the stack by the time this plaque is built - so the
+     * scope active here is whatever the session left behind, which on a session that ended mid-match
+     * is the local player's own solo save.
+     */
+    this.scope = params.scope || '';
+    /** True when this run was played online: the party has a room to go back to (see backToLobby). */
+    this.online = !!params.online;
+    this.unlocked = this.defeat || !this.stage ? null
+      : progress.inScope(this.scope, () => progress.markCleared(this.stage.id, { score: this.total, rank: this.rank.letter }));
     this.entryLines = entryLines(this.newEntries, !!this.unlocked);   // needs `unlocked`: it decides the room left
     this.rowsShown = 0; this.rowTimer = 0; this.stamp = -1; this.leaving = false;
     // victory poses: the players' rigs playing their win anims (defeat: lying)
@@ -157,10 +171,28 @@ export class ResultsScreen extends Screen {
     else if (this.stamp > AUTO_RETURN) go = true;
     if (go && this.frame > 30) {
       this.leaving = true; audio.play('menu_confirm');
-      // a clear that opened a board goes to BOARD SELECT to play the reveal; everything else returns to the title
-      const reveal = this.unlocked && this.game.factories.boardselect ? this.unlocked.id : '';
+      // A co-op run goes back to the ROOM it was played in: the same CHOOSE YOUR FIGHTER row and
+      // board plaques the party started from, with the board this clear just opened under the host's
+      // cursor. Dropping the party onto the title instead would break the room up on a win.
+      if (this.backToLobby()) {
+        this.game.fadeTo(() => this.game.reset('lobby', { resume: true, reveal: this.unlocked ? this.unlocked.id : '' }), 0.06);
+        return;
+      }
+      // A solo clear that opened a board goes to BOARD SELECT to play the reveal; everything else
+      // returns to the title. An online run never does: what it opened belongs to the party's
+      // campaign, and BOARD SELECT reads this player's own - so there would be nothing to reveal.
+      const reveal = !this.online && this.unlocked && this.game.factories.boardselect ? this.unlocked.id : '';
       this.game.fadeTo(() => (reveal ? this.game.reset('boardselect', { reveal }) : this.game.reset('title')), 0.06);
     }
+  }
+  /**
+   * True when this plaque hands back to the lobby: a co-op run whose room is still standing between
+   * matches (net/session.js matchOver). A session that ended mid-match - a disconnect, a desync -
+   * has no room left to return to, so that run leaves the way a solo one does.
+   */
+  backToLobby() {
+    const net = this.game.net;
+    return !!(this.online && net && net.state === 'lobby' && this.game.factories.lobby);
   }
   /** "NEW BOARD OPEN" plate: what this clear unlocked, and where to find it. */
   drawUnlock(ctx, f) {
@@ -245,6 +277,7 @@ export class ResultsScreen extends Screen {
         drawText(ctx, this.entryLines[i], LABEL_X, y0 + i * 11, { size: 1, color: i ? UI.paper : ((f % 50) < 34 ? UI.brassLight : UI.brass) });
       }
     }
-    if ((f % 60) < 40 && this.stamp > 10) drawText(ctx, 'PRESS START', VIEW_W / 2, VIEW_H - 48, { size: 1, color: UI.paper, align: 'center' });
+    // In co-op the party is still in their room, so say where the plaque is about to put them.
+    if ((f % 60) < 40 && this.stamp > 10) drawText(ctx, this.backToLobby() ? 'PRESS START - BACK TO THE ROOM' : 'PRESS START', VIEW_W / 2, VIEW_H - 48, { size: 1, color: UI.paper, align: 'center' });
   }
 }

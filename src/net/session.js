@@ -1,4 +1,6 @@
-// Online co-op session: signalling -> peers -> lobby -> synchronised match (docs/MULTIPLAYER.md).
+// Online co-op session: signalling -> peers -> lobby -> synchronised match -> lobby again
+// (docs/MULTIPLAYER.md). A finished match hands the party back to the lobby (net.matchOver) rather than
+// ending the room: the group keeps its seats, its heroes and its shared progress between boards.
 //
 // Owns the netplay state machine and the per-frame lockstep pump for a party of TWO TO FOUR. The
 // rules that keep every peer identical live here, and every one of them exists because breaking it
@@ -118,6 +120,12 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     remoteSlots() { return net.lobby.members.filter((m) => m && !m.local).map((m) => m.slot); },
     /** The roster entry for a slot, or null. */
     memberAt(slot) { return net.lobby.members[slot] || null; },
+    /**
+     * Re-point the state callback. A session outlives the lobby screen that opened it - the party
+     * comes back to a NEW LobbyScreen between matches (see matchOver) - and the screen that has
+     * left the stack must not be the one still being told that the room has ended.
+     */
+    onStateChange(fn) { onState = typeof fn === 'function' ? fn : null; },
   };
 
   const setState = (s) => { if (net.state !== s) { net.state = s; if (onState) onState(s); } };
@@ -546,6 +554,75 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     watchdog = setInterval(tickWatchdog, 250);
     setState('playing');
     game.reset('gameplay', { chars: game.options.chars.slice(), net });
+  }
+
+  /**
+   * The match is over but the room is NOT: come off lockstep, keep every link, every hero pick and
+   * the group's progress scope, and put the party back in the lobby they started from.
+   *
+   * This is the difference between "the run finished" and "somebody left" (net.end): a co-op clear
+   * that dropped everyone onto the title screen would break up the room and hand the group's
+   * progress back to each player's solo save before the results plaque had recorded the clear.
+   *
+   * Two rules make it safe for the party to arrive back here at their own pace - each peer dismisses
+   * its own results plaque:
+   *
+   *  * Every ready flag is cleared BEFORE the state goes back to 'lobby', so the next match cannot
+   *    start on a stale ready and drag a peer that is still reading its plaque into a match its
+   *    START packet would arrive too early for (MSG.START is only acted on in the lobby state).
+   *  * Every seat's virtual input is handed back to the real devices. The lockstep buffers were
+   *    injected into all of them, so without this the menus read a mask frozen on the match's last
+   *    frame instead of the keyboard in front of the player.
+   *
+   * @returns {boolean} true when a live match was handed back to the lobby
+   */
+  net.matchOver = function matchOver() {
+    if (net.state !== 'playing') return false;
+    if (watchdog) { clearInterval(watchdog); watchdog = 0; }
+    net.ls = null;
+    stepped = false;
+    stallStart = 0; waitShownAt = 0;
+    net.waiting = false; net.missing = [];
+    net.lastDrop = null;
+    dropped.clear(); lostLinks.clear();
+    allReadyAt = 0;
+    game.options.netplay = false;      // nothing is under lockstep control again until the next match
+    for (let s = 0; s < Math.max(net.players, input.playerCount || net.players); s++) {
+      input.clearVirtual(s);
+      // Slots 1+ were joined by beginMatch for the seats the party held. Releasing them again is
+      // what gives the local player their solo alias keys back (engine/input.js soloActive).
+      if (s > 0 && typeof input.setJoined === 'function') input.setJoined(s, false);
+    }
+    if (typeof input.clearBuffers === 'function') input.clearBuffers();
+    if (typeof input.resetClaims === 'function') { input.resetClaims(); input.setPadClaiming(false); }
+    // A seat the bot finished the board for is a player who has gone: empty it, so the lobby the
+    // rest come back to is the party that is actually still in the room (and, with it, the progress
+    // scope that party shares).
+    dropGoneMembers();
+    for (const m of members()) if (m) m.ready = false;
+    net.lobby.myReady = false;
+    setState('lobby');
+    // The rendezvous has something to do again: a seat may have opened up, and more can still join.
+    announce();
+    if (!announcer) announcer = setInterval(() => { announce(); sweepLinks(); maybeStart(); }, ANNOUNCE_MS);
+    if (isHost) sendRoster(); else sendRequest();
+    scheduleRtt();                     // a new match needs a fresh delay for whoever is still here
+    return true;
+  };
+
+  /**
+   * Forget anyone the match retired (the bot played the rest of the board for them). Slots stay
+   * dense for the same reason they do in seat(): the roster is addressed by index.
+   */
+  function dropGoneMembers() {
+    if (!members().some((m) => m && m.gone)) return;
+    const packed = members().filter((m) => m && !m.gone);
+    packed.forEach((m, i) => { m.slot = i; });
+    net.lobby.members = packed;
+    net.players = Math.max(1, packed.length);
+    const me = localMember();
+    if (me) net.localSlot = me.slot;
+    syncScope();
   }
 
   // ---- losing a player -------------------------------------------------------------------------

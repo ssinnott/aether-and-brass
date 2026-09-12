@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles stall platforms events cargo hazards bestiary playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad audio gallery botstyles options sourcelink training weapons)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles stall platforms events cargo hazards bestiary playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad netrematch audio gallery botstyles options sourcelink training weapons)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 // This file is already close to its ~700-line budget: further scenarios belong in their own sibling
@@ -16,6 +16,7 @@ import { weaponScenarios } from './scenarios/weapons.js';
 import { thrown } from './scenarios/thrown.js';
 import { coop4Scenarios } from './scenarios/coop4.js';
 import { netquadScenarios } from './scenarios/netquad.js';
+import { netrematchScenarios } from './scenarios/netrematch.js';
 import { training as trainingScenario } from './scenarios/training.js';
 import { entrances } from './scenarios/entrances.js';
 import { obstacles } from './scenarios/obstacles.js';
@@ -751,6 +752,7 @@ const scenarios = {
 Object.assign(scenarios, weaponScenarios({ withPage, assert }));
 Object.assign(scenarios, coop4Scenarios({ withPage, withPair, assert, readyUp }));
 Object.assign(scenarios, netquadScenarios({ withPeers, assert, readyUp }));
+Object.assign(scenarios, netrematchScenarios({ withPair, assert, readyUp }));
 
 async function main() {
   const wanted = process.argv.slice(2).filter((a) => !a.startsWith('-'));
