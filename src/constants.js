@@ -33,6 +33,9 @@ export const MAX_PLAYERS = 4;
  *  ONLINE room, where the lobby hands out seats and nothing has to guess whose press a button was.
  *  Slots 2/3 therefore only ever hold a remote peer (or a test virtual) -- see engine/input.js. */
 export const LOCAL_PLAYERS = 2;
+/** Frames of total silence from a seat before the couch hands it to the bot (game/screens/gameplay.js).
+ *  15s: long enough that watching a boss walk on is never mistaken for walking away. */
+export const ABANDONED_SEAT_FRAMES = 900;
 /** The lockstep session (docs/MULTIPLAYER.md): an online room holds this many players at most. */
 export const NET_PLAYERS = 4;
 /** ...and at least this many. Below it there is nobody to be in lockstep with. */

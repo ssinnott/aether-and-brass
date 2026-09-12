@@ -48,7 +48,7 @@ function makeActionMap(v = false) {
 }
 function makePlayer() {
   return { cur: makeActionMap(), prev: makeActionMap(), pressedNow: makeActionMap(), bufAge: makeActionMap(NEVER), virtual: null, device: 'none',
-    joined: false, joinNow: false, run: false, gpAny: false, gpAnyPrev: false, pad: -1, kbSeen: false };
+    joined: false, joinNow: false, run: false, gpAny: false, gpAnyPrev: false, pad: -1, kbSeen: false, idleFrames: 0 };
 }
 const players = Array.from({ length: MAX_PLAYERS }, makePlayer);
 players[0].joined = true;
@@ -264,6 +264,12 @@ export const input = {
       // normally. screens/title.js guards the same hazard for a slot that JOINS this step with its
       // own `joinedNow` mask; a re-claim of a slot that was already joined never reached that mask.
       if (claimed.has(p)) for (const a of ACTIONS) { pl.pressedNow[a] = false; pl.bufAge[a] = NEVER; }
+      // Frames of total silence from this seat. HELD counts, not just edges: somebody walking right
+      // for ten seconds presses nothing new the whole time, and `bufAge` (per action, edge-only)
+      // would call them idle. Reset by any held action or the pad's run trigger.
+      let live = pl.run;
+      for (const a of ACTIONS) if (pl.cur[a]) { live = true; break; }
+      pl.idleFrames = live ? 0 : pl.idleFrames + 1;
       if (pl.virtual) { for (const a of ACTIONS) if (pl.pressedNow[a]) { pl.joinNow = true; break; } }
     }
     keysPressedPending.clear();
@@ -397,6 +403,8 @@ export const input = {
   clearVirtual(player) { players[player].virtual = null; },
   /** Last device that produced input for the player ('keyboard' | 'gamepad' | 'virtual' | 'none'). */
   device(player) { return players[player].device; },
+  /** Frames since this seat last held or pressed anything; 0 while it is being played. */
+  idleFrames(player) { return players[player].idleFrames; },
   /** Number of player slots the engine holds (four: an online room seats four). */
   get playerCount() { return players.length; },
   /** How many of them couch play may fill. Slots at or above this only ever hold a remote peer. */

@@ -859,7 +859,7 @@ window.__game = {
   game, world (getter), input, rng,
   step(n),                           // run n fixed updates + 1 render (test mode)
   screen() -> string,                // current screen id
-  summary() -> { screen, sectionIndex, cameraX, locked, players: [{hp, lives, x, state, meter, score, weapon, weaponHits, index, id}], enemies: [{name, variant, hp, state, x, z}], boss: {...}|null, wavesCleared, errors: [] },
+  summary() -> { screen, sectionIndex, cameraX, locked, players: [{hp, lives, x, state, meter, score, weapon, weaponHits, index, id, bot}], enemies: [{name, variant, hp, state, x, z}], boss: {...}|null, wavesCleared, errors: [] },   // `bot` covers ?bot=1 AND a seat the couch handed over after ABANDONED_SEAT_FRAMES of silence
   setInput(p, actions) / clearInput(p),
   userOptions,                       // the game/options.js module object (load/apply/get/set/cycle/adjust/difficulty/saveBindings/reset/state)
   optionsState() -> object,          // userOptions.state(): { storage, saved, ...current values } for test assertions

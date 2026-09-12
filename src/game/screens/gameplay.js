@@ -1,6 +1,6 @@
 // Gameplay screen: World + players + HUD + StageRunner (ARCHITECTURE.md sections 7, 9, 12, 15).
 // Exposes spawnEnemy / spawnEnemyAt / killAllEnemies / fillMeter / facePlayerToNearestEnemy / summary for window.__game.
-import { VIEW_W, VIEW_H, TEAM, ST, Z_MAX, METER, UI, MAX_PLAYERS, LOCAL_PLAYERS, NET_PLAYERS } from '../../constants.js';
+import { VIEW_W, VIEW_H, TEAM, ST, Z_MAX, METER, UI, MAX_PLAYERS, LOCAL_PLAYERS, NET_PLAYERS, ABANDONED_SEAT_FRAMES } from '../../constants.js';
 import { Screen } from '../game.js';
 import { World } from '../world.js';
 import { Player } from '../player.js';
@@ -152,6 +152,31 @@ export class GameplayScreen extends Screen {
         this.hud.showBanner(`P${s + 1} JOINS!`, '', 60);
       }
     }
+    // A seat nobody is driving must not be able to hold the run. Netplay has had this since the drop
+    // protocol (net/session.js hands a lost peer's slot to the bot and the survivors play on); the
+    // couch had no equivalent, and the gap ran deep: GAME OVER needs EVERY player `out` (below), so
+    // one abandoned-but-alive hero suppressed the continue countdown, `continueRun()` and the results
+    // plaque together -- and once their partner was out, that hero was the only living player, so the
+    // camera settled on them, the section never advanced, no wave ever spawned and nothing was left
+    // that could kill them. Stable forever, with QUIT TO TITLE the only way out.
+    //
+    // Only with company (one player alone blocks nobody, and the training room is a party of one, where
+    // standing still reading the frame-data readout is the whole point) and only offline: online, seats
+    // are the session's to retire, and flipping `bot` from a local timer would diverge the lockstep.
+    // A single press takes the seat straight back.
+    if (!online && this.players.filter(Boolean).length > 1) {
+      for (const p of this.players) {
+        if (!p || p.out) continue;
+        const idle = inp.idleFrames(p.index);
+        if (!p.bot && idle >= ABANDONED_SEAT_FRAMES) {
+          p.bot = true; p.abandoned = true;
+          this.hud.showBanner(`PLAYER ${p.index + 1} AWAY`, 'THE BOT TAKES OVER', 90);
+        } else if (p.abandoned && idle === 0) {
+          p.bot = false; p.abandoned = false;
+          this.hud.showBanner(`PLAYER ${p.index + 1} IS BACK`, '', 60);
+        }
+      }
+    }
     // pause: Escape (global) or a joined player's start button
     // Escape is folded into the `start` bit by the net session, so pause is a simulated event.
     let pause = !online && inp.globalPressed('pause');
@@ -262,7 +287,7 @@ export class GameplayScreen extends Screen {
     return {
       ...rs,
       sectionIndex: w.sectionIndex, cameraX: w.camera.x, locked: w.camera.locked, wavesCleared: w.wavesCleared,
-      players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, shield: p.shield, shieldMax: p.shieldMax, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out, weapon: p.weaponId, weaponHits: p.weaponHits, index: p.index, id: p.def.id })),
+      players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, shield: p.shield, shieldMax: p.shieldMax, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out, weapon: p.weaponId, weaponHits: p.weaponHits, index: p.index, id: p.def.id, bot: !!p.bot })),
       enemies: w.enemies.filter((e) => e.kind !== 'boss').map((e) => ({ name: e.name, type: e.def.type || '', variant: e.def.variant || '', mods: e.mods || [], hp: e.hp, state: e.state, x: e.x, z: e.z, ai: e.aiState })),
       boss: b ? { kind: b.bossKind || 'boss', name: b.name, hp: b.hpTotal != null ? b.hpTotal : b.hp, maxHp: b.hpTotalMax || b.maxHp, phase: b.phase || 1, state: b.state, phaseName: b.phaseName } : null,
       enemiesDefeated: this.enemiesDefeated, time: this.time, continues: this.continues,
