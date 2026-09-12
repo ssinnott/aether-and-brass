@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "node tools/server.js",
     "build": "node tools/build.js",
-    "test": "node tools/playtest.js",
+    "test": "node tools/simtest.js && node tools/playtest.js",
+    "simtest": "node tools/simtest.js",
     "winrate": "node tools/winrate.js",
     "art-check": "node tools/art-check.js",
     "lint": "node --check src/main.js && npm run typecheck",

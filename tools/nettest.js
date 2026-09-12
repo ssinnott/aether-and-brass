@@ -1,13 +1,13 @@
 // Pure-Node tests for the online co-op layer (docs/MULTIPLAYER.md). No browser, no network.
 //
 //   node tools/nettest.js              run every suite
-//   node tools/nettest.js trig proto   run selected suites (trig mqtt proto lockstep checksum signal picks progress)
+//   node tools/nettest.js trig proto   run selected suites (trig mqtt proto lockstep checksum signal picks buffers progress)
 //
 // These cover the parts that must be provably correct before anything is on the wire: deterministic
 // trig, the MQTT signalling codec, the input/message wire format, and the lockstep frame scheduler
 // under packet loss. Exit code 1 on any failure.
 import { dsin, dcos, dhypot } from '../src/engine/trig.js';
-import { ACTIONS } from '../src/engine/input.js';
+import { ACTIONS, input } from '../src/engine/input.js';
 import * as M from '../src/net/mqtt-codec.js';
 import * as P from '../src/net/protocol.js';
 import * as S from '../src/net/signal.js';
@@ -100,19 +100,36 @@ const suites = {
     ok(bad === 0, 'all 4096 reachable masks survive unpack -> pack unchanged');
 
     const masks = Array.from({ length: P.REDUNDANCY }, (_, i) => (i * 37 + 5) & 0xfff);
-    const d = P.decodeMessage(P.encodeInput(4294967290, masks));
+    const d = P.decodeMessage(P.encodeInput(3, 4294967290, masks));
     ok(d.baseFrame === 4294967290 && JSON.stringify(d.masks) === JSON.stringify(masks), 'INPUT round trips near the uint32 ceiling');
-    ok(P.encodeInput(0, masks).length === 22, 'INPUT with 8 frames of redundancy is 22 bytes (~1.3 KB/s at 60Hz)');
+    ok(d.slot === 3, 'INPUT names the slot it came from, so a relayed packet is still attributable');
+    ok(P.encodeInput(0, 0, masks).length === 23, 'INPUT with 8 frames of redundancy is 23 bytes (~1.4 KB/s at 60Hz, per peer)');
 
-    const c = P.decodeMessage(P.encodeChecksum(1234, 0xdeadbeef));
-    ok(c.frame === 1234 && c.sum === 0xdeadbeef, 'CHECKSUM keeps the high bit');
-    const s = P.decodeMessage(P.encodeStart({ seed: 0xfeedface, stage: 2, difficulty: 1, chars: [3, 0], delay: 4 }));
-    ok(s.seed === 0xfeedface && s.chars[1] === 0 && s.delay === 4, 'START round trips');
+    const c = P.decodeMessage(P.encodeChecksum(2, 1234, 0xdeadbeef));
+    ok(c.slot === 2 && c.frame === 1234 && c.sum === 0xdeadbeef, 'CHECKSUM keeps the high bit and names its sender');
+    for (const chars of [[3, 0], [3, 0, 1], [3, 0, 1, 2]]) {
+      const s2 = P.decodeMessage(P.encodeStart({ seed: 0xfeedface, stage: 2, difficulty: 1, chars, delay: 4 }));
+      ok(s2.seed === 0xfeedface && s2.delay === 4 && JSON.stringify(s2.chars) === JSON.stringify(chars),
+        `START round trips a party of ${chars.length}`);
+    }
+    const dr = P.decodeMessage(P.encodeDrop(2, 4000000000));
+    ok(dr.slot === 2 && dr.frame === 4000000000, 'DROP round trips a slot and the frame it leaves on');
+    const pg = P.decodeMessage(P.encodePing(2, 77, P.MSG.PONG));
+    ok(pg.type === P.MSG.PONG && pg.slot === 2 && pg.id === 77, 'PONG carries the answering slot, so a relayed ping is answered to the right player');
+
+    // RELAY wraps a whole packet for the host to hand on; the far end must decode the inner one
+    // exactly as if it had arrived down a direct channel.
+    const inner = P.encodeInput(1, 900, masks), rl = P.decodeMessage(P.encodeRelay(2, inner));
+    ok(rl.to === 2 && rl.payload.length === inner.length, 'RELAY round trips its destination and payload');
+    const unwrapped = P.decodeMessage(rl.payload);
+    ok(unwrapped.slot === 1 && unwrapped.baseFrame === 900, 'the relayed payload decodes to the original INPUT');
+    ok(P.encodeRelay(2, inner).length === inner.length + 2, 'relaying costs two bytes');
     ok(P.decodeMessage(P.encodeJson(P.MSG.LOBBY, { ready: true })).ready === true, 'JSON messages round trip');
 
     // Packets arrive corrupt and truncated over an unreliable channel; decoding must never throw.
     let threw = false;
-    const samples = [P.encodeInput(1, masks), P.encodeChecksum(1, 2), P.encodeStart({ seed: 1, stage: 1, difficulty: 0, chars: [0, 0], delay: 3 })];
+    const samples = [P.encodeInput(1, 1, masks), P.encodeChecksum(1, 1, 2), P.encodeDrop(1, 2), P.encodeRelay(1, inner),
+      P.encodePing(1, 2), P.encodeStart({ seed: 1, stage: 1, difficulty: 0, chars: [0, 0, 0, 0], delay: 3 })];
     for (const mk of samples) for (let n = 0; n <= mk.length; n++) { try { P.decodeMessage(mk.subarray(0, n)); } catch { threw = true; } }
     ok(!threw, 'every truncation of every packet decodes to null instead of throwing');
     ok(P.decodeMessage(new Uint8Array([99])) === null, 'an unknown message type decodes to null');
@@ -164,32 +181,98 @@ const suites = {
     ok(codes.size === 2000, '2000 room codes with no collision');
     ok([...codes].every((c) => /^[23456789BCDFGHJKMNPQRSTVWXYZ]{6}$/.test(c)), 'room codes avoid vowels and ambiguous glyphs');
     ok(typeof S.mqttSignal === 'function' && typeof S.broadcastSignal === 'function', 'the two signalling strategies are the room-code rendezvous and the test channel');
+
+    // One room rendezvous carries up to six pairings, so it has to be split back up into the
+    // one-pairing channel net/peer.js expects.
+    const sent = [];
+    let feed = null;
+    const mux = S.createSignalMux({ send: (o) => sent.push(o), onMessage: (fn) => { feed = fn; }, close() {} }, 'me');
+    const seenB = [], seenC = [], anns = [];
+    mux.onAnnounce((m) => anns.push(m));
+    const b = mux.channel('B'); b.onMessage((m) => seenB.push(m));
+    const c = mux.channel('C'); c.onMessage((m) => seenC.push(m));
+    b.send({ hello: true });
+    ok(sent.length === 1 && sent[0].to === 'B' && sent[0].hello === true, 'a pairing channel addresses what it sends');
+    feed({ from: 'B', to: 'me', sdp: { type: 'offer' } });
+    feed({ from: 'C', to: 'me', cand: { c: 1 } });
+    ok(seenB.length === 1 && seenB[0].sdp && seenC.length === 1 && seenC[0].cand, "each pairing hears only its own peer's signalling");
+    feed({ from: 'D', ann: 1, host: 1 });
+    ok(anns.length === 1 && anns[0].from === 'D' && seenB.length === 1, 'an unaddressed announcement goes to the room, not to a pairing');
+    feed({ from: 'E', to: 'me', sdp: { type: 'offer' } });
+    ok(anns.length === 1 && seenB.length === 1 && seenC.length === 1, 'signalling addressed to us from a peer we have no channel for is dropped');
+    // Every peer in the room sees every pairing's signalling: another pair's offer must never be
+    // handed to our own connection with that peer, or it answers a negotiation that was not ours.
+    feed({ from: 'B', to: 'somebody-else', sdp: { type: 'offer' } });
+    ok(seenB.length === 1, "signalling addressed to another peer is not ours to answer");
+    ok(mux.has('B') && !mux.has('E'), 'the mux knows which peers it already has a channel for');
+    b.close();
+    feed({ from: 'B', to: 'me', cand: { c: 2 } });
+    ok(seenB.length === 1, 'closing one pairing leaves the rendezvous up for the others');
+    feed({ from: 'C', to: 'me', cand: { c: 3 } });
+    ok(seenC.length === 2, '...and the others keep working');
   },
 
   // ---- net/session.js: one hero each. Online there is no "I'm the darker one", so the lobby
-  // refuses a pick the peer is holding and the guest yields when two picks cross in flight. ----
+  // refuses a pick somebody else is holding, and the host arbitrates whatever the room asks for. ----
   picks() {
     const game = { characters: [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }], options: {} };
     const stubInput = { setJoined() {}, setVirtual() {}, clearVirtual() {}, pollRaw: () => ({}) };
     const make = (isHost) => createNetSession({ game, input: stubInput, isHost, room: 'TESTRM' });
+    /** Seat a party by hand: connect() needs a browser, and these rules are pure roster logic. */
+    const seatParty = (net, chars, mine = 0) => {
+      net.lobby.members = chars.map((c, i) => ({ pid: `p${i}`, slot: i, char: c, ready: false, id: `id${i}`, local: i === mine, seq: 0, rtt: 0 }));
+      net.localSlot = mine;
+      net.players = chars.length;
+      net.lobby.myChar = chars[mine];
+      return net;
+    };
 
-    const host = make(true), guest = make(false);
-    ok(host.lobby.myChar === 0 && guest.lobby.myChar === 1, 'the two peers open on different heroes');
-
-    host.lobby.theirChar = 2;
-    ok(host.charTaken(2) && !host.charTaken(1), "the peer's hero is the only one marked taken");
+    const host = seatParty(make(true), [0, 2]);
+    ok(host.localSlot === 0 && host.players === 2, 'the host holds seat 0');
+    ok(host.charTaken(2) && !host.charTaken(1), "the other player's hero is the only one marked taken");
     ok(host.setChar(3) && host.lobby.myChar === 3, 'a free hero can be chosen');
-    ok(host.setChar(2) === false && host.lobby.myChar === 3, "the peer's hero is refused, and the pick does not move");
+    ok(host.setChar(2) === false && host.lobby.myChar === 3, "a hero somebody else holds is refused, and the pick does not move");
     host.lobby.myChar = 1;
-    ok(host.nextChar(1) === 3, 'moving right skips over the card the peer is holding');
+    ok(host.nextChar(1) === 3, 'moving right skips over the card the other player is holding');
     ok(host.nextChar(-1) === 0, 'and moving left skips it too');
     host.lobby.myChar = 3;
     ok(host.nextChar(1) === 0, 'the row wraps');
 
+    // Four players, three cards spoken for: the cursor has exactly one place left to go.
+    const four = seatParty(make(false), [0, 1, 2, 3], 2);
+    ok(four.localSlot === 2 && four.players === 4, 'a guest takes the seat the host gave it');
+    ok([0, 1, 3].every((i) => four.charTaken(i)) && !four.charTaken(2), 'in a full room every other hero is taken');
+    ok(four.nextChar(1) === 2 && four.nextChar(-1) === 2, 'with one card left the cursor stays on it rather than landing on somebody else');
+    ok(four.setChar(1) === false, 'and a taken hero is still refused in a four-player room');
+    const three = seatParty(make(false), [0, 1, 2], 1);
+    ok(three.nextChar(1) === 3, 'a party of three still leaves the fourth card free to move onto');
+
     // One character registered: the rule cannot be honoured, and must not deadlock the lobby.
-    const solo = createNetSession({ game: { characters: [{ id: 'a' }], options: {} }, input: stubInput, isHost: true });
-    solo.lobby.theirChar = 0;
-    ok(!solo.charTaken(0) && solo.setChar(0), 'with a single hero registered both players may share it');
+    const solo = seatParty(createNetSession({ game: { characters: [{ id: 'a' }], options: {} }, input: stubInput, isHost: true }), [0, 0]);
+    ok(!solo.charTaken(0) && solo.setChar(0), 'with a single hero registered every player may share it');
+  },
+
+  // ---- engine/input.js: the match boundary must not let a menu press through as gameplay ----
+  buffers() {
+    // The lobby's READY press lands in slot 0's buffer on EVERY machine, because the lobby reads
+    // the local player through binding set 0 whatever seat they hold. Slot 0 is somebody else's
+    // character on everyone but the host, so a press that survives into frame 0 is a desync that
+    // no input mask ever asked for (net/session.js beginMatch).
+    input.setVirtual(0, { attack: true }); input.update();
+    input.setVirtual(0, { attack: false }); input.update();
+    ok(input.buffered(0, 'attack'), 'a press is still buffered a frame later, which is the whole point of the buffer');
+    ok(!input.pressed(0, 'attack'), '...without still reading as a fresh edge');
+    input.clearBuffers();
+    ok(!input.buffered(0, 'attack'), 'clearBuffers() forgets it, so the fight does not open on somebody else swinging');
+
+    input.setVirtual(1, { jump: true }); input.update();
+    input.setVirtual(2, { jump: true }); input.update();
+    ok(input.buffered(1, 'jump') && input.buffered(2, 'jump'), 'two seats each hold their own buffered press');
+    input.clearBuffers(2);
+    ok(input.buffered(1, 'jump') && !input.buffered(2, 'jump'), 'clearing one seat leaves the others alone');
+    input.clearBuffers();
+    ok(ACTIONS.every((a) => [0, 1, 2, 3].every((p) => !input.buffered(p, a))), 'and clearing everything leaves no action buffered on any seat');
+    for (let p = 0; p < 4; p++) input.clearVirtual(p);
   },
 
   // ---- game/progress.js: co-op progress belongs to the pairing, not to either player's solo save ----
@@ -203,6 +286,10 @@ const suites = {
       ok(p.scope === SOLO_SCOPE && !p.isGroup, 'reads and writes default to the solo scope');
       ok(p.groupScope(A, B) === p.groupScope(B, A), 'the group key is the same whoever hosts');
       ok(p.groupScope(A, B) !== p.groupScope(A, C), 'a different partner is a different group');
+      const D = 'dddd0000111122223';
+      ok(p.groupScope([A, B, C, D]) === p.groupScope([D, C, B, A]), 'a party of four keys the same whatever order they arrived in');
+      ok(p.groupScope([A, B, C]) !== p.groupScope([A, B, C, D]), 'a fourth player makes it a different group');
+      ok(p.groupScope([A, B]) === p.groupScope(A, B), 'and two of them still key exactly as the pair always did');
       ok(/^g:[0-9a-f]{8}$/.test(p.groupScope(A, B)), 'the group key is short and readable in a save file');
       const id = p.playerId();
       ok(/^[0-9a-f]{16}$/.test(id) && p.playerId() === id, 'the player id is stable within a page load');
@@ -273,82 +360,147 @@ const suites = {
     }
   },
 
-  // ---- net/lockstep.js: two peers over a lossy, reordering link must never diverge ----
+  // ---- net/lockstep.js: a party of two to four over a lossy, reordering link must never diverge ----
   lockstep() {
-    // Two peers driven by independent input streams across a simulated link.
-    function sim({ loss, latency, jitter, ticks, delay, seed }) {
-      const R = rngOf(seed), A = createLockstep({ localSlot: 0, delay }), B = createLockstep({ localSlot: 1, delay });
-      const inFlight = [], consumed = [[], []], prng = [rngOf(seed ^ 0xaaaa), rngOf(seed ^ 0xbbbb)];
-      const send = (to, t, pkt) => { if (R() >= loss) inFlight.push({ to, at: t + latency + Math.floor(R() * (jitter + 1)), pkt }); };
+    /**
+     * A whole party on a simulated link. Every peer broadcasts its own input to every other, which
+     * is exactly what net/session.js does over the mesh; `silent` stops sending for one slot from a
+     * given tick, standing in for a player whose connection has died.
+     */
+    function sim({ players = 2, loss, latency, jitter, ticks, delay, seed, silent = null, dropAt = 0 }) {
+      const R = rngOf(seed);
+      const peers = Array.from({ length: players }, (_, i) => createLockstep({ localSlot: i, players, delay }));
+      const prng = peers.map((_, i) => rngOf(seed ^ (0x1111 * (i + 1))));
+      const consumed = peers.map(() => []);
+      const inFlight = [];
+      // `owner` is whose input the packet carries, which is not always who is sending it: a peer
+      // forwarding somebody else's tail is still a packet from that somebody.
+      const send = (from, t, pkt, owner = from) => {
+        if (silent && from === silent.slot && t >= silent.from) return;      // this player has gone quiet
+        for (let to = 0; to < players; to++) {
+          if (to === from || to === owner || R() < loss) continue;
+          inFlight.push({ to, at: t + latency + Math.floor(R() * (jitter + 1)), owner, pkt });
+        }
+      };
+      let declared = -1;
       for (let t = 0; t < ticks; t++) {
-        for (const p of inFlight) if (p.at === t) (p.to === 'A' ? A : B).receiveInput(p.pkt.baseFrame, p.pkt.masks);
+        for (const p of inFlight) if (p.at === t) peers[p.to].receiveInput(p.owner, p.pkt.baseFrame, p.pkt.masks);
         for (let i = inFlight.length - 1; i >= 0; i--) if (inFlight[i].at <= t) inFlight.splice(i, 1);
-        for (const [peer, other, idx] of [[A, 'B', 0], [B, 'A', 1]]) {
-          if (!peer.canAdvance()) { peer.stall(); send(other, t, peer.resend()); continue; }
-          const [m0, m1] = peer.inputs();
-          consumed[idx].push(`${peer.frame}:${m0},${m1}`);
-          send(other, t, peer.recordLocal(Math.floor(prng[idx]() * 4096)));
+        // The host notices the silence and names ONE frame for everybody to retire that slot on:
+        // the frame the party has come to a halt on, which is the only one that is both reachable
+        // by every peer and in nobody's past.
+        if (silent && dropAt && t === silent.from + dropAt && declared < 0) {
+          declared = peers[0].frame;
+          for (let i = 0; i < players; i++) if (i !== silent.slot) peers[i].dropSlot(silent.slot, declared);
+        }
+        for (let i = 0; i < players; i++) {
+          const peer = peers[i];
+          if (!peer.canAdvance()) {
+            peer.stall();
+            send(i, t, peer.resend());
+            // A stalled peer also passes on what it last heard from whoever it is waiting for, which
+            // is how the party converges on the last frame a departing player actually played.
+            for (const s of peer.missing()) { const tail = peer.tailOf(s); if (tail) send(i, t, tail, s); }
+            continue;
+          }
+          consumed[i].push(`${peer.frame}:${peer.inputs().join(',')}`);
+          send(i, t, peer.recordLocal(Math.floor(prng[i]() * 4096)));
           peer.advance();
         }
       }
-      return { A, B, consumed };
+      return { peers, consumed, declared };
     }
 
+    /** Every peer must have consumed exactly the same input for every frame they all reached. */
+    const agree = (consumed) => {
+      const n = Math.min(...consumed.map((c) => c.length));
+      const first = consumed[0].slice(0, n).join('|');
+      return { n, same: consumed.every((c) => c.slice(0, n).join('|') === first) };
+    };
+
     for (const cfg of [
-      { name: 'perfect link', loss: 0, latency: 1, jitter: 0, delay: 3, floor: 1500 },
-      { name: '10% loss', loss: 0.10, latency: 2, jitter: 1, delay: 3, floor: 1500 },
-      { name: '40% loss + jitter', loss: 0.40, latency: 2, jitter: 3, delay: 3, floor: 200 },
-      { name: '70% loss', loss: 0.70, latency: 3, jitter: 4, delay: 6, floor: 1 },   // an effectively dead link
-      { name: 'high latency, delay 6', loss: 0.05, latency: 6, jitter: 2, delay: 6, floor: 1500 },
+      { name: 'two peers, perfect link', players: 2, loss: 0, latency: 1, jitter: 0, delay: 3, floor: 1500 },
+      { name: 'two peers, 10% loss', players: 2, loss: 0.10, latency: 2, jitter: 1, delay: 3, floor: 1500 },
+      { name: 'three peers, 10% loss', players: 3, loss: 0.10, latency: 2, jitter: 1, delay: 3, floor: 1400 },
+      { name: 'four peers, perfect link', players: 4, loss: 0, latency: 1, jitter: 0, delay: 3, floor: 1500 },
+      { name: 'four peers, 10% loss', players: 4, loss: 0.10, latency: 2, jitter: 1, delay: 3, floor: 1300 },
+      { name: 'four peers, 40% loss + jitter', players: 4, loss: 0.40, latency: 2, jitter: 3, delay: 3, floor: 150 },
+      { name: 'four peers, 70% loss', players: 4, loss: 0.70, latency: 3, jitter: 4, delay: 6, floor: 1 },   // an effectively dead link
+      { name: 'four peers, high latency, delay 6', players: 4, loss: 0.05, latency: 6, jitter: 2, delay: 6, floor: 1400 },
     ]) {
-      const { A, B, consumed } = sim({ ...cfg, ticks: 3000, seed: 12345 });
-      const n = Math.min(consumed[0].length, consumed[1].length);
-      ok(consumed[0].slice(0, n).join('|') === consumed[1].slice(0, n).join('|'), `${cfg.name}: both peers consumed identical input for all ${n} shared frames`);
+      const { peers, consumed } = sim({ ...cfg, ticks: 3000, seed: 12345 });
+      const { n, same } = agree(consumed);
+      ok(same, `${cfg.name}: all ${cfg.players} peers consumed identical input for all ${n} shared frames`);
       ok(n >= cfg.floor, `${cfg.name}: ${n} frames simulated (floor ${cfg.floor})`);
-      ok(Math.abs(A.frame - B.frame) <= cfg.delay + 1, `${cfg.name}: peers stay within delay+1 (drift ${Math.abs(A.frame - B.frame)})`);
+      const drift = Math.max(...peers.map((p) => p.frame)) - Math.min(...peers.map((p) => p.frame));
+      ok(drift <= cfg.delay + 1, `${cfg.name}: the party stays within delay+1 (drift ${drift})`);
+    }
+
+    // A player vanishing mid-match. The host names a future frame; everybody else retires the slot
+    // on that same frame, so the three that remain stay identical rather than each guessing.
+    for (const players of [3, 4]) {
+      const { peers, consumed, declared } = sim({
+        players, loss: 0.05, latency: 2, jitter: 1, ticks: 3000, delay: 3, seed: 99,
+        silent: { slot: players - 1, from: 400 }, dropAt: 60,
+      });
+      const alive = consumed.slice(0, players - 1);
+      const { n, same } = agree(alive);
+      ok(same, `${players} peers, one drops: the survivors consumed identical input for all ${n} frames`);
+      ok(n > declared + 500, `${players} peers, one drops: the match runs on well past the drop frame (${n} > ${declared})`);
+      ok(peers[0].isGone(players - 1) && !peers[0].isGone(0), 'only the dropped slot is retired');
+      // Everyone reached the drop frame, and from it on the empty seat reads as pressing nothing.
+      ok(alive.every((c) => c.length > declared), 'every survivor reached the drop frame rather than deadlocking short of it');
+      ok(alive.every((c) => /,0$/.test(c[declared])), 'from the drop frame on, the empty seat presses nothing');
+      ok(alive.every((c) => c[declared - 1] && c[declared - 1].split(':')[0] === String(declared - 1)), 'the frames before it were played with real input');
     }
 
     // The input delay must exceed the one-way latency or the peers have no slack; and a stalled peer
-    // must keep retransmitting, or two peers stalling on the same frame deadlock forever.
+    // must keep retransmitting, or peers stalling on the same frame deadlock forever.
     const rows = [];
     for (const latency of [1, 3]) for (const delay of [1, 2, 4, 8]) {
-      const { consumed } = sim({ loss: 0.05, latency, jitter: 0, ticks: 2000, delay, seed: 7 });
-      rows.push({ latency, delay, frames: Math.min(consumed[0].length, consumed[1].length) });
+      const { consumed } = sim({ players: 4, loss: 0.05, latency, jitter: 0, ticks: 2000, delay, seed: 7 });
+      rows.push({ latency, delay, frames: agree(consumed).n });
     }
     ok(rows.every((r) => r.frames > 0), 'no configuration deadlocks (a stalled peer keeps retransmitting)');
-    ok(rows.filter((r) => r.delay > r.latency).every((r) => r.frames > 1200), 'delay > one-way latency gives healthy throughput');
+    ok(rows.filter((r) => r.delay > r.latency).every((r) => r.frames > 1100), 'delay > one-way latency gives healthy throughput with four players');
     const at3 = rows.filter((r) => r.latency === 3).sort((a, b) => a.delay - b.delay).map((r) => r.frames);
     ok(at3[0] <= at3[1] && at3[1] <= at3[2] && at3[2] <= at3[3], `throughput rises monotonically with delay at fixed latency (${at3.join(' -> ')})`);
 
     // A single packet must heal a burst of drops through the redundancy window alone.
     {
       const A = createLockstep({ localSlot: 0, delay: 3 }), B = createLockstep({ localSlot: 1, delay: 3 });
-      const pump = (from, to, drop) => { const p = from.recordLocal(0x111); if (!drop) to.receiveInput(p.baseFrame, p.masks); };
-      for (let i = 0; i < 20; i++) { if (A.canAdvance()) { pump(A, B, false); A.advance(); } if (B.canAdvance()) { pump(B, A, false); B.advance(); } }
-      for (let i = 0; i < 5; i++) if (A.canAdvance()) { pump(A, B, true); A.advance(); }
+      const pump = (from, fromSlot, to, drop) => { const p = from.recordLocal(0x111); if (!drop) to.receiveInput(fromSlot, p.baseFrame, p.masks); };
+      for (let i = 0; i < 20; i++) { if (A.canAdvance()) { pump(A, 0, B, false); A.advance(); } if (B.canAdvance()) { pump(B, 1, A, false); B.advance(); } }
+      for (let i = 0; i < 5; i++) if (A.canAdvance()) { pump(A, 0, B, true); A.advance(); }
       let drained = 0;
-      while (B.canAdvance() && drained < 50) { pump(B, A, false); B.advance(); drained++; }
+      while (B.canAdvance() && drained < 50) { pump(B, 1, A, false); B.advance(); drained++; }
       ok(drained === 3, `B drains exactly its buffered lead of delay=3 frames (drained ${drained})`);
       ok(!B.canAdvance(), 'B then stalls');
-      if (A.canAdvance()) pump(A, B, false);
+      if (A.canAdvance()) pump(A, 0, B, false);
       ok(B.canAdvance(), 'one packet heals 5 dropped frames via the redundancy window');
     }
 
-    // Checksums must be caught in either arrival order.
+    // Checksums must be caught in either arrival order, and against EVERY peer: with four players
+    // one machine is compared with three others on the same frame.
     {
-      const A = createLockstep({ localSlot: 0, delay: 3 });
-      A.noteLocalChecksum(30, 0xabc); A.receiveChecksum(30, 0xabc);
-      ok(A.desync === null, 'matching checksums do not report a desync');
-      A.noteLocalChecksum(60, 0xabc); A.receiveChecksum(60, 0xdef);
-      ok(A.desync && A.desync.frame === 60, 'mismatch caught when ours is recorded first');
-      const B = createLockstep({ localSlot: 1, delay: 3 });
-      B.receiveChecksum(90, 0x111); B.noteLocalChecksum(90, 0x222);
-      ok(B.desync && B.desync.frame === 90, 'mismatch caught when theirs arrives first');
+      const A = createLockstep({ localSlot: 0, delay: 3, players: 4 });
+      A.noteLocalChecksum(30, 0xabc); A.receiveChecksum(1, 30, 0xabc); A.receiveChecksum(2, 30, 0xabc); A.receiveChecksum(3, 30, 0xabc);
+      ok(A.desync === null, 'matching checksums from all three peers do not report a desync');
+      A.noteLocalChecksum(60, 0xabc); A.receiveChecksum(1, 60, 0xabc); A.receiveChecksum(3, 60, 0xdef);
+      ok(A.desync && A.desync.frame === 60 && A.desync.slot === 3, 'a mismatch on the THIRD peer is still caught, after two matches on the same frame');
+      const B = createLockstep({ localSlot: 1, delay: 3, players: 4 });
+      B.receiveChecksum(2, 90, 0x111); B.noteLocalChecksum(90, 0x222);
+      ok(B.desync && B.desync.frame === 90 && B.desync.slot === 2, 'mismatch caught when theirs arrives first');
+      const C = createLockstep({ localSlot: 0, delay: 3, players: 3 });
+      C.receiveChecksum(1, 30, 0x9); C.receiveChecksum(2, 30, 0x9); C.noteLocalChecksum(30, 0x9);
+      ok(C.desync === null, 'two peers arriving before our own number are both compared against it');
     }
 
     ok(createLockstep({ localSlot: 0, delay: 0 }).delay === 1, 'delay 0 is coerced to 1 (0 deadlocks at frame 0)');
-    const L = createLockstep({ localSlot: 0, delay: 3 });
-    ok(L.canAdvance() && L.inputs()[0] === 0 && L.inputs()[1] === 0, 'the opening frames are pre-filled with neutral input');
+    const L = createLockstep({ localSlot: 2, delay: 3, players: 4 });
+    ok(L.canAdvance() && L.inputs().length === 4 && L.inputs().every((m) => m === 0), 'the opening frames are pre-filled with neutral input for every seat');
+    ok(JSON.stringify(L.remoteSlots) === '[0,1,3]', 'a peer in seat 3 of 4 waits on the other three');
+    ok(L.receiveInput(2, 10, [0xfff]) === undefined && L.inputs()[2] === 0, 'a peer never takes its OWN input off the wire');
   },
 };
 

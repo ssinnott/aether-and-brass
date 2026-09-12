@@ -95,6 +95,12 @@ export function worldChecksum(world, rng) {
     h = mix(h, (e.heldProp ? 1 : 0) | (e.holder ? 2 : 0) | (e.lost ? 4 : 0) | (e.throwable ? 8 : 0) | (e.lastHitWasThrow ? 16 : 0));
     h = mixAny(h, e.throwPending && e.throwPending.kind); h = mixAny(h, e.thrownWeapon); h = mixAny(h, e.thrownProp);
     h = mixAny(h, e.propThrowCooldown); // enemy prop-throw cooldown (issue #21 step 21.6, dev-only ?enemythrow=1)
+    // Wave entrances (issue #30, game/entrances.js): the arrival's own frame counter, plus the two AI fields that
+    // decide where a spawned unit may stand at all. `arriveT` drives the whole scripted path and `entered` picks
+    // which interval World.boundsFor clamps to, so both diverge a frame before x/y/z would; `aiState` is a plain
+    // sim string (mixAny handles strings) and catches a state-machine split the positions would only hint at.
+    h = mixAny(h, e.arriveT);
+    h = mixAny(h, e.aiState); h = mix(h, e.entered === false ? 1 : 2);
     if (e.anim) { h = mix(h, e.anim.instance | 0); h = mix(h, e.anim.frameIndex | 0); h = mixNum(h, e.anim.frameTime); }
   }
   h = mix(h, n);                             // count of hashed entities, not entities.length

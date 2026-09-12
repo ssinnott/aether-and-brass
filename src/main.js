@@ -19,6 +19,7 @@ import { PauseScreen } from './game/screens/pause.js';
 import { TrainPauseScreen } from './game/screens/trainpause.js';
 import { TrialsScreen } from './game/screens/trialsScreen.js';
 import { MovesScreen } from './game/screens/moves.js';
+import { HelpScreen } from './game/screens/help.js';
 import { OptionsScreen } from './game/screens/options.js';
 import { GameOverScreen } from './game/screens/gameover.js';
 import { LobbyScreen } from './game/screens/lobby.js';
@@ -56,6 +57,10 @@ export function parseOptions(search = window.location.search) {
     botStyle: devOnly ? (q.get('botstyle') || '').split(',').map((s) => s.trim()).filter(Boolean) : [],
     godmode: devOnly && flag('godmode'),
     section: devOnly ? (parseInt(q.get('section') || '0', 10) || 0) : 0,
+    // ?event=<id> (issue #33): start just before that scripted event and arm it, for iterating on one without
+    // replaying the board. Dev-only and inert in netplay for the same reason `enemythrow` is -- the START packet
+    // does not carry it, so a peer without the flag would simulate a different world.
+    event: devOnly ? (q.get('event') || '') : '',
     // which board to play: 1-based stage number (see content/stage/index.js). Honoured outside dev mode too so a
     // link can point straight at a board, and it opens that board on BOARD SELECT for this page load (game/progress.js).
     stage: q.has('stage') ? (parseInt(q.get('stage'), 10) || 1) : 1,
@@ -64,6 +69,11 @@ export function parseOptions(search = window.location.search) {
     room: (q.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8),
     host: flag('host'),
     transport: q.get('transport') === 'broadcast' ? 'broadcast' : 'mqtt',
+    // Dev-only: refuse to open a direct link to another guest, so this peer's traffic to them has
+    // to go through the host's relay. It is the only way to exercise that path on one machine,
+    // where every link forms - and on a real network it is the pair of players behind symmetric
+    // NATs (tools/playtest.js netquad, net/session.js MSG.RELAY).
+    netrelay: devOnly && flag('netrelay'),
     // open every board on BOARD SELECT for this page load; `resetprogress` wipes the saved unlocks instead.
     unlockall: flag('unlockall'),
     resetprogress: flag('resetprogress'),
@@ -126,6 +136,7 @@ function boot() {
   game.registerScreen('trainpause', (g) => new TrainPauseScreen(g));
   game.registerScreen('trials', (g) => new TrialsScreen(g));
   game.registerScreen('moves', (g) => new MovesScreen(g));
+  game.registerScreen('help', (g) => new HelpScreen(g));
   game.registerScreen('options', (g) => new OptionsScreen(g));
   game.registerScreen('gameover', (g) => new GameOverScreen(g));
   game.registerScreen('results', (g) => new ResultsScreen(g));
@@ -205,6 +216,7 @@ function boot() {
     setInput(p, actions) { input.setVirtual(p, actions); },
     clearInput(p) { input.clearVirtual(p); },
     spawnEnemy: delegate('spawnEnemy', null),
+    spawnEntrance: delegate('spawnEntrance', null),
     spawnWeapon: delegate('spawnWeapon', null),
     killAllEnemies: delegate('killAllEnemies', undefined),
     enemyList: () => (game.enemyList || []).map((e) => ({ type: e.type, variant: e.variant, name: e.name, role: e.role })),
@@ -215,7 +227,18 @@ function boot() {
     facePlayerToNearestEnemy: delegate('facePlayerToNearestEnemy', undefined),
     toggleDebug() { showDebug = !showDebug; return showDebug; },
     /** Online co-op state for tools/playtest.js. */
-    netState() { return net ? { state: net.state, room: net.room, slot: net.localSlot, delay: net.delay, waiting: net.waiting, frame: net.ls ? net.ls.frame : -1, desync: net.ls ? net.ls.desync : null, reason: net.endReason } : null; },
+    netState() {
+      if (!net) return null;
+      return {
+        state: net.state, room: net.room, slot: net.localSlot, players: net.players, delay: net.delay,
+        waiting: net.waiting, missing: net.missing.slice(), frame: net.ls ? net.ls.frame : -1,
+        desync: net.ls ? net.ls.desync : null, reason: net.endReason,
+        // Who is seated, and how each of them is reached: a link that never formed rides the host's
+        // relay instead, and the four-player playtest checks both paths carry a match.
+        party: net.lobby.members.map((m) => ({ slot: m.slot, char: m.char, ready: m.ready, local: !!m.local, gone: !!m.gone, direct: !!(net.links.get(m.pid) || {}).open })),
+        dropped: net.ls ? net.lobby.members.filter((m) => net.ls.dropFrameOf(m.slot) >= 0).map((m) => m.slot) : [],
+      };
+    },
     /** Board-unlock state, for tools/playtest.js. `solo` and `saved` prove co-op left the solo save alone. */
     progressState() {
       let saved = null;

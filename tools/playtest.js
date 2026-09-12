@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown playthrough playthrough2 playthrough3 playthrough4 coop coop4 audio gallery botstyles options training weapons)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles platforms events cargo playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad audio gallery botstyles options training weapons)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 // This file is already close to its ~700-line budget: further scenarios belong in their own sibling
@@ -14,7 +14,13 @@ import { options as optionsScenario } from './playtest-options.js';
 import { weaponScenarios } from './scenarios/weapons.js';
 import { thrown } from './scenarios/thrown.js';
 import { coop4Scenarios } from './scenarios/coop4.js';
+import { netquadScenarios } from './scenarios/netquad.js';
 import { training as trainingScenario } from './scenarios/training.js';
+import { entrances } from './scenarios/entrances.js';
+import { obstacles } from './scenarios/obstacles.js';
+import { platforms } from './scenarios/platforms.js';
+import { events as eventScenario } from './scenarios/events.js';
+import { cargo } from './scenarios/cargo.js';
 
 const { chromium } = loadPlaywright();
 
@@ -57,17 +63,22 @@ async function withPage(server, params, fn, { viewport = { width: 1280, height: 
 }
 
 /**
- * Two pages in ONE browser context, for the online co-op scenario. They must share a context or
- * BroadcastChannel cannot reach between them (each browser.newPage() gets its own implicit context),
- * and the pages then establish a real WebRTC data channel over loopback ICE candidates.
+ * Several pages in ONE browser context, for the online co-op scenarios. They must share a context
+ * or BroadcastChannel cannot reach between them (each browser.newPage() gets its own implicit
+ * context), and the pages then establish real WebRTC data channels over loopback ICE candidates -
+ * a four-player room is six of them.
+ *
+ * @param {object} server the playtest server
+ * @param {string[]} paramsList query strings, one page each; the first is the host by convention
+ * @param {(pages: object[], apis: object[]) => Promise<void>} fn
  */
-async function withPair(server, hostParams, guestParams, fn, { viewport = { width: 1280, height: 720 } } = {}) {
+async function withPeers(server, paramsList, fn, { viewport = { width: 1280, height: 720 } } = {}) {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport });
   const errs = [];
   const pages = [];
   try {
-    for (const params of [hostParams, guestParams]) {
+    for (const params of paramsList) {
       const page = await ctx.newPage();
       page.on('pageerror', (e) => errs.push('pageerror: ' + e.message));
       page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); if (process.env.KEEP) console.log('   [browser]', m.text()); });
@@ -75,10 +86,10 @@ async function withPair(server, hostParams, guestParams, fn, { viewport = { widt
       await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 15000 });
       pages.push(page);
     }
-    await fn(pages[0], pages[1], makeApi(pages[0]), makeApi(pages[1]));
+    await fn(pages, pages.map(makeApi));
     // A scenario may deliberately close a page (testing disconnect), so skip those.
     for (const p of pages) if (!p.isClosed()) for (const e of await makeApi(p).errors()) errs.push(e);
-    assert(errs.length === 0, `no runtime errors in the netplay pair ${errs.length ? JSON.stringify(errs.slice(0, 3)) : ''}`);
+    assert(errs.length === 0, `no runtime errors in the netplay room ${errs.length ? JSON.stringify(errs.slice(0, 3)) : ''}`);
   } catch (e) {
     failures++; results.push(`  FAIL: netplay scenario crashed: ${e.message}`); console.log(`  FAIL: netplay scenario crashed: ${e.message}`);
     if (errs.length) console.log('   browser errors:', errs.slice(0, 5));
@@ -86,6 +97,11 @@ async function withPair(server, hostParams, guestParams, fn, { viewport = { widt
   } finally {
     await browser.close();
   }
+}
+
+/** The two-page case, which is most of them: host params first, guest params second. */
+function withPair(server, hostParams, guestParams, fn, opts) {
+  return withPeers(server, [hostParams, guestParams], (pages, apis) => fn(pages[0], pages[1], apis[0], apis[1]), opts);
 }
 
 /** Focus a page, press ready, and wait until that page has actually registered it. A backgrounded
@@ -470,6 +486,26 @@ const scenarios = {
   // sibling module, same pattern as tools/scenarios/weapons.js above.
   thrown: (server) => thrown(server, { withPage, assert }),
 
+  // 3e. Wave entrances: tell -> ARRIVING approach -> punishable arrival, per entrance kind, plus the rope-drop
+  // line cut (issue #30, tools/scenarios/entrances.js).
+  entrances: (server) => entrances(server, { withPage, assert }),
+
+  // 3f. Solid obstacles: gap fall / jump / thrown ring-out, the enemy jump-over, and a barricade holding a wave
+  // lock until it is broken (issue #31, tools/scenarios/obstacles.js).
+  obstacles: (server) => obstacles(server, { withPage, assert }),
+
+  // 3g. Moving platforms: tilt / pallet / hoist against the real authored sections, plus the regression that the
+  // Brass Funicular declares none (issue #32, tools/scenarios/platforms.js).
+  platforms: (server) => platforms(server, { withPage, assert }),
+
+  // 3h. Scripted mid-board events: the ?event= jump, a real script reaching the world, and hazard overrides being
+  // handed back afterwards (issue #33, tools/scenarios/events.js). Action SEQUENCING is in tools/simtest.js.
+  events: (server) => eventScenario(server, { withPage, assert }),
+
+  // 3i. Scenery entrances: a crate tipping its cargo out, a chute on a timer that can be held shut, a smashed timer
+  // container becoming loot, and a wave that comes out of a named cart (issue #34, tools/scenarios/cargo.js).
+  cargo: (server) => cargo(server, { withPage, assert }),
+
   // 4. Full bot playthrough to the results screen.
   async playthrough(server) {
     await withPage(server, 'seed=7&skipTo=gameplay&chars=0&bot=1&godmode=1', async (g) => {
@@ -691,6 +727,7 @@ const scenarios = {
 // (tools/scenarios/weapons.js). A sibling module, same pattern as playtest-options.js above.
 Object.assign(scenarios, weaponScenarios({ withPage, assert }));
 Object.assign(scenarios, coop4Scenarios({ withPage, withPair, assert, readyUp }));
+Object.assign(scenarios, netquadScenarios({ withPeers, assert, readyUp }));
 
 async function main() {
   const wanted = process.argv.slice(2).filter((a) => !a.startsWith('-'));

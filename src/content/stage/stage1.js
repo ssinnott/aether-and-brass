@@ -24,6 +24,9 @@ export const stage1 = {
   sections: [
     // ---------------------------------------------------------------- Section 1: Sootfoot Docks (rain, night)
     { id: 's1', name: 'SOOTFOOT DOCKS', x0: 0, x1: 1800, backdrop: 'section1', floor: 'planks',
+      /** Issue #32: the crane hook at x 1500 is not just swinging any more — it is swinging a loaded cargo pallet,
+       *  and the pallet is floor. Stand on it and it carries you; step off and it leaves without you. */
+      platform: { kind: 'pallet', x0: 1424, x1: 1508, z0: 38, z1: 102, travel: 72, period: 280, axis: 'x' },
       // crates: Brass Cog x2, one in four hides a Meat Pie; barrels roll 40px (10 to enemies) and drop Coal Scrip; the winch an Aether Vial
       // bottle + lamp (issue #21, GDD 7): throwable clutter -- an empty hand near either lifts it instead of swinging
       props: [
@@ -31,6 +34,11 @@ export const stage1 = {
         { type: 'barrel', x: 760, z: 118, drops: 'coalScrip' }, { type: 'crate', x: 1080, z: 24, drops: COGS },
         { type: 'winch', x: 1180, z: 14, drops: 'aetherVial' }, { type: 'barrel', x: 1450, z: 120, drops: 'coalScrip' },
         { type: 'crate', x: 1720, z: 40, drops: COGS },
+        // issue #34: two crates on the quay with someone in them. Break one and a Cutthroat climbs out into 26f you
+        // can punish; leave it and it is just a crate -- but the cargo is only loot if you break it, so a crate you
+        // have not opened is a fight you have not had yet.
+        { type: 'crate', x: 660, z: 26, name: 'quay1', cargo: [{ type: S, variant: 'cutthroat' }] },
+        { type: 'crate', x: 1380, z: 112, name: 'quay2', cargo: [{ type: S, variant: 'cutthroat' }] },
         { type: 'bottle', x: 520, z: 96, throwable: true }, { type: 'lamp', x: 1000, z: 110, throwable: true },
       ],
       hazards: [
@@ -61,6 +69,10 @@ export const stage1 = {
         { type: 'drum', x: 2380, z: 30, drops: 'aetherVial' }, { type: 'case', x: 2700, z: 20, drops: 'goldenSprocket' },
         { type: 'mold', x: 2760, z: 120, drops: 'brassCog' }, { type: 'bucket', x: 3100, z: 16, drops: 'roastBird' },
         { type: 'drum', x: 3150, z: 110, drops: 'aetherVial' }, { type: 'cart', x: 3480, z: 30, drops: 'meatPie' },
+        // the coal chute at the head of the row: it lets a Sootborn out every four seconds while the wave is live
+        // (`cargoOn: 'timer'`), and it can be STOOD ON to hold it shut -- the clock stops while somebody is on the lip.
+        { type: 'mold', x: 2180, z: 96, name: 'chute', drops: null, cargoOn: 'timer', cargoEvery: 240,
+          cargo: [{ type: S, variant: 'cutthroat' }, { type: S, variant: 'cutthroat' }] },
       ],
       hazards: [
         { type: 'steamVent', x: 2500, z: 110, period: 180, active: 40, tell: 30 },
@@ -73,6 +85,10 @@ export const stage1 = {
       zones: [
         { type: 'molten', x0: 1800, x1: 3920 },
         { type: 'conveyor', x0: 3280, x1: 3920, z0: 100 },
+        // issue #31: a conveyor arm swings through the row at head height across the two front lanes. Step back into
+        // the middle lane to walk under it, or jump it -- the molten channel closes the back lane, so there is a real
+        // choice to make rather than a free detour.
+        { type: 'solid', x0: 3056, x1: 3080, z0: 70, z1: 140, height: 44 },
       ],
       waves: [
         { triggerX: 2100, lock: true, spawns: [{ type: S, variant: 'firebrand', side: 'right', z: 40, delay: 0 }, { type: S, variant: 'firebrand', side: 'left', z: 100, delay: 30 }, ...cut(3, { z0: 60, delay0: 20 })] },
@@ -100,8 +116,14 @@ export const stage1 = {
         { type: 'mailcart', x: 4120, z: 16, drops: 'goldenSprocket' }, { type: 'lantern', x: 3860, z: 126, drops: 'coalScrip' }, { type: 'lantern', x: 4400, z: 126, drops: 'coalScrip' },
       ],
       hazards: [{ type: 'crossbar', x: 4120, z: 0, period: 360, active: 12, tell: 40 }],
-      /** front / back 12px are railings: enemies thrown over them are instant KOs (+200) */
-      zones: [{ type: 'rails', x0: 3800, x1: 4440 }],
+      /** front / back 12px are railings: enemies thrown over them are instant KOs (+200). Issue #31: the roof plating
+       *  has gone at the far end of the car -- a body that walks into the hole falls through it (an enemy rings out,
+       *  a player pays 8% of max HP and is set on the lip). It takes the back half of the band only, so the front
+       *  lanes are always a way past it. */
+      zones: [
+        { type: 'rails', x0: 3800, x1: 4440 },
+        { type: 'solid', x0: 4340, x1: 4372, z0: 20, z1: 62, height: 0 },
+      ],
       waves: [],
       timedWaves: [
         { at: 0, spawns: [{ type: B, variant: 'sapper', side: 'right', z: 30, delay: 0 }, { type: B, variant: 'sapper', side: 'left', z: 110, delay: 30 }, { type: B, variant: 'sapper', side: 'right', z: 120, delay: 60 },
@@ -130,22 +152,46 @@ export const stage1 = {
       ],
       // aether floor vents fire together on the music's downbeat (2s bars at 120 BPM)
       hazards: [
-        { type: 'aetherVent', x: 4900, z: 110, period: 120, active: 30, tell: 30, offset: 80 },
-        { type: 'aetherVent', x: 5260, z: 40, period: 120, active: 30, tell: 30, offset: 80 },
-        { type: 'aetherVent', x: 5480, z: 100, period: 120, active: 30, tell: 30, offset: 80 },
+        { type: 'aetherVent', name: 'daisVents', x: 4900, z: 110, period: 120, active: 30, tell: 30, offset: 80 },
+        { type: 'aetherVent', name: 'daisVents', x: 5260, z: 40, period: 120, active: 30, tell: 30, offset: 80 },
+        { type: 'aetherVent', name: 'daisVents', x: 5480, z: 100, period: 120, active: 30, tell: 30, offset: 80 },
       ],
       /** the dais: the band shrinks 20px per boss phase as steam vents open along its edges (4 dmg every 30f inside) */
       zones: [{ type: 'daisVents', x0: 5560, x1: 6000 }],
       waves: [
         { triggerX: 4800, lock: true, spawns: [{ type: B, variant: 'footman', side: 'right', z: 40, delay: 0 }, { type: B, variant: 'footman', side: 'left', z: 100, delay: 30 },
           { type: B, variant: 'halberdier', side: 'right', z: 110, delay: 60 }, { type: B, variant: 'halberdier', side: 'left', z: 30, delay: 90 }] },
-        { triggerX: 5150, lock: true, spawns: [{ type: B, variant: 'warden', side: 'right', z: 70, delay: 0 },
-          { type: B, variant: 'sapper', side: 'left', z: 30, delay: 30 }, { type: B, variant: 'sapper', side: 'left', z: 120, delay: 60 }, { type: B, variant: 'duelist', side: 'right', z: 40, delay: 90 }] },
-        { triggerX: 5500, lock: true, spawns: [{ type: B, variant: 'warden', side: 'right', z: 50, delay: 0 }, { type: B, variant: 'warden', side: 'left', z: 100, delay: 40 },
-          { type: B, variant: 'duelist', side: 'right', z: 110, delay: 80 }, { type: B, variant: 'duelist', side: 'left', z: 30, delay: 110 },
+        // Inside the Engine the Concordat stops walking its machines in and starts RE-FORMING them on the floor
+        // (issue #30 `teleport`): a cyan ring and a rising chime for 40f, then the unit is standing in it with 12f
+        // of lens-lighting you get to punish. The Sappers still walk on — the ring is for the heavy plate.
+        { triggerX: 5150, lock: true, spawns: [{ type: B, variant: 'warden', z: 70, delay: 0, entrance: { kind: 'teleport', dx: 60 } },
+          { type: B, variant: 'sapper', side: 'left', z: 30, delay: 30 }, { type: B, variant: 'sapper', side: 'left', z: 120, delay: 60 },
+          { type: B, variant: 'duelist', z: 40, delay: 90, entrance: { kind: 'teleport', dx: -90 } }] },
+        { triggerX: 5500, lock: true, spawns: [{ type: B, variant: 'warden', z: 50, delay: 0, entrance: { kind: 'teleport', dx: -70 } },
+          { type: B, variant: 'warden', side: 'left', z: 100, delay: 40 },
+          { type: B, variant: 'duelist', z: 110, delay: 80, entrance: { kind: 'teleport', dx: 80 } },
+          { type: B, variant: 'duelist', side: 'left', z: 30, delay: 110 },
           { type: S, variant: 'wrangler', side: 'left', z: 120, delay: 140 }, ...cut(3, { z0: 20, delay0: 160 })] },
       ],
-      events: [],
+      /**
+       * THE REGENT ENGINE OVER-FIRES (issue #33). After the second wave of the section a klaxon goes and the warning
+       * lamps come up red across the whole floor; ten seconds later every vent on it opens AT ONCE for eight
+       * seconds and the only safe ground is the dais. It is the exam for everything the board taught about vents:
+       * the warning is a caption, a klaxon and a `zoneFlash` you can stand outside of, and it lasts long enough to
+       * walk out of, because the vents do not open until 600 frames after the first word of it.
+       */
+      events: [
+        { id: 'overfire', onWaveClear: 2, once: true, actions: [
+          { caption: 'THE ENGINE IS OVER-FIRING', sub: 'GET TO THE DAIS', life: 150 },
+          { sfx: 'coil_charge' }, { camera: { shake: 5, frames: 20 } },
+          { zoneFlash: { x0: 4440, x1: 5540, z0: 0, z1: 140, frames: 600, color: '#4DF0E0' } },
+          { wait: 600 },
+          { caption: 'OVER-FIRE', sub: '', life: 90 },
+          { sfx: 'steam' }, { camera: { shake: 9, frames: 24 } },
+          { hazardSet: { name: 'daisVents', force: 'active', frames: 480 } },
+          { wait: 480 },
+        ] },
+      ],
     },
   ],
   /** Foreman Grubbik & the Hoister: cargo bay at the end of Foundry Row (conveyor + molten back edge, see section 2 zones). */

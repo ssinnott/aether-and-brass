@@ -5,33 +5,38 @@
 // and shareable as an invite link. (`?transport=broadcast` still reaches two tabs of one origin,
 // which is what the end-to-end test drives, but it is not offered here.)
 //
-// Both players' cursors are on the row: P1 is the host's white gear ring, P2 the guest's cyan one,
-// exactly as on the couch. Unlike the couch, the two may NOT land on the same hero — online there
-// is no "that one's me, the darker one" to fall back on, so the peer's card is greyed out and the
-// cursor steps over it (net/session.js owns the rule).
+// Two to four players share a room. Every seated player's cursor is on the row - P1 is the host's
+// white gear ring, P2 cyan, P3 and P4 their own colours, exactly as on the couch. Unlike the couch,
+// two of them may NOT land on the same hero - online there is no "that one's me, the darker one" to
+// fall back on, so a claimed card is greyed out and the cursor steps over it (net/session.js owns
+// the rule, and the host is the one who arbitrates a collision).
+//
+// The room fills as people arrive: the host holds on the room code until somebody joins, and from
+// then on the code stays on the bottom line so the third and fourth player can still be invited.
+// The match starts when EVERY seated player is ready, so a party of two never waits on a fourth.
 //
 // The group's boards run underneath on the same screen: the BOARD SELECT plaques at lobby size
 // (screens/boardcards.js), vignette and all, with the ones this pairing has not opened yet still
 // wearing their padlock. The host's cursor picks - the session runs on their unlocks - and the
 // guest watches it move.
-import { VIEW_W, VIEW_H, UI } from '../../constants.js';
+import { VIEW_W, VIEW_H, UI, MAX_PLAYERS, NET_PLAYERS } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined, measureText } from '../../engine/text.js';
 import { rrect, rivetLine, gear } from '../../art/shapes.js';
 import { makeRoomCode } from '../../net/signal.js';
 import { progress } from '../progress.js';
 import { STAGES } from '../../content/stage/index.js';
-import { buildCharSlots, tickCharSlots, drawCharCard, cardX, P1_CURSOR, P2_CURSOR } from './charcards.js';
+import { buildCharSlots, tickCharSlots, drawCharCard, cardX, CURSOR_COLORS, P1_CURSOR, P2_CURSOR } from './charcards.js';
 import { drawBoardPlaque, rowMetrics, PLAQUE_H } from './boardcards.js';
 
-const ROLES = [['HOST A GAME', 'YOU ARE PLAYER 1'], ['JOIN A GAME', 'YOU ARE PLAYER 2']];
+const ROLES = [['HOST A GAME', 'YOU ARE PLAYER 1'], ['JOIN A GAME', 'UP TO FOUR PLAY TOGETHER']];
 const CODE_CHARS = /^[A-Z0-9]$/;
 // Both rows share one screen, so the hero cards sit higher than on the couch screen and the boards
 // are the BOARD SELECT plaques at lobby size underneath them.
 const HERO_Y = 22, STATUS_Y = 226, BOARD_Y = 236;
 const BOARD_ROW = { maxW: 150, gap: 20, pad: 200, minW: 90 };
-/** Where each player's line sits: under their own cursor, clear of the board counter in the middle. */
-const STATUS_X = [140, 500];
+/** Where each player's line sits: one even column per seat, so a party of three is not lopsided. */
+const STATUS_COLS = [[320], [160, 480], [110, 320, 530], [92, 244, 396, 548]];
 
 /** Netplay lobby. Phases: role -> code -> connecting -> lobby -> (handed to the match). */
 export class LobbyScreen extends Screen {
@@ -53,7 +58,7 @@ export class LobbyScreen extends Screen {
     this.inviteUrl = '';
     this.slots = buildCharSlots(this.game.characters || []);
     this.boards = []; this.boardsKey = '';
-    this.shownChars = [-1, -1];       // last drawn [mine, theirs], so a change can play a taunt
+    this.shownChars = new Array(MAX_PLAYERS).fill(-1);   // last drawn hero per seat, so a change can taunt
     // The local player is always sampled through slot 0's keyboard (net/session.js pollRaw(0, { solo: true }))
     // whichever slot they end up owning, so the keys to name are P1's plus the arcade aliases.
     const inp = this.game.input;
@@ -158,9 +163,16 @@ export class LobbyScreen extends Screen {
     this.game.audio.play('menu_move');
   }
 
+  /** True once there is somebody to play with; until then the host is still showing its room code. */
+  party() { return (this.net && this.net.lobby.members) || []; }
+
   onNetState(s) {
     if (s === 'lobby') {
-      this.phase = 'lobby'; this.status = ''; this.game.audio.play('join');
+      this.status = '';
+      // The host reaches 'lobby' the moment its own seat exists, which is before anyone has joined:
+      // hold the room-code plate up until the room has someone in it to choose against.
+      if (this.party().length > 1) { this.phase = 'lobby'; this.game.audio.play('join'); }
+      else this.status = 'WAITING FOR PLAYER 2';
       // Only now are the player ids exchanged, so only now does progress read this PAIRING's
       // unlocks (game/progress.js). A new group starts on board 1 however far either player has got
       // solo; a `?stage=N` link is still a key to that board, so honour it when it is open.
@@ -195,6 +207,11 @@ export class LobbyScreen extends Screen {
     // off it, or the letters in the code fire menu moves and back-outs as they are typed.
     if (this.phase === 'code') return;
     if (this.phase === 'connecting') {
+      // A host sits here with its room code until the room has somebody else in it.
+      if (this.net && this.net.state === 'lobby' && this.party().length > 1) {
+        this.phase = 'lobby'; this.status = ''; audio.play('join');
+        this.shownChars = new Array(MAX_PLAYERS).fill(-1);
+      }
       if (inp.pressed(0, 'dodge')) { if (this.net) this.net.end('cancelled'); back(); }
       return;
     }
@@ -221,18 +238,17 @@ export class LobbyScreen extends Screen {
   }
 
   /**
-   * A pick changing - mine or the peer's, and the peer's arrives in a packet rather than a
-   * keypress - taunts on the newly hovered card, so the row reacts to both players.
+   * A pick changing - anyone's, and everyone else's arrives in a packet rather than a keypress -
+   * taunts on the newly hovered card, so the row reacts to the whole room.
    */
   syncCardAnims() {
-    const { myChar, theirChar, myReady } = this.net.lobby;
-    if (this.shownChars[0] !== myChar) {
-      if (this.shownChars[0] >= 0 && !myReady) this.playOn(myChar, 'taunt', { fallback: 'idle' });
-      this.shownChars[0] = myChar;
-    }
-    if (this.shownChars[1] !== theirChar) {
-      if (this.shownChars[1] >= 0) this.playOn(theirChar, 'taunt', { fallback: 'idle' });
-      this.shownChars[1] = theirChar;
+    const lobby = this.net.lobby;
+    for (const m of this.party()) {
+      const char = m.local ? lobby.myChar : m.char | 0;
+      const ready = m.local ? lobby.myReady : m.ready;
+      if (this.shownChars[m.slot] === char) continue;
+      if (this.shownChars[m.slot] >= 0 && !ready) this.playOn(char, 'taunt', { fallback: 'idle' });
+      this.shownChars[m.slot] = char;
     }
   }
 
@@ -303,64 +319,81 @@ export class LobbyScreen extends Screen {
   }
 
   /**
-   * The pick screen: the hero cards on top - the same cards as the couch screen, with the peer
-   * driving the second cursor - and the group's boards underneath as BOARD SELECT plaques.
+   * The pick screen: the hero cards on top - the same cards as the couch screen, with the rest of
+   * the room driving the other cursors - and the group's boards underneath as BOARD SELECT plaques.
    */
   drawLobby(ctx, f) {
     const chars = this.game.characters || [], n = this.slots.length;
-    const lobby = this.net.lobby, mySlot = this.net.localSlot;
-    const mine = lobby.myChar, theirs = lobby.theirChar;
+    const lobby = this.net.lobby, party = this.party();
 
     drawTextOutlined(ctx, 'CHOOSE YOUR FIGHTER', 320, 6, { size: 2, color: UI.brass, outline: '#3a2010', align: 'center' });
     if (!n) { drawText(ctx, 'NO CHARACTERS REGISTERED', 320, 170, { size: 1, color: UI.red, align: 'center' }); return; }
-    // Slot 0 is always the white "1" cursor and slot 1 the cyan "2", whichever of them is local:
-    // the ring colours have to mean the same thing here as they do in the match.
-    const cur = [null, null];
-    cur[mySlot] = { confirmed: lobby.myReady, label: `P${mySlot + 1}`, char: mine };
-    cur[this.net.remoteSlot] = { confirmed: lobby.theirReady, label: `P${this.net.remoteSlot + 1}`, char: theirs };
+    // A seat's ring colour means the same thing here as it does in the match, so the cursors are
+    // indexed by SLOT and not by who is looking at the screen. Our own pick is drawn from the local
+    // value rather than the roster's, so the cursor moves the instant the key is pressed.
+    const cur = new Array(MAX_PLAYERS).fill(null);
+    for (const m of party) {
+      cur[m.slot] = {
+        confirmed: m.local ? lobby.myReady : !!m.ready,
+        label: `P${m.slot + 1}`,
+        char: (m.local ? lobby.myChar : m.char) | 0,
+        local: !!m.local,
+      };
+    }
     for (let i = 0; i < n; i++) {
       drawCharCard(ctx, this.slots[i], cardX(i, n), HERO_Y, f, {
         index: i,
-        cursors: [cur[0].char === i ? cur[0] : null, cur[1].char === i ? cur[1] : null],
+        cursors: cur.map((c) => (c && c.char === i ? c : null)),
         taken: this.net.charTaken(i),
       });
     }
 
-    // Who is who, on the same side as their cursor: player 1 left, player 2 right.
-    for (let s = 0; s < 2; s++) {
-      const c = cur[s], d = chars[c.char];
-      const head = `P${s + 1}${s === mySlot ? ' (YOU)' : ''}  ${(d && (d.name || d.id)) || '?'}  `;
+    // Who is who, in one column per seat, left to right in slot order.
+    const cols = STATUS_COLS[Math.max(0, party.length - 1)] || STATUS_COLS[3];
+    party.forEach((m, i) => {
+      const c = cur[m.slot], d = chars[c.char];
+      const head = `P${m.slot + 1}${c.local ? ' (YOU)' : ''} ${(d && (d.name || d.id)) || '?'} `;
       const state = c.confirmed ? 'READY' : 'CHOOSING';
-      const wh = measureText(head, 1), x0 = STATUS_X[s] - (wh + measureText(state, 1)) / 2;
-      drawText(ctx, head, x0, STATUS_Y, { size: 1, color: s === 0 ? P1_CURSOR : P2_CURSOR });
+      const wh = measureText(head, 1), x0 = (cols[i] || 320) - (wh + measureText(state, 1)) / 2;
+      drawText(ctx, head, x0, STATUS_Y, { size: 1, color: CURSOR_COLORS[m.slot] || P1_CURSOR });
       drawText(ctx, state, x0 + wh, STATUS_Y, { size: 1, color: c.confirmed ? '#7ef07e' : UI.brassDark });
-    }
+    });
 
-    // The boards are the GROUP's: co-op progress belongs to the pairing, so a new group sees board 1
-    // open and the rest still sealed however far either player has got alone. The host's cursor picks
-    // (they own the session's unlocks); the guest watches it move.
+    // The boards are the GROUP's: co-op progress belongs to the party, so a new group sees board 1
+    // open and the rest still sealed however far any of them has got alone. The host's cursor picks
+    // (they own the session's unlocks); everyone else watches it move.
     const open = this.boardOptions().length, total = this.boards.length;
-    drawText(ctx, `BOARDS OPEN TOGETHER  ${open} / ${total}`, 320, STATUS_Y, { size: 1, color: open < total ? UI.steel : UI.teal, align: 'center' });
     const bi = Math.max(0, (lobby.stage || 1) - 1);
     const m = rowMetrics(total, BOARD_ROW);
     for (let i = 0; i < total; i++) {
-      // The cursor is P1's white: the host is always player 1, so it reads as "their pick" on both screens.
+      // The cursor is P1's white: the host is always player 1, so it reads as "their pick" on every screen.
       drawBoardPlaque(ctx, this.boards[i], m.x0 + i * (m.w + m.gap), BOARD_Y, m.w, PLAQUE_H, f,
         { sel: i === bi, cursor: i === bi ? P1_CURSOR : null });
     }
 
-    const hint = lobby.myReady ? 'JUMP: CHANGE YOUR MIND'
-      : this.isHost && open > 1 ? this.hintReadyHost
-        : this.isHost ? this.hintReadyHost1
-          : this.hintReadyGuest;
+    const hint = lobby.myReady ? this.waitingOn() : this.readyHint(open);
     drawText(ctx, hint, 320, BOARD_Y + PLAQUE_H + 4, { size: 1, color: UI.brass, align: 'center' });
-    drawText(ctx, `ROOM ${this.net.room}    PING ${Math.round(this.net.rtt || 0)}MS    DELAY ${this.net.delay}F    ONE HERO EACH`,
+    const room = party.length < NET_PLAYERS ? `ROOM ${this.net.room} (SHARE IT)` : `ROOM ${this.net.room}`;
+    drawText(ctx, `${room}    PARTY ${party.length}/${NET_PLAYERS}    PING ${Math.round(this.net.rtt || 0)}MS    DELAY ${this.net.delay}F    BOARDS ${open}/${total}`,
       320, BOARD_Y + PLAQUE_H + 14, { size: 1, color: UI.brassDark, align: 'center' });
 
-    if (lobby.myReady && lobby.theirReady) {
+    if (party.length >= 2 && party.every((p) => (p.local ? lobby.myReady : p.ready))) {
       const pw = measureText('STARTING!', 3) + 48;
       rrect(ctx, 320 - pw / 2, 126, pw, 41, 6, 'rgba(10,6,14,0.9)', UI.brass, 2);
       drawTextOutlined(ctx, 'STARTING!', 320, 138, { size: 3, color: UI.brassLight, outline: '#3a2010', thickness: 2, align: 'center' });
     }
+  }
+
+  /** The line under the boards while this player is ready: who the match is still waiting for. */
+  waitingOn() {
+    const late = this.party().filter((m) => !m.local && !m.ready).map((m) => `P${m.slot + 1}`);
+    if (!late.length) return 'JUMP: CHANGE YOUR MIND';
+    return `WAITING FOR ${late.join(' AND ')}    JUMP: CHANGE YOUR MIND`;
+  }
+
+  /** ...and while they are still choosing: what the keys do, plus the invitation if seats are free. */
+  readyHint(open) {
+    const base = this.isHost ? (open > 1 ? this.hintReadyHost : this.hintReadyHost1) : this.hintReadyGuest;
+    return this.party().length < NET_PLAYERS ? `${base}    MORE CAN STILL JOIN` : base;
   }
 }

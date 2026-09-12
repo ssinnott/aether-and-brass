@@ -1,5 +1,5 @@
 // Training pause plate (issue #22): DUMMY behaviour / variant / facing, REFILL HEALTH, METER lock,
-// HITBOXES, FRAME DATA, RESET POSITIONS, MOVES, TRIALS, QUIT TO TITLE. A transparent overlay on top of
+// HITBOXES, FRAME DATA, RESET POSITIONS, MOVES, TRIALS, COMMANDS, QUIT TO TITLE. A transparent overlay on top of
 // TrainingScreen (the room stays visible underneath -- there is no dim rect, unlike pause.js, so a
 // setting's effect on the dummy can be previewed while the plate is up). Built from the same
 // drawPlate/drawMenuRows/consumeMenuBuffers helpers pause.js exports so every brass plate matches.
@@ -12,8 +12,8 @@ import { DUMMY_MODES, METER_LOCKS } from './training.js';
 const PLATE_W = 260, PLATE_Y = 52, PLATE_H = 250, ROWS_Y0 = PLATE_Y + 40, ROW_H = 14;
 const DUMMY_LABEL = { stand: 'STAND', block: 'BLOCK-STAGGER', cpu: 'CPU' };
 const METER_LABEL = { normal: 'NORMAL', full: 'LOCK FULL', empty: 'LOCK EMPTY' };
-const ROWS = ['RESUME', 'DUMMY', 'VARIANT', 'FACING', 'REFILL HEALTH', 'METER', 'HITBOXES', 'FRAME DATA', 'RESET POSITIONS', 'MOVES', 'TRIALS', 'QUIT TO TITLE'];
-const R = { RESUME: 0, DUMMY: 1, VARIANT: 2, FACING: 3, REFILL: 4, METER: 5, HITBOXES: 6, FRAME_DATA: 7, RESET: 8, MOVES: 9, TRIALS: 10, QUIT: 11 };
+const ROWS = ['RESUME', 'DUMMY', 'VARIANT', 'FACING', 'REFILL HEALTH', 'METER', 'HITBOXES', 'FRAME DATA', 'RESET POSITIONS', 'MOVES', 'TRIALS', 'COMMANDS', 'QUIT TO TITLE'];
+const R = { RESUME: 0, DUMMY: 1, VARIANT: 2, FACING: 3, REFILL: 4, METER: 5, HITBOXES: 6, FRAME_DATA: 7, RESET: 8, MOVES: 9, TRIALS: 10, COMMANDS: 11, QUIT: 12 };
 
 /** Training pause plate. Escape / a joined slot's start or jump resumes; up/down moves the cursor;
  *  left/right cycles a row's value; attack activates a row (window.__game reaches the room through
@@ -85,7 +85,8 @@ export class TrainPauseScreen extends Screen {
           audio.play('menu_confirm'); this.game.push('moves', { chars: tr.players.filter(Boolean).map((p) => this.game.characters.indexOf(p.def)) }); return;
         } else if (this.cursor === R.TRIALS) {
           if (this.game.factories.trials) { audio.play('menu_confirm'); this.game.push('trials'); return; }
-        } else if (this.cursor === R.QUIT) { audio.play('menu_confirm'); audio.music.stop(); this.game.fadeTo(() => this.game.reset('title'), 0.08); return; }
+        } else if (this.cursor === R.COMMANDS) { audio.play('menu_confirm'); this.game.push('help'); return; }
+        else if (this.cursor === R.QUIT) { audio.play('menu_confirm'); audio.music.stop(); this.game.fadeTo(() => this.game.reset('title'), 0.08); return; }
       }
     }
     this.refreshLabels();

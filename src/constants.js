@@ -28,8 +28,10 @@ export const CAMERA_MARGIN = 8;
 export const INPUT_BUFFER = 8;
 /** Local couch co-op slots (engine/input.js). */
 export const MAX_PLAYERS = 4;
-/** The two-slot lockstep session (docs/MULTIPLAYER.md): netplay never exceeds this many players. */
-export const NET_PLAYERS = 2;
+/** The lockstep session (docs/MULTIPLAYER.md): an online room holds this many players at most. */
+export const NET_PLAYERS = 4;
+/** ...and at least this many. Below it there is nobody to be in lockstep with. */
+export const NET_MIN_PLAYERS = 2;
 /** Default hitbox depth tolerance. */
 export const HIT_Z_TOLERANCE = 24;
 
