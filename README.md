@@ -1,5 +1,7 @@
 # Aether & Brass
 
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support-e2b34a?logo=kofi&logoColor=white&labelColor=3a2010)](https://ko-fi.com/seansinnott)
+
 A steampunk high-fantasy side-scrolling beat-em-up in the spirit of *Golden Axe*, the *TMNT*
 arcade games and *TMNT: Shredder's Revenge*. **Four complete boards** end to end, four playable
 heroes, five enemy factions (thirty-one variants, plus five spawn modifiers that re-dress them per
@@ -314,13 +316,6 @@ src/game/      fighters, players, enemy AI, bosses, combat, world, stage runner,
 src/content/   characters, enemies and stage data (pure data + small draw hooks)
 tools/         dev server, single-file build, playtest harness, contact-sheet generator
 ```
-
-## Support
-
-Aether & Brass is a hobby project built around a day job. It is free, it has no ads and no
-tracking, and it will stay that way. If you enjoyed it and feel like putting something in the
-tip jar, there is [Ko-fi](https://ko-fi.com/seansinnott) — entirely optional, and a bug report
-or a note saying you played it is worth just as much.
 
 ## License
 
