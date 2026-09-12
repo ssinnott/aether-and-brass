@@ -31,13 +31,22 @@ for stage 2 (its faction, bosses, sections and audio).
   `types/content.d.ts`, then use it.
 - **Zero binary assets.** All art is drawn with canvas primitives; all audio is
   synthesized with WebAudio. Nothing is fetched at runtime except our own modules.
-- **Internal resolution:** `640 x 360` (constants `VIEW_W`, `VIEW_H`). The internal
-  canvas is scaled to the window by the largest integer factor that fits (min 1x), letterboxed, with
-  `image-rendering: pixelated` and `imageSmoothingEnabled = false` on the *display*
-  canvas. The integer factor is chosen in **device pixels** (`devicePixelRatio`, clamped
-  1..4) so HiDPI screens get evenly sized crisp game pixels; the display canvas's bitmap
-  is `window size * dpr` and its CSS size is the window size. All game drawing happens on the internal canvas. Snap sprite positions to
-  integers when drawing (`Math.round`) for a crisp pixel look.
+- **Internal resolution:** `640 x 360` (constants `VIEW_W`, `VIEW_H`). That is also the canvas's
+  bitmap size: there is ONE canvas, the one on the page, and the compositor scales it up to the window
+  via its CSS size (`image-rendering: pixelated` in `index.html`, `imageSmoothingEnabled = false` on the
+  context). The CSS size is the largest whole number of CSS pixels per game pixel that still fills
+  most of the window, falling back to an exact fit on a phone or a small window where the next whole
+  step would overflow or waste half the screen. Snap sprite positions to integers when drawing
+  (`Math.round`) for a crisp pixel look.
+  There used to be a second, offscreen "internal" canvas that `present()` blitted onto a display canvas
+  whose bitmap was `window size * dpr` — up to `3840 x 2160` on a 4K panel, `5120 x 2880` at 4x on a
+  retina one. That blit re-rasterised millions of pixels per frame to do a nearest-neighbour upscale the
+  compositor already does for free, and it dominated the frame. Measured in the headless harness (software
+  rasteriser, so pessimistic in absolute terms), a busy fight in a 4K window went from **30.1 ms to 19.6 ms
+  per frame** (33 -> 51 fps) and from **31.6 MB to 0.9 MB** of canvas bitmap; frame time also stopped
+  scaling with the window at all (19.6 / 21.0 / 21.7 / 24.1 ms across 640x360..2560x1440 before, flat 19.6
+  after). Wherever the scale is a whole number of device pixels per game pixel — what the sizing rule above
+  aims for — the output is identical either way. Do not reintroduce a full-window bitmap.
 - **Fixed timestep:** logic runs at exactly `60 Hz` (`DT = 1/60`). Render every
   requestAnimationFrame with the latest state (no interpolation needed). Accumulator
   clamps to 5 steps per frame to avoid spiral of death. All gameplay numbers
@@ -71,7 +80,7 @@ src/
     bindings.js            # default binding table + pure helpers: clone/sanitise/rebind/legend/join-hint
     rng.js                 # seedable RNG: rng.seed(n), rng.next(), rng.range(a,b), rng.int(a,b), rng.pick(arr), rng.chance(p)
     camera.js              # camera x, lock/unlock, shake
-    canvas.js              # create internal canvas, display canvas, resize/scaling, present()
+    canvas.js              # the 640x360 canvas on the page, CSS resize/scaling (present() is a no-op)
     text.js                # drawText(ctx, str, x, y, opts) using a built-in procedural pixel font (see 9)
     particles.js           # pooled particle system (sparks, dust, smoke, steam, debris, floating text)
     audio.js               # WebAudio synth: sfx.play(name, opts), music.play(track), master mute
@@ -249,7 +258,7 @@ entities must project as `sx = cam.toScreenX(x)`, `sy = FLOOR_TOP + z - y + cam.
 
 ### `engine/canvas.js`
 ```js
-export function createCanvas(mount) // -> { ctx /* internal 640x360 */, present(), scale /* integer, device px */, dpr, displayCanvas, resize(), toInternal(clientX, clientY) }
+export function createCanvas(mount) // -> { ctx /* the 640x360 canvas on the page */, canvas, displayCanvas /* same element */, present() /* no-op */, scale /* device px per game px */, cssScale, dpr, resize(), toInternal(clientX, clientY) }
 ```
 Use `toInternal()` for any pointer mapping (it accounts for dpr and the letterbox offset).
 
