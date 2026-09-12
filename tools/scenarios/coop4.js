@@ -309,6 +309,32 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         const desyncs = await Promise.all([hostPage, guestPage].map((p) => p.evaluate(() => window.__game.netState().desync)));
         assert(desyncs[0] === null && desyncs[1] === null, `no desync from the extra local join/pad activity (${JSON.stringify(desyncs)})`);
       });
+
+      // Part G: a room you can leave. The lobby's start gate needs EVERY seated player ready
+      // (net/session.js partyReady) and the disconnect watchdog is only armed once a match starts, so
+      // a peer who goes quiet without closing the tab is never dropped. Until lobby.js grew a
+      // back-out in its 'lobby' phase there was no key at all -- Escape included -- that got anybody
+      // out of that wait; reloading the page was the only way.
+      await withPair(server, 'room=NETOUT&transport=broadcast&host=1', 'room=NETOUT&transport=broadcast', async (hostPage, guestPage, H, G) => {
+        for (const p of [hostPage, guestPage]) await p.evaluate(() => window.__game.startLoop());
+        for (const p of [hostPage, guestPage]) await p.waitForFunction(() => ((window.__game.netState() || {}).state === 'lobby'), null, { timeout: 20000 });
+        // The guest must have reached the LOBBY phase: 'connecting' has always had its own back-out,
+        // so testing there would pass whether or not the lobby phase has one.
+        await guestPage.waitForFunction(() => window.__game.game.screen.phase === 'lobby', null, { timeout: 20000 });
+        const phase = await guestPage.evaluate(() => window.__game.game.screen.phase);
+        assert(phase === 'lobby', `the guest is past 'connecting' and in the room proper (got ${phase})`);
+        // The host readies and then waits on the guest for good -- nothing times this out.
+        assert(await readyUp(hostPage), 'the host registered its ready press');
+        assert(await hostPage.evaluate(() => (window.__game.netState() || {}).state) === 'lobby',
+          'one ready peer does not start the match: the room still waits on the other');
+        // The guest has NOT readied. BACK must actually leave the room, not sit there doing nothing.
+        await guestPage.bringToFront();
+        await guestPage.keyboard.press('KeyX'); // P1 JUMP = BACK (game/menuinput.js)
+        await guestPage.waitForFunction(() => window.__game.screen() === 'title', null, { timeout: 10000 })
+          .catch(() => { /* asserted below with the actual screen in the message */ });
+        const left = await G.screen();
+        assert(left === 'title', `BACK from a room you have not readied in leaves it for the title (got ${left})`);
+      });
     },
   };
 }

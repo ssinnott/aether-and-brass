@@ -137,6 +137,14 @@ flavours are gone — three doors onto one feature is three things to explain an
 working. `?transport=broadcast` still drives BroadcastChannel for `tools/playtest.js`, and is not
 offered in the UI.
 
+**Every wait has a way out of it.** The match starts only when every seated player is ready
+(`partyReady`), and the disconnect watchdog is not armed until the match itself starts — so a peer who
+stops responding without closing their tab is never dropped, and the rest of the room waits on them
+indefinitely. BACK therefore leaves: from a room you have not readied in it ends your session and
+returns you to the title, exactly as it does from the 'connecting' phase; once you are ready, the
+first BACK un-readies you and the second leaves. Before that the 'lobby' phase read no back-out at
+all, and reloading the page was the only way out of a room somebody had gone quiet in.
+
 One room topic now carries up to six pairings' signalling, so a peer publishes under its own short
 id and addresses each message to one other peer; `createSignalMux` splits that back into the
 one-pairing channel `peer.js` expects. Two things there are load-bearing: a message addressed to

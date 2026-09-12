@@ -70,6 +70,7 @@ export class LobbyScreen extends Screen {
     this.hintCancel = `${backKey(inp)}: CANCEL`;
     this.hintError = `${confirmKey(inp)}: BACK TO TITLE`;
     this.hintUnready = `${backKey(inp)}: CHANGE YOUR MIND`;
+    this.hintLeave = `${backKey(inp)}: LEAVE ROOM`;
     this.hintReadyHost = `LEFT/RIGHT: HERO    UP/DOWN: BOARD    ATTACK (${k('attack')}): READY`;
     this.hintReadyHost1 = `LEFT/RIGHT: HERO    ATTACK (${k('attack')}): READY`;
     this.hintReadyGuest = `LEFT/RIGHT: HERO    ATTACK (${k('attack')}): READY    THE HOST PICKS THE BOARD`;
@@ -235,8 +236,18 @@ export class LobbyScreen extends Screen {
         if (confirmPressed(inp, 0)) {
           this.net.setReady(true); audio.play('menu_confirm');
           this.playOn(this.net.lobby.myChar, 'win');
+        } else if (cancelPressed(inp, 0) || escapePressed(inp)) {
+          // BACK from a room you have not readied in LEAVES it, the same way it does from the
+          // 'connecting' phase above. Until this the lobby phase read no back-out at all: the start
+          // gate needs every seated player ready (net/session.js partyReady), the disconnect watchdog
+          // is not armed until the match starts, so a peer who stops responding without closing the
+          // tab is never dropped, and nothing on this screen -- Escape included -- got anybody out.
+          // Reloading the page was the only way to leave a room somebody had gone quiet in.
+          this.net.end('left the room');
+          back();
         }
       } else if (cancelPressed(inp, 0) || escapePressed(inp)) {
+        // Ready -> not ready. BACK again then leaves the room, by the branch above.
         this.net.setReady(false); audio.play('menu_back');
         this.playOn(this.net.lobby.myChar, 'idle');
       }
@@ -402,6 +413,7 @@ export class LobbyScreen extends Screen {
   /** ...and while they are still choosing: what the keys do, plus the invitation if seats are free. */
   readyHint(open) {
     const base = this.isHost ? (open > 1 ? this.hintReadyHost : this.hintReadyHost1) : this.hintReadyGuest;
-    return this.party().length < NET_PLAYERS ? `${base}    MORE CAN STILL JOIN` : base;
+    const seats = this.party().length < NET_PLAYERS ? `${base}    MORE CAN STILL JOIN` : base;
+    return `${seats}    ${this.hintLeave}`;
   }
 }
