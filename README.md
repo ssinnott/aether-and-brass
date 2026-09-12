@@ -75,9 +75,9 @@ Playing online, everybody is on the first block: the keys are the same on every 
   bar, that is spent before health and refills a few seconds after the last hit. The pool, the refill rate and
   the wait are different for each hero (character select prints them), and breaking one keeps it down twice as
   long — it is a buffer, not a block, so the hit still lands, staggers and knocks down as usual.
-- If somebody **puts the pad down mid-fight**, their hero goes on autopilot after about fifteen seconds so the
-  run keeps moving, and comes straight back under their hand the moment they press anything. A seat nobody is
-  driving can't hold up the rest of the party.
+- Standing still is your business — nobody's hero is taken off them for hanging back. But if you're **the last
+  one standing and you've put the pad down**, your hero goes on autopilot after about fifteen seconds rather than
+  leaving the run with no way to end, and comes straight back under your hand the moment you press anything.
 - Online, **jump or dodge leaves a room** you haven't readied in (once you're ready, the first press
   un-readies you and the second leaves). A match needs everyone ready and nothing times that out, so a
   friend who wanders off can't strand the rest of you in the lobby.

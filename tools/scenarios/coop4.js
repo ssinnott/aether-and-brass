@@ -310,35 +310,35 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         assert(desyncs[0] === null && desyncs[1] === null, `no desync from the extra local join/pad activity (${JSON.stringify(desyncs)})`);
       });
 
-      // Part I: an abandoned couch seat goes to the bot, and comes straight back on one press.
-      // Without it, GAME OVER's `anyAlive` gate (every player `out`) was suppressed for good by one
-      // alive-but-silent hero: no continue countdown, no results, and -- once their partner was out --
-      // no camera movement, no section advance, no wave, so nothing was ever going to kill them.
+      // Part I: a seat is only taken over when it is the LAST thing holding the run open. Standing
+      // still is ordinary play, so an idle partner keeps their hero while somebody else is still up --
+      // the camera's leader floor already stops them holding the run up. But once every other player is
+      // out, GAME OVER's `anyAlive` gate (every player `out`) was suppressed for good by that one
+      // alive-but-silent hero: no continue countdown, no results, and with their partner gone no camera
+      // movement, no section advance, no wave, so nothing was ever going to kill them either.
       await withPage(server, 'seed=3&skipTo=gameplay&chars=0,1&nowaves=1&godmode=1', async (g) => {
         await g.step(30);
         const seats = () => g.eval(() => window.__game.summary().players.map((p) => ({ i: p.index, bot: !!p.bot })));
+        const botAt = async (i) => (await seats()).find((p) => p.i === i).bot;
         let st = await seats();
         assert(st.length === 2 && st.every((p) => !p.bot), `two human seats to start (${JSON.stringify(st)})`);
-        // Zero P2's idle clock with one press, so the window below is measured from a known point
-        // rather than from whenever the page booted.
-        await g.press(1, { left: true }, 2, 2);
-        // P1 keeps playing throughout; only P2 goes silent.
+        // 1. Nobody is up for takeover while a partner is still playing, however long they stand still.
+        await g.press(1, { left: true }, 2, 2);           // zero P2's idle clock
         await g.eval(() => window.__game.setInput(0, { right: true }));
-        await g.step(840);
-        st = await seats();
-        assert(st.every((p) => !p.bot), `nobody is handed over early -- 840 frames is inside the 900-frame window (${JSON.stringify(st)})`);
-        await g.step(120);
-        st = await seats();
-        const p1 = st.find((p) => p.i === 0), p2 = st.find((p) => p.i === 1);
-        assert(p2 && p2.bot, `the silent seat goes to the bot past ABANDONED_SEAT_FRAMES (${JSON.stringify(st)})`);
-        assert(p1 && !p1.bot, `and the seat that is being played is left alone (${JSON.stringify(st)})`);
-        // One press takes it back.
-        await g.eval(() => window.__game.setInput(1, { left: true }));
-        await g.step(3);
-        await g.eval(() => window.__game.clearInput(1));
-        st = await seats();
-        assert(!st.find((p) => p.i === 1).bot, `one press takes the seat straight back (${JSON.stringify(st)})`);
+        await g.step(1200);                                // well past ABANDONED_SEAT_FRAMES
         await g.eval(() => window.__game.clearInput(0));
+        st = await seats();
+        assert(st.every((p) => !p.bot), `a hero is not taken from its owner just for standing still (${JSON.stringify(st)})`);
+        // 2. Their partner goes out: now that silent seat is the only thing keeping the run open.
+        await g.eval(() => { window.__game.game.screen.players[0].out = true; });
+        await g.press(1, { left: true }, 2, 2);           // zero the clock again, so the window is measured
+        await g.step(840);
+        assert(!(await botAt(1)), 'still nobody handed over 840 frames in -- inside the 900-frame window');
+        await g.step(120);
+        assert(await botAt(1), 'the last living seat goes to the bot once it is all that holds the run open');
+        // 3. One press takes it straight back.
+        await g.press(1, { left: true }, 2, 3);
+        assert(!(await botAt(1)), 'one press takes the seat straight back from the bot');
       });
 
       // Part G: a room you can leave. The lobby's start gate needs EVERY seated player ready

@@ -160,15 +160,21 @@ export class GameplayScreen extends Screen {
     // camera settled on them, the section never advanced, no wave ever spawned and nothing was left
     // that could kill them. Stable forever, with QUIT TO TITLE the only way out.
     //
-    // Only with company (one player alone blocks nobody, and the training room is a party of one, where
-    // standing still reading the frame-data readout is the whole point) and only offline: online, seats
-    // are the session's to retire, and flipping `bot` from a local timer would diverge the lockstep.
-    // A single press takes the seat straight back.
+    // Only when that seat is the LAST thing holding the run open -- every other player already out --
+    // because that is precisely the deadlock and nothing else is. Standing still is ordinary play: you
+    // hang back from a hazard, you let your partner take the boss, you put the pad down for twenty
+    // seconds while somebody answers the door. Taking a hero off its owner then would be theft, and the
+    // camera's leader floor already means an idle partner cannot hold the run up on its own.
+    // Only with company too (one player alone blocks nobody, and the training room is a party of one,
+    // where standing still reading the frame-data readout is the whole point) and only offline: online,
+    // seats are the session's to retire, and flipping `bot` from a local timer would diverge the
+    // lockstep. A single press takes the seat straight back.
     if (!online && this.players.filter(Boolean).length > 1) {
+      const alive = this.players.filter((q) => q && !q.out);
       for (const p of this.players) {
         if (!p || p.out) continue;
         const idle = inp.idleFrames(p.index);
-        if (!p.bot && idle >= ABANDONED_SEAT_FRAMES) {
+        if (!p.bot && alive.length === 1 && idle >= ABANDONED_SEAT_FRAMES) {
           p.bot = true; p.abandoned = true;
           this.hud.showBanner(`PLAYER ${p.index + 1} AWAY`, 'THE BOT TAKES OVER', 90);
         } else if (p.abandoned && idle === 0) {
