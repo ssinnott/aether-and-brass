@@ -177,11 +177,12 @@ salvage lines going up into a sky with bladders in it. Flat, open, and the longe
 (1800px of it) — this is where the game teaches you to look up, and where it teaches you that the rose haze is only
 a warning. It is also the thinnest sky on the board: six of its eighteen bodies hang under a bag.
 
-- **Props:** two **spoil heaps** (x 300, x 1690; Coal Scrip), the guild's pole **lantern** at x 580 (Coal Scrip —
-  and a **fire** when it breaks: the spilt oil lights the seep beside it, which is the one thing on the field that
-  lights a seep *on purpose*), a **salvage line** at x 1000 (cut it for an Aether Vial), a crate (Brass Cogs), a
-  **keg** at x 1460 (Coal Scrip; it goes off 30f after breaking, and the blast lights the back-lane seep), a bucket
-  (Roast Bird).
+- **Props (5):** two **spoil heaps** (x 300 Coal Scrip, x 1740 Coal Scrip and a Brass Cog), the guild's pole
+  **lantern** at x 580 (Coal Scrip — and a **fire** when it breaks: the spilt oil lights the seep beside it, which is
+  the one thing on the field that lights a seep *on purpose*), a **salvage line** at x 940 (cut it for an Aether
+  Vial), and a bucket (Roast Bird) at x 1560. The crate and the keg that used to stand between the far seep and the
+  second heap have gone: the lantern-and-seep pair is the one thing on this field the player has to read *as a pair*,
+  and a screen with six other things on it is not where anyone works that out.
 - **Hazards:** two **gas seeps** (`gasSeep`, x 620 on the front lane, x 1400 on the back lane) — rose haze,
   HARMLESS until any fire touches it (a burning body, the Firebrand's flame, a broken lantern, a keg, an explosion),
   then a 12 knockdown + burn burst within 34px and 360f dormant — and the salvage **hook** swinging at x 1120 on the
@@ -206,12 +207,15 @@ the field on forty bladders, **under way**: the camera locks to the screen and t
 way below, the loft off the end of the float) scrolls itself at `drift: 0.4` px/frame, so the raft reads as a thing
 drifting toward the press end rather than a still screen. No bulwark anywhere on it.
 
-- **Props:** two **salvage lines** (x 1930, x 2380; Aether Vials, one at either end), a **gas bag** at x 2060 (a
-  Meat Pie and a rose puff — never a fire source), a ballast bag at x 2200 (Meat Pie). The arrival spot (x
-  1870–1910) stays clear.
-- **Hazards:** two **ballast drops** (`ballastDrop`) — the lines landing their loads: a shadow grows on the deck
-  for 36f, then a ballast bag lands for 14 knockdown, every 240f — at x 1960 on the middle lane and at x 2280 on the
-  front lane half a cycle later.
+- **Props (1):** one **gas bag** at x 2300, carrying a Meat Pie and an Aether Vial (and a rose puff — never a fire
+  source). The arrival spot (x 1870–1910) stays clear.
+- **Hazards (1):** one **ballast drop** (`ballastDrop`) at x 2060 on the middle lane — the line landing its load: a
+  shadow grows on the deck for 36f, then a ballast bag lands for 14 knockdown, every 240f.
+- **THE BAREST SCENE IN THE GAME, and deliberately.** Two things on the whole raft, where board 1's Foundry Row and
+  Heart-Engine carry four (ARCHITECTURE 7, scene density). A float of other people's wrecks hanging on forty bladders
+  with **nothing lashed down** is what this section is about, and everything else it asks of the player is geometry
+  rather than objects: the dip that slides you, the two plank gaps, no bulwark anywhere. It also buys the set piece
+  below — on a deck this empty, the Warden's carcass coming down in the middle of it is unmistakably the new thing.
 - **Zone:** `rails` over the whole raft (x 1800–2440): the front and back 12px are open air over the field. An
   **enemy** thrown or knocked over that line rings out for +200 — `hazards.js` rings out enemies only, and a player
   who reaches it is simply shoved back onto the deck. `open: true` as well, so a thrown weapon or prop, or a
@@ -235,12 +239,13 @@ of it. **Decked in** — no rails and no net squares, because the Reeve's arena 
 zone inside a boss arena can only cost a player a life (the boss cannot be thrown out of it). The backdrop paints a
 low hull-plate bulwark along the deck edges here instead of the raft's rope-and-air.
 
-- **Props:** a crate (Brass Cogs), a keg (Coal Scrip), a **gas bag** at x 2790 (Meat Pie), the urn holding the
-  board's **Brass Heart** (1-UP) at x 2900, a **lantern** at x 3012 (the fire that lights the seep beside it), and
-  in the Reeve's arena a **salvage line** at x 3200 (Aether Vial) and a gas bag at x 3400 (Meat Pie).
-- **Hazards:** a **ballast drop** at x 2640 on the back lane, the press crane's **hook** at x 2900 over the middle
-  lane, and one **gas seep** at x 3060 on the front lane just short of the arena — a different layout from the
-  field and the raft.
+- **Props (4):** a **gas bag** at x 2500 (a Meat Pie and a Brass Cog) opening the press, the urn holding the board's
+  **Brass Heart** (1-UP) at x 2860, a **lantern** at x 3240 (the fire that lights the seep beside it), and a **salvage
+  line** at x 3500 (Aether Vial) in the Reeve's arena. The crate, the keg and the second gas bag made this the
+  second-busiest screen in the game; the lantern and its seep moved down the press *together*, because they are a pair
+  and have to stay one wherever the pair is standing.
+- **Hazards:** a **ballast drop** at x 2620 on the back lane, the press crane's **hook** at x 3060 over the middle
+  lane, and one **gas seep** at x 3300 on the front lane — a different layout from the field and the raft.
 - **Waves (19):** (1) 1x Sickle + 2x **Tin Footman (salvaged)** + 1x Chaff + 2x Deckhand — *meet the salvage*: two
   Footmen re-plated in plum and hemp, walking in under a Sickle, with two of the Wing's Deckhands behind them
   working the press lines. (2) 1x Thresher + 2x **Tin Footman (winged)** + 1x Line Corsair + 1x Deck Crimper + 1x
@@ -259,13 +264,15 @@ Only the guild in here, and the scrap it has made its own — no Sootborn, no Wi
 four bodies the guild has winged or re-plated. It is also the fullest sky on the board: 13 of its 18 hang under a
 bag of their own.
 
-- **Props:** two **cargo nets** overhead (x 3960, x 4660) — only a **jump attack** opens one, and when it does its
+- **Props (6):** two **cargo nets** overhead (x 3860, x 4900) — only a **jump attack** opens one, and when it does its
   load, a rolling **chassis**, comes down on the floor under it and rolls away from whoever opened it as a live
-  hazard (Brass Cog when it breaks); a case (Golden Sprocket), a **lantern** at x 4170 on the sorting line (the only
-  fire in a bag full of gas), a **salvage line** at x 4240 (Aether Vial), an urn and a **gas bag** (Meat Pies) before
-  the hang line, a bucket (Roast Bird).
+  hazard (Brass Cog when it breaks); a **lantern** at x 4180 on the sorting line (the only fire in a bag full of gas),
+  an urn at x 4380 (Meat Pie), a case at x 4780 (Golden Sprocket), and a bucket at x 5060 (Roast Bird). The loft is
+  the room the game ends in and it used to put eight things in one view of the approach; the salvage line and a gas
+  bag went. **The last two now stand inside the Harvestlord's box** — a net that can still drop a chassis into the
+  boss fight, and food you have to go into the vent band to reach.
 - **Hazards:** one **gas seep** at x 4120 on the back lane (the loft's own gas coming up through the netting) and a
-  **ballast drop** at x 4500 on the front lane, from the nets above.
+  **ballast drop** at x 4560 on the front lane, from the nets above.
 - **Zones:** **net decking** (`netGive`, x 3700–4800) with three marked squares — x 3900 z 60, x 4300 z 110, x 4600
   z 40 — that give way under a knockdown or thrown landing: the square sags for 10f and is open for 60f, enemies
   standing in it ring out (+200), players lose 8% of max HP, are knocked down and set on the nearest edge. All

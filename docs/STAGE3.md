@@ -175,8 +175,10 @@ a hazard layout no other section in the game shares.
   lamps on poles. *Near* (1.2x): cart shafts and hanging tarpaulin at the screen edges, lime dust blowing along the
   ground.
 - **Floor:** rutted lime road over old rail, sleeper lines, spilled quicklime, cart tracks.
-- **Props:** crates (Brass Cogs), kegs (Coal Scrip), a cart (Meat Pie), a **lime sack** at x 1140 (a Meat Pie under
-  the quicklime, which goes up in a white puff), a **tally board** at x 1300 (the company's Coal Scrip).
+- **Props (4):** a crate at x 280 (Brass Cogs and the road gang's Coal Scrip), a cart at x 880 (Meat Pie), a **lime
+  sack** at x 1140 (a Meat Pie under the quicklime, which goes up in a white puff), a **tally board** at x 1300 (the
+  company's Coal Scrip). Three in a view at most, which is the thinnest the board gets on purpose: the road is the one
+  stretch you can see a long way down, and the wagon that rolls its whole length has to be readable from off screen.
 - **Hazards:** two **lime pits** (x 620 on the front lane, x 1540 on the back lane) — the roadside quicklime blows
   off every 180f: 5 damage and **BLINDED** for 30f (no attacking), no launch — and the **runaway lime wagon**: parked
   at x 1780, it rocks on its chocks for 45f and then rolls the *whole road* leftward along the middle rut (z 70) to
@@ -198,10 +200,11 @@ a hazard layout no other section in the game shares.
   painted on it.
 - **Hazards:** the **kiln head** at x 2000 (`kilnMouth`, z 12, reach 128) — its draw-cone runs the **full width of the
   floor band**, so the belt feeds *into* it: a 36f lime glow, then 14f of fire across x 1972–2028 (12 knockdown +
-  burn) every 300f; the arrival spot (x 1870–1910) stays clear of it. A **tallow vat** at x 2300 on the back lane
-  bubbles for 40f and boils over for 30f every 240f (6 knockdown + burn; a fire source while it boils).
-- **Props:** a lime sack (Meat Pie), a keg, a bucket (Roast Bird), and **two handcarts**: a live **Tin Footman tips
-  out** of each when it breaks. The second cart stands *on the belt* at x 2410 and rides it down to the kiln head,
+  burn) every 300f; the arrival spot (x 1870–1910) stays clear of it. **One hazard on this lane, not two** — the set
+  piece is the belt carrying everything into the kiln, and a tallow vat boiling over halfway down it was a second thing
+  to watch on a screen the camera never leaves. The vats are the yard's, and the yard still has one.
+- **Props (2):** a lime sack at x 1920 (a Meat Pie and Coal Scrip under the quicklime) and **one handcart**: a live
+  **Tin Footman tips out** of it when it breaks. It stands *on the belt* at x 2410 and rides it down to the kiln head,
   and its Footman was **crusted** before it was loaded.
 - **Timed waves (16, plus the two out of the carts)** — each fires at its time, or as soon as the one before it is
   cleared: **0s** 1x **Drayman** (the first Chandler who is a threat on his own) + 2x Wickboy + 1x Soot Cutthroat
@@ -218,12 +221,15 @@ a hazard layout no other section in the game shares.
   company's mark on it. *Mid* (0.5x): tallow vats and their gantries, stacked handcarts, tally boards, pole lamps.
   *Near* (1.2x): kiln flues and hanging tarpaulin passing in front of the fight; lime dust.
 - **Floor:** yard cobble with cart ruts, chalk lane lines and quicklime spill.
-- **Props:** kegs, a **handcart** at x 2700 (a **crusted Brass Halberdier** tips out of it), a bucket (Roast Bird),
-  the urn holding the board's **Brass Heart** (1-UP) at x 2960, a tally board, a lime sack (Meat Pie) in the
-  kiln-head arena.
-- **Hazards:** **tallow vats** at x 2600 (front lane) and x 3040 (back lane, on the opposite half of the cycle), the
-  shed wall's **draw-kiln** at x 2760 (a 90px cone across the back lane every 300f), and the yard crane's **hook**
-  swinging at x 2880 over the middle lane.
+- **Props (4):** the urn holding the board's **Brass Heart** (1-UP) at x 2760, the **delivery cart** at x 2960 that
+  wave 1 comes out of, the **handcart shoved across the yard mouth** at x 3086 (the barricade), and a bucket (Roast
+  Bird) at x 3460 in the kiln-head arena. **This was the busiest screen in the game — eleven props and hazards in one
+  view of it** — in a section whose floor is climbing under the player and whose two loaded carts are both decisions.
+  Two of the four left are fixed where they are, so what got cut was the scenery standing between them.
+- **Hazards (2):** a **tallow vat** at x 2520 on the front lane, and the shed wall's **draw-kiln** at x 3280 (a 90px
+  cone across the back lane every 300f), which has moved down to the head of the yard where the Yardmaster is waiting —
+  board 1 puts a piston inside Grubbik's arena the same way. The yard keeps both of the hazards that are *its own* and
+  drops the crane hook, which four other sections have one of anyway.
 - **Waves (14, plus the one out of the cart):** (1) 1x Limeburner + 1x **Purser** + 1x Wickboy + 1x Copper Sapper —
   the company's dram, on a Limeburner who is about to crust a Sapper. (2) 1x Drayman + 1x Tallyman + 2x Tin Footman
   (crusted) + 1x Tin Footman — the Drayman sends the carts down and the tin walks off them; no Wickboy in the wave
@@ -243,13 +249,15 @@ a hazard layout no other section in the game shares.
   end of the room. *Mid* (0.5x): counting desks, chained ledgers, the wax press, cart lanes running into the hall.
   *Near* (1.2x): pillars passing in front of the fight; paper dust turning in the lamp light.
 - **Floor:** waxed board with brass inlay lines and lime tracked in from the yard.
-- **Props:** cabinets (a Golden Sprocket; the second, at x 4760, an Aether Vial), two **ledger stacks** (Brass Cogs),
-  a case (Golden Sprocket), a tally board, urns (Meat Pie — one of them out on the counting floor, for the fight),
-  and the last **handcart** up from the yard at x 4820, stood short of the counting floor: break it and the company
-  loses the Tin Footman inside it before it can tip him out itself.
+- **Props (5):** a cabinet at x 3760 (Golden Sprocket), a **ledger stack** at x 4160 (Brass Cogs), urns at x 4460 and
+  x 5020 (Meat Pie — the second out on the counting floor, for the fight), and the last **handcart** up from the yard
+  at x 4820, stood short of the counting floor, now carrying the Aether Vial as well: break it and the company loses
+  the Tin Footman inside it before it can tip him out itself. Down from nine — the second sprocket, the second ledger
+  stack, the tally board and the aether cabinet put seven in one view of the counting floor, on the one board whose
+  galleries drop something on you from above, which is a tell you have to be able to find.
 - **Hazards:** two **ledger drops** (x 3980 on the front lane, x 4320 on the back lane, half a cycle apart) — the
   house drops its ledgers off the galleries: a shadow grows on the floor for 36f and then the book lands, 10
-  knockdown — and one **lime pit** at x 4560 on the front lane, where the lime lamp on the floor is the tell.
+  knockdown — and one **lime pit** at x 4620 on the front lane, where the lime lamp on the floor is the tell.
 - **Zone:** `daisVents` over the counting floor (4880–5300), in rite lime.
 - **Waves (22):** (1) 1x Resurrection Man + 1x Wickboy + 2x Tin Footman (crusted) + 1x Brass Halberdier — the door
   of the house: two men to keep them up, and three machines already on their feet. (2) 1x Purser + 1x Limeburner +

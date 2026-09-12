@@ -252,8 +252,10 @@ before it did not do.
   goes down before the fighters, so the back lane stands in front of it, and only the front rail — the one the camera
   is outboard of — is in the near layer, kept below the feet of the frontmost lane. Nothing in a near layer sits at
   fighter height on any board (`glean2.js`): a full-width bar across the arena hides whoever is standing behind it.
-- **Props:** crates (2x Brass Cog), **powder kegs** (they go off 30f after they break: 20, r 40 — bat one into a
-  boarding party; Coal Scrip), **ballast bags** (Meat Pie), a **signal locker** (Golden Sprocket).
+- **Props (5):** a crate (2x Brass Cog) at x 300, a **powder keg** at x 540 (it goes off 30f after it breaks: 20,
+  r 40 — bat one into a boarding party; Coal Scrip), **ballast bags** (Meat Pie) at x 900 and x 1810, and a **signal
+  locker** (Golden Sprocket) at x 1340. One of each rather than two: with four hazards already on this gantry, a
+  second crate and a second keg took the spine past the four-objects-a-screen rule (ARCHITECTURE 7, scene density).
 - **Hazards:** **lightning conductors** at x 700 (z 96) and x 1620 (z 40, half a cycle behind): a 40f violet ring,
   then 12 + knockdown + 10f stunned; the loading hook still swinging at x 1180 (z 70).
 - **Zones:** `rails` over the whole section — there is no bulwark up here, **any enemy thrown over the edge is gone**
@@ -278,14 +280,17 @@ before it did not do.
   hanging chains and hooks, ballast bags on lanyards, cargo stacked along the back, gantry lamps. *Near* (1.2x):
   structural frames passing in front of the fight; canvas dust turning in the cell light.
 - **Floor:** plank catwalk over mesh, caulked bay seams with brass screw heads, a dark drop along the back edge.
-- **Props:** ballast bags (Meat Pie) x2, kegs x2, crates x2, a signal locker holding the Wing's **Aether Vial**
-  (meter before the winch bay), a hanging bucket (Roast Bird), and a **powder tub** at x 2900 under the Bosuns' wave
-  for their kegs to cook (it rolls 50 and goes off 30f after it breaks: 18, r 44).
-- **Hazards:** two of the cells have split. **Gas cells** at x 2300 (z 70, the cloud drifts right at 2 px/f) and
-  x 3060 (z 40, drifts left, 210f behind): the cell swells and hisses for 40f, then a green cloud rolls 300px along
+- **Props (5):** a ballast bag (Meat Pie) at x 1960, a signal locker holding the Wing's **Aether Vial** at x 2160
+  (meter before the winch bay), the **powder barricade** keg at x 2660 (Coal Scrip), a **powder tub** at x 3200 in the
+  winch bay where the Bosuns' kegs are (it rolls 50 and goes off 30f after it breaks: 18, r 44), and a crate at x 3380
+  (Brass Cog and a Roast Bird). This was the busiest stretch in the game — eight things in one view of a corridor whose
+  whole job is reading the edges of two drifting clouds; the second ballast bag, the second keg, the loose crate and
+  the hanging bucket are what went, and their loads ride the survivors.
+- **Hazards:** two of the cells have split. **Gas cells** at x 2360 (z 70, the cloud drifts right at 2 px/f) and
+  x 3000 (z 40, drifts left, 210f behind): the cell swells and hisses for 40f, then a green cloud rolls 300px along
   its lane for 150f — 4 and **30f of stunned** to whoever it rolls over, once each. **Any fire inside the cloud
   ignites it** — a Bosun's keg, a keg or tub going off, a burning body: 14 + knockdown + burn on everyone within
-  1.6r, and the cell is empty until its next cycle. The loading hook swings at x 2680 (z 66). No gas valves any more:
+  1.6r, and the cell is empty until its next cycle. The loading hook swings at x 2800 (z 66). No gas valves any more:
   the section's tell is the hiss, not the rattle.
 - **Waves (20):** (1) 2x Galewright behind 2x Deckhand. (2) 1x Marine **through the netting from above** + 2x Crimper
   + 1x Corsair + **2x Copper Sapper (holdout)** lobbing bombs into the gas. (3) "meet the line": **1x Grapnel Mate** +
@@ -307,8 +312,11 @@ before it did not do.
   under the front edge of the floor band so it covers no one; the weather rail is the mid layer's bulwark cap, behind
   the fight. Rain, spray and the flash over everything.
 - **Floor:** holystoned planking, treenails, caulked butt seams with brass inlay, ring bolts, wet patches.
-- **Props:** a **powder tub at each gun port** (x 3760 z 26 aft, x 4080 z 116 forward), a ballast bag (Meat Pie), the
-  signal locker (Aether Vial) and a bucket (Roast Bird) amidships — food and meter for the densest screen on the board.
+- **Props (2):** a bucket (Roast Bird) at x 3880 and the **brig hatch** at x 3940, amidships. A locked screen IS one
+  scene — the camera never moves off it — so the gun deck carries four things counting both guns, where it used to
+  carry eight. The powder tubs at the gun ports were the ones that had to go: they read as gun furniture standing next
+  to the ports that are already the hazard, on a deck where both edges fire down a lane and the gust decides which lane
+  you are in. The tub survives in the winch bay one section back.
 - **Hazards:** two **run-out cannon**. The aft gun at the left edge (x 3604, z 22) fires right up the **back lane**
   (z 4–40); the forward gun at the right edge (x 4236, z 118) fires left down the **front lane** (z 100–136), 180f
   behind it. Every 360f: 45f of the carriage running the barrel out while its lane lights on the deck, then the shot
@@ -335,8 +343,10 @@ before it did not do.
 ## Section 4, The Bridge (x 4240–5200; the flagship's upper deck)
 - **Setting:** from the companion ladder to the bridge tower, still inside the storm; the `storm3` backdrop again, with
   the tower standing at the end of the section so the boss arena is visible long before you reach it.
-- **Props:** a keg, an urn holding the board's **Brass Heart** (1-UP) at x 4460, a bucket (Roast Bird), the signal
-  locker (Golden Sprocket) and a ballast bag (Meat Pie) at the foot of the dais.
+- **Props (2):** an urn at x 4540 holding the board's **Brass Heart** (1-UP) and the Golden Sprocket, and a bucket
+  (Roast Bird) at x 5100 — which is **on the dais, inside the vent band**, so the food on this deck costs something to
+  take. The approach to the dais is only 520px long and it used to hold five props and two masts, which is the whole
+  run-up to the Admiral spent walking round furniture; it holds three things in a view now, not four.
 - **Hazards:** two masts, no hook — **lightning conductors** at x 4420 (z 100, the front lane) and x 4640 (z 36, the
   back lane, 105f behind): the storm earths itself on both lanes of the bridge deck, never on both at once.
 - **Zone:** `daisVents` over the bridge dais (4760–5200): the band shrinks per boss phase and the edges vent.

@@ -79,11 +79,14 @@ export const stage4 = {
     { id: 'g1', name: 'THE TAILINGS', x0: 0, x1: 1800, backdrop: 'glean1', floor: 'spoil',
       // the board-4 family on the field: spoil heaps (the guild's scrip), a salvage line going up (cut it for meter), and the
       // guild's pole lantern at x 580 — break it and the spilt oil lights the seep beside it, on purpose
+      // Five props: the crate and the keg that used to stand between the far seep and the spoil heap have gone, because
+      // the lantern-and-seep pair is the one thing on this field the player has to SEE as a pair, and a screen with six
+      // other things on it is not where anyone works that out.
       props: [
         { type: 'spoilHeap', x: 300, z: 30, drops: SCRIP }, { type: 'lantern', x: 580, z: 124, drops: SCRIP },
-        { type: 'salvageLine', x: 1000, z: 20, drops: 'aetherVial' }, { type: 'crate', x: 1300, z: 112, drops: COGS },
-        { type: 'keg', x: 1460, z: 60, drops: SCRIP }, { type: 'bucket', x: 1600, z: 118, drops: 'roastBird' },
-        { type: 'spoilHeap', x: 1690, z: 24, drops: SCRIP },
+        { type: 'salvageLine', x: 940, z: 20, drops: 'aetherVial' },
+        { type: 'bucket', x: 1560, z: 118, drops: 'roastBird' },
+        { type: 'spoilHeap', x: 1740, z: 24, drops: ['coalScrip', 'brassCog'] },
       ],
       // two gas seeps (front lane, then back lane) and the salvage hook swinging on the line up to the float between them
       hazards: [
@@ -141,19 +144,17 @@ export const stage4 = {
         warn: 'THE FLOAT DIPS', warnSub: 'MIND THE GAPS' },
       /** Auto-scroll of the far parallax (px per frame, glean2.js): the field a long way below slides past under the raft. */
       drift: 0.4,
-      // two salvage lines (meter, either end), a gas bag (a pie, and a rose puff - never a fire source) and a ballast bag;
-      // the arrival spot (x 1870..1910) stays clear
+      // THE BAREST SCENE IN THE GAME, and deliberately: two things on the whole raft. A float of other people's wrecks
+      // hanging on forty bladders with nothing lashed down is what this section is ABOUT, and everything else it asks
+      // of the player is geometry rather than objects -- the dip that slides you, the two plank gaps, no bulwark
+      // anywhere. The `bladders` beat below lands a chassis in the middle of it, and on a deck this empty that carcass
+      // is unmistakably the new thing. One gas bag carries the pie and the meter the cut props used to.
       props: [
-        { type: 'salvageLine', x: 1930, z: 20, drops: 'aetherVial' },
-        { type: 'gasBag', x: 2060, z: 118, drops: 'meatPie' },
-        { type: 'ballast', x: 2200, z: 26, drops: 'meatPie' },
-        { type: 'salvageLine', x: 2380, z: 116, drops: 'aetherVial' },
+        { type: 'gasBag', x: 2300, z: 118, drops: ['meatPie', 'aetherVial'] },
       ],
-      // the lines land their loads: a growing shadow on the deck, then a ballast bag (14 knockdown) - one on the middle of
-      // the raft, one on the front lane at the far end half a cycle later
+      // the line lands its load: a growing shadow on the deck, then a ballast bag (14 knockdown), on the middle of the raft
       hazards: [
-        { type: 'ballastDrop', x: 1960, z: 60, period: 240, tell: 36, active: 8 },
-        { type: 'ballastDrop', x: 2280, z: 100, period: 240, tell: 36, active: 8, offset: 120 },
+        { type: 'ballastDrop', x: 2060, z: 60, period: 240, tell: 36, active: 8 },
       ],
       /** No bulwark on a raft of other people's hulls: the front and back 12px are open air over the field (+200). */
       // `open: true` (issue #21): a thrown weapon / prop, or a dropped weapon pickup, drifting past the same edge is lost too.
@@ -230,20 +231,22 @@ export const stage4 = {
     // bags, not the guild's own air. Decked in - no rails, no net squares - because the Reeve's arena is at the end of it
     // and a ring-out zone inside a boss arena only ever takes a player's life.
     { id: 'g3', name: 'THE PRESS', x0: 2440, x1: 3600, backdrop: 'glean2', floor: 'plank',
-      // the urn holds the board's Brass Heart (1-UP); a gas bag (pie) and a salvage line (meter) stand in the Reeve's arena,
-      // and the lantern at x 3012 is the fire that lights the seep beside it
+      // Four props, down from seven: the urn holds the board's Brass Heart (1-UP), a gas bag (pie) opens the press, the
+      // lantern is the fire that lights the seep beside it, and the salvage line (meter) stands in the Reeve's arena.
+      // The crate, the keg and the second gas bag were the three that made this the second-busiest screen in the game.
       props: [
-        { type: 'crate', x: 2520, z: 30, drops: COGS }, { type: 'keg', x: 2680, z: 116, drops: SCRIP },
-        { type: 'gasBag', x: 2790, z: 118, drops: 'meatPie' }, { type: 'urn', x: 2900, z: 24, drops: 'brassHeart' },
-        { type: 'lantern', x: 3012, z: 124, drops: SCRIP },
-        { type: 'salvageLine', x: 3200, z: 20, drops: 'aetherVial' }, { type: 'gasBag', x: 3400, z: 118, drops: 'meatPie' },
+        { type: 'gasBag', x: 2500, z: 118, drops: ['meatPie', 'brassCog'] },
+        { type: 'urn', x: 2860, z: 24, drops: 'brassHeart' },
+        { type: 'lantern', x: 3240, z: 124, drops: SCRIP },
+        { type: 'salvageLine', x: 3500, z: 20, drops: 'aetherVial' },
       ],
       // a ballast line lands on the back lane, the press crane's hook works the middle, and one seep vents through the
-      // decking on the front lane just short of the arena - a different layout from the field and the raft
+      // decking on the front lane - a different layout from the field and the raft. The lantern and the seep have moved
+      // down the press together: they are a pair and they have to stay one, wherever the pair is standing.
       hazards: [
-        { type: 'ballastDrop', x: 2640, z: 40, period: 240, tell: 36, active: 8 },
-        { type: 'hook', x: 2900, z: 66, period: 130 },
-        { type: 'gasSeep', x: 3060, z: 110 },
+        { type: 'ballastDrop', x: 2620, z: 40, period: 240, tell: 36, active: 8 },
+        { type: 'hook', x: 3060, z: 66, period: 130 },
+        { type: 'gasSeep', x: 3300, z: 110 },
       ],
       waves: [
         // "meet the salvage": two Tin Footmen re-plated in plum and hemp, walking in under a Sickle and a Chaff, with two of
@@ -284,18 +287,22 @@ export const stage4 = {
     // net is not an elite. No floor to speak of either: marked net squares give way, and 13 of the 18 bodies in here hang
     // under a bag of their own, which is where the rule has been going since the field.
     { id: 'g4', name: 'THE CROP LOFT', x0: 3600, x1: 5300, backdrop: 'glean3', floor: 'net',
-      // two cargo nets overhead (a jump attack opens one and its chassis comes down rolling), a case, a salvage line (meter),
-      // an urn and a gas bag (pies) before the hang line, and one lantern on the sorting line - the only fire in a bag of gas
+      // two cargo nets overhead (a jump attack opens one and its chassis comes down rolling), an urn (pie), a case
+      // (meter) and a bucket, and one lantern on the sorting line - the only fire in a bag of gas.
+      // The loft is the room the game ends in and it used to put eight things in one view of the approach. Six now,
+      // and the last two stand INSIDE the Harvestlord's box: a net that can still drop a chassis into the boss fight,
+      // and the food you have to go into the vent band to reach.
       props: [
-        { type: 'cargoNet', x: 3960, z: 60 }, { type: 'case', x: 4080, z: 22, drops: 'goldenSprocket' },
-        { type: 'lantern', x: 4170, z: 20, drops: SCRIP }, { type: 'salvageLine', x: 4240, z: 118, drops: 'aetherVial' },
-        { type: 'urn', x: 4420, z: 26, drops: 'meatPie' }, { type: 'gasBag', x: 4560, z: 120, drops: 'meatPie' },
-        { type: 'cargoNet', x: 4660, z: 80 }, { type: 'bucket', x: 4780, z: 118, drops: 'roastBird' },
+        { type: 'cargoNet', x: 3860, z: 60 },
+        { type: 'lantern', x: 4180, z: 20, drops: SCRIP },
+        { type: 'urn', x: 4380, z: 26, drops: 'meatPie' },
+        { type: 'case', x: 4780, z: 22, drops: 'goldenSprocket' },
+        { type: 'cargoNet', x: 4900, z: 80 }, { type: 'bucket', x: 5060, z: 118, drops: 'roastBird' },
       ],
       // the loft's own gas comes up through the netting on the back lane, and the nets above drop their ballast on the front
       hazards: [
         { type: 'gasSeep', x: 4120, z: 30 },
-        { type: 'ballastDrop', x: 4500, z: 100, period: 240, tell: 36, active: 8 },
+        { type: 'ballastDrop', x: 4560, z: 100, period: 240, tell: 36, active: 8 },
       ],
       /**
        * Net decking: three marked squares give way under a knockdown landing (enemies in them ring out, +200; players lose

@@ -10,6 +10,7 @@
 // table counts reinforcements and timed waves as enemies and waves respectively.
 import { STAGES } from '../src/content/stage/index.js';
 import { getEnemyDef } from '../src/content/enemies/index.js';
+import { VIEW_W } from '../src/constants.js';
 
 // the spawn-modifier table (game/traits.js SPAWN_MODS); tolerated as absent so the census runs on any revision
 const SPAWN_MODS = (await import('../src/game/traits.js')).SPAWN_MODS || {};
@@ -57,6 +58,35 @@ function spawnsOf(w) {
 }
 const key = (s) => `${s.type}:${s.variant}${s.mods && s.mods.length ? '+' + [...s.mods].sort().join('+') : ''}`;
 const label = (k) => k.replace(/^[a-z]+:/, '');
+/**
+ * SCENE DENSITY. A "scene" is one cameraful: the camera shows VIEW_W px of the board at a time (engine/camera.js),
+ * so the honest measure of how busy a stretch looks is the most props + hazards that can be on screen TOGETHER,
+ * not how many a section holds in total. The rule the boards are authored to is a VARIABLE 2 to 4 — a section may
+ * open on two and close on four, but nothing may put five in one view.
+ *
+ * Counted: props and hazards, the discrete things that are drawn and hit. Not counted:
+ *   - `zones` (molten, conveyor, rails, gust, spoil, netGive, solid) and `platform`: area rules over a whole band
+ *     rather than objects standing in it, and several draw nothing of their own.
+ *   - props an `events` beat spawns (stage 4's chassis): transient, and the beat IS the thing to look at.
+ * Windows never straddle a section boundary because every boundary in the game carries a `transition` (lift, board,
+ * dock) that takes the screen, so measuring per section is measuring what the player can actually see at once.
+ */
+const SCENE_MIN = 2, SCENE_MAX = 4;
+function sceneDensity(sec) {
+  const objs = [
+    ...(sec.props || []).map((p) => ({ x: p.x, what: `${p.name || p.type}` })),
+    ...(sec.hazards || []).map((h) => ({ x: h.x, what: `${h.type}` })),
+  ].sort((a, b) => a.x - b.x);
+  // A window that holds the most objects can always be slid right until its left edge sits on one, so testing a
+  // window at each object's x finds the true peak.
+  let peak = 0, at = 0, worst = [];
+  for (const o of objs) {
+    const inside = objs.filter((q) => q.x >= o.x && q.x < o.x + VIEW_W);
+    if (inside.length > peak) { peak = inside.length; at = o.x; worst = inside; }
+  }
+  return { count: objs.length, peak, at, worst: worst.map((w) => w.what) };
+}
+
 /** A section's hazard layout, position-relative so two sections with the same vents in the same places collide. */
 function layoutOf(sec) {
   return (sec.hazards || []).map((h) => `${h.type}@${h.x - sec.x0},${h.z == null ? 100 : h.z}`).sort().join(' | ') || '(none)';
@@ -100,7 +130,7 @@ function census(stage, index) {
     for (const z of sec.zones || []) hazardTypes.add(z.type + ' zone');
     layouts.push({ stage: n, section: sec.id, layout: layoutOf(sec) });
     if (elitesHere.size >= 2) elitePairSections.push(sec.id);
-    secRows.push({ id: sec.id, name: sec.name, locked: sec.mode === 'locked', waves: secWaves.length, enemies: secEnemies, mixed: secMixed,
+    secRows.push({ id: sec.id, name: sec.name, locked: sec.mode === 'locked', scene: sceneDensity(sec), waves: secWaves.length, enemies: secEnemies, mixed: secMixed,
       rising: secRising, risingShare: secRising / Math.max(1, secEnemies), falling: secFalling,
       introduced: introduced.map(label), elites: [...elitesHere].map(label), hazards: (sec.hazards || []).map((h) => h.type),
       zones: (sec.zones || []).map((z) => z.type), props: [...new Set((sec.props || []).map((p) => p.type))], transition: sec.transition ? sec.transition.kind : null });
@@ -135,8 +165,21 @@ const modNames = Object.keys(SPAWN_MODS || {});
 const checks = [];
 const check = (name, ok, detail) => checks.push({ name, ok: !!ok, detail });
 check('No two sections in the game share a hazard layout', layoutDupes.length === 0, layoutDupes.map(([a, b]) => `${a.stage}/${a.section} = ${b.stage}/${b.section}`).join('; ') || 'all layouts unique');
+// Scene density applies to board 1 as well: it is the board the others are measured against, so a rule about how
+// busy a screen may look is worth nothing if the reference board is the one breaking it.
+const allScenes = rows.flatMap((r) => r.secRows.map((s) => ({ board: r.number, id: s.id, ...s.scene })));
+const overfull = allScenes.filter((s) => s.peak > SCENE_MAX);
+check(`No scene shows more than ${SCENE_MAX} props and hazards at once`, overfull.length === 0,
+  overfull.map((s) => `${s.board}/${s.id} ${s.peak} at x${s.at} (${s.worst.join(', ')})`).join('; ')
+    || `busiest: ${Math.max(...allScenes.map((s) => s.peak))} in a ${VIEW_W}px view`);
+// "Variable", not "always four": a game that pins every section at the cap is as flat as one that pins it at two.
+const peaks = [...new Set(allScenes.map((s) => s.peak))].sort();
+check(`Scene density varies across the sections (${SCENE_MIN}-${SCENE_MAX})`, peaks.length >= 3 && Math.min(...peaks) <= SCENE_MIN,
+  `peaks in use: ${peaks.join(', ')}`);
 for (const r of rows) {
   const b = `Board ${r.number}`;
+  check(`${b}: scene density stays inside ${SCENE_MIN}-${SCENE_MAX}`, r.secRows.every((s) => s.scene.peak <= SCENE_MAX),
+    r.secRows.map((s) => `${s.id}:${s.scene.peak}`).join(' '));
   check(`${b}: has a locked / moving section`, r.locked > 0, `${r.locked} locked section(s)`);
   check(`${b}: has a reinforcement wave`, r.reinforced > 0, `${r.reinforced} wave(s) with reinforcements`);
   check(`${b}: has its own mid-boss track`, r.midbossTrack && midbossTracks.filter((t) => t === r.midbossTrack).length === 1, String(r.midbossTrack));
@@ -222,6 +265,13 @@ if (JSON_OUT) {
   console.log('|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const r of rows) for (const s of r.secRows) {
     console.log(`| ${r.number} | ${s.name} | ${s.locked ? 'locked' : 'scroll'} | ${s.waves} | ${s.enemies} | ${s.mixed} | ${s.introduced.join(', ') || '-'} | ${s.elites.join(', ') || '-'} | ${s.hazards.join(', ') || '-'} | ${s.zones.join(', ') || '-'} | ${s.props.join(', ') || '-'} | ${s.transition || '-'} |`);
+  }
+  console.log(`\n## Scene density (props + hazards in one ${VIEW_W}px cameraful)\n`);
+  console.log('| Board | Section | Span | Objects | Busiest scene | At x | What is in it |');
+  console.log('|---|---|---|---|---|---|---|');
+  for (const r of rows) for (let i = 0; i < r.secRows.length; i++) {
+    const s = r.secRows[i], sec = STAGES[r.number - 1].sections[i], d = s.scene;
+    console.log(`| ${r.number} | ${s.name} | ${sec.x1 - sec.x0}px | ${d.count} | ${d.peak} | ${d.at} | ${d.worst.join(', ') || '-'} |`);
   }
   console.log('\n## Spawn modifiers\n');
   console.log('| Board | Modifier | Spawns |');

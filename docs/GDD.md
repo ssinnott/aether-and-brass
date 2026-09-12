@@ -216,7 +216,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
 - **Setting:** the great foundry, the goblins' workplace.
 - **Parallax:** *Far* (0.2×): cavern wall `#2A1C16`, huge gears (r 60–100px, 0.3°/f) rimmed `#FF7A1F`. *Mid* (0.5×): brick arches `#5A3A2E`, a molten channel behind a low wall (`#FFB347 → #FF5A1F` band with drifting blobs). *Near* (1.2×): pipe bundles, heat shimmer (2px sinusoidal x-offset), sparks.
 - **Floor:** iron grate plates `#2E2A28` with rivet rows at 48px seams. The back 20px (z < 20) is the **molten channel**: 10 + burn and a bounce back; enemies knocked in die.
-- **Props & breakables:** ingot molds (**Brass Cog**), coal carts (roll, 15 to enemies; **Meat Pie**), oil drums (explode 30f after breaking, 20 dmg r 40; **Aether Vial**), display case (**Golden Sprocket**), hanging bucket (**Roast Bird**).
+- **Props & breakables:** an ingot mold (**Brass Cog**, **Meat Pie**) and the coal chute that is one too, a coal cart (rolls, 15 to enemies; **Meat Pie**), an oil drum (explodes 30f after breaking, 20 dmg r 40; **Aether Vial**), display case (**Golden Sprocket**), hanging bucket (**Roast Bird**) — one of each, so a screenful of the row is four things all doing different jobs (ARCHITECTURE 7, scene density).
 - **Hazards:** steam vents at x 2500 and 2800 (cyan tell 30f, jet 40f: 7 + launch). Crushing pistons at x 3000 and 3300 every 240f (shadow tell 36f; 16 + knockdown, hits enemies).
 - **Waves:**
   - Wave 1 (x 2100): 2× Firebrand + 3× Soot Cutthroat.
@@ -230,7 +230,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
 - **Setting:** a tram car climbing the cliff; the floor is its roof, backdrops scroll to sell the climb.
 - **Parallax:** *Far* (auto-scroll down 0.3px/f): dusk gradient `#3A2450 → #E8743B` lerping to night `#0F1A2E`; the lower city as stepped silhouettes. *Mid* (auto 1.5px/f): cliff polygon, cable and pylons (thick rects every 240px). *Near* (auto 3px/f): rail struts, wind streaks.
 - **Floor:** riveted brass roof `#A67C2E` / `#8C6825`; couplings drawn as darker gaps (cosmetic; floor is continuous). **Front and back 12px of the band are railings**: enemies thrown over them are instant KOs (+200).
-- **Props & breakables:** luggage trunks (**Meat Pie**, **Brass Cog**), mailbag cart (**Golden Sprocket**), lantern posts (**Coal Scrip**).
+- **Props & breakables:** a luggage trunk (**Meat Pie**) and the mailbag cart (**Golden Sprocket**, **Brass Cog**, **Coal Scrip**). A locked section is a single scene the camera never moves off, so the car carries three things and the crossbar that sweeps them; the second trunk and the two lantern posts were the other three, and their load rides the mail cart.
 - **Hazards:** **pylon crossbars** every 360f sweep the back lane (z < 40) (tell: horn + shadow 40f): 12 + knockdown; step forward in z.
 - **Waves (timer-triggered, or on clear):**
   - Wave 1 (t = 0s): 3× Copper Sapper + 2× Tin Footman.
@@ -243,7 +243,7 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
 - **Setting:** a boiler-cathedral; the Engine's core burns at the far end.
 - **Parallax:** *Far* (0.2×): the Engine wall, cylinders `#8C6825` with gauge needles, a 120px cyan core pulsing on the downbeat. *Mid* (0.5×): gothic arches `#3B3A46` with stained-glass triangle mosaics; purple `#5B2A86` gear banners. *Near* (1.2×): brass pillars, cyan motes.
 - **Floor:** marble diamonds `#D9D3C7` / `#B9B2A5` with actor reflections at alpha 0.12.
-- **Props & breakables:** urns (**Meat Pie**; the third hides a **Brass Heart** 1-UP), a **chandelier** that falls when hit by a jump attack (30 to enemies within 90px, once), a cabinet (**Golden Sprocket**), the boss-arena **pressure valves**.
+- **Props & breakables:** two urns (the first a **Meat Pie** and the **Golden Sprocket**, the second a **Brass Heart** 1-UP), a **chandelier** that falls when hit by a jump attack (30 to enemies within 90px, once), the boss-arena **pressure valves**. The cabinet and a third urn have gone: this is a room whose whole job is to be read — three vents firing on the downbeat and a dais you have to be standing on — and it was putting six things plus a vent in one view.
 - **Hazards:** aether floor vents (cyan tell 30f, 30f jet: 10 + launch) firing on the music's downbeat.
 - **Waves:**
   - Wave 1 (x 4800): 2× Tin Footman + 2× Brass Halberdier.

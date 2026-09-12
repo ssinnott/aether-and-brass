@@ -535,6 +535,20 @@ Hazard and zone types, their spec fields, timings, hits and `dangerBox` footprin
 hazard follows the same tell / active / grace contract, so the enemy
 pathing (`laneAroundHazards`) and the autopilot read them without knowing the type.
 
+**SCENE DENSITY.** The camera shows `VIEW_W` (640px) of a board at a time, so one cameraful is one *scene*, and a
+scene carries **2 to 4 props and hazards — never five**. Boards vary inside that range rather than sitting at the
+cap: The Lash-Up (stage4 `g2`) holds two, because a raft with nothing lashed down is what that section is about;
+Foundry Row and the Heart-Engine hold four. The count is props + hazards only. `zones` and `platform` are area rules
+over a whole band rather than objects standing in it (several draw nothing of their own), and a prop an `events`
+beat spawns is transient and is the thing the player is meant to be looking at, so neither counts. Windows are
+measured per section, which is exact rather than convenient: every section boundary in the game carries a
+`transition` (lift, board, dock) that takes the screen, so two sections are never on camera together.
+
+The rule is measured, not asserted — `node tools/stage-census.js` prints a **Scene density** table (objects, busiest
+scene, and what is in it) and fails `--strict` on a fifth object. The equivalent authoring check, if you are placing
+by hand: with a section's props and hazards sorted by x, `x[i+4] - x[i] >= 640` for every `i`. A scene holds five
+exactly when five consecutive objects fit inside one cameraful.
+
 A spawn entry may carry `entrance: { kind, ... }` (issue #30, `game/entrances.js`), which replaces the walk-on from
 `side` with an authored arrival. Kinds are `teleport` | `flyIn` | `descend` | `ropeDrop`; their frame budgets, paths
 and tells are tabulated in the ENTRANCE TABLE at the head of that module. Every entrance is a tell (an `EntranceTell`
