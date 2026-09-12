@@ -4,7 +4,11 @@
 // Mid (0.5): the ship — a bulwark of gun ports with run-out cannon, rigging, boarding nets, and the bridge tower
 //            standing at the end of the section so the boss arena is visible long before you reach it.
 // Floor: holystoned deck planking with brass inlay, a caulked seam grid and a compass rose on the dais.
-// Near (1.2, drawFront): the leeward rail and rigging ropes; rain, spray and the flash of the strikes.
+// Near (1.2, drawFront): the rigging falls across the TOP of the frame and the leeward rail along the BOTTOM of it;
+//            rain, spray and the flash of the strikes. The camera stands outboard of the leeward rail, so that rail
+//            is the only piece of the ship that belongs in front of the fight — and it is kept below the feet of the
+//            frontmost lane (glean2's rule: nothing in a near layer at fighter height). The weather rail is the mid
+//            layer's bulwark cap, behind the fight, where the fight can walk in front of it.
 // UNDER WAY: a section with `drift` (px/frame; the locked gun deck, stage2.js m3) is the ship coming about with the party
 // aboard — the camera is locked, so the far sky scrolls itself by `drift` every frame (frame-based, deterministic: the
 // blockade and the storm wall slide past the rail), and the bridge tower is left off the mid layer (the bridge is the
@@ -20,7 +24,12 @@ const FAR_W = 1280;
 const FLOOR_TILE = 480;
 const PORT_STEP = 132;
 const RAIN_N = 80;
-const NEAR_Y = 150;
+/** The rigging falls hang from the top of the frame; the leeward rail is its own strip along the bottom. */
+const NEAR_Y = 0;
+/** The leeward rail: one tiled strip (a whole number of stanchion bays) blitted at the near layer's own parallax. */
+const STANCHION_STEP = 74, RAIL_TILE = STANCHION_STEP * 8, RAIL_H = 40;
+/** Screen row of the rail cap — below the front edge of the floor band, so the rail covers no one standing on it. */
+const RAIL_Y = 334;
 const BOLT_PERIOD = 320;
 
 const SKY_TOP = '#0B0F1E', SKY_MID = '#1A2138', SKY_LOW = '#39415C';
@@ -146,21 +155,27 @@ function paintFloor(g, w, h, rnd) {
   g.fillStyle = '#100D14'; g.fillRect(0, Z_MAX, w, h - Z_MAX);
 }
 function paintNear(g, w, h, rnd) {
-  // the leeward rail: a solid cap on turned stanchions, with rigging falls hanging past the camera
-  for (let x = 0; x < w; x += 74) {
-    boxOutlined(g, x, 24, 7, 32, '#1B2130', INK, 2);
-    g.fillStyle = '#39415C'; g.fillRect(x + 1, 25, 3, 30);
-    g.fillStyle = BRASS; g.fillRect(x, 30, 7, 3);
-  }
-  boxOutlined(g, -4, 16, w + 8, 10, '#20283A', INK, 2);
-  g.fillStyle = '#4A5468'; g.fillRect(0, 18, w, 3);
-  g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(0, 18, w, 1);
+  // rigging falls hanging past the camera, out of the top of the frame and stopping clear of the deck
   for (let x = 120; x < w; x += 300) {
-    g.strokeStyle = INK; g.lineWidth = 5;
-    g.beginPath(); g.moveTo(x, 0); g.quadraticCurveTo(x + 12, 40, x + 4, 84); g.stroke();
-    g.strokeStyle = '#B9A47E'; g.lineWidth = 3;
-    g.beginPath(); g.moveTo(x, 0); g.quadraticCurveTo(x + 12, 40, x + 4, 84); g.stroke();
+    for (const [color, width] of [[INK, 5], ['#B9A47E', 3]]) {
+      g.strokeStyle = color; g.lineWidth = width;
+      g.beginPath(); g.moveTo(x, 0); g.quadraticCurveTo(x + 12, 60, x + 4, 126); g.stroke();
+    }
+    // the fall ends in a blocked tail, so it reads as rope run out and belayed rather than a line cut off mid-air
+    g.fillStyle = INK; g.fillRect(x, 124, 9, 7);
+    g.fillStyle = '#8A7250'; g.fillRect(x + 1, 125, 7, 5);
   }
+}
+/** The leeward rail: a solid cap on turned stanchions, standing between the camera and the deck's front edge. */
+function paintLeewardRail(g, w) {
+  for (let x = 0; x < w; x += STANCHION_STEP) {
+    boxOutlined(g, x, 8, 7, 32, '#1B2130', INK, 2);
+    g.fillStyle = '#39415C'; g.fillRect(x + 1, 9, 3, 30);
+    g.fillStyle = BRASS; g.fillRect(x, 14, 7, 3);
+  }
+  boxOutlined(g, -4, 0, w + 8, 10, '#20283A', INK, 2);
+  g.fillStyle = '#4A5468'; g.fillRect(0, 2, w, 3);
+  g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(0, 2, w, 1);
 }
 
 export function create(section) {
@@ -171,7 +186,8 @@ export function create(section) {
   const farL = makeLayer(FAR_W, SKY_H, paintFar, 71);
   const midL = makeLayer(mid.width, SKY_H, (g, w, h, rnd) => paintMid(g, w, h, rnd, !drift), 72);
   const floorL = makeLayer(FLOOR_TILE, FLOOR_H, paintFloor, 73);
-  const nearL = makeLayer(near.width, 100, paintNear, 74);
+  const nearL = makeLayer(near.width, 140, paintNear, 74);
+  const railL = makeLayer(RAIL_TILE, RAIL_H, paintLeewardRail, 75);
   const boltGlow = makeGlowSprite(60, 'rgba(200,214,255,0.34)');
 
   const rain = makePool(RAIN_N);
@@ -218,6 +234,7 @@ export function create(section) {
     drawFront(ctx, cam) {
       const sy = cam.shakeY || 0;
       blitAt(ctx, nearL, near.originX(cam), NEAR_Y + sy);
+      blitTiled(ctx, railL, near.originX(cam), RAIL_Y + sy);
       ctx.strokeStyle = 'rgba(206,222,255,0.34)'; ctx.lineWidth = 1;
       ctx.beginPath();
       for (let i = 0; i < RAIN_N; i++) {
@@ -225,11 +242,11 @@ export function create(section) {
         ctx.moveTo(x, y); ctx.lineTo(x - 4, y + len);
       }
       ctx.stroke();
-      // spray coming over the rail on the beat of the swell
+      // spray coming over the leeward rail on the beat of the swell — just above the cap, where it comes aboard
       const s = Math.sin(f * 0.03);
       if (s > 0.9) {
         ctx.fillStyle = 'rgba(220,235,255,0.12)';
-        for (let i = 0; i < 10; i++) ctx.fillRect((i * 71 + f * 3) % VIEW_W, 300 - (i % 4) * 8, 6, 2);
+        for (let i = 0; i < 10; i++) ctx.fillRect((i * 71 + f * 3) % VIEW_W, RAIL_Y - 4 - (i % 4) * 8, 6, 2);
       }
       if (flash > 0) { ctx.globalAlpha = flash * 0.2; ctx.fillStyle = '#E8EEFF'; ctx.fillRect(0, 0, VIEW_W, FLOOR_TOP + Z_MAX); ctx.globalAlpha = 1; }
     },
