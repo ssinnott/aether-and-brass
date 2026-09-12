@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles stall platforms events cargo hazards bestiary playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad audio gallery botstyles options training weapons)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles stall platforms events cargo hazards bestiary playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad audio gallery botstyles options sourcelink training weapons)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 // This file is already close to its ~700-line budget: further scenarios belong in their own sibling
@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from './server.js';
 import { loadPlaywright } from './browser.js';
 import { options as optionsScenario } from './playtest-options.js';
+import { sourceLink as sourceLinkScenario } from './playtest-link.js';
 import { weaponScenarios } from './scenarios/weapons.js';
 import { thrown } from './scenarios/thrown.js';
 import { coop4Scenarios } from './scenarios/coop4.js';
@@ -734,6 +735,9 @@ const scenarios = {
 
   // 9. Options plate, key remapping and persistence (tools/playtest-options.js).
   async options(server) { await optionsScenario(server, { withPage, assert }); },
+
+  // 9b. The title's SOURCE CODE row and the repository address under it (tools/playtest-link.js).
+  async sourcelink(server) { await sourceLinkScenario(server, { withPage, assert }); },
 
   // 10. Training room (issue #22): dummy spawn / modes / variant picker / meter lock (tools/scenarios/training.js).
   training: (server) => trainingScenario(server, { withPage, assert, CHARACTER_COUNT }),
