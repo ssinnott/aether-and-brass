@@ -199,8 +199,8 @@ export function legendFor(b, layout) {
 export function joinLabels(b, slot) {
   const map = b.keyboard[slot];
   if (!map) return { key: '', keys: '' };
-  const join = joinCodesFor(b, slot);
-  const prim = (a) => { for (const c of map[a] || []) if (join.has(c)) return c; return ''; };
+  // Every code of the block is a join code (invariant (c)), so the primary one is simply the first.
+  const prim = (a) => (map[a] && map[a][0]) || '';
   let key = '';
   for (const a of LEGEND_BUTTONS) { const c = prim(a); if (c) { key = keyLabel(c); break; } }
   const parts = [];
@@ -260,7 +260,9 @@ export function rebindKey(b, layout, action, code) {
 }
 
 /**
- * Rebind a gamepad action to `button`, mutating `b` in place. No sibling layout for gamepad.
+ * Rebind a gamepad action to `button`, mutating `b` in place. Same swap rule as `rebindKey`, with
+ * only the RT "run" button and a same-map collision to worry about -- the pad map is shared, so
+ * there is no other player's layout to refuse against.
  * @param {Bindings} b
  * @param {string} action
  * @param {number} button
@@ -285,7 +287,6 @@ export function rebindPad(b, action, button) {
   b.gamepad[action] = [button];
   return swapped ? { ok: true, swapped } : { ok: true };
 }
-
 
 /** @param {Record<string, number[]>} gamepad @param {number[]} gamepadRun @param {number[]} codes @param {string} action */
 function padInvalid(gamepad, gamepadRun, codes, action) {

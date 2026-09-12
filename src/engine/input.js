@@ -310,7 +310,8 @@ export const input = {
   joined(player) { return player === 0 || !!players[player].joined; },
   /** Gamepad index claimed by `player`'s slot, or -1 if none. */
   padOf(player) { return players[player].pad; },
-  /** Does this slot have a keyboard half at all? (Slots 2/3 have none: gamepad or virtual only.) */
+  /** Does this slot have a keyboard block at all? (Slots 2/3 have none: they are an online room's
+   *  seats, so nobody is ever sat at this machine's keyboard on one.) */
   hasKeyboard(player) { return !!bindings.keyboard[player]; },
   /** Local slots (1..LOCAL_PLAYERS-1) that have not joined yet -- the ones a hint may still invite.
    *  Allocates -- call only on a joinState() change. */
