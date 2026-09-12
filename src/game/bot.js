@@ -210,6 +210,10 @@ function threatNear(p, world) {
  * `StageRunner.barricadeHolding` refuses to clear the wave while one is up, and the autopilot is otherwise perfectly
  * happy to walk into the lock bound and stand there for the rest of the run. So a standing barricade outranks every
  * other goal below — the bot goes to the prop that holds it up, aligns z on it, and hits it down.
+ *
+ * Deliberately a wider test than `barricadeHolding`'s, which only counts a gate WHOLLY inside the lock: one
+ * straddling an edge is the next wave's problem and breaking it early costs the bot a few seconds, while missing one
+ * that does hold costs it the run. A guard against a soft-lock errs toward swinging.
  * @returns {object|null} the barricade Prop
  */
 function barricadeTarget(p, world) {

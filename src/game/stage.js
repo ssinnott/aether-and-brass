@@ -18,6 +18,8 @@ import { floatText } from '../art/fx.js';
 const SPAWN_MARGIN = 50;
 const GO_FRAMES = 150;
 const NO_DAMAGE_BONUS = 1000;   // GDD 7 scoring: a wave cleared without any player being hit
+/** Frames a wave may run with nothing hurt and nothing killed before its survivors are pressed in (checkWaveStall). */
+const WAVE_STALL_FRAMES = 600;
 /** Pose hold after the boss defeat spectacle before the results (GDD 6). */
 const VICTORY_FRAMES = 240;
 const PLATE_FRAMES = 170, SPOTLIGHT_FRAMES = 110, DESCENT_FRAMES = 120, DAIS_SHRINK = 20;
@@ -374,7 +376,7 @@ export class StageRunner {
   }
   startWave(wave, lock = true) {
     if (lock) this.lockHere();
-    this.activeWave = { wave, reinforced: false, startFrame: this.frame, hits: this.playerHits() };
+    this.activeWave = { wave, reinforced: false, startFrame: this.frame, hits: this.playerHits(), sig: -1, sigAt: this.frame, pressed: false };
     this.queueSpawns(wave.spawns || []);
   }
   updateWave() {
@@ -384,21 +386,48 @@ export class StageRunner {
       const r = w.reinforcements[0];
       if (alive <= (r.whenRemaining != null ? r.whenRemaining : 0)) { aw.reinforced = true; this.queueSpawns(r.spawns || []); return; }
     }
-    if (alive > 0) return;
+    if (alive > 0) { this.checkWaveStall(aw); return; }
     if (this.barricadeHolding()) return;   // issue #31: the gate is still up, so the wave is not over
     this.clearWave();
+  }
+  /**
+   * ANTI-STALL. A wave holds the camera lock until it is empty, so a survivor the party cannot reach holds the whole
+   * board: in a `mode: 'locked'` section (board 3's cart lane) there is not even a way to walk past it. The one variant
+   * that can arrange that on its own is a ranged one — `finishAttack` tops the retreat budget back up by 40 on every
+   * shot, so a Tallyman that lands its lob, backs off and lands the next one never runs the budget down and kites
+   * inside the lock forever, knocking the approach over on a cadence the player cannot close through.
+   *
+   * So: if nothing in the wave has died and nothing has lost a hit point for WAVE_STALL_FRAMES, the survivors are
+   * pressed in (Enemy.pressIn) and fight at melee range for the rest of the wave. The test is the wave's own hp
+   * total, which every landed hit moves, so a fight that is merely slow never trips it; and it is derived from
+   * hashed state on a deterministic frame counter, so every peer in a netplay room presses on the same frame.
+   */
+  checkWaveStall(aw) {
+    if (aw.pressed) return;
+    const list = this.world.waveEnemies;
+    let sig = list.length;
+    for (const e of list) sig = (Math.imul(sig, 31) + Math.round(e.hp)) | 0;
+    if (sig !== aw.sig) { aw.sig = sig; aw.sigAt = this.frame; return; }
+    if (this.frame - aw.sigAt < WAVE_STALL_FRAMES) return;
+    aw.pressed = true;
+    for (const e of list) if (e.pressIn) e.pressIn();
   }
   /**
    * Is a breakable `solid` (issue #31) still standing inside the current camera lock? While one is, the wave it
    * belongs to does not clear and the lock does not release — the barricade IS the wave's last enemy. Only a locked
    * camera is considered: a barricade the party has already walked past must never hold a later wave open.
+   *
+   * WHOLLY inside, not merely overlapping. A wave that locks the screen with the barricade straddling an edge asks
+   * the party to break something that is half off the screen they are locked to — board 3's yard gate sits 6px past
+   * the right edge of the lock the first Tallow Works wave takes — and what that reads as is a room emptied of
+   * enemies that never opens. One that far out is the NEXT wave's gate; this one clears on its enemies alone.
    */
   barricadeHolding() {
     const cam = this.world.camera;
     if (!cam.locked) return false;
     for (const e of this.world.entities) {
       if (!e.isSolid || !e.breakable || e.removeMe || !e.blocking) continue;
-      if (e.x1 >= cam.left && e.x0 <= cam.right) return true;
+      if (e.x0 >= cam.left && e.x1 <= cam.right) return true;
     }
     return false;
   }
