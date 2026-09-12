@@ -132,7 +132,7 @@ export const audio = {
   unlock() {
     if (audio.testMode) return;
     if (!ensureContext()) return;
-    if (S.ctx.state === 'suspended') S.ctx.resume().catch(() => {});
+    if (S.ctx.state !== 'running') S.ctx.resume().catch(() => {}); // 'suspended' (autoplay policy) or iOS 'interrupted' (a call, a route change)
     S.unlocked = true;
     if (M.name && !activeVoice() && TRACKS[M.name]) startVoice(M.name);
   },

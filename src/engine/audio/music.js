@@ -1,7 +1,7 @@
 // Pattern sequencer (GDD section 10). Tracks are data: chords + channels with step patterns.
 // `scheduleSteps` is pure with respect to the context (works on OfflineAudioContext), so the realtime
 // look-ahead scheduler in audio.js and the offline self-test share the exact same code path.
-import { osc, noise, ring, bus } from './synth.js';
+import { osc, noise, ring, bus, releaseAt } from './synth.js';
 
 const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const midiHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
@@ -64,16 +64,21 @@ function resolveTok(tok, chord, key, oct) {
   return [];
 }
 
+// tanh soft clip for bass_dist, built once: the curve is context-independent and a WaveShaper copies what it is given
+const DIST_CURVE = Float32Array.from({ length: 256 }, (_, i) => Math.tanh(((i / 127.5) - 1) * 3));
+
 // ---- instruments: (ctx, dest, when, { f, dur, vel, ch }) ----
 const INST = {
   bass_square: (c, d, t, { f, dur, vel }) => { osc(c, d, t, { type: 'square', f0: f, dur, vol: 0.18 * vel, attack: 0.004, hold: dur * 0.5, lp: 900 }); osc(c, d, t, { type: 'sine', f0: f, dur, vol: 0.12 * vel, attack: 0.004, hold: dur * 0.5 }); },
   bass_tri: (c, d, t, { f, dur, vel }) => osc(c, d, t, { type: 'triangle', f0: f, dur, vol: 0.3 * vel, attack: 0.006, hold: dur * 0.6 }),
   bass_dist: (c, d, t, { f, dur, vel }) => { // "distorted": saw + square through a resonant lowpass, clipped by a waveshaper
-    const sh = c.createWaveShaper(); const curve = new Float32Array(256);
-    for (let i = 0; i < 256; i++) { const x = (i / 127.5) - 1; curve[i] = Math.tanh(x * 3); }
-    sh.curve = curve; const g = c.createGain(); g.gain.value = 0.26 * vel; sh.connect(g).connect(d);
+    const sh = c.createWaveShaper(); sh.curve = DIST_CURVE;
+    const g = c.createGain(); g.gain.value = 0.26 * vel; sh.connect(g).connect(d);
     osc(c, sh, t, { type: 'sawtooth', f0: f, dur, vol: 0.8, attack: 0.003, hold: dur * 0.5, lp: 700, q: 3 });
     osc(c, sh, t, { type: 'square', f0: f / 2, dur, vol: 0.5, attack: 0.003, hold: dur * 0.5, lp: 400 });
+    // the shaper is shared by both oscillators, so neither one's `ended` can own it: it needs its own release, or
+    // the three tracks that use this bass pile up a node pair per sixteenth for as long as they play
+    releaseAt(c, [sh, g], t, dur + 0.05);
   },
   lead_saw: (c, d, t, { f, dur, vel }) => osc(c, d, t, { type: 'sawtooth', f0: f, dur, vol: 0.11 * vel, attack: 0.01, hold: dur * 0.55, lp: 1900, q: 2 }),
   lead_pulse: (c, d, t, { f, dur, vel }) => { osc(c, d, t, { type: 'square', f0: f, dur, vol: 0.07 * vel, attack: 0.01, hold: dur * 0.5, lp: 2600, detune: -6 }); osc(c, d, t, { type: 'square', f0: f, dur, vol: 0.05 * vel, attack: 0.01, hold: dur * 0.5, lp: 2600, detune: 6 }); },

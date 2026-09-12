@@ -4,6 +4,7 @@
 // Nothing here touches global state, so the same code renders in selfTest and in-game.
 
 const NOISE = new WeakMap();
+const SILENT = new WeakMap();
 const FLOOR = 0.0001; // exponential ramps cannot reach zero
 let noiseCursor = 0.137; // rotating start offset so back-to-back bursts differ
 
@@ -29,6 +30,28 @@ export const clampF = (f) => Math.min(20000, Math.max(20, f));
  */
 export function autoDisconnect(src, nodes) {
   src.onended = () => { for (const n of nodes) { try { n.disconnect(); } catch { /* already gone */ } } src.onended = null; };
+}
+
+/** One silent sample, cached per context: the clock source behind `releaseAt`. */
+function silentBuffer(ctx) {
+  let b = SILENT.get(ctx);
+  if (!b) { b = ctx.createBuffer(1, 1, ctx.sampleRate); SILENT.set(ctx, b); }
+  return b;
+}
+
+/**
+ * Disconnect `nodes` at `when + life`. A voice is torn down by its own source's `ended` (see autoDisconnect), but a
+ * node that OUTLIVES the sources feeding it — an echo tail, a shared waveshaper — has no source to hang that off,
+ * and every such node left connected keeps being processed for the life of the context. So give it a clock: a silent
+ * one-sample source, looped, whose only job is to end. Using the context rather than setTimeout means this behaves
+ * identically on an OfflineAudioContext, and `nodes[0]` is the head of the group (what the clock feeds silence into).
+ */
+export function releaseAt(ctx, nodes, when, life) {
+  const s = ctx.createBufferSource();
+  s.buffer = silentBuffer(ctx); s.loop = true;
+  s.connect(nodes[0]);
+  autoDisconnect(s, [...nodes, s]);
+  s.start(when); s.stop(when + Math.max(0, life));
 }
 
 /** Attack / hold / exponential decay envelope on an AudioParam. Returns the end time. */
@@ -140,20 +163,27 @@ export function am(ctx, dest, when, o = {}) {
 }
 
 /**
- * Multi-tap echo "reverb-ish" tail (no feedback loop, so the nodes are collectable once sources stop).
- * Returns an input GainNode: dry passes straight to `dest`, taps are delayed, low-passed and attenuated.
+ * Multi-tap echo "reverb-ish" tail (no feedback loop). Returns an input GainNode: dry passes straight to `dest`,
+ * taps are delayed, low-passed and attenuated. Pass `when` (the time the caller starts feeding it) and `life` (how
+ * long it does); the taps are then released with `releaseAt` instead of living for the rest of the context.
  */
-export function echo(ctx, dest, { taps = 3, time = 0.07, decay = 0.5, wet = 0.35, lowpass = 3500, spread = 1.37 } = {}) {
+export function echo(ctx, dest, { taps = 3, time = 0.07, decay = 0.5, wet = 0.35, lowpass = 3500, spread = 1.37, when = ctx.currentTime, life = 2 } = {}) {
   const input = ctx.createGain(); input.gain.value = 1;
   input.connect(dest);
-  let t = time, a = wet;
+  const nodes = [input];
+  let t = time, a = wet, longest = 0;
   for (let i = 0; i < taps; i++) {
     const d = ctx.createDelay(2); d.delayTime.value = Math.min(1.99, t);
     const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = clampF(lowpass / (i + 1));
     const g = ctx.createGain(); g.gain.value = a;
     input.connect(d).connect(f).connect(g).connect(dest);
+    nodes.push(d, f, g);
+    longest = Math.max(longest, d.delayTime.value);
     t *= spread; a *= decay;
   }
+  // `life` is how long the caller keeps feeding this echo; the taps are released once the last tap of that has run
+  // out. Without it the whole tail stays in the graph forever and a session's worth of hits starves the audio thread.
+  releaseAt(ctx, nodes, when, life + longest + 0.05);
   return input;
 }
 
