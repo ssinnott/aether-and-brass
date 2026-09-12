@@ -1,5 +1,7 @@
 # Aether & Brass
 
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support-e2b34a?logo=kofi&logoColor=white&labelColor=3a2010)](https://ko-fi.com/seansinnott)
+
 A steampunk high-fantasy side-scrolling beat-em-up in the spirit of *Golden Axe*, the *TMNT*
 arcade games and *TMNT: Shredder's Revenge*. **Four complete boards** end to end, four playable
 heroes, five enemy factions (thirty-one variants, plus five spawn modifiers that re-dress them per
