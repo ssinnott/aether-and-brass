@@ -14,8 +14,14 @@ import { drawTextOutlined } from '../../engine/text.js';
 import { clamp } from '../../engine/math.js';
 import { WeaponPickup } from '../items.js';
 import { dropInChar, dupTint } from '../party.js';
+import { bestiary, entryOf } from '../bestiary.js';
 
 const GAME_OVER_DELAY = 150;
+// How often the bestiary is written during a run (issue #26). exit() flushes too, but a browser tab closed or
+// navigated away mid-run never reaches exit(), and losing a first-ever kill to that is exactly the moment the
+// feature exists for. Five seconds is short enough that nothing meaningful is lost and rare enough that the
+// stringify never lands in a fight: flush() is a no-op unless something has actually changed.
+const BESTIARY_FLUSH_EVERY = 300;
 const START_X = 100;
 /** Player z spread (issue #23): slot 3 lands at 70 + 3*16 = 118, inside Z_MAX 140 (today's slot*24 would hit 142). */
 const PLAYER_START_Z = 70, PLAYER_Z_PITCH = 16;
@@ -38,8 +44,15 @@ export class GameplayScreen extends Screen {
     this.difficulty = DIFFICULTY[opt.difficulty] || DIFFICULTY.normal;
     opt.tellScale = this.difficulty.tellScale;
     this.world = new World({ stageLength: this.stage.length, game, backdrop: null, options: opt });
-    this.world.onEnemyKilled = () => { this.enemiesDefeated++; };
+    // Bestiary (issue #26). Three hooks, because a defeat reaches this screen by three different routes: the normal
+    // death path, a ring-out (game/items.js sets `dead` without calling die(), so onDeath never fires for it), and a
+    // boss phase change, which is not a defeat at all but is what gates the phase's codex block.
+    this.world.onEnemyKilled = (f, killer) => { this.enemiesDefeated++; this.noteDefeat(f, killer, false); };
+    this.world.onEnemyRungOut = (f, killer) => { this.noteDefeat(f, killer, true); };
+    this.world.onBossPhase = (b, i) => { if (this.countsForBestiary()) bestiary.markPhase(b.def, i); };
     this.enemiesDefeated = 0;
+    /** Entries this run opened for the first time, in the order they were beaten (the results plaque lists them). */
+    this.newEntries = [];
     this.players = [];
     this.continues = params.continues != null ? params.continues : this.difficulty.continues;
     this.continuesUsed = 0;
@@ -114,6 +127,7 @@ export class GameplayScreen extends Screen {
   }
   update() {
     super.update();
+    if (this.frame % BESTIARY_FLUSH_EVERY === 0) bestiary.flush();
     const inp = this.game.input, world = this.world;
     // Under netplay every seat is established by the lobby and every input arrives through the
     // lockstep mask. joinPressed() and globalPressed() are local keyboard edges that never reach
@@ -182,7 +196,7 @@ export class GameplayScreen extends Screen {
     const stats = this.players.filter(Boolean).map((p) => ({
       name: p.def.name, kills: p.kills, maxCombo: p.maxCombo, damageTaken: Math.round(p.damageTakenTotal), continues: p.continuesUsed, score: p.score, lives: p.lives, index: p.index,
     }));
-    this.game.replace('results', { stats, defeat, stage: this.stage, time: this.time, enemiesDefeated: this.enemiesDefeated, continuesUsed: this.continuesUsed, sectionIndex: this.world.sectionIndex, wavesCleared: this.world.wavesCleared, cameraX: this.world.camera.x });
+    this.game.replace('results', { stats, defeat, stage: this.stage, time: this.time, enemiesDefeated: this.enemiesDefeated, newEntries: this.newEntries.slice(), continuesUsed: this.continuesUsed, sectionIndex: this.world.sectionIndex, wavesCleared: this.world.wavesCleared, cameraX: this.world.camera.x });
   }
   draw(ctx) {
     this.world.draw(ctx);
@@ -195,7 +209,39 @@ export class GameplayScreen extends Screen {
       drawTextOutlined(ctx, 'ALL HEROES DOWN', VIEW_W / 2, 150, { size: 3, color: UI.red, outline: '#2a1010', thickness: 1, align: 'center' });
     }
   }
+  /**
+   * Whether defeats in this room go in the book. The TRAINING room overrides this to false: its dummies respawn on a
+   * 45-frame timer and can be set to any variant from a menu, so counting them would fill the bestiary from a plate
+   * rather than from the campaign. Bot runs and `?nowaves=1` debug spawns DO count -- they are real defeats.
+   */
+  countsForBestiary() { return true; }
+  /**
+   * Record one defeat in the bestiary, from whichever of the three hooks saw it. Derived bookkeeping only: it reads
+   * state the sim has already settled and writes nothing the sim reads back, so it cannot desync a lockstep match.
+   * @param {object} f the defeated enemy or boss
+   * @param {object} killer whoever landed the last hit (may be null: a hazard, or a bomb from its own side)
+   * @param {boolean} ringOut true when it went over a rail or into the molten channel
+   */
+  noteDefeat(f, killer, ringOut) {
+    if (!f || !f.def || !this.countsForBestiary()) return;
+    const hero = killer && killer.kind === 'player' && killer.def ? killer.def.name : '';
+    // GDD 7's throw-kill rule, reused verbatim: the thrown body itself, or anything killed by a thrown body or a
+    // weapon's last hit (game/player.js onKill scores the same pair at 1.5x).
+    const thrown = !!(f.thrownBy || f.lastHitWasThrow);
+    const phase = f.kind === 'boss' && f.phaseIndex != null ? f.phaseIndex : -1;
+    if (!bestiary.record(f.def, { thrown, ringOut, hero, phase })) return;
+    // The BOOK's name for it, not the spawned def's: game/traits.js applyMods renames a modified spawn
+    // ("SOOT CUTTHROAT (SCRIP)") while keeping its id, and the entry that just opened is the plain Cutthroat.
+    const opened = entryOf(f.def.id);
+    const name = opened ? opened.name : f.def.name;
+    this.newEntries.push(name);
+    this.hud.showNewEntry(name);
+  }
   exit() {
+    // The book is written on the way out of every match, whichever way the match ended: the results plaque, a quit
+    // to the title, a game over, a reset. bestiary.record() only touches memory, so without this a run's kills would
+    // be lost -- and flushing per kill would stringify the whole book in the middle of a fight.
+    bestiary.flush();
     // Any way out of the match ends the session: quitting to title, the results screen, a reset.
     // Without this the lockstep pump keeps injecting the peer's masks into the title screen menu.
     if (this.game.net && this.game.net.active) this.game.net.end('left the match');

@@ -98,10 +98,12 @@ HUD uses the simple delayed second bar), no typewriter text, no friendly fire, n
 **OPTIONS (issue #19):** an overlay pushed from the title menu and the pause plate holds difficulty, a
 music / SFX volume mixer, a screen-shake setting (off / low / full) and key + gamepad remapping under a
 CONTROLS sub-plate, all persisted in `localStorage` (`game/options.js`, `aetherAndBrass.options.v1`).
-This diverges from GDD 9's menu lists: the title menu is now **START / ONLINE CO-OP /
-OPTIONS** (difficulty and mute both moved off the title into OPTIONS) and the pause plate is **RESUME /
-MUTE / OPTIONS / QUIT TO TITLE** (OPTIONS hidden under netplay). CONTROLS is a sub-plate of OPTIONS, not
-a menu row of its own. Friendly-fire and scale toggles remain cut, as above.
+This diverges from GDD 9's menu lists: the title menu is now **START / ONLINE CO-OP / TRAINING /
+BESTIARY / OPTIONS** (difficulty and mute both moved off the title into OPTIONS; TRAINING added by issue
+#22 and BESTIARY by issue #26, which also puts the book's completion percentage on its own row) and the
+pause plate is **RESUME / MUTE / OPTIONS / MOVES / COMMANDS / QUIT TO TITLE** (OPTIONS, MOVES and
+COMMANDS hidden under netplay). CONTROLS is a sub-plate of OPTIONS, not a menu row of its own.
+Friendly-fire and scale toggles remain cut, as above.
 
 ## Game title
 The game is **AETHER & BRASS** (logo already on the title screen). The GDD's "CALDERWICK" logo is

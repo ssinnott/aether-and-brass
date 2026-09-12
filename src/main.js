@@ -24,8 +24,10 @@ import { OptionsScreen } from './game/screens/options.js';
 import { GameOverScreen } from './game/screens/gameover.js';
 import { LobbyScreen } from './game/screens/lobby.js';
 import { ResultsScreen } from './game/screens/results.js';
+import { BestiaryScreen } from './game/screens/bestiary.js';
 import { createNetSession } from './net/session.js';
 import { progress } from './game/progress.js';
+import { bestiary, ENTRIES as BESTIARY_ENTRIES } from './game/bestiary.js';
 import { trialProgress, TRIALS_KEY } from './game/trials.js';
 import { options as userOptions } from './game/options.js';
 import { CHARACTERS } from './content/characters/index.js';
@@ -57,6 +59,8 @@ export function parseOptions(search = window.location.search) {
     botStyle: devOnly ? (q.get('botstyle') || '').split(',').map((s) => s.trim()).filter(Boolean) : [],
     godmode: devOnly && flag('godmode'),
     section: devOnly ? (parseInt(q.get('section') || '0', 10) || 0) : 0,
+    // ?tab=<faction slug> (issue #26): which BESTIARY tab `?skipTo=bestiary` opens on
+    tab: devOnly ? (q.get('tab') || '') : '',
     // ?event=<id> (issue #33): start just before that scripted event and arm it, for iterating on one without
     // replaying the board. Dev-only and inert in netplay for the same reason `enemythrow` is -- the START packet
     // does not carry it, so a peer without the flag would simulate a different world.
@@ -102,7 +106,9 @@ window.addEventListener('unhandledrejection', (e) => { if (!hooks._record) hooks
 function boot() {
   const options = parseOptions();
   // Unlock state has to settle before the title / board select read it.
-  if (options.resetprogress) { progress.reset(); trialProgress.reset(); }
+  // `?resetprogress=1` clears the whole save family, not just the board unlocks: trial ticks (issue #22) and the
+  // bestiary (issue #26) are the same player's record of the same campaign, and leaving one behind reads as a bug.
+  if (options.resetprogress) { progress.reset(); trialProgress.reset(); bestiary.reset(); }
   if (options.unlockall) progress.unlockAllForSession();
   if (options.stage > 1) progress.allowSession(options.stage - 1); // a `?stage=N` link is its own key to board N
   audio.testMode = options.autotest;
@@ -140,6 +146,7 @@ function boot() {
   game.registerScreen('options', (g) => new OptionsScreen(g));
   game.registerScreen('gameover', (g) => new GameOverScreen(g));
   game.registerScreen('results', (g) => new ResultsScreen(g));
+  game.registerScreen('bestiary', (g) => new BestiaryScreen(g));
 
   let showDebug = options.debug;
   let frameCounter = 0;
@@ -220,6 +227,20 @@ function boot() {
     spawnWeapon: delegate('spawnWeapon', null),
     killAllEnemies: delegate('killAllEnemies', undefined),
     enemyList: () => (game.enemyList || []).map((e) => ({ type: e.type, variant: e.variant, name: e.name, role: e.role })),
+    /** BESTIARY state for tools/playtest.js (issue #26): completion, and one row per entry with its counts. */
+    bestiary: () => ({
+      ...bestiary.completion(),
+      scope: bestiary.scope,
+      entries: BESTIARY_ENTRIES.map((e) => {
+        const st = bestiary.stats(e.id);
+        return {
+          id: e.id, name: e.name, faction: e.faction, boss: e.boss, seen: bestiary.isSeen(e.id),
+          n: st.n, thrown: st.thrown, ring: st.ring, top: bestiary.topHero(e.id),
+          phases: e.phases.map((ph) => ({ index: ph.index, name: ph.name, seen: bestiary.phaseSeen(e.id, ph.index) })),
+        };
+      }),
+    }),
+    resetBestiary: () => { bestiary.reset(); },
     characterList: () => (game.characters || []).map((c) => ({ id: c.id, name: c.name })),
     fillMeter: delegate('fillMeter', undefined),
     setTraining: delegate('setTraining', null),
@@ -273,7 +294,7 @@ function boot() {
   const invited = !!(options.room || options.host);
   const start = options.skipTo && game.factories[options.skipTo] ? options.skipTo : invited ? 'lobby' : 'title';
   try {
-    game.push(start, { chars: options.chars, autoRoom: invited });
+    game.push(start, { chars: options.chars, autoRoom: invited, tab: options.tab });
   } catch (e) { recordError(e); if (start !== 'title') game.reset('title'); }
   hooks.ready = true;
   if (options.autotest) render(); else loop.start();

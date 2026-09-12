@@ -30,10 +30,12 @@ export async function options(server, { withPage, assert }) {
     // Escape is a global key, not a player action, so it cannot go through setInput/`press`.
     const esc = async () => { await page.keyboard.down('Escape'); await g.step(2); await page.keyboard.up('Escape'); await g.step(8); };
 
-    // 1. Title -> OPTIONS (menu is START / ONLINE CO-OP / TRAINING / OPTIONS -- issue #23 dropped START
-    // (2P), issue #22 added TRAINING directly after ONLINE CO-OP).
+    // 1. Title -> OPTIONS. The menu is START / ONLINE CO-OP / TRAINING / BESTIARY / OPTIONS (issue #23 dropped
+    // START (2P), issue #22 added TRAINING after ONLINE CO-OP, issue #26 added BESTIARY after it), and rows keep
+    // being added in the middle -- so walk UP from START rather than counting downs. OPTIONS is last by design
+    // (docs/RECONCILIATION.md) and the cursor wraps, so one `up` lands on it however many rows precede it.
     await g.step(60);
-    await dn(); await dn(); await dn();
+    await up_();
     await atk();
     assert((await g.screen()) === 'options', 'attack on OPTIONS pushes the options overlay');
     let s = await g.summary();
@@ -317,7 +319,7 @@ export async function options(server, { withPage, assert }) {
     await page.goto(`http://localhost:${server.port}/index.html?autotest=1&seed=1`, { waitUntil: 'load' });
     await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 15000 });
     await g.step(60);
-    await dn(); await dn(); await dn(); // title -> OPTIONS (menu is START / ONLINE CO-OP / TRAINING / OPTIONS)
+    await up_(); // title -> OPTIONS: it is the last row and the cursor wraps, so this survives new rows (see step 1)
     await atk();
     for (let i = 0; i < 6; i++) await dn();
     s = await g.summary();

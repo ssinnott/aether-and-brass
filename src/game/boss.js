@@ -219,6 +219,9 @@ export class Boss extends Enemy {
       if (world.announce) world.announce(this.phaseName, this.bossKind === 'boss' ? 'PHASE ' + this.phase : '', 120);
       const ci = this.phaseDef.cutIn;
       if (ci) world.cutscene(ci.frames || 120, ci.draw ? (ctx, w, t) => ci.draw(ctx, this, w, t) : null);
+      // The bestiary (issue #26) reveals a phase's codex block only once that phase has been REACHED, so the
+      // person inside the machine is not spoiled by a card for a fight the player has only half seen.
+      if (world.onBossPhase) world.onBossPhase(this, this.phaseIndex);
     }
     this.callHook('onPhase', this.phaseIndex, world);
   }
