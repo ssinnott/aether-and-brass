@@ -1,15 +1,18 @@
 // Pure-Node tests for the sim modules that can be reasoned about without a canvas (issue #33). No browser, no
-// rendering, no audio context — the same shape as tools/nettest.js, and run by `npm test` ahead of the browser
-// harness so a sequencing mistake fails in a second rather than after six minutes of playthroughs.
+// rendering — the same shape as tools/nettest.js, and run by `npm test` ahead of the browser harness so a
+// sequencing mistake fails in a second rather than after six minutes of playthroughs.
 //
 //   node tools/simtest.js              run every suite
-//   node tools/simtest.js events       run selected suites (events entrances platforms)
+//   node tools/simtest.js events       run selected suites (events entrances platforms audio)
 //
 // These cover the parts whose CORRECTNESS IS ORDERING rather than rendering: which action of a script runs on which
-// frame, how long an arrival takes, and where a platform is at a given frame. Exit code 1 on any failure.
+// frame, how long an arrival takes, where a platform is at a given frame, and which audio nodes are still in the
+// graph after a sound has finished. Exit code 1 on any failure.
 import { EventRunner, eventLength, EVENT_ACTIONS } from '../src/game/events.js';
 import { ENTRANCES, entranceFor, entranceLength, entranceLanding } from '../src/game/entrances.js';
 import { PLATFORMS } from '../src/game/platforms.js';
+import { SFX_DEFS, CANONICAL_SFX } from '../src/engine/audio/sfx.js';
+import { TRACKS, compileTrack, scheduleSteps } from '../src/engine/audio/music.js';
 
 let failures = 0;
 const ok = (cond, msg) => { console.log((cond ? '  ok:   ' : '  FAIL: ') + msg); if (!cond) failures++; };
@@ -148,7 +151,72 @@ function suitePlatforms() {
   ok(PLATFORMS.pallet.travel > 0 && PLATFORMS.pallet.period > 0, 'a pallet travels over a period');
 }
 
-const SUITES = { events: suiteEvents, entrances: suiteEntrances, platforms: suitePlatforms };
+
+// ================================================================ audio node lifetime
+// Every synth module is `(ctx, dest, when, opts)`, so a stub context is enough to answer the one question that only
+// shows up after half an hour of play: does a sound leave anything behind? A node that is still connected is still
+// processed every render quantum, so a per-note or per-hit residue grows without bound and eventually starves the
+// audio thread -- the music goes first, because it is the one thing playing continuously.
+function stubContext() {
+  const live = new Set();
+  const due = [];  // [time, node] from stop(), replayed by advance()
+  const param = () => ({ value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() {} });
+  const mk = (kind, extra) => { const n = { kind, connect: (d) => d, disconnect: () => live.delete(n), ...extra }; live.add(n); return n; };
+  const src = (kind, extra) => mk(kind, { onended: null, start() {}, stop(t) { due.push([t, this]); }, ...extra });
+  return {
+    live,
+    sampleRate: 44100,
+    currentTime: 0,
+    destination: { kind: 'destination', connect: (d) => d, disconnect() {} },
+    createGain: () => mk('gain', { gain: param() }),
+    createOscillator: () => src('osc', { frequency: param(), detune: param(), type: 'square' }),
+    createBufferSource: () => src('bufsrc', { buffer: null, loop: false, playbackRate: param() }),
+    createBiquadFilter: () => mk('filter', { type: 'lowpass', frequency: param(), Q: param(), gain: param() }),
+    createWaveShaper: () => mk('shaper', { curve: null, oversample: 'none' }),
+    createDelay: () => mk('delay', { delayTime: param() }),
+    createBuffer: (ch, len, sr) => ({ sampleRate: sr, length: len, getChannelData: () => new Float32Array(len) }),
+    /** Run the context clock to `t`, firing every source's `ended` on the way (what tears voices down in a browser). */
+    advance(t) {
+      this.currentTime = t;
+      for (let i = due.length - 1; i >= 0; i--) if (due[i][0] <= t) { const n = due[i][1]; due.splice(i, 1); if (n.onended) n.onended(); }
+    },
+  };
+}
+
+function suiteAudio() {
+  console.log('\n== audio ==');
+
+  // (a) every SFX, played over and over the way a long fight plays them, leaves nothing connected.
+  // `echo` used to be the offender: its taps have no source of their own, so they outlived every hit that fed them.
+  const leaky = [];
+  for (const name of CANONICAL_SFX) {
+    const def = SFX_DEFS[name];
+    if (!def) continue;
+    const ctx = stubContext();
+    const before = ctx.live.size;
+    let t = 0;
+    for (let i = 0; i < 20; i++) { def(ctx, ctx.destination, t, { v: 1, p: 1, vol: 1, pitch: 1 }); t += 4; ctx.advance(t); }
+    ctx.advance(t + 30);
+    if (ctx.live.size > before) leaky.push(`${name} (+${ctx.live.size - before})`);
+  }
+  ok(leaky.length === 0, `20 plays of every SFX leave no nodes in the graph (leaking: ${leaky.join(', ') || 'none'})`);
+
+  // (b) the same for the music sequencer, over enough steps to cover several loops of every track.
+  // `bass_dist` used to leak a waveshaper + gain per sixteenth, which is ~1200 nodes a minute on boss2.
+  const leakyTracks = [];
+  for (const name of Object.keys(TRACKS)) {
+    const ctx = stubContext();
+    const before = ctx.live.size;
+    const c = compileTrack(TRACKS[name]);
+    const steps = c.total * 3;
+    for (let i = 0; i < steps; i++) { scheduleSteps(ctx, ctx.destination, TRACKS[name], 0, i, i + 1, {}); ctx.advance(i * c.stepDur); }
+    ctx.advance(steps * c.stepDur + 60); // past the longest note in the game (the boss3 drone is 128 steps)
+    if (ctx.live.size > before) leakyTracks.push(`${name} (+${ctx.live.size - before})`);
+  }
+  ok(leakyTracks.length === 0, `3 loops of every track leave no nodes in the graph (leaking: ${leakyTracks.join(', ') || 'none'})`);
+}
+
+const SUITES = { events: suiteEvents, entrances: suiteEntrances, platforms: suitePlatforms, audio: suiteAudio };
 const pick = process.argv.slice(2).filter((a) => SUITES[a]);
 for (const name of (pick.length ? pick : Object.keys(SUITES))) SUITES[name]();
 console.log(`\n${failures ? failures + ' failure(s)' : 'all sim tests passed'}`);
