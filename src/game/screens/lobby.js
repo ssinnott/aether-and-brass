@@ -78,13 +78,49 @@ export class LobbyScreen extends Screen {
     // A ?room= invite link drops the guest straight into connecting.
     const opt = this.game.options;
     this.transport = opt.transport || 'mqtt';
-    if (params.autoRoom || opt.room) {
+    // A finished co-op match comes back to the room it was played in, so take the live session over
+    // instead of opening a second one on top of it (`opt.room` below would otherwise have a returning
+    // guest re-dial their own invite link).
+    if (params.resume && this.game.net && this.game.net.state === 'lobby') this.resume(this.game.net, params);
+    else if (params.autoRoom || opt.room) {
       this.isHost = !!opt.host;
       this.typed = opt.room || '';
       if (this.typed || this.isHost) this.begin();
     }
     this.onKey = (e) => this.handleKey(e);
     window.addEventListener('keydown', this.onKey);
+  }
+
+  /**
+   * Pick a session back up between matches (game/screens/results.js resets here with `resume`).
+   *
+   * The room outlives the match: everyone keeps their seat, their hero and the group's progress, so
+   * there is nothing to host, nothing to type and nobody to wait for - the party is simply choosing
+   * again. The state callback is re-pointed at THIS screen, since the one that opened the session
+   * left the stack when the match started.
+   * @param {object} net the live session, already back in its lobby state
+   * @param {{ reveal?: string }} params `reveal` is the board this party's clear just opened
+   */
+  resume(net, params) {
+    this.net = net;
+    this.isHost = net.isHost;
+    this.typed = net.room;
+    this.transport = net.transport || this.transport;
+    net.onStateChange((s) => this.onNetState(s));
+    this.shownChars = new Array(MAX_PLAYERS).fill(-1);
+    // The address bar still holds the guest-facing invite link from when the room was opened.
+    if (this.isHost && typeof window !== 'undefined' && window.location) this.inviteUrl = window.location.href;
+    if (this.party().length > 1) this.phase = 'lobby';
+    else { this.phase = 'connecting'; this.status = 'WAITING FOR PLAYER 2'; }
+    // The host's cursor lands on the board this party just opened - which is the whole point of
+    // coming back here rather than to the title - and otherwise stays where it was.
+    if (this.isHost) {
+      const opts = this.boardOptions();
+      const opened = params.reveal ? STAGES.findIndex((st) => st.id === params.reveal) : -1;
+      const held = (net.lobby.stage || 1) - 1;
+      const at = opts.includes(opened) ? opened : (opts.includes(held) ? held : (opts[0] || 0));
+      net.setStage(at + 1);
+    }
   }
 
   exit() {

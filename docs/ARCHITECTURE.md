@@ -31,13 +31,22 @@ for stage 2 (its faction, bosses, sections and audio).
   `types/content.d.ts`, then use it.
 - **Zero binary assets.** All art is drawn with canvas primitives; all audio is
   synthesized with WebAudio. Nothing is fetched at runtime except our own modules.
-- **Internal resolution:** `640 x 360` (constants `VIEW_W`, `VIEW_H`). The internal
-  canvas is scaled to the window by the largest integer factor that fits (min 1x), letterboxed, with
-  `image-rendering: pixelated` and `imageSmoothingEnabled = false` on the *display*
-  canvas. The integer factor is chosen in **device pixels** (`devicePixelRatio`, clamped
-  1..4) so HiDPI screens get evenly sized crisp game pixels; the display canvas's bitmap
-  is `window size * dpr` and its CSS size is the window size. All game drawing happens on the internal canvas. Snap sprite positions to
-  integers when drawing (`Math.round`) for a crisp pixel look.
+- **Internal resolution:** `640 x 360` (constants `VIEW_W`, `VIEW_H`). That is also the canvas's
+  bitmap size: there is ONE canvas, the one on the page, and the compositor scales it up to the window
+  via its CSS size (`image-rendering: pixelated` in `index.html`, `imageSmoothingEnabled = false` on the
+  context). The CSS size is the largest whole number of CSS pixels per game pixel that still fills
+  most of the window, falling back to an exact fit on a phone or a small window where the next whole
+  step would overflow or waste half the screen. Snap sprite positions to integers when drawing
+  (`Math.round`) for a crisp pixel look.
+  There used to be a second, offscreen "internal" canvas that `present()` blitted onto a display canvas
+  whose bitmap was `window size * dpr` — up to `3840 x 2160` on a 4K panel, `5120 x 2880` at 4x on a
+  retina one. That blit re-rasterised millions of pixels per frame to do a nearest-neighbour upscale the
+  compositor already does for free, and it dominated the frame. Measured in the headless harness (software
+  rasteriser, so pessimistic in absolute terms), a busy fight in a 4K window went from **30.1 ms to 19.6 ms
+  per frame** (33 -> 51 fps) and from **31.6 MB to 0.9 MB** of canvas bitmap; frame time also stopped
+  scaling with the window at all (19.6 / 21.0 / 21.7 / 24.1 ms across 640x360..2560x1440 before, flat 19.6
+  after). Wherever the scale is a whole number of device pixels per game pixel — what the sizing rule above
+  aims for — the output is identical either way. Do not reintroduce a full-window bitmap.
 - **Fixed timestep:** logic runs at exactly `60 Hz` (`DT = 1/60`). Render every
   requestAnimationFrame with the latest state (no interpolation needed). Accumulator
   clamps to 5 steps per frame to avoid spiral of death. All gameplay numbers
@@ -71,10 +80,11 @@ src/
     bindings.js            # default binding table + pure helpers: clone/sanitise/rebind/legend/join-hint
     rng.js                 # seedable RNG: rng.seed(n), rng.next(), rng.range(a,b), rng.int(a,b), rng.pick(arr), rng.chance(p)
     camera.js              # camera x, lock/unlock, shake
-    canvas.js              # create internal canvas, display canvas, resize/scaling, present()
+    canvas.js              # the 640x360 canvas on the page, CSS resize/scaling (present() is a no-op)
     text.js                # drawText(ctx, str, x, y, opts) using a built-in procedural pixel font (see 9)
     particles.js           # pooled particle system (sparks, dust, smoke, steam, debris, floating text)
     audio.js               # WebAudio synth: sfx.play(name, opts), music.play(track), master mute
+    links.js               # the one module that navigates: opens the repo in a tab, owns the canvas's clickable rect
     math.js                # clamp, lerp, approach, sign, rectsOverlap, easing helpers
     timer.js               # simple cooldown/tween helpers (optional)
   art/
@@ -247,7 +257,7 @@ entities must project as `sx = cam.toScreenX(x)`, `sy = FLOOR_TOP + z - y + cam.
 
 ### `engine/canvas.js`
 ```js
-export function createCanvas(mount) // -> { ctx /* internal 640x360 */, present(), scale /* integer, device px */, dpr, displayCanvas, resize(), toInternal(clientX, clientY) }
+export function createCanvas(mount) // -> { ctx /* the 640x360 canvas on the page */, canvas, displayCanvas /* same element */, present() /* no-op */, scale /* device px per game px */, cssScale, dpr, resize(), toInternal(clientX, clientY) }
 ```
 Use `toInternal()` for any pointer mapping (it accounts for dpr and the letterbox offset).
 
@@ -280,6 +290,25 @@ export const audio = {
 }
 ```
 Test mode (`?autotest=1`) must never create an AudioContext (all calls no-op).
+
+### `engine/links.js`
+The only module in the build that leaves the canvas: the title's SOURCE CODE row and the repository
+address drawn under it (`constants.js` `REPO_URL` / `REPO_LABEL`).
+```js
+export const links = {
+  init(view),                    // main.js, beside touch.init: mouse listeners on the display canvas
+  open(url) -> bool,             // new tab; false when the browser refused it (popup blocker)
+  setZone({ x, y, w, h, url, onOpen }),  // the clickable rect, in internal 640x360 px
+  clearZone(),                   // screens release it in exit()
+  hot,                           // true while a mouse rests on the zone, so the screen can light it
+};
+```
+One zone at a time, claimed by the screen on top of the stack. Two ways to follow one link because
+neither alone covers every player: a **menu row** calls `open()` from the fixed step (keyboard, pad and
+the on-screen touch buttons), which a popup blocker may refuse — hence the boolean, and the address
+printed on screen either way; a **mouse click** on the drawn address runs inside the click event, which
+is a real user gesture, so it always opens. Mouse only: `engine/touch.js` preventDefaults `touchstart`,
+so a tap never produces a synthetic click here.
 
 ### `engine/rng.js`
 ```js
@@ -622,8 +651,76 @@ never be an enemy short because scenery was smashed.
 passes `atX` (the same `reach` wave triggers use) or when the section's Nth wave clears (`onWaveClear: n`, counted
 **per section**, not stage-wide). The actions and what each one blocks for are tabulated in the ACTION TABLE at the
 head of that module: `caption`, `wait` (the only action that spends time — `wait: N` is exactly N frames), `camera`,
-`sfx`, `music`, `hazardSet`, `zoneFlash`, `spawn` and `prop`. A run of instant actions all lands on one frame, so
-`{caption}, {sfx}, {zoneFlash}` reads as a single beat.
+`sfx`, `music`, `hazardSet`, `zoneFlash`, `spawn` and `prop`, plus the story-beat actions `actor`, `walk`, `sign` and
+`say` (issue #25, below). A run of instant actions all lands on one frame, so `{caption}, {sfx}, {zoneFlash}` reads as
+a single beat.
+
+### Story beats and companion dialogue (issue #25)
+
+The event runner carries a second family of actions, and they differ from the combat ones in a single property that
+decides everything else about them: **a beat is scenery**. `actor` puts a scripted body on stage, `walk` retargets
+one already there, `sign` letters the board's name on a thing in the world (a dockside hoarding, a ship's nameplate,
+the Chandlery's tally board, a stencil on a bale) and `say` raises a companion exchange. None of them spawns a fight,
+changes a hazard or is hashed by `net/checksum.js`. There is no `hold`: `wait` already is one.
+
+An event marked `beat: true` does not arm at all when beats are off — under `?bot=1` and `?nowaves`. That is a
+stronger gate than making the actions no-ops, and it has to be: a beat also carries `holdWaves`, which holds the wave
+director for as long as its script runs, so a bot that stepped a beat and staged nothing would still wait six seconds
+for its first wave and every `npm run winrate` number would move with it.
+
+`holdWaves` is what buys an intro beat its six to ten seconds. Every board triggers its first wave about two seconds'
+walk from the spawn point, and rather than re-cut four levels to make room, the wave director waits while the script
+runs. Nothing else waits: the player walks under their own control the whole time, and hazards, platforms and weather
+all keep running.
+
+It holds the SECTION as well as the wave, and it has to: with no waves to stop them a player who runs rather than
+walks covers about 1900px in the eight seconds of board 1's opening, and section 1 ends at 1800 — they would cross
+into Foundry Row having skipped every fight on the quay. The bound on that is `outrunAt()`: however fast the party
+moves, the beat stands down the moment the trigger position passes the section's last authored wave, and the section
+plays out normally from wherever they are. So the hold cannot deadlock on either axis — it is read only while
+`events.running`, a runner stops the frame its script runs out of actions, `events.cancel()` clears it on a section
+change, and the outrun valve ends it early for a party that has left everything behind.
+
+An `Actor` (`game/actors.js`) is a `Fighter` subclass with `kind: 'fx'`, `team: TEAM.NONE` and `think()` overridden,
+and those choices buy five properties at once: it is absent from `world.enemies` (so no wave lock waits on it and the
+autopilot never targets it), absent from `world.fighters`, un-hittable (`combat.js` `TARGET_KINDS` does not include
+`'fx'`), unhashed, and — the one that matters most — it **draws no rng**. That last is why it is not an `Enemy`: the
+`Enemy` constructor draws `rng.sign()`, and since the rng is one shared stream whose draw count is part of the
+checksum, a peer that staged a beat the other skipped would desync. Content hooks are stripped rather than trusted,
+so a beat can stage any def in the roster without auditing what its `onSpawn` does.
+
+Between-section **vignettes** ride a `transition`'s own timeline instead of the event runner, because
+`StageRunner.update()` returns above `events.update()` for the whole of a transition — a script armed there would not
+advance a frame until the party already had control back. A section's `transition` may carry
+`vignette: { cues: [{ at, ... }] }`, where `at` is counted from the first frame of the transition across all its
+phases, and a cue takes the same keys a beat action does. Actor positions there are written as `dx` (from the left
+edge of the view) rather than `x`, since a transition parks the camera wherever it began and the same lift is a
+different place on every board. One caveat for authors: a boss `descent` runs under `world.cutscene`, which
+early-returns the whole world update, so captions and camera work there but an actor will not walk.
+
+**Companion dialogue** (`game/dialogue.js`) is drawn as a plate over a fighter's head from `StageRunner.draw` — the
+one pass above every entity, particle and weather effect and still below all HUD. It never blocks input, never
+touches `busy`, `freeze` or `cutscene`, and never uses `hud.showBanner`, which is a single slot already spoken for by
+waves, boss plates and CONTINUE!. One plate per hero, a global cooldown, and a trigger that lands while something is
+already speaking is **dropped rather than queued** — a queue would spend the cooldown replaying a fight that finished
+ten seconds ago. Ranked triggers break a tie on one frame: `partnerDown` outranks `combo20`, and a boss speaking
+outranks both.
+
+Which line comes out is `(world.frame + slot * 7) % rows.length`. `world.frame` is hashed and identical on both
+peers, so two peers say the same thing with nothing new going over the wire, and no rng is drawn at all — which is
+what makes the peer-local `?bot=1` gate free. The seven triggers are `sectionStart`, `midbossIntro`, `bossIntro`,
+`partnerDown`, `partnerContinue`, `combo20` and `results`. Three of them are edges in player state rather than events
+anybody raises and are polled in one place (`StageRunner.pollDialogue`); note that `combo20` must be a **crossing**
+test, because an air hit adds 2 and a combo can go 19 → 21 without ever equalling 20.
+
+Lines live in `content/characters/lines.js` — `BANTER` keyed by pairing (`brunhild+sael`, in `CHARACTERS` order) then
+by trigger, `SOLO` per hero for single-player and for a pairing with nothing written, and `BOSS_LINES` merged onto the
+boss defs by `content/enemies/index.js` the way `CODEX` is. A boss's lines are read from `boss.baseDef.lines`, never
+`boss.def.lines`: `mergePhase` replaces every non-`ai` key of the def on a phase change. `phase[0]` is raised by
+`showPlate` rather than `nextPhase`, since phase 0 is entered by the constructor and never passes through
+`nextPhase` at all. Every line is capped at 42 characters — past that a plate is wider than the space a body has to
+stand in — and `tools/simtest.js` (suite `beats`) fails the build on a long line, a missing pairing or a board whose
+transition has no vignette.
 
 `hazardSet: { name, force?, period?, frames? }` addresses hazards by an optional author key (`name` on the hazard
 spec) because `Entity.id` differs between lockstep peers and is deliberately unhashed. It only ever touches
@@ -766,8 +863,11 @@ arrival that outlives its own length by 180 frames ends as an ordinary enemy rat
 `Game` holds a stack `screens[]`; top screen gets `update()`, all screens draw bottom
 to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
 `update()`, `draw(ctx)`. No screen wires its own menu keys: **CONFIRM** and **BACK** come from
-`game/menuinput.js` (section 16), so the same two keys work on every plate in the game. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`.
-Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `BESTIARY` / `OPTIONS`, "PRESS ATTACK", blinking; the BESTIARY row carries the book's completion percentage, read once in `enter()`; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
+`game/menuinput.js` (section 16), so the same two keys work on every plate in the game. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`
+(a clear that opened a board goes `results → boardselect` so the unlock plays out there; an ONLINE run goes
+`results → lobby`, back to the room it was played in — the session is handed back to its lobby rather than ended,
+docs/MULTIPLAYER.md).
+Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `BESTIARY` / `SOURCE CODE` / `OPTIONS`, "PRESS ATTACK", blinking; the BESTIARY row carries the book's completion percentage, read once in `enter()`; `SOURCE CODE` opens the repository in a new tab (`engine/links.js`) without leaving the title and says whether the tab actually opened, and the address itself is drawn along the credit line — lit while the row is highlighted or a mouse is on it, clickable there, and readable (typeable) either way; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
 (`boardcards.js`, compact) on one screen, with the room's other two to three players driving the
 P2-P4 cursors, a status column per seat, and no two players allowed on one hero
@@ -893,11 +993,17 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   correctness is ORDERING rather than rendering — event action sequencing, entrance frame budgets, platform
   defaults, and (issue #26) the bestiary's counting rules plus the completeness of its 39 codex entries: every
   registered variant and boss phase has a block, no block runs past `CODEX_MAX_CHARS`, no block keys a def that no
-  longer exists, and every entry's first appearance is derivable from the stage data. The `bindings` suite holds the
-  keyboard layout to its own rules (`engine/bindings.js` header): every action bound in every layout, no key under
-  two actions or in two players' hands, no global key bound to a player action, nine distinct primary keys per
-  block with taunt and start on the digits above it, the rebind refusals, and that a save from an older default
-  table is dropped rather than merged. It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
+  longer exists, and every entry's first appearance is derivable from the stage data. Issue #25 adds the `beats`
+  suite: the dialogue system's own rules (one plate at a time, the cooldown, a higher-ranked trigger taking the
+  floor, a hero who is out never speaking, the same line on both peers, and that `game/dialogue.js` never imports
+  the rng) plus the completeness of the writing — every one of the six pairings written at all seven triggers, every
+  solo table likewise, all eight boss units carrying phase and defeat lines, no line over the 42 characters a plate
+  can draw, and every board opening on a beat with every section carrying a stinger and every transition a vignette.
+  The `bindings` suite holds the keyboard layout to its own rules (`engine/bindings.js` header): every action bound
+  in every layout, no key under two actions or in two players' hands, no global key bound to a player action, nine
+  distinct primary keys per block with taunt and start on the digits above it, the rebind refusals, and that a save
+  from an older default table is dropped rather than merged.
+  It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
   after six minutes of playthroughs. `npm run simtest` runs it alone. The second:
   starts the server, launches headless Chromium
   via the globally installed Playwright (`NODE_PATH=/opt/node22/lib/node_modules` or
@@ -948,6 +1054,13 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      vents open together and hands every override back afterwards, board 2's broadside forces its two guns one after
      the other rather than together, and an unknown id is inert rather than a crash. Action sequencing itself is in
      `tools/simtest.js`.
+  3i2. `beats` (`tools/scenarios/beats.js`, issue #25): the browser half of the story beats — board 1's intro beat
+     arms on the first frames of the run, letters the board's name on a sign in the world and stages its two dockers;
+     for the six to ten seconds it runs the party keeps control and walks under its own power with NO enemy on
+     screen at any point; the cast is struck when the script ends and the wave it was holding arrives immediately
+     after. The second half is the gate: under `?bot=1` the beat does not arm, nothing is staged, and the bot reaches
+     its first fight on the frame it always did — which is what keeps `npm run winrate` comparable across the change.
+     The dialogue rules and the completeness of the writing are in `tools/simtest.js`.
   3j. `cargo` (`tools/scenarios/cargo.js`, issue #34): against the real authored containers — a quay crate tips its
      cargo out on break and the unit climbs out at the crate into a punishable recovery; the foundry chute is quiet
      (no threat box), rattles (threat box live), lets one out at a time, stops its clock while it is stood on and
@@ -983,7 +1096,17 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      RESET TO DEFAULTS. Further scenarios that don't fit in `playtest.js` follow this sibling-module
      pattern: a small file exporting one function of the form `(server, { withPage, assert }) => {...}`,
      imported and added to the `scenarios` map here.
-  9. `coop4` (`tools/scenarios/coop4.js`, issue #23): a four-bot party to results, seated through the `?chars=` debug hook since the couch cannot make four (`attackTokens.max===4`, party-scaled wave clones, 4 stats rows); the couch cap from gameplay, the pause overlay and character select (P2 drops in, a third seat never does, and a full couch is still the identity spawn stream); title pad-claim assignment (P1's-arrows-then-pad stays P2, a second pad finds no seat, `resetClaims()` releases on title entry); a two-cursor select into gameplay; the two select-screen defects the four-player audit found, each with its own re-broken-on-revert check — a pad press re-claiming an orphaned seat must not lock that seat's hero, and BACK from an unlocked slot must free the READY gate; the netplay guard (own room) — `beginMatch` un-joins local slots above `NET_PLAYERS`, no pad claims the peer's slot, no desync.
+  8b. `sourcelink` (`tools/playtest-link.js`, the same sibling-module pattern): the title's SOURCE CODE row
+     sits directly above OPTIONS, following it opens the drawn `REPO_URL` in a new tab without leaving the
+     title and reports that it did, a refused `window.open` reads as blocked rather than as success, the
+     drawn address is inside the view, a real mouse click on it opens the same URL, and leaving the title
+     releases the zone so that click opens nothing. `window.open` is stubbed in the page, so the run never
+     navigates anywhere.
+  8c. `netrematch` (`tools/scenarios/netrematch.js`): two online pages play two boards in ONE room — the first
+     board ends, both peers come off lockstep with the room still up, the clear is recorded against the group's
+     own campaign (neither solo save touched), both plaques hand back to the lobby with the host's cursor on the
+     newly opened board, and the party readies up again and plays it.
+  9. `coop4` (`tools/scenarios/coop4.js`, issue #23): a four-bot party to results, seated through the `?chars=` debug hook since the couch cannot make four (`attackTokens.max===4`, party-scaled wave clones, 4 stats rows); the couch cap from gameplay, the pause overlay and character select (P2 drops in, a third seat never does, and a full couch is still the identity spawn stream); title pad-claim assignment (P1's-arrows-then-pad stays P2, a second pad finds no seat, `resetClaims()` releases on title entry); a two-cursor select into gameplay; and the gates that used to wait on a player who had gone, each with its own re-broken-on-revert check — a pad press re-claiming an orphaned seat must not lock that seat's hero, BACK from an unlocked slot must free the READY gate, one player standing still must not stop the camera, BACK must leave an online room nobody has readied in, a seat nothing can drive must be retired at select's door, and the last living seat must go to the bot once it alone holds the run open; the netplay guard (own room) — `beginMatch` un-joins local slots above `NET_PLAYERS`, no pad claims the peer's slot, no desync.
   10. `training` (`tools/scenarios/training.js`, issue #22 — same sibling-module pattern as `options`/`coop4`,
      registered from here as `training: (server) => trainingScenario(server, { withPage, assert, CHARACTER_COUNT })`):
      Part A, per hero, `?skipTo=training`: lands on `training` with one STAND Tin Footman dummy and no props/

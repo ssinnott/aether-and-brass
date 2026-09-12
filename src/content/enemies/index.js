@@ -7,6 +7,7 @@
 // first three boards away as they fell, working over the Sootborn who have always picked these heaps and the Stormcrows
 // the sea gave back, so the last board is the whole war's leftovers in one field.
 // Type slugs come from the design-doc faction names; the ARCHITECTURE aliases typeA/typeB are accepted too.
+import { BOSS_LINES } from '../characters/lines.js';
 import { BRASSBOUND } from './brassbound.js';
 import { SOOTBORN } from './sootborn.js';
 import { STORMCROWS } from './stormcrow.js';
@@ -63,6 +64,12 @@ DEFS.set('boss4:oke', boss4);
 // takes the block content/enemies/codex.js keys under its id. Boss PHASE blocks stay in CODEX under `id#phase` and
 // are read from there by game/bestiary.js, since a phase is not a def and has nowhere here to hang.
 for (const d of DEFS.values()) if (!d.codex && CODEX[d.id]) d.codex = CODEX[d.id];
+
+// Attach the boss CALL-OUT lines (issue #25) the same way and for the same reason: the writing lives in one prose
+// file next to the rest of the game's words, not scattered through eight thousand lines of rig and moveset. Read at
+// runtime from `boss.baseDef.lines` — game/boss.js `mergePhase` replaces every non-`ai` key of the def when a phase
+// changes, so a lookup through `boss.def` finds nothing from phase 2 onward.
+for (const d of DEFS.values()) if (!d.lines && BOSS_LINES[d.id]) d.lines = BOSS_LINES[d.id];
 
 /** Resolve a type slug (accepting aliases). */
 export function resolveType(type) {

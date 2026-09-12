@@ -10,6 +10,11 @@ import { Transition, drawSpotlight, VictorySpectacle } from './transitions.js';
 import { entranceFor, entranceLanding, EntranceTell, teleportShove } from './entrances.js';
 import { createPlatform } from './platforms.js';
 import { EventRunner } from './events.js';
+import { Actor, Sign } from './actors.js';
+import { Dialogue, PLATE_COOLDOWN } from './dialogue.js';
+import { getEnemyDef } from '../content/enemies/index.js';
+import { CHARACTERS, getCharacter } from '../content/characters/index.js';
+import { BANTER, SOLO } from '../content/characters/lines.js';
 import { clamp } from '../engine/math.js';
 import { audio } from '../engine/audio.js';
 import { particles } from '../engine/particles.js';
@@ -23,6 +28,21 @@ const WAVE_STALL_FRAMES = 600;
 /** Pose hold after the boss defeat spectacle before the results (GDD 6). */
 const VICTORY_FRAMES = 240;
 const PLATE_FRAMES = 170, SPOTLIGHT_FRAMES = 110, DESCENT_FRAMES = 120, DAIS_SHRINK = 20;
+/** Combo the `combo20` companion line fires on — the BRASSY grade boundary (game/player.js GRADES). */
+const COMBO_LINE = 20;
+/**
+ * Frames after a boss name plate before the heroes answer it.
+ *
+ * It is DERIVED from the dialogue cooldown rather than picked, because the boss speaks first: `showPlate` raises the
+ * boss's own arrival line, which takes the floor for `PLATE_COOLDOWN` frames and outranks every hero trigger. A
+ * reply scheduled inside that window is not delayed, it is DROPPED — so a hand-picked 70 against a cooldown of 90
+ * meant no hero ever answered a boss at all.
+ */
+const BOSS_REPLY_DELAY = PLATE_COOLDOWN + 24;
+/** The same, for a section opening — long enough that the section name plate has been read first. */
+const SECTION_REPLY_DELAY = 50;
+/** Life of a dock transition's arrival banner. */
+const DOCK_BANNER_LIFE = 60;
 
 /** Drives one stage for a World. The gameplay screen owns it and forwards update()/draw(). */
 export class StageRunner {
@@ -50,10 +70,39 @@ export class StageRunner {
     /** `?event=<id>` (issue #33): jump to this scripted event instead of the section start. */
     this.startEventId = startEvent || '';
     this.forceEvents = false;
+    /**
+     * Story beats (issue #25). OFF for the bot and for `?nowaves`, which is what keeps tools/winrate.js and the
+     * playtest scenarios seeing exactly the run they saw before: the bot draws from the shared rng on every frame it
+     * plays, so a beat that merely made a run LONGER would move every winrate number at a fixed seed.
+     *
+     * This is peer-local and that is safe, because nothing a beat does is simulation — no rng draw, no hashed
+     * entity, no hazard. See the determinism notes in game/actors.js and game/dialogue.js.
+     */
+    this.beats = !nowaves && !(game && game.options && game.options.bot);
+    /** @type {import('./actors.js').Actor[]} bodies the running beat put on stage, dropped when it ends */
+    this.actors = [];
+    /** @type {import('./actors.js').Sign[]} lettered boards the running beat put up, dropped with it */
+    this.signs = [];
+    /** A scheduled exchange: `{ trigger, t, focus }`, counted down in update(). See saySoon(). */
+    this.pendingSay = null;
+    /** Last frame's `out` / `combo` per slot — the edges pollDialogue() turns into triggers. */
+    this.wasOut = null; this.wasCombo = null;
+    this.dialogue = new Dialogue({ banter: BANTER, solo: SOLO, order: CHARACTERS.map((c) => c.id) }, { enabled: this.beats });
     world.stage = this;
     world.spawnEnemy = (type, variant, x, z, opts) => this.screen.spawnEnemyAt(type, variant, x, z, opts);
     world.announce = (text, sub, life) => this.hud.showBanner(text, sub, life);
     world.onBossSpawn = (b) => this.onBossSpawn(b);
+    /**
+     * A boss's own call-out (issue #25). Read from `b.baseDef`, never `b.def`: `mergePhase` (game/boss.js) REPLACES
+     * every non-`ai` key of the def on a phase change, so by phase 2 `b.def.lines` is whatever that phase's override
+     * happened to carry — which is nothing.
+     */
+    world.bossLine = (b, key, phase) => {
+      const lines = b && b.baseDef && b.baseDef.lines;
+      if (!lines || !this.dialogue) return false;
+      const text = key === 'defeat' ? lines.defeat : (lines.phase || [])[phase | 0];
+      return text ? this.dialogue.shout(b, text) : false;
+    };
     /**
      * Scripted mid-board events (issue #33). The runner itself imports nothing from the engine — every effect it can
      * have is in this bag — which is what lets tools/simtest.js step a whole script in pure Node with no canvas.
@@ -68,7 +117,145 @@ export class StageRunner {
       zoneFlash: (spec) => this.world.add(new ZoneFlash(spec)),
       spawn: (specs) => this.eventSpawn(specs),
       prop: (spec) => this.world.spawnProp(spec.type, spec.x, spec.z, spec),
+      // Story-beat actions (issue #25). Every one is scenery, and every one is a no-op when beats are off, so a
+      // peer running `?bot=1` steps the SAME script for the same number of frames and simply stages nothing.
+      actor: (spec) => this.spawnActor(spec),
+      walk: (spec) => this.walkActor(spec),
+      sign: (spec) => this.spawnSign(spec),
+      say: (spec) => this.say(spec && spec.trigger, spec || {}),
     });
+  }
+
+  // --------------------------------------------------------------------------------------------------------------
+  // Story beats (issue #25)
+  // --------------------------------------------------------------------------------------------------------------
+  /**
+   * Put a scripted body on stage. The def is resolved from the enemy roster, or from the hero roster when the spec
+   * names a character — a beat stages both (dock hands on board 1, a chained Brassbound on board 3).
+   *
+   * Deliberately NOT routed through `eventSpawn`: that starts a wave and locks the camera behind it, and an actor
+   * that locked the camera would be a section the player could never walk out of.
+   */
+  spawnActor(spec) {
+    if (!this.beats || !spec) return null;
+    const def = resolveActorDef(spec, this.game);
+    if (!def) return null;
+    const a = new Actor(def, { id: spec.id || '', x: spec.x || 0, z: spec.z != null ? spec.z : 70, facing: spec.facing || 1, anim: spec.anim || 'idle', life: spec.life || 0 });
+    if (spec.vx || spec.vz || spec.frames) a.push({ vx: spec.vx || 0, vz: spec.vz || 0, frames: spec.frames || 0, anim: spec.anim || '', face: spec.face || 0 });
+    this.actors.push(a);
+    this.world.add(a);
+    return a;
+  }
+
+  /**
+   * Letter the board's name on something standing in the world. Tracked alongside the actors rather than left to its
+   * own `life` timer: a sign belongs to the beat that put it up, and a section left early (a speedrun, `?nowaves`,
+   * a debug jump) must not carry a hoarding into the next backdrop.
+   */
+  spawnSign(spec) {
+    if (!this.beats || !spec) return null;
+    const s = new Sign(spec);
+    this.signs.push(s);
+    this.world.add(s);
+    return s;
+  }
+
+  /** Retarget an actor already on stage, addressed by the `id` its `actor` action gave it. */
+  walkActor(spec) {
+    if (!this.beats || !spec) return;
+    for (const a of this.actors) {
+      if (a.removeMe || (spec.id && a.actorId !== spec.id)) continue;
+      a.retarget({ vx: spec.vx || 0, vz: spec.vz || 0, frames: spec.frames || 0, anim: spec.anim || '', face: spec.face || 0 });
+      if (spec.id) return;
+    }
+  }
+
+  /**
+   * True while a story beat is holding the wave director (issue #25). A beat holds the SECTION as well as the wave,
+   * because the two would otherwise come apart: with no waves to stop them, a player who runs rather than walks
+   * covers about 1900px in the eight seconds of board 1's opening, and section 1 ends at 1800 — they would cross
+   * into Foundry Row having skipped every fight on the quay.
+   *
+   * `outrun` is the safety valve on that, and it is what makes the hold impossible to get stuck behind: however
+   * fast the party moves, the beat is cancelled the moment they reach the section's last authored wave, and the
+   * section plays out normally from wherever they are.
+   */
+  get holdingWaves() { return !!(this.events.running && this.events.event && this.events.event.holdWaves); }
+
+  /** The furthest authored trigger in this section: past it, a beat has nothing left to hold and stands down. */
+  outrunAt(sec) {
+    let x = -Infinity;
+    for (const w of sec.waves || []) if (w.triggerX > x) x = w.triggerX;
+    const tr = sec.transition;
+    if (tr && tr.atX != null && tr.atX < x) x = tr.atX;
+    return x;
+  }
+
+  /** Stop a running beat early and strike everything it staged. The script's own end goes through clearActors(). */
+  endBeat() { this.events.cancel(); this.clearActors(); }
+
+  /** Drop everything a beat put on stage — bodies and lettering alike (the beat ended, or the section changed). */
+  clearActors() {
+    for (const a of this.actors) { a.removeMe = true; a.alive = false; }
+    for (const s of this.signs) { s.removeMe = true; s.alive = false; }
+    this.actors.length = 0; this.signs.length = 0;
+  }
+
+  /**
+   * Raise a companion exchange. Every trigger in the game funnels through here so that the "one plate at a time"
+   * rule is enforced in exactly one place, and so the whole system can be switched off with a single flag.
+   *
+   * @param {string} trigger one of dialogue.TRIGGERS
+   * @param {{ focus?: object }} [o] the hero the moment belongs to, when there is one
+   */
+  say(trigger, { focus = null } = {}) {
+    if (!this.dialogue || !trigger) return false;
+    return this.dialogue.say(trigger, this.world.players, this.world.frame, { focus });
+  }
+
+  /**
+   * The same, `delay` frames from now. Several triggers fire on the exact frame something ELSE is already asking for
+   * the player's attention — a section banner, a boss name plate — and a line that lands on that frame is a line
+   * nobody reads. One slot, so a later schedule replaces an earlier one rather than stacking.
+   */
+  saySoon(trigger, delay, { focus = null } = {}) {
+    if (!this.dialogue || !trigger) return;
+    this.pendingSay = { trigger, t: Math.max(1, delay | 0), focus };
+  }
+
+  /**
+   * Three of the seven dialogue triggers are EDGES in player state rather than events anybody raises: a partner
+   * going out, a partner coming back on a continue, and a combo crossing 20. They are polled here, in one place,
+   * for two reasons.
+   *
+   * The first is that the alternative is three call sites scattered through player.js, hud.js and gameplay.js, each
+   * of which would have to reach back to the runner for a system none of them otherwise knows about.
+   *
+   * The second is correctness, and it is specific: the combo counter does not step by one. An air hit adds
+   * AIR_HIT_COMBO (2), so a combo can go 19 -> 21 and an `=== 20` test never fires at all. Only a CROSSING test is
+   * right, and a crossing test needs last frame's value, which is what this poll keeps.
+   *
+   * Deterministic: `p.out` and `p.combo` are simulation state, agreed by lockstep before this runs.
+   */
+  pollDialogue() {
+    const ps = this.world.players;
+    // Both baselines are seeded from LIVE state, never from zero. The player list grows when somebody drops in
+    // mid-run (game/party.js), and a zeroed combo baseline turns every combo already past 20 into a fresh crossing
+    // on that frame — the party gains a player and the hero mid-combo congratulates themselves again.
+    if (!this.wasOut || this.wasOut.length !== ps.length) {
+      this.wasOut = ps.map((p) => !!(p && p.out));
+      this.wasCombo = ps.map((p) => (p ? p.combo | 0 : 0));
+    }
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
+      if (!p) continue;
+      const out = !!p.out, combo = p.combo | 0;
+      // A partner going out is about the OTHER hero, so the survivor speaks first and the one who went out answers.
+      if (out && !this.wasOut[i]) this.say('partnerDown', { focus: ps.find((q) => q && q !== p && !q.out) || null });
+      else if (!out && this.wasOut[i]) this.say('partnerContinue', { focus: p });
+      else if (combo >= COMBO_LINE && this.wasCombo[i] < COMBO_LINE) this.say('combo20', { focus: p });
+      this.wasOut[i] = out; this.wasCombo[i] = combo;
+    }
   }
   /**
    * An event's `spawn` action (issue #33). These are a real encounter, not strays: if a wave is running they join it
@@ -202,8 +389,22 @@ export class StageRunner {
     this.world.platform = this.platform;
     // a script belongs to the section that authored it: leaving mid-event reverts every hazard override it made
     if (this.events) this.events.cancel();
-    if (!first || this.startSection > 0) this.hud.showBanner(sec.name || sec.id.toUpperCase(), sec.sub || '', 90);
+    // ...and so do the bodies and the conversation it staged. An actor is scenery for one beat; carrying one into
+    // the next section would leave a dock hand walking through Foundry Row.
+    this.clearActors();
+    if (this.dialogue) this.dialogue.reset();
+    // The section enter STINGER (issue #25) is the board doc's own line for this room, and it rides the section
+    // name plate's subtitle rather than a banner of its own: `showBanner` is one slot and the last write wins, so a
+    // second call here would simply delete the section name. A stinger also earns 30 more frames to be read in.
+    if (!first || this.startSection > 0) {
+      const sub = (this.beats && sec.stinger) || sec.sub || '';
+      this.hud.showBanner(sec.name || sec.id.toUpperCase(), sub, sub === sec.stinger && sub ? 120 : 90);
+    }
     if (sec.mode === 'locked' && !this.nowaves) this.world.camera.lock(sec.x0, sec.x1);
+    // "a new room opened" is the most-fired dialogue trigger, and it is scheduled rather than said: on the frame a
+    // section opens the player is already reading its name plate, and the first section of a run opens on frame 0,
+    // before the board has drawn once.
+    this.saySoon('sectionStart', SECTION_REPLY_DELAY);
   }
   playMusic(track) { if (track && track !== this.music) { this.music = track; this.game.audio.music.play(track); } }
 
@@ -211,15 +412,23 @@ export class StageRunner {
   update() {
     this.frame++;
     const world = this.world, cam = world.camera, center = cam.x + VIEW_W / 2;
+    // Companion plates age HERE, at the very top, above the transition early-return below: a line raised as a
+    // section opened has to keep ticking through the lift ride that follows it, or it would hang on screen for the
+    // whole transition and then vanish the instant the party got control back.
+    if (this.dialogue) this.dialogue.update();
+    if (this.beats) this.pollDialogue();
+    if (this.pendingSay && --this.pendingSay.t <= 0) { const s = this.pendingSay; this.pendingSay = null; this.say(s.trigger, { focus: s.focus }); }
     if (this.plate && ++this.plate.timer >= this.plate.life) this.plate = null;
     if (this.spotlightT >= 0 && ++this.spotlightT > SPOTLIGHT_FRAMES) this.spotlightT = -1;
     // The platform is stepped BEFORE the transition early-return: a hoist does not stop climbing because the party is
     // boarding something. `carry` is false during a transition so its clock runs on while nothing shoves a held body.
     if (this.platform) this.platform.update(world, !this.transition);
     if (this.transition) { this.holdPlayers(); if (this.transition.update()) this.endTransition(); return; }
-    // section by camera centre; a section whose exit is a scripted transition is left through that transition instead
+    // section by camera centre; a section whose exit is a scripted transition is left through that transition instead.
+    // A beat holding the wave director holds this too — see `holdingWaves`: leaving the section mid-beat is how a
+    // running player would skip every fight the section had.
     const next = this.sectionAt(center);
-    if (next > this.sectionIndex) {
+    if (next > this.sectionIndex && !this.holdingWaves) {
       const tr = this.section.transition;
       if (tr && !tr._done && !this.bossActive && !this.nowaves) { this.startTransition(tr); return; }
       this.enterSection(next);
@@ -228,7 +437,9 @@ export class StageRunner {
     // The event script is stepped HERE, above the victory / boss / nowaves returns, because checkTriggers is not
     // frame-stepped at all -- it does not run while a wave is active, and a script driven from there would stall
     // for the whole of its own wave. Arming still happens down there, where `reach` already exists.
-    if (this.events.running) this.events.update();
+    // A beat's cast belongs to the beat. When the script finishes, the bodies it staged walk off with it rather than
+    // being left standing in the middle of the next wave.
+    if (this.events.running && !this.events.update()) this.clearActors();
     if (this.victoryTimer >= 0) {
       if (this.spectacle) this.spectacle.update();
       if (++this.victoryTimer >= VICTORY_FRAMES && !this.finished) { this.finished = true; this.screen.onVictory(); }
@@ -469,6 +680,14 @@ export class StageRunner {
    */
   startEvent(ev) {
     if (this.nowaves && !this.forceEvents) return;
+    // A STORY BEAT (issue #25) does not arm at all when beats are off, and this is the whole of that switch.
+    //
+    // It is not enough for the beat's own actions to no-op, which is what an earlier version of this did: a beat
+    // holds the wave director for as long as its script runs (`holdWaves`), so a bot run that stepped the script
+    // and staged nothing still waited six seconds for its first wave. Every playthrough moved, and `npm run
+    // winrate` moves with it. Skipping the event outright is what makes "the harness sees the run it saw before"
+    // true rather than nearly true.
+    if (ev.beat && !this.beats && !this.forceEvents) return;
     if (ev.kind === 'text') { this.hud.showBanner(ev.text || '', ev.sub || '', ev.life || 90); return; }
     this.events.arm(ev);
   }
@@ -477,11 +696,23 @@ export class StageRunner {
     // final boss
     if (stage.boss && this.bossState === 'none' && center >= stage.boss.atX && this.sectionAt(stage.boss.atX) === this.sectionIndex) { this.startBoss(stage.boss, 'boss'); return; }
     if (stage.midboss && this.midbossState === 'none' && center >= stage.midboss.atX && this.sectionAt(stage.midboss.atX) === this.sectionIndex) { this.startBoss(stage.midboss, 'midboss'); return; }
-    for (const w of sec.waves || []) {
-      if (w._state !== 'idle' || center < w.triggerX) continue;
-      w._state = 'done';
-      this.startWave(w, w.lock !== false);
-      return;
+    // An intro beat (issue #25) is "walking a set-dressed stretch with NO ENEMIES before the first wave", and the
+    // stretch the boards already have between the spawn point and the first trigger is about two seconds of it. So
+    // a beat marked `holdWaves` holds the wave director for as long as its script runs, rather than the level being
+    // re-cut to make room. Nothing else is held: the player walks, the camera follows, hazards run.
+    //
+    // It CANNOT deadlock. `holdWaves` only reads while `events.running`, an EventRunner stops the moment its script
+    // runs out of actions, and `events.cancel()` on a section change clears it even if the section is left mid-beat.
+    // The safety valve: a party that has walked past everything the section had to throw at them has outrun the
+    // beat, so it stands down here rather than holding a section that has nothing left to give.
+    if (this.holdingWaves && center >= this.outrunAt(sec)) this.endBeat();
+    if (!this.holdingWaves) {
+      for (const w of sec.waves || []) {
+        if (w._state !== 'idle' || center < w.triggerX) continue;
+        w._state = 'done';
+        this.startWave(w, w.lock !== false);
+        return;
+      }
     }
     for (const ev of sec.events || []) {
       if (ev._done || ev.atX == null || center < ev.atX) continue;
@@ -503,17 +734,46 @@ export class StageRunner {
     if (this.transition) return;
     spec._done = true;
     this.goTimer = 0;
-    if (spec.kind === 'dock') { const banner = spec.banner != null ? spec.banner : 'FUNICULAR DOCKING'; if (banner) this.hud.showBanner(banner, '', 60); }
-    this.transition = new Transition(this, spec.kind, { gateX: spec.gateX, nextSection: this.sectionIndex + 1, banner: spec.banner, look: spec.look, pies: spec.pies, up: spec.up, ...extra });
+    const vignette = this.beats ? spec.vignette : null;
+    // `showBanner` is ONE SLOT and the last write wins, so a dock's arrival banner and a vignette caption in the
+    // same breath is not two lines, it is the first one deleted. When a vignette opens with a caption it IS this
+    // transition's banner, and the default one stands down for it.
+    const vignetteOpens = !!(vignette && (vignette.cues || []).some((c) => c.caption != null && (c.at | 0) <= DOCK_BANNER_LIFE));
+    if (spec.kind === 'dock' && !vignetteOpens) { const banner = spec.banner != null ? spec.banner : 'FUNICULAR DOCKING'; if (banner) this.hud.showBanner(banner, '', DOCK_BANNER_LIFE); }
+    // `vignette` (issue #25) is the between-section moment. It is handed to the Transition rather than armed as an
+    // event because StageRunner.update() returns above `events.update()` for the whole of a transition, so a script
+    // armed here would not advance a frame until the party already had control back.
+    this.transition = new Transition(this, spec.kind, { gateX: spec.gateX, nextSection: this.sectionIndex + 1, banner: spec.banner, look: spec.look, pies: spec.pies, up: spec.up, vignette, ...extra });
     this.holdPlayers();
   }
   endTransition() {
     const tr = this.transition;
     this.transition = null;
     if (!tr) return;
+    // A vignette's cast goes with it. `switchSection` already clears actors through enterSection, but a `descent`
+    // has no switch phase at all, so this is the one teardown every kind passes through.
+    this.clearActors();
     if (tr.kind === 'dock') { this.goTimer = GO_FRAMES; audio.play('go_arrow'); }
     if (tr.kind === 'board') this.sectionTimer = 0;
     if (tr.kind === 'descent' && this.pendingPlate) { this.showPlate(this.pendingPlate); this.pendingPlate = null; }
+  }
+
+  /**
+   * One vignette cue, fired by the Transition at its authored frame. The vocabulary is deliberately the event
+   * runner's — `actor`, `walk`, `caption`, `sfx`, `camera` — so an author writing a between-section moment writes
+   * the same shapes as one writing a mid-board beat.
+   */
+  vignetteCue(cue) {
+    if (!cue || !this.beats) return;
+    // A vignette plays under a LOCKED camera parked wherever the transition began, so an author has no absolute x
+    // worth writing: the same lift is a different place on every board. `dx` is therefore measured from the left
+    // edge of the view, which is the only frame of reference a between-section moment actually has.
+    if (cue.actor) this.spawnActor(cue.actor.dx != null ? { ...cue.actor, x: this.world.camera.x + cue.actor.dx } : cue.actor);
+    if (cue.walk) this.walkActor(cue.walk);
+    if (cue.caption != null) this.hud.showBanner(String(cue.caption), cue.sub || '', cue.life || 110);
+    if (cue.sfx) audio.play(cue.sfx);
+    if (cue.camera) this.world.camera.shake(cue.camera.shake || 4, cue.camera.frames || 12);
+    if (cue.say) this.say(cue.say);
   }
   /** Freeze player input for this frame (cutscenes): no actions, i-frames, walking stops. */
   holdPlayers() {
@@ -556,6 +816,12 @@ export class StageRunner {
     audio.play('boss_intro'); audio.play('roar');
     this.playMusic((this.stage.music && this.stage.music[plate.kind]) || plate.kind);
     this.world.camera.shake(8, 20);
+    // The boss's ARRIVAL line (issue #25). It has to be raised here and nowhere else: `Boss.nextPhase` is what calls
+    // `world.bossLine`, and phase 0 is not entered through nextPhase at all — the constructor applies it — so a boss
+    // that only spoke from nextPhase would never say the one line it was written to open with.
+    if (this.bossEntity && this.world.bossLine) this.world.bossLine(this.bossEntity, 'phase', 0);
+    // ...and then the heroes answer the name plate, after it rather than over it.
+    this.saySoon(plate.kind === 'midboss' ? 'midbossIntro' : 'bossIntro', BOSS_REPLY_DELAY);
   }
   /** GDD 5.2 dais: the floor band shrinks 20px per phase as the edge vents open (world.shrinkBand); reset when the boss is gone. */
   trackBossBand() {
@@ -589,11 +855,17 @@ export class StageRunner {
     }
   }
 
-  /** Transition overlays and the boss intro spotlight (the HUD draws the GO arrow from `goTimer`). */
+  /**
+   * Transition overlays, the boss intro spotlight, and the companion speech plates (the HUD draws the GO arrow from
+   * `goTimer`). The plates are drawn HERE rather than from the world or the HUD because this pass is the one layer
+   * that is above every entity, particle and weather effect and still below all HUD — a line spoken in the rain on
+   * board 1 has to be readable through it, and the HUD strip must still win over the line.
+   */
   draw(ctx) {
     const cam = this.world.camera;
     if (this.spotlightT >= 0 && this.bossEntity && this.midbossState === 'active') drawSpotlight(ctx, cam, this.bossEntity, this.spotlightT);
     if (this.transition) this.transition.draw(ctx);
+    if (this.dialogue) this.dialogue.draw(ctx, cam);
   }
 
   /** window.__game.summary() contribution. */
@@ -601,6 +873,27 @@ export class StageRunner {
     const pf = this.platform;
     return { sectionIndex: this.sectionIndex, wavesCleared: this.wavesCleared, transition: this.transition ? this.transition.kind : null,
       platform: pf ? { kind: pf.kind, phase: pf.phase, progress: pf.progress(this.world), offset: Math.round(pf.offset || 0) } : null,
-      event: this.events.running ? { id: this.events.event.id || '', step: this.events.step, t: this.events.t } : null };
+      event: this.events.running ? { id: this.events.event.id || '', step: this.events.step, t: this.events.t } : null,
+      beat: { on: !!this.beats, actors: this.actors.length, signs: this.signs.length, ...(this.dialogue ? this.dialogue.summary() : {}) } };
   }
+}
+
+/**
+ * Which def an `actor` action stages. A beat names either an enemy (`def: 'sootborn', variant: 'cutthroat'`) or a
+ * hero (`hero: 'brunhild'`), and both resolve to the same kind of content def — an actor is a rig with the AI taken
+ * off, so the roster it comes from does not matter to it.
+ *
+ * A hero actor defaults to the def the PLAYER is not using where a beat asks for `hero: 'other'`, so a stage can
+ * stage "the rest of the party" without knowing who was picked.
+ */
+function resolveActorDef(spec, game) {
+  if (spec.hero) {
+    if (spec.hero === 'other') {
+      const taken = new Set((game && game.options && game.options.chars) || []);
+      const free = CHARACTERS.findIndex((c, i) => !taken.has(i));
+      return CHARACTERS[free >= 0 ? free : 0];
+    }
+    return getCharacter(spec.hero);
+  }
+  return spec.def ? getEnemyDef(spec.def, spec.variant) : null;
 }

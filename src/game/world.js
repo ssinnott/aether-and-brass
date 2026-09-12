@@ -23,6 +23,8 @@ export class World {
     this.game = game;
     this.options = options;
     this.entities = [];
+    /** Reused by draw() for the depth-sorted pass, re-filled every frame (never read outside draw()). */
+    this._sorted = [];
     /** Player fighters (kept even while dead/out so the HUD can show them). */
     this.players = [];
     this.camera = new Camera(stageLength);
@@ -171,9 +173,17 @@ export class World {
     if (this.backdrop && this.backdrop.drawBack) this.backdrop.drawBack(ctx, cam, this.frame);
     else { ctx.fillStyle = '#202030'; ctx.fillRect(0, 0, VIEW_W, FLOOR_TOP); ctx.fillStyle = '#4a4650'; ctx.fillRect(0, FLOOR_TOP, VIEW_W, VIEW_H - FLOOR_TOP); }
     this.drawBandEdges(ctx, cam);
-    for (const e of this.entities) if (e.alive || e.kind === 'player' || e.state === ST.DEAD) e.drawShadow(ctx, cam);
+    // One pass draws the shadows and fills the reusable depth-sort array (this ran `entities.slice().sort()`
+    // every frame, allocating a fresh array 60 times a second for the GC to take back again).
+    const sorted = this._sorted;
+    let n = 0;
+    for (const e of this.entities) {
+      sorted[n++] = e;
+      if (e.alive || e.kind === 'player' || e.state === ST.DEAD) e.drawShadow(ctx, cam);
+    }
+    sorted.length = n;
     particles.draw(ctx, cam, 'back');
-    const sorted = this.entities.slice().sort(depthCompare);
+    sorted.sort(depthCompare);
     for (const e of sorted) e.draw(ctx, cam);
     this.drawFx(ctx, cam);
     particles.draw(ctx, cam, 'front');

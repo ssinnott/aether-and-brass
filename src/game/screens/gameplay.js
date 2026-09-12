@@ -51,6 +51,16 @@ export class GameplayScreen extends Screen {
     this.world.onEnemyRungOut = (f, killer) => { this.noteDefeat(f, killer, true); };
     this.world.onBossPhase = (b, i) => { if (this.countsForBestiary()) bestiary.markPhase(b.def, i); };
     this.enemiesDefeated = 0;
+    // Whether this run is an online one, and which co-op group it belongs to. Captured HERE because
+    // both are needed after the session has let go of them: the results plaque records the clear
+    // (game/screens/results.js), and a co-op clear belongs to the party's own campaign rather than
+    // to whoever's solo save happens to be active by the time the plaque is built.
+    // (`netRun`, not the live `net.active` update() reads: a session that ends mid-match hands the
+    // seats to the bots, but the run it started is still the party's.)
+    this.netRun = !!(game.net && game.net.active && opt.netplay);
+    this.netScope = (this.netRun && game.net.groupScope) || '';
+    /** Set by showResults: the match ended in the plaque, so the room survives it (see exit()). */
+    this.toResults = false;
     /** Entries this run opened for the first time, in the order they were beaten (the results plaque lists them). */
     this.newEntries = [];
     this.players = [];
@@ -75,7 +85,15 @@ export class GameplayScreen extends Screen {
     this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves, startSection: section, startEvent: event });
     this.runner.start();
     for (const s of opt.spawn || []) this.spawnEnemy(s.type, s.variant, s.dx, s.dz);
-    if (!params.resume && !(section > 0)) this.hud.showBanner(this.stage.name, this.stage.sections[0].name || '', 120);
+    // The opening banner. Its subtitle is normally the first section's name — but when story beats are on that name
+    // is already lettered on a hoarding in the world a few strides ahead (issue #25), so the room's own STINGER goes
+    // here instead of repeating it. Without this the four section-1 stingers would be written and never displayed:
+    // StageRunner.enterSection suppresses its own banner for the first section precisely because this one exists.
+    if (!params.resume && !(section > 0)) {
+      const s0 = this.stage.sections[0];
+      const sub = (this.runner.beats && s0.stinger) || s0.name || '';
+      this.hud.showBanner(this.stage.name, sub, 120);
+    }
   }
   /**
    * Netplay status over the scene: a stall while somebody's input is late, the note when one player
@@ -233,7 +251,11 @@ export class GameplayScreen extends Screen {
     const stats = this.players.filter(Boolean).map((p) => ({
       name: p.def.name, kills: p.kills, maxCombo: p.maxCombo, damageTaken: Math.round(p.damageTakenTotal), continues: p.continuesUsed, score: p.score, lives: p.lives, index: p.index,
     }));
-    this.game.replace('results', { stats, defeat, stage: this.stage, time: this.time, enemiesDefeated: this.enemiesDefeated, newEntries: this.newEntries.slice(), continuesUsed: this.continuesUsed, sectionIndex: this.world.sectionIndex, wavesCleared: this.world.wavesCleared, cameraX: this.world.camera.x });
+    // The match is ending IN the plaque, which is the one exit that keeps an online room alive (exit()).
+    this.toResults = true;
+    // `online` / `scope` hand the run's provenance forward: exit() runs before the plaque is built,
+    // so by then the session has already let go of the group whose clear this is.
+    this.game.replace('results', { stats, defeat, stage: this.stage, time: this.time, enemiesDefeated: this.enemiesDefeated, newEntries: this.newEntries.slice(), continuesUsed: this.continuesUsed, sectionIndex: this.world.sectionIndex, wavesCleared: this.world.wavesCleared, cameraX: this.world.camera.x, online: this.netRun, scope: this.netScope });
   }
   draw(ctx) {
     this.world.draw(ctx);
@@ -279,9 +301,15 @@ export class GameplayScreen extends Screen {
     // to the title, a game over, a reset. bestiary.record() only touches memory, so without this a run's kills would
     // be lost -- and flushing per kill would stringify the whole book in the middle of a fight.
     bestiary.flush();
-    // Any way out of the match ends the session: quitting to title, the results screen, a reset.
-    // Without this the lockstep pump keeps injecting the peer's masks into the title screen menu.
-    if (this.game.net && this.game.net.active) this.game.net.end('left the match');
+    // Every way out of the match leaves lockstep, or the pump keeps injecting the party's masks into
+    // the menus. The results plaque is the one way out that keeps the ROOM: the party goes back to
+    // the lobby from there and plays the next board together (net/session.js matchOver). Quitting to
+    // the title, a game over with no plaque or a reset ends the session outright.
+    const net = this.game.net;
+    if (net && net.active) {
+      if (this.toResults && typeof net.matchOver === 'function') net.matchOver();
+      else net.end('left the match');
+    }
     this.game.players = [];
     if (this.runner) this.runner.dispose();
   }

@@ -241,6 +241,12 @@ before it did not do.
 > **THE STUBBORN KETTLE IS GOING UP THERE TO ASK WHY.**
 
 ## Section 1, The Mooring Spine (x 0–1900; dawn, storm, open air)
+- **The opening beat (issue #25):** the board does not open on a title card. The party steps off the mooring ladder
+  and walks the spine for six seconds with nothing to fight, while the storm front comes over: the board's name is on
+  the **nameplate bolted to the rail** (`NINTH WING - NO BOARDING`) rather than on a plate in the middle of the
+  screen, a Stormcrow deckhand walks the gantry ahead of them and turns for the rail as the front hits, and the
+  thunder lands under the second caption. The player has control throughout — the wave director is held, nothing
+  else is. The stinger under the section plate is *nothing up here is bolted to the ground*.
 - **Setting:** the topmost mooring gantry of Calderwick, above a sea of cloud, with the blockade hanging in the weather.
 - **Parallax:** *Far* (0.2x): storm gradient indigo → bruised violet → dawn amber, an anvil cloud wall, three banks of
   lit cloud tops, three fleet hulls drifting, and **lightning that lights the whole sky** every ~7s. *Mid* (0.5x):

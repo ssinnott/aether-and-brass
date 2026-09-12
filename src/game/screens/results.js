@@ -5,6 +5,9 @@
 // Clearing a board records it in game/progress.js, which is what opens the next board on BOARD SELECT; when this run
 // opened one, a plate announces it under the totals and dismissing the plaque hands off to BOARD SELECT so the
 // unlock plays out on the newly opened board's own plaque instead of dropping straight back to the title.
+// An ONLINE run is recorded against the party's own campaign (the scope the match was played in, passed in by
+// game/screens/gameplay.js) and dismissing the plaque hands the party back to their lobby, where the board they
+// just opened is waiting under the host's cursor - the room outlives the match (docs/MULTIPLAYER.md).
 import { VIEW_W, VIEW_H, UI, MAX_PLAYERS, PLAYER_COLORS } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
@@ -17,6 +20,9 @@ import { drawShadowScreen } from '../../art/fx.js';
 import { AnimPlayer } from '../animation.js';
 import { progress } from '../progress.js';
 import { getStage, stageIndex } from '../../content/stage/index.js';
+import { CHARACTERS } from '../../content/characters/index.js';
+import { BANTER, SOLO } from '../../content/characters/lines.js';
+import { drawSpeechPlate, pairKey } from '../dialogue.js';
 
 const ROWS = [['ENEMIES DEFEATED', 'kills'], ['MAX COMBO', 'maxCombo'], ['DAMAGE TAKEN', 'damageTaken'], ['CONTINUES USED', 'continues'], ['TIME', 'time'], ['SCORE', 'score']];
 const ROW_FRAMES = 20, ROLL_FRAMES = 16;
@@ -28,6 +34,16 @@ const LABEL_X = 64, COL_X = 250, COL_W = 120, ROW_Y = 104;
 // and a four-rig hero row (last rig's right edge ~585, inside the plaque's inner edge 594).
 const COL_X_QUAD = 176, COL_W_QUAD = 80;
 const HERO_X = [470, 560], HERO_X_QUAD = [400, 456, 512, 568], HERO_Y = 322;
+/** Issue #25: the run's last exchange comes up this many stamp-frames after the rank lands, and its reply follows. */
+const RESULTS_LINE_AT = 24, RESULTS_LINE_GAP = 26;
+/**
+ * Rows the exchange plates sit on, and the gap between the two speakers' rows.
+ *
+ * The plaque has no spare space and these are the only rows left: the stat rows finish around 203, the NEW BOARD
+ * OPEN plate owns 262..296 and the bestiary entry list starts at 262 — and BOTH of those are drawn AFTER the
+ * exchange, so a plate that overlapped them would simply be painted over rather than competing with them.
+ */
+const RESULTS_LINE_Y = 238, RESULTS_LINE_ROW = 15;
 
 // New-entry list (issue #26). It shares the plaque with the hero rigs (from x ~370 in quad mode), the NEW BOARD
 // OPEN plate (rows 262..296) and PRESS START (centred on row 312), so it lives in the left column and is kept
@@ -78,7 +94,18 @@ export class ResultsScreen extends Screen {
     this.rank = this.defeat ? rankFor(0) : rankFor(this.total);
     // Which board this was, and - on a clear - the board that clear just opened (null when nothing new opened).
     this.stage = params.stage || getStage(this.game.options.stage);
-    this.unlocked = this.defeat || !this.stage ? null : progress.markCleared(this.stage.id, { score: this.total, rank: this.rank.letter });
+    /**
+     * The co-op group this run belonged to ('' for a solo run). A co-op clear belongs to the PARTY's
+     * campaign (docs/MULTIPLAYER.md), and the scope is passed in rather than read from `progress`
+     * because the match screen has already left the stack by the time this plaque is built - so the
+     * scope active here is whatever the session left behind, which on a session that ended mid-match
+     * is the local player's own solo save.
+     */
+    this.scope = params.scope || '';
+    /** True when this run was played online: the party has a room to go back to (see backToLobby). */
+    this.online = !!params.online;
+    this.unlocked = this.defeat || !this.stage ? null
+      : progress.inScope(this.scope, () => progress.markCleared(this.stage.id, { score: this.total, rank: this.rank.letter }));
     this.entryLines = entryLines(this.newEntries, !!this.unlocked);   // needs `unlocked`: it decides the room left
     this.rowsShown = 0; this.rowTimer = 0; this.stamp = -1; this.leaving = false;
     // victory poses: the players' rigs playing their win anims (defeat: lying)
@@ -88,13 +115,43 @@ export class ResultsScreen extends Screen {
       if (!def) return null;
       const anim = new AnimPlayer(def.anims || {});
       anim.play(this.defeat ? 'lying' : 'win', { fallback: 'idle' });
-      return { rig: buildRig(def.build || {}), anim };
+      return { rig: buildRig(def.build || {}), anim, def };
     });
+    // The last companion exchange of the run (issue #25), over the victory poses. It is chosen here rather than
+    // drawn live because the results screen has no world and no sim frame: `this.frame` is its own, and picking
+    // once on entry means the plate cannot change while the player is reading it.
+    this.exchange = this.pickExchange();
     this.game.audio.music.play(this.defeat ? 'gameover' : 'results');
     particles.clear();
   }
+  /**
+   * The `results` exchange: the first two heroes on the plaque, from the same tables the run used. Nothing about a
+   * results screen is simulation, so this may use any clock it likes — but it uses the score anyway, which keeps a
+   * netplay pair showing the same line and costs nothing.
+   *
+   * @returns {{ lines: Array<{ i: number, text: string }> }|null}
+   */
+  pickExchange() {
+    if (this.defeat || this.game.options.bot) return null;
+    const live = this.heroes.map((h, i) => (h && h.def ? { i, id: h.def.id } : null)).filter(Boolean);
+    if (!live.length) return null;
+    const pick = (n, seed) => (n <= 1 ? 0 : ((seed | 0) % n + n) % n);
+    if (live.length >= 2) {
+      const order = CHARACTERS.map((c) => c.id);
+      const [x, y] = [live[0], live[1]].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+      const rows = (BANTER[pairKey(x.id, y.id, order)] || {}).results;
+      if (rows && rows.length) {
+        const row = rows[pick(rows.length, this.total)];
+        return { lines: [{ i: x.i, text: row.a }, { i: y.i, text: row.b }] };
+      }
+    }
+    const solo = (SOLO[live[0].id] || {}).results;
+    return solo && solo.length ? { lines: [{ i: live[0].i, text: solo[pick(solo.length, this.total)] }] } : null;
+  }
+
   /** Keep the stage bookkeeping visible to window.__game.summary() after the run. */
-  summary() { return { ...this.summaryExtra, stageId: this.stage ? this.stage.id : '', unlockedStageId: this.unlocked ? this.unlocked.id : '' }; }
+  summary() { return { ...this.summaryExtra, stageId: this.stage ? this.stage.id : '', unlockedStageId: this.unlocked ? this.unlocked.id : '',
+    resultsLines: this.exchange ? this.exchange.lines.map((l) => l.text) : [] }; }
   update() {
     super.update();
     for (const h of this.heroes) if (h) { h.anim.tick(); if (h.anim.done) h.anim.play(this.defeat ? 'lying' : 'win', { restart: true, fallback: 'idle' }); }
@@ -114,10 +171,28 @@ export class ResultsScreen extends Screen {
     else if (this.stamp > AUTO_RETURN) go = true;
     if (go && this.frame > 30) {
       this.leaving = true; audio.play('menu_confirm');
-      // a clear that opened a board goes to BOARD SELECT to play the reveal; everything else returns to the title
-      const reveal = this.unlocked && this.game.factories.boardselect ? this.unlocked.id : '';
+      // A co-op run goes back to the ROOM it was played in: the same CHOOSE YOUR FIGHTER row and
+      // board plaques the party started from, with the board this clear just opened under the host's
+      // cursor. Dropping the party onto the title instead would break the room up on a win.
+      if (this.backToLobby()) {
+        this.game.fadeTo(() => this.game.reset('lobby', { resume: true, reveal: this.unlocked ? this.unlocked.id : '' }), 0.06);
+        return;
+      }
+      // A solo clear that opened a board goes to BOARD SELECT to play the reveal; everything else
+      // returns to the title. An online run never does: what it opened belongs to the party's
+      // campaign, and BOARD SELECT reads this player's own - so there would be nothing to reveal.
+      const reveal = !this.online && this.unlocked && this.game.factories.boardselect ? this.unlocked.id : '';
       this.game.fadeTo(() => (reveal ? this.game.reset('boardselect', { reveal }) : this.game.reset('title')), 0.06);
     }
+  }
+  /**
+   * True when this plaque hands back to the lobby: a co-op run whose room is still standing between
+   * matches (net/session.js matchOver). A session that ended mid-match - a disconnect, a desync -
+   * has no room left to return to, so that run leaves the way a solo one does.
+   */
+  backToLobby() {
+    const net = this.game.net;
+    return !!(this.online && net && net.state === 'lobby' && this.game.factories.lobby);
   }
   /** "NEW BOARD OPEN" plate: what this clear unlocked, and where to find it. */
   drawUnlock(ctx, f) {
@@ -173,6 +248,14 @@ export class ResultsScreen extends Screen {
       drawShadowScreen(ctx, heroX[i], HERO_Y, 34 * h.rig.scale, 0.45);
       drawRig(ctx, h.rig, h.anim.pose, { x: heroX[i], y: HERO_Y, facing });
     });
+    // The run's last exchange, over the poses. It comes up AFTER the rank stamp has landed (the plaque is what the
+    // player is reading until then) and the reply follows the opening line, the same beat the in-game plates use.
+    if (this.exchange && this.stamp > RESULTS_LINE_AT) {
+      this.exchange.lines.forEach((l, k) => {
+        if (this.stamp < RESULTS_LINE_AT + k * RESULTS_LINE_GAP) return;
+        drawSpeechPlate(ctx, heroX[l.i], RESULTS_LINE_Y - (l.i % 2) * RESULTS_LINE_ROW, l.text);
+      });
+    }
     // rank stamp: 6f slam from big to final size, then a 6f shake (scaled by the SCREEN SHAKE option)
     if (this.stamp >= 0) {
       const t = Math.min(1, this.stamp / 6), sc = 5 + Math.round((1 - t) * 6);
@@ -194,6 +277,7 @@ export class ResultsScreen extends Screen {
         drawText(ctx, this.entryLines[i], LABEL_X, y0 + i * 11, { size: 1, color: i ? UI.paper : ((f % 50) < 34 ? UI.brassLight : UI.brass) });
       }
     }
-    if ((f % 60) < 40 && this.stamp > 10) drawText(ctx, 'PRESS START', VIEW_W / 2, VIEW_H - 48, { size: 1, color: UI.paper, align: 'center' });
+    // In co-op the party is still in their room, so say where the plaque is about to put them.
+    if ((f % 60) < 40 && this.stamp > 10) drawText(ctx, this.backToLobby() ? 'PRESS START - BACK TO THE ROOM' : 'PRESS START', VIEW_W / 2, VIEW_H - 48, { size: 1, color: UI.paper, align: 'center' });
   }
 }

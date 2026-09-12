@@ -1,7 +1,7 @@
 // Pure-Node tests for the online co-op layer (docs/MULTIPLAYER.md). No browser, no network.
 //
 //   node tools/nettest.js              run every suite
-//   node tools/nettest.js trig proto   run selected suites (trig mqtt proto lockstep checksum signal picks buffers progress)
+//   node tools/nettest.js trig proto   run selected suites (trig mqtt proto lockstep checksum signal picks rematch buffers progress)
 //
 // These cover the parts that must be provably correct before anything is on the wire: deterministic
 // trig, the MQTT signalling codec, the input/message wire format, and the lockstep frame scheduler
@@ -14,6 +14,9 @@ import * as S from '../src/net/signal.js';
 import { worldChecksum } from '../src/net/checksum.js';
 import { createLockstep } from '../src/net/lockstep.js';
 import { createNetSession } from '../src/net/session.js';
+// The live module, as session.js sees it: the `progress` suite below works on throwaway copies,
+// but which scope a SESSION leaves active is a property of the one instance it imports.
+import { progress as liveProgress } from '../src/game/progress.js';
 
 let failures = 0;
 const ok = (cond, msg) => { console.log((cond ? '  ok:   ' : '  FAIL: ') + msg); if (!cond) failures++; };
@@ -250,6 +253,67 @@ const suites = {
     // One character registered: the rule cannot be honoured, and must not deadlock the lobby.
     const solo = seatParty(createNetSession({ game: { characters: [{ id: 'a' }], options: {} }, input: stubInput, isHost: true }), [0, 0]);
     ok(!solo.charTaken(0) && solo.setChar(0), 'with a single hero registered every player may share it');
+  },
+
+  // ---- net/session.js: the ROOM outlives the match. A finished board hands the party back to the
+  // lobby with their seats, their heroes and their shared campaign intact; only somebody leaving
+  // (net.end) breaks the room up and gives each player their solo save back. ----
+  async rematch() {
+    fakeStorage();
+    const virtual = new Set(), joined = new Set();
+    // A recording stand-in for engine/input.js: every seat was virtual-injected from the lockstep
+    // buffers, and the menus the party comes back to must read the keyboards in front of them.
+    const stubInput = {
+      playerCount: 4,
+      buffersCleared: false, claimsReset: false,
+      setJoined(s, v) { if (v) joined.add(s); else joined.delete(s); },
+      setVirtual(s) { virtual.add(s); },
+      clearVirtual(s) { virtual.delete(s); },
+      clearBuffers() { stubInput.buffersCleared = true; },
+      resetClaims() { stubInput.claimsReset = true; },
+      setPadClaiming() {},
+      pollRaw: () => ({}),
+    };
+    const game = { characters: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], options: { netplay: true, stage: 2 }, players: [] };
+    const net = createNetSession({ game, input: stubInput, isHost: true, room: 'TESTRM' });
+    // Seat a party of three by hand (connect() needs a browser), then stand in for the match itself:
+    // every seat driven by the pump, and one player the bot took over on the way to the last wave.
+    net.lobby.members = ['id0', 'id1', 'id2'].map((id, i) => ({ pid: `p${i}`, slot: i, char: i, ready: true, id, local: i === 0, seq: 0, rtt: 20 }));
+    net.players = 3; net.localSlot = 0; net.lobby.myReady = true; net.lobby.stage = 2;
+    for (let s = 0; s < 3; s++) { stubInput.setVirtual(s, {}); if (s) stubInput.setJoined(s, true); }
+    net.lobby.members[2].gone = true;
+    net.state = 'playing';
+    net.ls = { frame: 100 };
+    net.waiting = true; net.missing = [2];
+
+    ok(net.matchOver() === true, 'a finished match hands the party back to the lobby');
+    ok(net.state === 'lobby' && net.ls === null, '...off lockstep, with the room still standing');
+    ok(liveProgress.isGroup && liveProgress.scope === liveProgress.groupScope(['id0', 'id1']),
+      'the party keeps a campaign of its own between boards, re-keyed to whoever is still in the room');
+    ok(net.lobby.members.length === 2 && net.players === 2, 'the seat the bot finished the board for is emptied');
+    ok(net.localSlot === 0 && net.lobby.members.every((m, i) => m.slot === i), 'and the seats left stay dense');
+    ok(!net.lobby.myReady && net.lobby.members.every((m) => !m.ready),
+      'every ready flag is cleared: a peer still reading its results plaque cannot be dragged into the next match');
+    ok(virtual.size === 0, 'every seat gets its real devices back - a mask frozen on the last frame is not a menu');
+    ok(joined.size === 0, '...and no seat is left joined with nothing able to drive it');
+    ok(stubInput.buffersCleared && stubInput.claimsReset, 'and the match cannot leak a press into the lobby');
+    ok(!net.waiting && net.missing.length === 0, 'the waiting overlay is down');
+    ok(game.options.netplay === false, 'nothing is under lockstep control until the next match starts');
+    ok(net.matchOver() === false, 'a second call is a no-op: there is no match left to finish');
+    net.end('test over');
+    ok(!liveProgress.isGroup, 'leaving the room is what hands the player back to their own solo save');
+
+    // The clear itself: the results plaque is built after the match screen has left the stack, so the
+    // scope is handed to it (game/screens/gameplay.js -> results.js) rather than read off whatever is
+    // active by then. A co-op clear opens the GROUP's next board and touches nobody's solo save.
+    const { progress: p } = await freshProgress();
+    const group = p.groupScope(['id0', 'id1']);
+    ok(p.scope === 'solo', 'the plaque can easily be reached with the solo scope active');
+    ok(p.inScope(group, () => p.markCleared('stage1', { score: 900, rank: 'B' })) !== undefined, 'the clear is recorded in the scope it was played in');
+    ok(p.scope === 'solo', 'inScope puts back the scope it found');
+    ok(!p.isCleared('stage1'), "so a co-op clear stays out of the player's own campaign");
+    p.setScope(group);
+    ok(p.isCleared('stage1') && p.unlockedCount() >= 2, "...and opens the next board for the group that earned it");
   },
 
   // ---- engine/input.js: the match boundary must not let a menu press through as gameplay ----

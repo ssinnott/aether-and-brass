@@ -1,14 +1,18 @@
 // Title screen (GDD 9 + RECONCILIATION): navy sky, a brass gear (r 140) rotating behind the tiered-city silhouette,
 // the AETHER & BRASS logo with a bevel, the four heroes idling on the gear, a single menu row START /
-// ONLINE CO-OP / OPTIONS, blinking PRESS START, a compact controls legend and a composite join hint for
+// ONLINE CO-OP / TRAINING / BESTIARY / SOURCE CODE / OPTIONS, blinking PRESS START, a compact controls legend and a join hint for
 // up to three drop-in players (P2's keyboard half, P3/P4 gamepad-only). DIFFICULTY and MUTE moved off
 // this menu onto the OPTIONS overlay (screens/options.js), which is pushed on top of this screen and
 // popped back to it; Game.update() ticks only the top of the stack, so the heroes and steam freeze while it is
 // up. START goes to BOARD SELECT (screens/boardselect.js), which is where the run's board is chosen; the plate
-// under the logo just reports how many boards are open so far (game/progress.js).
-import { VIEW_W, VIEW_H, UI, MAX_PLAYERS, PLAYER_COLORS } from '../../constants.js';
+// under the logo just reports how many boards are open so far (game/progress.js). SOURCE CODE opens the
+// repository this build came from (engine/links.js): the address is printed along the credit line whether
+// or not the row is used, and a mouse can click it there -- which is the only way to follow it that is
+// guaranteed not to be swallowed by a popup blocker, since the menu row activates from the fixed step
+// rather than from the click that asked for it.
+import { VIEW_W, VIEW_H, UI, MAX_PLAYERS, PLAYER_COLORS, REPO_URL, REPO_LABEL } from '../../constants.js';
 import { Screen } from '../game.js';
-import { drawText, drawTextOutlined, measureText } from '../../engine/text.js';
+import { drawText, drawTextOutlined, measureText, lineHeight } from '../../engine/text.js';
 import { particles } from '../../engine/particles.js';
 import { gear, rrect, pathPoly, paint, rivetLine, pipe, circle } from '../../art/shapes.js';
 import { buildRig, drawRig } from '../../art/rig.js';
@@ -21,6 +25,7 @@ import { bestiary } from '../bestiary.js';
 import { options } from '../options.js';
 import { joinHint } from '../party.js';
 import { confirmPressed } from '../menuinput.js';
+import { links } from '../../engine/links.js';
 
 // A remapped legend line is centred at x=320 and must not clip the view; 16px clears the side gutter.
 const LEGEND_MAX_W = VIEW_W - 16;
@@ -28,9 +33,33 @@ const LEGEND_MAX_W = VIEW_W - 16;
 // menu onto OPTIONS (#19), so TRAINING lands where DIFFICULTY used to be rather than after it.
 // BESTIARY (issue #26) sits after TRAINING and before OPTIONS: both are things you do between runs rather than a way
 // to start one, and OPTIONS stays last where every menu in the game puts it.
-const MENU = ['START', 'ONLINE CO-OP', 'TRAINING', 'BESTIARY', 'OPTIONS'];
-const I_START = 0, I_ONLINE = 1, I_TRAIN = 2, I_BESTIARY = 3, I_OPTIONS = 4;
-const PLATE_H = MENU.length * 14 + 10;
+// SOURCE CODE sits after BESTIARY for the same reason BESTIARY sits after TRAINING -- it is a thing you
+// do between runs, not a way to start one -- and again before OPTIONS, which stays last
+// (docs/RECONCILIATION.md lists the whole row). New rows land in the middle often enough that
+// tools/playtest-options.js reaches OPTIONS by wrapping upwards from START rather than counting downs.
+const MENU = ['START', 'ONLINE CO-OP', 'TRAINING', 'BESTIARY', 'SOURCE CODE', 'OPTIONS'];
+const I_START = 0, I_ONLINE = 1, I_TRAIN = 2, I_BESTIARY = 3, I_SOURCE = 4, I_OPTIONS = 5;
+// The menu plate and everything stacked under it: adding a row pushes PRESS START, the join hint and the
+// link notice down together rather than letting the plate grow into them.
+const PLATE_X = 200, PLATE_Y = 156, PLATE_W = 240, ROW_Y0 = PLATE_Y + 5, ROW_H = 14;
+const PLATE_H = MENU.length * ROW_H + 10;
+const START_Y = PLATE_Y + PLATE_H + 6, HINT_Y = START_Y + 18, NOTICE_Y = HINT_Y + 14;
+// How long the SOURCE CODE row's answer stays up, in frames.
+const NOTICE_FRAMES = 150;
+const LINK_OPENED = 'SOURCE OPENED IN A NEW TAB';
+// Nothing is lost when the tab is refused: the address is on screen below either way.
+const LINK_BLOCKED = 'NEW TAB BLOCKED - THE ADDRESS IS BELOW';
+// Credit line and repository address share the bottom row, drawn as two pieces so the address alone is
+// lit, underlined and clickable. The address ends the line, so its left edge is the line's right edge
+// back off by its own width -- no measuring of the gap's trailing spaces.
+const CREDIT = '2026 AETHER WORKS   ';
+// Two px above the old credit row: the address carries an underline 8px below its top, and at 352 that
+// rule would have fallen on y=360 -- one row past the bottom of the view, where nothing is drawn.
+const CREDIT_Y = 350, LINK_RULE_Y = CREDIT_Y + 8;
+const LINK_W = measureText(REPO_LABEL, 1), LINE_W = measureText(CREDIT + REPO_LABEL, 1);
+const LINE_X = Math.round(VIEW_W / 2 - LINE_W / 2), LINK_X = LINE_X + LINE_W - LINK_W;
+// A couple of px of slop around the glyphs: the row is 7px tall and a mouse is not a cursor key.
+const LINK_ZONE = { x: LINK_X - 3, y: CREDIT_Y - 3, w: LINK_W + 6, h: lineHeight(1) + 2 };
 // Controls legend text is rebuilt from the live bindings (engine/input.js legend()/joinHint()) in
 // refreshLegends() below, so a remap in OPTIONS is reflected here without any hardcoded key literal.
 // Global keys are not remappable, so ESC / M stay literal in the fixed part of the footer.
@@ -59,6 +88,10 @@ export class TitleScreen extends Screen {
       this.game.input.resetClaims();
     }
     this.cursor = 0; this.joinFlash = null; this.joinKey = -1; this.hint = ''; this.starting = false;
+    this.notice = ''; this.noticeTimer = 0;
+    // The drawn address is clickable for as long as this screen is on the stack. A mouse click is a real
+    // user gesture, so it opens the tab even where the menu row's fixed-step call would be refused.
+    links.setZone({ ...LINK_ZONE, url: REPO_URL, onOpen: (opened) => this.linkNotice(opened) });
     this.heroes = (this.game.characters || []).slice(0, 4).map((c, i) => {
       const anim = new AnimPlayer(c.anims || {});
       anim.play('idle');
@@ -69,6 +102,15 @@ export class TitleScreen extends Screen {
     const book = bestiary.completion();
     this.bookPct = `${book.pct}%`;
     this.bookFull = book.seen === book.total && book.total > 0;
+  }
+  /** The address stops being clickable the moment the title leaves the stack. */
+  exit() { links.clearZone(); }
+  /** Report what following the SOURCE CODE link actually did. Called from the row and from a click.
+   *  @param {boolean} opened */
+  linkNotice(opened) {
+    this.notice = opened ? LINK_OPENED : LINK_BLOCKED;
+    this.noticeTimer = NOTICE_FRAMES;
+    this.game.audio.play(opened ? 'menu_confirm' : 'menu_back');
   }
   /** Rebuild the legend / footer strings from the live bindings. Called on enter and whenever
    * `input.bindingsVersion` changes (returning from the OPTIONS overlay never re-enters the title,
@@ -95,6 +137,7 @@ export class TitleScreen extends Screen {
     particles.update();
     for (const h of this.heroes) h.anim.tick();
     if (this.joinFlash && this.joinFlash.t > 0) this.joinFlash.t--;
+    if (this.noticeTimer > 0) this.noticeTimer--;
     // Slots joined THIS step (a bitmask, not a scalar): two pads claiming on the same 60Hz frame must
     // both be excluded from the menu loop below, or the earlier slot's claim press doubles as a
     // START/confirm (review major -- a single "last slot" scalar only caught the later one).
@@ -133,6 +176,10 @@ export class TitleScreen extends Screen {
       this.starting = true;
       audio.play('menu_confirm');
       this.game.fadeTo(() => this.game.replace('bestiary'), 0.08);
+    } else if (i === I_SOURCE) {
+      // No fade and no screen change: the game stays where it is and the browser gets a second tab.
+      // linkNotice() plays the sound, since a refused popup should not sound like a confirmation.
+      this.linkNotice(links.open(REPO_URL));
     } else if (i === I_OPTIONS) { audio.play('menu_confirm'); this.game.push('options'); }
   }
   draw(ctx) {
@@ -195,22 +242,24 @@ export class TitleScreen extends Screen {
     const open = progress.unlockedCount();
     drawText(ctx, `${open} OF ${STAGES.length} BOARDS OPEN`, 320, 146, { size: 1, color: open < STAGES.length ? '#4DF0E0' : UI.brassLight, align: 'center' });
     // menu on a translucent plate
-    rrect(ctx, 200, 156, 240, PLATE_H, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
+    rrect(ctx, PLATE_X, PLATE_Y, PLATE_W, PLATE_H, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
     for (let i = 0; i < MENU.length; i++) {
-      const sel = i === this.cursor, y = 161 + i * 14;
+      const sel = i === this.cursor, y = ROW_Y0 + i * ROW_H;
       const label = MENU[i];
       if (sel) { gear(ctx, 320 - drawTextWidth(label) / 2 - 12, y + 4, 5, 6, UI.brass, '#3a2010', 1, f * 0.05, 1.5); }
       drawText(ctx, label, 320, y, { size: 1, color: sel ? UI.white : UI.steel, align: 'center' });
       // How far through the book you are, on the row itself, so it is answerable without opening it.
-      if (i === I_BESTIARY) drawText(ctx, this.bookPct, 432, y, { size: 1, color: this.bookFull ? UI.teal : UI.brass, align: 'right' });
+      if (i === I_BESTIARY) drawText(ctx, this.bookPct, PLATE_X + PLATE_W - 8, y, { size: 1, color: this.bookFull ? UI.teal : UI.brass, align: 'right' });
     }
-    if ((f % 60) < 40) drawTextOutlined(ctx, 'PRESS START', 320, 244, { size: 2, color: '#ffffff', outline: '#3a2010', thickness: 1, align: 'center' });
+    if ((f % 60) < 40) drawTextOutlined(ctx, 'PRESS START', 320, START_Y, { size: 2, color: '#ffffff', outline: '#3a2010', thickness: 1, align: 'center' });
     // Join status + compact controls legend on the walkway. A JOINED flash for whichever slot last
     // joined (in that slot's colour) briefly overrides the composite hint for the still-free slots.
     const p2 = this.game.input.joined(1);
     if (this.joinFlash && this.joinFlash.t > 0 && (f % 10) < 6) {
-      drawText(ctx, this.joinFlash.text, 320, 266, { size: 1, color: PLAYER_COLORS[this.joinFlash.slot], align: 'center' });
-    } else if (this.hint && (f % 90) < 60) drawText(ctx, this.hint, 320, 266, { size: 1, color: UI.p2, align: 'center' });
+      drawText(ctx, this.joinFlash.text, 320, HINT_Y, { size: 1, color: PLAYER_COLORS[this.joinFlash.slot], align: 'center' });
+    } else if (this.hint && (f % 90) < 60) drawText(ctx, this.hint, 320, HINT_Y, { size: 1, color: UI.p2, align: 'center' });
+    // What the SOURCE CODE row (or a click on the address) just did, on the walkway above the address.
+    if (this.noticeTimer > 0) drawText(ctx, this.notice, 320, NOTICE_Y, { size: 1, color: this.notice === LINK_OPENED ? UI.teal : UI.copper, align: 'center' });
     // The lead line is this player's own block, which is the same nine keys either way -- only its
     // label changes from '1P' to 'P1'. The second line is P2's block: a dimmed advertisement of the
     // keys a friend would take while nobody has, and their live legend once somebody has.
@@ -219,7 +268,21 @@ export class TitleScreen extends Screen {
     drawText(ctx, lead, 320, 318, { size: 1, color: UI.paper, align: 'center', shadow: false });
     drawText(ctx, second, 320, 330, { size: 1, color: p2 ? UI.paper : UI.brassDark, align: 'center', shadow: false });
     drawText(ctx, this.legends.foot, 320, 342, { size: 1, color: UI.brass, align: 'center', shadow: false });
-    drawText(ctx, '2026 AETHER WORKS', 320, 352, { size: 1, color: UI.brassDark, align: 'center', shadow: false });
+    // Credit line, then the repository address as a link: lit while the mouse is on it or the SOURCE
+    // CODE row is highlighted, and underlined always, so it reads as something to follow rather than
+    // a caption. A player who never touches a mouse can still read it off the screen and type it in.
+    drawText(ctx, CREDIT, LINE_X, CREDIT_Y, { size: 1, color: UI.brassDark, shadow: false });
+    const linkLit = links.hot || this.cursor === I_SOURCE;
+    const linkColor = linkLit ? UI.brassLight : UI.brass;
+    drawText(ctx, REPO_LABEL, LINK_X, CREDIT_Y, { size: 1, color: linkColor, shadow: false });
+    ctx.fillStyle = linkColor;
+    ctx.fillRect(LINK_X, LINK_RULE_Y, LINK_W, 1);
+  }
+  summary() {
+    return {
+      screen: 'title', cursor: this.cursor, rows: MENU.length, row: MENU[this.cursor],
+      link: REPO_URL, linkLabel: REPO_LABEL, linkZone: LINK_ZONE, notice: this.noticeTimer > 0 ? this.notice : '',
+    };
   }
 }
 

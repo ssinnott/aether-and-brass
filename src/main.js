@@ -5,6 +5,7 @@ import { input } from './engine/input.js';
 import { rng } from './engine/rng.js';
 import { createCanvas } from './engine/canvas.js';
 import { touch } from './engine/touch.js';
+import { links } from './engine/links.js';
 import { audio } from './engine/audio.js';
 import { particles } from './engine/particles.js';
 import { Game } from './game/game.js';
@@ -117,6 +118,9 @@ function boot() {
   const ctx = view.ctx;
   input.init(view.displayCanvas);
   touch.init(view, options.touch);
+  // Mouse clicks on the repository address the title draws (engine/links.js); touch.js already owns
+  // every touch pointer on the same canvas.
+  links.init(view);
   audio.init();
 
   const game = new Game({ input, audio, rng, options });

@@ -200,3 +200,30 @@ interface SpawnMod {
   apply(d: any, base: any): void;
   hooks?: Hooks;
 }
+
+/**
+ * Companion dialogue (issue #25, content/characters/lines.js). One two-line exchange: `a` is spoken by the hero
+ * named first in the pairing key, `b` answers it. Both are drawn in the 5px pixel font on a plate over a fighter's
+ * head, so both are capped at 42 characters — tools/simtest.js asserts it.
+ */
+interface Exchange { a: string; b: string; }
+
+/**
+ * One pairing's table, keyed by the seven triggers game/dialogue.js raises. Every key is optional: a pairing with
+ * nothing written for a trigger falls back to the speaker's SOLO lines rather than to silence.
+ */
+interface CharacterLines {
+  /** A new section of the board opened. Fires many times in a run, so it carries more than one row. */
+  sectionStart?: Exchange[];
+  midbossIntro?: Exchange[];
+  bossIntro?: Exchange[];
+  /** A hero has run out of lives. The one who went out is never a speaker — both lines are survivors. */
+  partnerDown?: Exchange[];
+  partnerContinue?: Exchange[];
+  /** A combo crossed 20 (the BRASSY grade). Fires often, so it carries more than one row. */
+  combo20?: Exchange[];
+  results?: Exchange[];
+}
+
+/** A boss's own call-outs. `phase[i]` is spoken on entering phase i; `phase[0]` goes up with the name plate. */
+interface BossLines { phase: string[]; defeat: string; }

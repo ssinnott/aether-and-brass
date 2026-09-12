@@ -24,11 +24,11 @@ operate.
 | Peer connection | `src/net/peer.js` | One link of the mesh: unreliable, unordered channel; queues early ICE candidates |
 | Signalling | `src/net/signal.js` | Room codes over MQTT/WSS, split into a channel per pairing by `createSignalMux`; BroadcastChannel for the e2e test |
 | MQTT subset | `src/net/mqtt-codec.js` | Streaming parser: a WebSocket frame does not align with an MQTT packet |
-| Session | `src/net/session.js` | Roster, mesh, relay, signalling → lobby → match, and the per-frame pump |
+| Session | `src/net/session.js` | Roster, mesh, relay, signalling → lobby → match → lobby again, and the per-frame pump |
 | UI | `src/game/screens/lobby.js` | Host/join by room code, a cursor and a status column per seat, host's board pick, ready; `?room=CODE` invite links |
 | Hero cards | `src/game/screens/charcards.js` | The 140x200 cards, shared by the lobby and the local CHOOSE YOUR FIGHTER |
 | Board plaques | `src/game/screens/boardcards.js` | The plaque art and vignettes, shared by BOARD SELECT and the lobby's compact row |
-| Tests | `tools/nettest.js`, `tools/playtest.js` | Pure-Node suites plus two-page and four-page end-to-end matches |
+| Tests | `tools/nettest.js`, `tools/playtest.js` | Pure-Node suites plus two-page and four-page end-to-end matches, and a room that plays two boards in a row |
 
 ### Topology: a mesh, with the host as the fallback courier
 
@@ -125,6 +125,41 @@ progress is namespaced by scope, and a party earns its own way up from board 1.
 
 The identity is per-browser-profile: clearing site data, or playing from another machine, mints a
 new id and the party reads as a new group. Unavoidable without accounts.
+
+### Between boards: the room outlives the match
+
+A co-op campaign that a group works up from board 1 only means something if the group is still
+together to play the next one, so **finishing a board does not end the session**. The match screen
+hands the party back to its lobby (`net.matchOver`) instead of tearing the room down
+(`net.end`), and the results plaque returns them there rather than to the title:
+
+    lobby -> match -> results -> the same lobby -> the next match
+
+`matchOver` comes off lockstep (`ls`, the watchdog, the waiting overlay, any mid-match drop) and
+hands every seat's input back to the real devices — the whole party was virtual-injected from the
+lockstep buffers, and a menu that reads a mask frozen on the match's last frame is a menu nobody
+can use. What it deliberately keeps is everything that makes it the same room: the links, the
+seats, the heroes, the invite code, and the group's progress scope.
+
+Each player dismisses their own plaque, so the peers arrive back in the lobby at their own pace.
+Two rules make that safe:
+
+- **Every ready flag is cleared before the state goes back to `lobby`.** A stale ready could
+  otherwise start the next match while somebody was still reading their results, and their `START`
+  packet would arrive in a state that ignores it — the party would be one player short of a
+  simulation that had already begun.
+- **A seat the bot finished the board for is emptied.** That player is not in the room any more, so
+  the lobby the rest come back to is the party that is actually still there — which re-keys the
+  group scope to those players, exactly as an arrival or a departure does at any other time.
+
+The clear itself is recorded by the plaque, which is built *after* the match screen has left the
+stack — so the scope the run was played in is handed to it explicitly (`progress.inScope`) rather
+than read off whatever is active by then. Without that, a co-op clear lands in the local player's
+solo save: the group's next board never opens, and the group appears to lose everything it just
+earned. The host's cursor then comes back sitting on the board the clear opened.
+
+A session that ended *during* the match (a disconnect, a desync, the host leaving) has no room to
+go back to, and that run leaves the plaque the way a solo one does — to BOARD SELECT or the title.
 
 Anything else in `progress` stays local — it is read at screen boundaries, never inside the
 simulation, so it cannot desync a match.
@@ -236,6 +271,11 @@ the boundary is the fix, and `nettest buffers` holds the line.
   match plays on for the remaining three (every survivor retiring the seat on the same frame, the
   bot taking it over, nobody losing their own character), then for two, and the last player is
   handed the session's end and keeps playing with bots.
+- `node tools/playtest.js netrematch` — two real pages playing **two boards in one room**: the
+  first board ends, both peers come off lockstep with their seats and heroes intact and their
+  session back in its lobby state, the clear is on disk under the group's own scope with neither
+  player's solo progress touched, both plaques hand back to CHOOSE YOUR FIGHTER (not to the title)
+  with the host's cursor on the board they just opened, and the party readies up again and plays it.
 - The full existing suite passes unchanged, so the determinism work is invisible in single player.
 
 ### Two bugs the work found in the existing game

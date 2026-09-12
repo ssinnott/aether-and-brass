@@ -118,6 +118,22 @@ export const progress = {
   /** Point reads and writes at a scope. Pass nothing to go back to solo. */
   setScope(key) { active = key || SOLO_SCOPE; },
 
+  /**
+   * Run `fn` with `scope` active, restoring the scope that was active before it either way.
+   *
+   * A co-op clear is recorded through this. The results plaque is built AFTER the match screen has
+   * left the stack, and leaving it is what releases the session's grip on the group's progress, so
+   * the scope the run was played in has to be handed to the plaque explicitly rather than read off
+   * whatever is active by the time it is drawn.
+   * @param {string} scope a scope key, or '' / null to just run `fn` where it is
+   */
+  inScope(scope, fn) {
+    if (!scope || scope === active) return fn();
+    const prev = active;
+    active = scope;
+    try { return fn(); } finally { active = prev; }
+  },
+
   /** Record for a cleared board in the active scope, or null. `{ cleared: true, score, rank }` */
   record(stageId) { return load()[stageId] || null; },
   /** True when this board has been cleared at least once in the active scope. */

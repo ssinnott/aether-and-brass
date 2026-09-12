@@ -62,9 +62,49 @@ export const stage1 = {
           { type: S, variant: 'slinger', side: 'right', z: 120, delay: 90 }, { type: S, variant: 'slinger', side: 'left', z: 20, delay: 120 },
         ] },
       ],
-      events: [],
-      /** The dock gate rotates open; a 180f freight-lift ride down with one Meat Pie. */
-      transition: { kind: 'lift', atX: 1740, gateX: 1800 },
+      /** Issue #25 stinger: the quay's own line, under the section name plate. */
+      stinger: 'EVERYTHING LEAVING THIS CITY GOES THROUGH HERE',
+      /**
+       * THE SOOTFOOT GANGWAY (issue #25). The board opens on a walk rather than a title card: the party comes down
+       * the gangway in the rain, two dockers go the other way with their shift finished, and the board's name is on
+       * the hoarding at the head of the quay instead of on a plate in the middle of the screen.
+       *
+       * `holdWaves` is what buys the six seconds. The first wave triggers at x 400 and the party spawns at 100, so
+       * the walk the quay already had is about two seconds; rather than re-cut the level, the wave director waits
+       * while the script runs. Nothing else waits — the player walks the whole time, and the rain, the hook and the
+       * pallet all keep running.
+       */
+      events: [
+        { id: 'intro1', atX: 40, once: true, beat: true, holdWaves: true, actions: [
+          { sign: { text: 'SOOTFOOT DOCKS', sub: 'CALDERWICK, LOWER', x: 330, z: 6, style: 'hoarding', life: 900 } },
+          // two dockers walking off the quay past the party, on the far lane so they never crowd the walk
+          { actor: { id: 'docker1', def: 'sootborn', variant: 'cutthroat', x: 700, z: 18, facing: -1, vx: -0.55, frames: 420, anim: 'walk' } },
+          { actor: { id: 'docker2', def: 'sootborn', variant: 'cutthroat', x: 764, z: 32, facing: -1, vx: -0.5, frames: 420, anim: 'walk' } },
+          // The stage banner (gameplay.js) holds the screen for its first 120 frames, and `showBanner` is one slot:
+          // a caption raised before then would delete the board's own title. The scenery goes up straight away; the
+          // words wait their turn.
+          { wait: 130 },
+          { caption: 'CALDERWICK', sub: 'CITY OF THE HEART-ENGINE - AND THE CHANCELLOR HAS SEALED THE SKY', life: 170 },
+          { wait: 150 },
+          { sfx: 'hydraulic' },
+          { wait: 60 },
+          { caption: 'FOUR UNLIKELY DELIVERIES', sub: 'ARE ABOUT TO BE MADE, UPWARD', life: 150 },
+          { wait: 170 },
+        ] },
+      ],
+      /** The dock gate rotates open; a 180f freight-lift ride down with one Meat Pie, and the Chandlery goes past. */
+      transition: { kind: 'lift', atX: 1740, gateX: 1800,
+        /**
+         * Issue #25 vignette: the freight lift's 180-frame ride is the first time the party stands still, so it is
+         * the first time they can be shown something. What goes past is a Brassbound being taken DOWN while they go
+         * down with it — the board's own cargo, on the company's own lift.
+         */
+        vignette: { cues: [
+          { at: 70, caption: 'THE FREIGHT LIFT', sub: 'IT ONLY RUNS DOWN', life: 110 },
+          // `dx` is from the left edge of the view: the lift parks the camera wherever the gate was.
+          { at: 120, actor: { id: 'cargo', def: 'brassbound', variant: 'footman', dx: 470, z: 14, facing: -1, anim: 'idle' } },
+          { at: 150, sfx: 'gear_slip' },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 2: Foundry Row (interior, heat)
     { id: 's2', name: 'FOUNDRY ROW', x0: 1800, x1: 3800, backdrop: 'section2', floor: 'grate',
@@ -107,9 +147,17 @@ export const stage1 = {
           { type: S, variant: 'slinger', side: 'left', z: 120, delay: 100 }, { type: S, variant: 'slinger', side: 'right', z: 20, delay: 130 },
         ] },
       ],
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'THE ROW POURS ALL NIGHT. NOBODY HERE CHOSE THE SHIFT',
       events: [],
       /** The cargo gate rises; the players board the Aether Funicular tram car. */
-      transition: { kind: 'board', atX: 3740, gateX: 3800 },
+      transition: { kind: 'board', atX: 3740, gateX: 3800,
+        /** Issue #25 vignette: the funicular car waiting, and the queue that will not be getting on it. */
+        vignette: { cues: [
+          { at: 10, caption: 'THE CAR GOES UP HALF EMPTY', sub: '', life: 100 },
+          { at: 16, sfx: 'chime' },
+          { at: 26, actor: { id: 'queue', def: 'sootborn', variant: 'cutthroat', dx: 120, z: 22, facing: 1, anim: 'idle' } },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 3: The Brass Funicular (one locked screen, timed waves)
     { id: 's3', name: 'THE BRASS FUNICULAR', x0: 3800, x1: 4440, backdrop: 'section3', floor: 'brass', mode: 'locked',
@@ -142,9 +190,16 @@ export const stage1 = {
           { type: B, variant: 'duelist', side: 'right', z: 40, delay: 40 }, { type: B, variant: 'duelist', side: 'left', z: 110, delay: 70 },
           { type: B, variant: 'footman', side: 'left', z: 60, delay: 100 }, { type: B, variant: 'footman', side: 'right', z: 90, delay: 130 }] },
       ],
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'ONE CAR UP. IT DOES NOT WAIT AT THE TOP',
       events: [],
       /** The funicular docks; a short stair with no enemies and 2 Meat Pies (spawned by the transition). */
-      transition: { kind: 'dock' },
+      transition: { kind: 'dock',
+        /** Issue #25 vignette: the summit landing, and the lamps going green across the terrace below. */
+        vignette: { cues: [
+          { at: 8, caption: 'THE SUMMIT LANDING', sub: 'THE TERRACE IS LIT ALL THE WAY DOWN, AND NONE OF IT FOR YOU', life: 100 },
+          { at: 18, sfx: 'coil_charge' },
+        ] } },
     },
     // ---------------------------------------------------------------- Section 4: The Heart-Engine (summit cathedral)
     { id: 's4', name: 'THE HEART-ENGINE', x0: 4440, x1: 6000, backdrop: 'section4', floor: 'marble',
@@ -189,6 +244,8 @@ export const stage1 = {
        * the warning is a caption, a klaxon and a `zoneFlash` you can stand outside of, and it lasts long enough to
        * walk out of, because the vents do not open until 600 frames after the first word of it.
        */
+      /** Issue #25 stinger: the room's own line, under the section name plate. */
+      stinger: 'THE SAFETY VALVES WERE WELDED SHUT ON PURPOSE',
       events: [
         { id: 'overfire', onWaveClear: 2, once: true, actions: [
           { caption: 'THE ENGINE IS OVER-FIRING', sub: 'GET TO THE DAIS', life: 150 },
