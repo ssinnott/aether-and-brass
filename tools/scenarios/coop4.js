@@ -99,6 +99,23 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
           return { n: added.length, cloned: added.filter((e) => e.spec.side === 'left').length };
         });
         assert(wp.n === 2 && wp.cloned === 0, `a full couch gets no wave clones -- identity, byte-for-byte the solo spawn list (${JSON.stringify(wp)})`);
+        // One player standing still must not veto the run. Before engine/camera.js grew its leader
+        // floor, the mean-follow and the left-edge clamp settled into a standstill the moment the
+        // party was a screen apart: the idle hero pinned the left edge, the moving one was stuck
+        // against the right, and the camera never advanced again -- on a 6000px stage, from x 132.
+        await g.eval(() => window.__game.clearInput(1));
+        const camBefore = await g.eval(() => Math.round(window.__game.world.camera.x));
+        await g.eval(() => window.__game.setInput(0, { right: true }));
+        await g.step(600);
+        const walk = await g.eval(() => {
+          const ps = window.__game.summary().players;
+          const at = (i) => { const p = ps.find((q) => q.index === i); return p ? Math.round(p.x) : null; };
+          return { cam: Math.round(window.__game.world.camera.x), lead: at(0), idle: at(1) };
+        });
+        await g.eval(() => window.__game.clearInput(0));
+        assert(walk.cam > camBefore + 400, `one player walking while the other stands still still moves the camera (${camBefore} -> ${walk.cam})`);
+        assert(walk.idle > camBefore + 300, `the player standing still is carried along rather than stranding the run (idle at ${walk.idle})`);
+        assert(walk.idle >= walk.cam - 8 && walk.lead <= walk.cam + 640, `and both stay on screen (cam ${walk.cam}, lead ${walk.lead}, idle ${walk.idle})`);
         await g.shot('20d-dropin-2p');
       });
 

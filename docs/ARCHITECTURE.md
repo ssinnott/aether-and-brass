@@ -233,7 +233,7 @@ UI, a hand-edited save, or a future import — can put one key on two actions or
 export class Camera {
   constructor(stageLength)    // right bound when unlocked
   x = 0; left = 0; right = STAGE_LENGTH; locked = false; shakeX; shakeY; minX;
-  follow(players)             // target = mean x of alive players - VIEW_W/2, clamped to [max(left, minX), right - VIEW_W]; eased (approach 0.12)
+  follow(players)             // target = max(mean x of alive players - VIEW_W/2, leader x - VIEW_W*0.75), clamped to [max(left, minX), right - VIEW_W]; eased (approach 0.12)
   lock(x0, x1) / unlock()     // lock also sets left/right (right >= x0 + VIEW_W); unlock sets left = floor(x) (never scrolls back)
   static shakeScale = 1       // visual-only multiplier applied inside shake(); OPTIONS' SCREEN SHAKE setting (1 / 0.5 / 0) scales it; never hashed in net/checksum.js
   shake(intensity, frames)

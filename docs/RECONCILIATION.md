@@ -52,6 +52,7 @@ uses them, so nothing has to switch them off. Nothing requires a finger to cross
 the local player through `input.pollRaw(0)` whichever seat they hold), so the nine keys are identical on
 every machine in the room.
 
+- The camera follows the party's mean x, but never lets the LEADING player be held against the right edge: the target is at least `leader - VIEW_W * 0.75`. Without that floor one player standing still vetoed the whole run — the idle hero is pushed to the left edge by the bounds clamp, the one still playing is pinned against the right edge, the mean lands exactly mid-screen and the camera stops for good (measured: an idle hero at x 140 froze the camera at 132 on a 6000px stage, and 16 seconds of holding right moved it 0px). The floor only binds once the party is more than half a screen apart, so ordinary co-op is unchanged and one player is identical to before; past that spread the camera travels at the leader's pace and the straggler is carried along at the left edge.
 - Run = double-tap left/right (12f window) or hold RT (gamepad 7). Dash attack = attack while running.
 - Grab = attack within grab reach of an enemy that is NOT in hitstun and not armored (never interrupts a combo). Throw = direction + attack while holding; attack = hold hit.
 - Global: `Escape` pauses/unpauses for everyone, `M` mutes, `F1` toggles the debug overlay. `preventDefault()` on all bound keys.

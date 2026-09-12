@@ -2,6 +2,10 @@
 import { VIEW_W } from '../constants.js';
 import { clamp } from './math.js';
 
+/** How far across the screen the leading player may get before the camera has to follow them rather
+ *  than the party's mean (see `follow`). 0.75 puts the hard stop 160px from the right edge. */
+const LEAD_LIMIT = 0.75;
+
 /** Camera along x; `left`/`right` are the current world bounds entities are clamped to. */
 export class Camera {
   /** Visual-only multiplier on every shake() (options SCREEN SHAKE: 0 off, 0.5 low, 1 full). Never hashed: camera shake is excluded from net/checksum.js. */
@@ -28,19 +32,36 @@ export class Camera {
   }
 
   /**
-   * Follow the mean x of alive players; eased, clamped to [left, right - VIEW_W] and never below minX.
+   * Follow the mean x of alive players, but never let the LEADER be held against the right edge:
+   * the target is at least `leader - VIEW_W * LEAD_LIMIT`. Eased, clamped to [left, right - VIEW_W]
+   * and never below minX.
+   *
+   * Without that floor one player can veto the whole run. The mean and the bounds in world.js
+   * (a player is clamped to [cam.x + margin, cam.x + VIEW_W - margin]) settle into a standstill: a
+   * hero who stops moving is pushed to the left edge, the one still playing is pinned against the
+   * right edge, the mean lands exactly mid-screen, and `target === x` forever. Measured before this
+   * floor: one idle hero at x 140 stopped the camera dead at 132 on a 6000px stage, and 16 seconds
+   * of holding right moved it 0px. Somebody putting the pad down -- or just standing still -- ended
+   * the run, and nothing the other player could press recovered it.
+   *
+   * The floor only binds when the party is more than half a screen apart (for two players: the mean
+   * beats it until they are VIEW_W/2 apart), so ordinary co-op, where everyone moves together, is
+   * untouched -- and it is identical to the old behaviour for one player, since the mean IS the
+   * leader. Past that spread the camera travels at the leader's pace and the straggler is carried
+   * along by the same left-edge clamp that used to strand everybody.
    * @param {Array<{x:number, alive?:boolean, dead?:boolean}>} players
    */
   follow(players) {
-    let sum = 0, n = 0;
+    let sum = 0, n = 0, lead = -Infinity;
     for (const p of players) {
       if (!p || p.alive === false || p.dead) continue;
       sum += p.x; n++;
+      if (p.x > lead) lead = p.x;
     }
     if (n === 0) return;
     const lo = Math.max(this.left, this.minX);
     const hi = Math.max(lo, this.right - VIEW_W);
-    this.target = clamp(sum / n - VIEW_W / 2, lo, hi);
+    this.target = clamp(Math.max(sum / n - VIEW_W / 2, lead - VIEW_W * LEAD_LIMIT), lo, hi);
     this.x += (this.target - this.x) * this.ease;
     if (Math.abs(this.target - this.x) < 0.05) this.x = this.target;
     if (!this.locked && this.x > this.minX) this.minX = this.x;
