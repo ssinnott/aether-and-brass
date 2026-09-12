@@ -137,6 +137,14 @@ flavours are gone — three doors onto one feature is three things to explain an
 working. `?transport=broadcast` still drives BroadcastChannel for `tools/playtest.js`, and is not
 offered in the UI.
 
+**A seat nothing can drive is retired, not left joined.** `net.end()` hands every remote slot to the
+bot; it also un-joins it. Clearing the virtual without un-joining leaves a seat no device can drive and
+no screen can clear — the title is the only other place that un-joins, and `results.js` reaches BOARD
+SELECT directly on a board unlock, so the ghosts rode straight into CHOOSE YOUR FIGHTER, whose READY
+gate waits on every joined slot. Slots 2/3 have no keyboard block, so not even BACK could retire them
+there. `screens/select.js` holds the same line at its own door, retiring any joined slot with neither a
+keyboard block nor a pad, so no future path can reintroduce the hang.
+
 **Every wait has a way out of it.** The match starts only when every seated player is ready
 (`partyReady`), and the disconnect watchdog is not armed until the match itself starts — so a peer who
 stops responding without closing their tab is never dropped, and the rest of the room waits on them

@@ -802,6 +802,12 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     for (let s = 0; s < Math.max(net.players, players.length); s++) {
       if (s === net.localSlot) continue;
       input.clearVirtual(s);
+      // ...and un-JOIN it, not just un-drive it. A seat left joined with its virtual cleared is a
+      // seat nothing can drive and nothing can clear: the title is the only other place that un-joins
+      // (title.js), and results.js reaches BOARD SELECT directly on a board unlock, so the ghosts ride
+      // into CHOOSE YOUR FIGHTER, where the READY gate waits on every joined slot. Slots 2/3 have no
+      // keyboard block, so not even BACK can retire them there -- the party would be stuck for good.
+      if (typeof input.setJoined === 'function' && s > 0) input.setJoined(s, false);
       if (players[s]) players[s].bot = true;
     }
     net.endedPump = true;

@@ -335,6 +335,33 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         const left = await G.screen();
         assert(left === 'title', `BACK from a room you have not readied in leaves it for the title (got ${left})`);
       });
+
+      // Part H: a seat nothing can drive never holds CHOOSE YOUR FIGHTER shut. An ended online session
+      // used to leave its remote slots joined-but-undrivable (net/session.js end() cleared the virtual
+      // and stopped there), and results.js reaches BOARD SELECT directly on a board unlock, so the
+      // ghosts rode past the only screen that un-joins anything. Slots 2/3 have no keyboard block, so
+      // BACK could not retire them either: the READY gate waited on them for good.
+      await withPage(server, 'seed=1', async (g) => {
+        await g.step(60);
+        // Stand in for the ghosts: joined, no keyboard block, no pad, no virtual -- exactly what
+        // end() left behind.
+        await g.eval(() => { window.__game.input.setJoined(2, true); window.__game.input.setJoined(3, true); });
+        const before = await g.eval(() => [0, 1, 2, 3].map((s) => window.__game.input.joined(s)));
+        assert(before[2] && before[3], `the ghost seats are joined before select (${JSON.stringify(before)})`);
+        await g.press(0, { attack: true }, 2, 20); // title -> board select
+        await g.press(0, { attack: true }, 2, 45); // board select -> character select
+        assert((await g.screen()) === 'select', `reached character select (got ${await g.screen()})`);
+        const seated = await g.eval(() => ({
+          screen: window.__game.game.screen.p.map((ps) => ps.joined),
+          input: [0, 1, 2, 3].map((s) => window.__game.input.joined(s)),
+        }));
+        assert(!seated.screen[2] && !seated.screen[3], `a seat nothing can drive is retired at the door (${JSON.stringify(seated.screen)})`);
+        assert(!seated.input[2] && !seated.input[3], `and it is un-joined for good, not just hidden (${JSON.stringify(seated.input)})`);
+        // P1 alone can now start the run, which is the whole point.
+        await g.press(0, { attack: true }, 2, 40);
+        const ready = await g.eval(() => (window.__game.game.screen.readyTimer !== undefined ? window.__game.game.screen.readyTimer : 1));
+        assert(ready >= 0 || (await g.screen()) !== 'select', `P1 can start alone rather than waiting on a ghost (readyTimer ${ready})`);
+      });
     },
   };
 }

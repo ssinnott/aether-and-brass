@@ -35,6 +35,13 @@ export class SelectScreen extends Screen {
     // true all the way into the single-player training room with no P2 player: P2's start would pause the
     // room and P2's own keys would drive the training plate, trials and moves overlays (review finding).
     if (this.single) for (let i = 1; i < MAX_PLAYERS; i++) if (this.game.input.joined(i)) this.game.input.setJoined(i, false);
+    // A slot only takes a seat here if something can actually DRIVE it. A joined slot with no
+    // keyboard block and no pad -- the ghosts an ended online session used to leave behind -- would
+    // otherwise hold the READY gate shut with no input in existence that could confirm it or back it
+    // out, since BACK is read from that slot's own keys. Retired at the door rather than papered over,
+    // so its cursor and "same hero" bookkeeping never appear either (the same reason `single` does).
+    const canAct = (i) => this.game.input.hasKeyboard(i) || this.game.input.padOf(i) >= 0;
+    for (let i = 1; i < MAX_PLAYERS; i++) if (this.game.input.joined(i) && !canAct(i)) this.game.input.setJoined(i, false);
     this.p = Array.from({ length: MAX_PLAYERS }, (_, i) => ({
       joined: i === 0 || (!this.single && this.game.input.joined(i)),
       cursor: Math.min(i, Math.max(0, this.chars.length - 1)),
