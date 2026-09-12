@@ -864,7 +864,10 @@ arrival that outlives its own length by 180 frames ends as an ordinary enemy rat
 `Game` holds a stack `screens[]`; top screen gets `update()`, all screens draw bottom
 to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
 `update()`, `draw(ctx)`. No screen wires its own menu keys: **CONFIRM** and **BACK** come from
-`game/menuinput.js` (section 16), so the same two keys work on every plate in the game. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`.
+`game/menuinput.js` (section 16), so the same two keys work on every plate in the game. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`
+(a clear that opened a board goes `results → boardselect` so the unlock plays out there; an ONLINE run goes
+`results → lobby`, back to the room it was played in — the session is handed back to its lobby rather than ended,
+docs/MULTIPLAYER.md).
 Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `BESTIARY` / `SOURCE CODE` / `OPTIONS`, "PRESS ATTACK", blinking; the BESTIARY row carries the book's completion percentage, read once in `enter()`; `SOURCE CODE` opens the repository in a new tab (`engine/links.js`) without leaving the title and says whether the tab actually opened, and the address itself is drawn along the credit line — lit while the row is highlighted or a mouse is on it, clickable there, and readable (typeable) either way; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
 (`boardcards.js`, compact) on one screen, with the room's other two to three players driving the
@@ -1096,6 +1099,10 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      drawn address is inside the view, a real mouse click on it opens the same URL, and leaving the title
      releases the zone so that click opens nothing. `window.open` is stubbed in the page, so the run never
      navigates anywhere.
+  8c. `netrematch` (`tools/scenarios/netrematch.js`): two online pages play two boards in ONE room — the first
+     board ends, both peers come off lockstep with the room still up, the clear is recorded against the group's
+     own campaign (neither solo save touched), both plaques hand back to the lobby with the host's cursor on the
+     newly opened board, and the party readies up again and plays it.
   9. `coop4` (`tools/scenarios/coop4.js`, issue #23): a four-bot run to results (`attackTokens.max===4`, 4 stats rows); pad-only drop-in mid-run/pause; title pad-claim assignment (arrows-then-pad stays P2, `resetClaims()` releases on title entry); a four-cursor select into gameplay; the netplay guard (own room) — `beginMatch` un-joins local slots above `NET_PLAYERS`, no pad claims the peer's slot, no desync.
   10. `training` (`tools/scenarios/training.js`, issue #22 — same sibling-module pattern as `options`/`coop4`,
      registered from here as `training: (server) => trainingScenario(server, { withPage, assert, CHARACTER_COUNT })`):
