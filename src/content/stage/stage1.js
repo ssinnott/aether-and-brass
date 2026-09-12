@@ -91,10 +91,6 @@ export const stage1 = {
       zones: [
         { type: 'molten', x0: 1800, x1: 3920 },
         { type: 'conveyor', x0: 3280, x1: 3920, z0: 100 },
-        // issue #31: a conveyor arm swings through the row at head height across the two front lanes. Step back into
-        // the middle lane to walk under it, or jump it -- the molten channel closes the back lane, so there is a real
-        // choice to make rather than a free detour.
-        { type: 'solid', x0: 3056, x1: 3080, z0: 70, z1: 140, height: 44 },
       ],
       waves: [
         { triggerX: 2100, lock: true, spawns: [{ type: S, variant: 'firebrand', side: 'right', z: 40, delay: 0 }, { type: S, variant: 'firebrand', side: 'left', z: 100, delay: 30 }, ...cut(3, { z0: 60, delay0: 20 })] },

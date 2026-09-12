@@ -51,7 +51,8 @@ export const stage2 = {
         { type: 'locker', x: 1340, z: 18, drops: 'goldenSprocket' },
         { type: 'ballast', x: 1810, z: 40, drops: 'meatPie' },
       ],
-      // the storm earths itself through the mooring masts; the loading hook still swings between them
+      // the storm earths itself through the mooring masts; the loading hook still swings between them, and a loose
+      // mooring boom sweeps the back lane on its own clock (`crossbar`: horn, lane shadow, then a knockdown at z<40)
       hazards: [
         { type: 'lightning', x: 700, z: 96, period: 220, active: 12, tell: 40 },
         { type: 'hook', x: 1180, z: 70, period: 120 },
@@ -65,13 +66,7 @@ export const stage2 = {
        *  stay up while it drags (art/fx.js `drawWind`).
        *  `open: true` (issue #21): a thrown weapon / prop, or a dropped weapon pickup, that drifts past the same edge falls
        *  into the cloud too -- lost, not landed. */
-      zones: [{ type: 'rails', x0: 0, x1: 1900, open: true }, { type: 'gust', x0: 0, x1: 1900, dir: 0 },
-        // issue #31: two mooring booms cross the spine at head height. The back one is paired with a `crossbar`
-        // hazard on the same lane (hazards list above) so it SWEEPS as well as blocks -- the timing half of a boom is
-        // the crossbar's job, the blocking half is the solid's, and neither needed to learn the other's trick.
-        { type: 'solid', x0: 960, x1: 984, z0: 0, z1: 46, height: 40 },
-        { type: 'solid', x0: 1520, x1: 1544, z0: 96, z1: 140, height: 40 },
-      ],
+      zones: [{ type: 'rails', x0: 0, x1: 1900, open: true }, { type: 'gust', x0: 0, x1: 1900, dir: 0 }],
       waves: [
         // the pressed crew first: three Deckhands, no wing-packs, throwable - learn the rail
         { triggerX: 420, lock: true, spawns: hands(3, { z0: 40 }) },

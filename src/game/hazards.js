@@ -42,6 +42,8 @@
 //                             in it ring out (+200), players lose 8% max HP, are knocked down and set on the nearest edge
 // solid   x0,x1,z0,z1,height[,breakable]   the first thing in the game that BLOCKS movement (issue #31). A grounded fighter
 //                             cannot cross [x0,x1] while its z is inside [z0,z1]; one whose y clears `height` passes over.
+//                             Drawn as a body STANDING on the near lip of the band, exactly `height` tall (drawSolid), and kept
+//                             under the 64px enemy jump-over apex (Enemy.tryJumpOver) or a walled-off mob grinds against it.
 //                             Knockback into it wall-bounces (the camera-bound idiom: AIR_FALL_STATES + vx *= -0.5).
 //                             height 0 = a floor GAP: walk in and you fall (enemies ring out +200, players lose 8% max HP
 //                             and are set on the nearest edge, cargo is lost over the edge). `breakable` blocks only while
@@ -58,7 +60,7 @@ import { audio } from '../engine/audio.js';
 import { rng, makeRng } from '../engine/rng.js';
 import { clamp } from '../engine/math.js';
 import { floatText, drawWind, windDrag, WIND_COLOR, WIND_BANNER } from '../art/fx.js';
-import { rrect, circle, pathPoly, line } from '../art/shapes.js';
+import { rrect, circle, poly, pathPoly, line } from '../art/shapes.js';
 import { tones } from '../art/props.js';
 import { dsin } from '../engine/trig.js';
 
@@ -914,6 +916,13 @@ export class Zone extends Entity {
     this.height = spec.height != null ? spec.height : SOLID_HEIGHT;
     this.breakable = !!spec.breakable;
     this.prop = null; this.propChecked = false;
+    // A wall is drawn as a standing body (drawSolid), so it has to SORT like one -- at its own back edge, which is
+    // the one depth that both hides what is genuinely behind it and lets everything from that edge forward draw
+    // over it: a fighter walking past its face, and the one mid-jump over it. Nothing reads a Zone's `z` but the
+    // depth sort (world.js depthCompare) and Entity.screen, and `fx` is not hashed by net/checksum.js, so this is
+    // render order and nothing else. A gap is a hole in the deck and stays where every other zone is, under
+    // everything that walks on it.
+    if (this.isSolid && this.height > 0) this.z = this.z0;
   }
   /**
    * A solid blocks unless it is a barricade whose Prop has been broken. Non-breakable solids always block.
@@ -1257,10 +1266,16 @@ export class Zone extends Entity {
   }
   /**
    * A gap is a hole in the deck: the floor simply is not there, so it is drawn as the dark underneath with a lit
-   * lip on the near side. A WALL is deliberately drawn flat and low here rather than as a standing object — like
-   * `rails`, the solid thing itself belongs to the backdrop art of whatever board placed it (a keg stack, a boom, a
-   * cargo gate), and this is the floor plan that tells the player where its footprint actually is. A broken
-   * barricade stops drawing entirely, matching `blocking`.
+   * lip on the near side.
+   *
+   * A WALL is drawn as a body STANDING on the deck, because the footprint on its own read as a plate set into the
+   * floor -- and nothing the picture says you can walk on will ever be read as something to jump. Everything here
+   * is the zone's own numbers: the barrier stands on the band's near lip, rises exactly `height` px (the same
+   * number Fighter.hitSolid measures a jump's apex against, so the edge the eye picks is the edge a jump has to
+   * clear), and the dimmed footprint behind it still says which lanes are shut. It is drawn side-on with a shallow
+   * top cap rather than with a full top face, which is the house idiom for a solid object (art/props.js `mold`,
+   * `cart`): this projection has no x foreshortening, so a top face the depth of the band would read as a second
+   * floor. A broken barricade stops drawing entirely, matching `blocking`.
    */
   drawSolid(ctx, cam, sy0, x0, x1, f) {
     if (!this.blocking) return;
@@ -1274,16 +1289,42 @@ export class Zone extends Entity {
       ctx.globalAlpha = 0.5; ctx.fillStyle = '#2a2030'; ctx.fillRect(x0 + 2, y + 2, w - 4, 2); ctx.globalAlpha = 1;
       return;
     }
-    // a wall's footprint: a hatched band with a brass lip along the top edge, kept low so it never hides a fighter
     const t = tones('#4a4e58');
-    rrect(ctx, x0, y, w, h, 2, t.base, OL, 1);
-    ctx.fillStyle = t.sh; ctx.fillRect(x0 + 2, y + h - 3, w - 4, 2);
-    ctx.fillStyle = t.hi; ctx.fillRect(x0 + 2, y + 1, w - 4, 1);
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1; ctx.beginPath();
-    for (let x = x0 + 4; x < x1; x += 8) { ctx.moveTo(x, y + h); ctx.lineTo(x + 6, y); }
+    const foot = y + h;                     // the near lip of the band: where the barrier meets the deck
+    const top = foot - this.height;         // exactly `height` above the deck -- the edge a jump has to clear
+    const cap = Math.min(6, Math.max(2, Math.min(Math.round(h / 8), Math.floor(this.height / 3))));
+    const face = Math.min(top + cap, foot - 2);   // the top cap eats into the height, it never adds to it
+    ctx.save();
+    // The footprint is what is left of the old floor plan, and it is drawn as the barrier's SHADOW on the deck
+    // rather than as more plate: the band lies directly above the face on screen, so anything in the zone's own
+    // metal there fuses with it into one impossibly tall column. As a shadow it reads as ground, and it still
+    // says which lanes are shut -- the same rectangle dangerBox hands enemy pathing.
+    ctx.fillStyle = '#0b0810';
+    // four flat bands rather than a gradient (the house idiom, and it holds up at 1x): the shadow is darkest where
+    // the barrier stands and thins toward the back, so a band as deep as the whole floor cannot read as a pit
+    for (let i = 0; i < 4; i++) {
+      ctx.globalAlpha = 0.06 + 0.1 * i;
+      ctx.fillRect(x0, y + (h * i) / 4, w, h / 4 + 1);
+    }
+    ctx.globalAlpha = 0.3; ctx.strokeStyle = '#000000'; ctx.lineWidth = 1; ctx.beginPath();
+    for (let x = x0 + 4; x < x1; x += 8) { ctx.moveTo(x, foot); ctx.lineTo(x + 6, y); }
     ctx.stroke();
-    // a barricade that can still be broken keeps a live brass edge so it reads as a target, not as scenery
-    if (this.breakable) { ctx.fillStyle = (f & 8) ? '#e2b34a' : '#8a5a1c'; ctx.fillRect(x0 + 1, y - 1, w - 2, 1); }
+    // the contact shadow that puts the barrier ON the deck rather than in front of it
+    ctx.globalAlpha = 0.35; ctx.fillStyle = '#000000'; ctx.fillRect(x0 - 2, foot - 1, w + 4, 3);
+    ctx.globalAlpha = 1;
+    // the standing face, with uprights and a footing band so it is structure rather than one painted panel
+    rrect(ctx, x0, face, w, foot - face, 2, t.base, OL, 1);
+    ctx.fillStyle = t.sh;
+    for (let x = x0 + 5; x < x1 - 3; x += 9) ctx.fillRect(x, face + 2, 1, foot - face - 5);
+    ctx.fillRect(x0 + 2, foot - 4, w - 4, 3);
+    ctx.fillStyle = t.hi; ctx.fillRect(x0 + 2, face + 1, w - 4, 1);
+    // the top cap: a shallow face receding away from the camera, lit from the top-left (ART_STYLE 3)
+    poly(ctx, [[x0 + 2, top], [x1 - 2, top], [x1, face], [x0, face]], t.hi, OL, 1);
+    // that top edge is the whole point of the silhouette, so it takes the brightest mark on the object; a barricade
+    // that can still be broken keeps it live, which reads as "hit me" rather than as scenery
+    ctx.fillStyle = this.breakable ? ((f & 8) ? '#e2b34a' : '#8a5a1c') : '#c8a050';
+    ctx.fillRect(x0 + 1, top, w - 2, 1);
+    ctx.restore();
   }
 }
 
