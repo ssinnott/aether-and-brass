@@ -65,6 +65,10 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
   bar, that is spent before health and refills a few seconds after the last hit. The pool, the refill rate and
   the wait are different for each hero (character select prints them), and breaking one keeps it down twice as
   long — it is a buffer, not a block, so the hit still lands, staggers and knocks down as usual.
+- **Menus** all work the same way, from the title to the pause plate: **ESC** opens and closes them, **ENTER**
+  (or attack) picks the highlighted row, and jump / dodge back out alongside ESC. A pause plate opens on
+  RESUME, so ESC or ENTER straight away just resumes; move the cursor and ENTER picks the row while ESC still
+  resumes. On a plate with nothing to pick — MOVES, the debug gallery — ENTER simply closes it.
 - Player 2 joins at any time by pressing any of their own keys (J K U L O I or Backspace — the arrows are
   shared, so they don't count). Escape pauses, M mutes, F1 shows the debug overlay. The on-screen legends and
   the "P2: PRESS J TO JOIN" hint follow whatever is actually bound, so they change if you remap keys below.
@@ -84,7 +88,7 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
   browser under `aetherAndBrass.options.v1` — same caveat as progress: if storage is unavailable the game
   still plays, it just falls back to defaults every session and nothing throws.
 - **Training**: TRAINING on the title menu, then pick a hero, opens the Funicular roof with a standing
-  dummy. Its pause plate (same Escape/Start as a real run) sets the dummy to STAND, BLOCK-STAGGER or
+  dummy. Its pause plate (same ESC / ENTER as a real run) sets the dummy to STAND, BLOCK-STAGGER or
   CPU, picks any of the 31 enemy variants, locks its facing so you can practice hits from behind, locks
   your meter full or empty, and toggles a hitbox overlay and a frame-data readout under the HUD. MOVES
   (from either pause plate) lists every move with its bound key and a short description, animating the
@@ -222,8 +226,8 @@ doc: `docs/STAGE4.md`.
 
 START on the title screen opens **BOARD SELECT**: one brass plaque per board with its vignette, name,
 section count and the two factions the board leads with — BRASSBOUND & SOOTBORN, STORMCROWS & BRASSBOUND,
-CHANDLERY & BRASSBOUND, GLEANING & STORMCROWS. Left/right chooses, attack or start confirms, dodge
-goes back. A board you have not opened yet shows a padlock plate and the board you have to clear to open
+CHANDLERY & BRASSBOUND, GLEANING & STORMCROWS. Left/right chooses, ENTER (or attack) confirms, ESC
+(or jump / dodge) goes back — the same two keys every menu in the game uses. A board you have not opened yet shows a padlock plate and the board you have to clear to open
 it; confirming it buzzes instead of starting a run.
 
 Board 1 is always open, and clearing a board opens the next one for good. The results screen announces it

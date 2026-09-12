@@ -7,6 +7,7 @@ import { VIEW_W, UI, MAX_PLAYERS } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText } from '../../engine/text.js';
 import { drawPlate, drawMenuRows, consumeMenuBuffers } from './pause.js';
+import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 import { DUMMY_MODES, METER_LOCKS } from './training.js';
 
 const PLATE_W = 260, PLATE_Y = 52, PLATE_H = 250, ROWS_Y0 = PLATE_Y + 40, ROW_H = 14;
@@ -15,9 +16,10 @@ const METER_LABEL = { normal: 'NORMAL', full: 'LOCK FULL', empty: 'LOCK EMPTY' }
 const ROWS = ['RESUME', 'DUMMY', 'VARIANT', 'FACING', 'REFILL HEALTH', 'METER', 'HITBOXES', 'FRAME DATA', 'RESET POSITIONS', 'MOVES', 'TRIALS', 'COMMANDS', 'QUIT TO TITLE'];
 const R = { RESUME: 0, DUMMY: 1, VARIANT: 2, FACING: 3, REFILL: 4, METER: 5, HITBOXES: 6, FRAME_DATA: 7, RESET: 8, MOVES: 9, TRIALS: 10, COMMANDS: 11, QUIT: 12 };
 
-/** Training pause plate. Escape / a joined slot's start or jump resumes; up/down moves the cursor;
- *  left/right cycles a row's value; attack activates a row (window.__game reaches the room through
- *  the TrainingScreen underneath, `this.tr`). */
+/** Training pause plate. Escape (or a joined slot's jump / dodge) resumes; up/down moves the cursor;
+ *  left/right cycles a row's value; CONFIRM -- ENTER or attack -- activates a row, which on the RESUME
+ *  row it opens on resumes (game/menuinput.js owns that scheme). window.__game reaches the room through
+ *  the TrainingScreen underneath, `this.tr`. */
 export class TrainPauseScreen extends Screen {
   constructor(game) { super(game, 'trainpause'); this.transparent = true; }
   enter(params) {
@@ -30,6 +32,9 @@ export class TrainPauseScreen extends Screen {
     // finding): null never equals a live opts value, so the first refreshLabels() call always rebuilds.
     this.lkMode = null; this.lkVariant = null; this.lkFaceLock = null; this.lkMeterLock = null; this.lkHitboxes = null; this.lkFrameData = null;
     this.refreshLabels();
+    // Built from the live bindings (a remapped `start` must show up here) and rebuilt on a change: this
+    // plate sits under OPTIONS > CONTROLS, which can rebind while it waits.
+    this.keysHint = ''; this.hintVersion = -1;
   }
   /** Rebuild the 12 row labels from the training screen's live opts -- cursor moves alone never rebuild. */
   refreshLabels() {
@@ -51,11 +56,15 @@ export class TrainPauseScreen extends Screen {
   update() {
     super.update();
     const inp = this.game.input, audio = this.game.audio, tr = this.tr;
+    if (this.hintVersion !== inp.bindingsVersion) {
+      this.hintVersion = inp.bindingsVersion;
+      this.keysHint = `${backKey(inp)}: RESUME  ${confirmKey(inp)}: SELECT  L/R: CHANGE`;
+    }
     if (this.frame < 3 || !tr) return;
-    let resume = inp.globalPressed('pause');
+    let resume = escapePressed(inp);
     for (let i = 0; i < MAX_PLAYERS; i++) {
       if (!inp.joined(i)) continue;
-      if (inp.pressed(i, 'start') || inp.pressed(i, 'jump')) resume = true;
+      if (cancelPressed(inp, i)) resume = true;
       if (inp.pressed(i, 'up')) { this.cursor = (this.cursor + ROWS.length - 1) % ROWS.length; audio.play('menu_move'); }
       if (inp.pressed(i, 'down')) { this.cursor = (this.cursor + 1) % ROWS.length; audio.play('menu_move'); }
       const left = inp.pressed(i, 'left'), right = inp.pressed(i, 'right');
@@ -77,7 +86,7 @@ export class TrainPauseScreen extends Screen {
         } else if (this.cursor === R.HITBOXES) { tr.toggle('hitboxes'); audio.play('menu_move'); }
         else if (this.cursor === R.FRAME_DATA) { tr.toggle('frameData'); audio.play('menu_move'); }
       }
-      if (inp.pressed(i, 'attack')) {
+      if (confirmPressed(inp, i)) {
         if (this.cursor === R.RESUME) { audio.play('menu_confirm'); resume = true; }
         else if (this.cursor === R.REFILL) { tr.refill(); audio.play('menu_confirm'); }
         else if (this.cursor === R.RESET) { tr.resetPositions(); audio.play('menu_confirm'); }
@@ -99,6 +108,6 @@ export class TrainPauseScreen extends Screen {
     const f = this.frame, w = PLATE_W, h = PLATE_H, x = (VIEW_W - w) / 2, y = PLATE_Y;
     drawPlate(ctx, x, y, w, h, f, 'TRAINING');
     drawMenuRows(ctx, this.labels, this.cursor, ROWS_Y0, f, ROW_H);
-    drawText(ctx, 'ESC / START: RESUME   LEFT/RIGHT: CHANGE', VIEW_W / 2, y + h - 22, { size: 1, color: UI.brassDark, align: 'center' });
+    drawText(ctx, this.keysHint, VIEW_W / 2, y + h - 22, { size: 1, color: UI.brassDark, align: 'center' });
   }
 }

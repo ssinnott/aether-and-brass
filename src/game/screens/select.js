@@ -10,11 +10,14 @@ import { rrect, gear } from '../../art/shapes.js';
 import { buildCharSlots, tickCharSlots, drawCharCard, cardX, charStrap, CARD_Y } from './charcards.js';
 import { shieldLabel } from '../shield.js';
 import { joinHint } from '../party.js';
+import { input } from '../../engine/input.js';
+import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 
 const READY_FRAMES = 24;
 const SLOT_GAP = 18;
 
-/** Character select screen. Left/right moves a cursor, attack locks, jump/dodge unlocks (P1 dodge backs out). */
+/** Character select screen. Left/right moves a cursor; CONFIRM (ENTER or attack) locks a hero and BACK
+ *  (Escape, jump or dodge) unlocks it -- or, from an unlocked P1, leaves the screen (game/menuinput.js). */
 export class SelectScreen extends Screen {
   constructor(game) { super(game, 'select'); }
   enter(params) {
@@ -37,6 +40,7 @@ export class SelectScreen extends Screen {
     this.cardCursors = this.slots.map(() => new Array(MAX_PLAYERS).fill(null));
     this.dirty = true; this.joinKey = -1; this.hint = ''; this.slotLine = []; this.sameHero = false;
     this.starting = false; this.readyTimer = -1;
+    this.keysHint = `LEFT/RIGHT: CHOOSE   ${confirmKey(input)}: LOCK   ${backKey(input)}: UNLOCK / BACK`;
     this.game.audio.music.play('title');
     if (this.slots[0]) this.slots[0].anim.play('taunt', { restart: true, fallback: 'idle' });
   }
@@ -65,18 +69,18 @@ export class SelectScreen extends Screen {
         continue;
       }
       if (ps.confirmed) {
-        if (inp.pressed(i, 'dodge') || inp.pressed(i, 'jump')) { ps.confirmed = false; audio.play('menu_back'); this.slots[ps.cursor].anim.play('idle', { restart: true }); this.dirty = true; }
+        if (cancelPressed(inp, i) || (i === 0 && escapePressed(inp))) { ps.confirmed = false; audio.play('menu_back'); this.slots[ps.cursor].anim.play('idle', { restart: true }); this.dirty = true; }
         continue;
       }
       let moved = false;
       if (inp.pressed(i, 'left')) { ps.cursor = (ps.cursor + n - 1) % n; moved = true; }
       if (inp.pressed(i, 'right')) { ps.cursor = (ps.cursor + 1) % n; moved = true; }
       if (moved) { audio.play('menu_move'); this.slots[ps.cursor].anim.play('taunt', { restart: true, fallback: 'idle' }); this.dirty = true; }
-      if (inp.pressed(i, 'attack') || inp.pressed(i, 'start')) {
+      if (confirmPressed(inp, i)) {
         ps.confirmed = true; audio.play('menu_confirm');
         this.slots[ps.cursor].anim.play('win', { restart: true });
         this.dirty = true;
-      } else if (inp.pressed(i, 'dodge') && i === 0) {
+      } else if (i === 0 && (cancelPressed(inp, i) || escapePressed(inp))) {
         audio.play('menu_back');
         this.starting = true;
         // back out to wherever the board was chosen, so P1 can change board without restarting from the title
@@ -154,6 +158,6 @@ export class SelectScreen extends Screen {
       rrect(ctx, 320 - pw / 2, ty - 10, pw, ph, 6, 'rgba(10,6,14,0.9)', UI.brass, 2);
       drawTextOutlined(ctx, 'READY!', 320, ty, { size: sc, color: UI.brassLight, outline: '#3a2010', thickness: 2, align: 'center' });
     }
-    drawText(ctx, 'LEFT/RIGHT: CHOOSE   ATTACK: LOCK   JUMP: UNLOCK   DODGE: BACK', 320, 336, { size: 1, color: UI.steel, align: 'center' });
+    drawText(ctx, this.keysHint, 320, 336, { size: 1, color: UI.steel, align: 'center' });
   }
 }

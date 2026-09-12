@@ -12,6 +12,7 @@ import { drawText, drawTextOutlined } from '../../engine/text.js';
 import { rrect, rivetLine } from '../../art/shapes.js';
 import { options } from '../options.js';
 import { ACTIONS } from '../../engine/input.js';
+import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 
 const PLATE = { x: 20, y: 25, w: 600, h: 310 };
 const COLS = [['1P ARCADE', 'solo'], ['P1', 'p1'], ['P2', 'p2'], ['PAD', 'pad']];
@@ -19,7 +20,9 @@ const COL_X0 = 120, COL_W = 120, ACTION_X = 14, HEAD_Y = 34, ROW_Y0 = 50, ROW_H 
 const CAPTURE_SETTLE = 2, NOTICE_FRAMES = 90, BLINK = 30, BLINK_ON = 20;
 // 11 rows end at y + 50 + 11*18 = y + 248; notice sits at y + h - 40, hint at y + h - 24 (h = 310).
 const ACTION_LABELS = ACTIONS.map((a) => a.toUpperCase());
-const HINT = 'ATTACK: REBIND   ESC: CANCEL   DODGE: BACK   ARROWS ARE SHARED BY 1P AND P2';
+/** Hint line, rebuilt whenever a rebind changes what CONFIRM is bound to (`hintFor` below). Escape is
+ *  the one key that means two things here: it cancels a capture in progress, and otherwise backs out. */
+const hintFor = (key) => `${key}: REBIND   ESC: CANCEL OR BACK   ARROWS ARE SHARED BY 1P AND P2`;
 const PROMPT_KEY = 'PRESS A KEY', PROMPT_PAD = 'PRESS A BUTTON';
 
 /**
@@ -29,7 +32,8 @@ const PROMPT_KEY = 'PRESS A KEY', PROMPT_PAD = 'PRESS A BUTTON';
  */
 export function createControlsPanel(screen) {
   const input = screen.game.input, audio = screen.game.audio;
-  const st = { row: 0, col: 0, capturing: false, notice: '', noticeBad: false, noticeTimer: 0, settle: 0 };
+  const st = { row: 0, col: 0, capturing: false, notice: '', noticeBad: false, noticeTimer: 0, settle: 0,
+    hint: hintFor(confirmKey(input)), hintVersion: input.bindingsVersion };
   /** @type {((e: KeyboardEvent) => void)|null} */
   let onKey = null;
 
@@ -77,6 +81,7 @@ export function createControlsPanel(screen) {
     open() {
       st.row = 0; st.col = 0; st.capturing = false;
       st.notice = ''; st.noticeBad = false; st.noticeTimer = 0; st.settle = 0;
+      st.hint = hintFor(confirmKey(input)); st.hintVersion = input.bindingsVersion;
       if (!onKey) { onKey = (e) => handleKey(e); window.addEventListener('keydown', onKey); }
     },
     close() {
@@ -87,6 +92,8 @@ export function createControlsPanel(screen) {
     /** Safety net so a panel left mid-capture never leaks its keydown listener when options closes. */
     dispose() { this.close(); },
     update() {
+      // A capture in this very panel can move `start`, so the hint follows the live bindings.
+      if (st.hintVersion !== input.bindingsVersion) { st.hintVersion = input.bindingsVersion; st.hint = hintFor(confirmKey(input)); }
       if (st.settle > 0) { st.settle--; return; }
       if (st.noticeTimer > 0) st.noticeTimer--;
       if (st.capturing) {
@@ -102,8 +109,8 @@ export function createControlsPanel(screen) {
         if (input.pressed(p, 'down')) { st.row = (st.row + 1) % ACTIONS.length; audio.play('menu_move'); }
         if (input.pressed(p, 'left')) { st.col = (st.col + COLS.length - 1) % COLS.length; audio.play('menu_move'); }
         if (input.pressed(p, 'right')) { st.col = (st.col + 1) % COLS.length; audio.play('menu_move'); }
-        if (input.pressed(p, 'attack') || input.pressed(p, 'start')) { startCapture(); return; }
-        if (input.pressed(p, 'dodge') || input.pressed(p, 'jump') || input.globalPressed('pause')) {
+        if (confirmPressed(input, p)) { startCapture(); return; }
+        if (cancelPressed(input, p) || escapePressed(input)) {
           audio.play('menu_back');
           screen.closeControls();
           return;
@@ -137,7 +144,7 @@ export function createControlsPanel(screen) {
         }
       }
       if (st.noticeTimer > 0) drawText(ctx, st.notice, VIEW_W / 2, y + h - 40, { size: 1, color: st.noticeBad ? UI.red : UI.teal, align: 'center' });
-      drawText(ctx, HINT, VIEW_W / 2, y + h - 24, { size: 1, color: UI.brassDark, align: 'center' });
+      drawText(ctx, st.hint, VIEW_W / 2, y + h - 24, { size: 1, color: UI.brassDark, align: 'center' });
     },
     summary() {
       return { row: st.row, col: st.col, capturing: st.capturing, controlsNotice: st.notice, controlsBad: st.noticeBad };

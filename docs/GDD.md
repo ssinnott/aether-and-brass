@@ -305,7 +305,7 @@ Final bindings (authoritative table in `docs/RECONCILIATION.md`):
 | start   | Enter                      | Enter          | Backspace       | 9 (Start) |
 
 Global: Escape pauses/unpauses, M mutes, F1 debug overlay. Any free slot joins by pressing its own key or pad button at any time (drop-in). Gamepads claim the lowest free slot on their first button press (never index-bound); P3/P4 are gamepad-only.
-**Menu navigation:** Up/Down (or Left/Right on the select screen) moves; Attack / Enter confirms; Jump / Escape backs out. Character select: Left/Right cycles portraits, Attack locks, Jump unlocks; both players may pick the same hero (second copy gets a darker tint).
+**Menu navigation (one scheme on every screen and plate, `src/game/menuinput.js`):** Up/Down (or Left/Right on the select screen) moves; **CONFIRM** — Enter / pad START, or attack — picks the highlighted row; **BACK** — Escape, or jump / dodge (pad B / X) — closes the plate. Escape and Enter both open a pause plate and every plate opens on RESUME, so either key closes a freshly opened one; after a cursor move Enter picks the row and Escape still resumes. A plate with nothing to pick (MOVES, the debug gallery) treats CONFIRM as "done reading" and closes too, so Enter is never a dead key. Character select: Left/Right cycles portraits, CONFIRM locks, BACK unlocks (and from an unlocked P1 leaves the screen); both players may pick the same hero (second copy gets a darker tint).
 
 # 9. Screens & HUD
 

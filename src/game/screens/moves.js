@@ -12,6 +12,7 @@ import { AnimPlayer } from '../animation.js';
 import { drawShadowScreen } from '../../art/fx.js';
 import { input, bindings } from '../../engine/input.js';
 import { drawPlate, consumeMenuBuffers } from './pause.js';
+import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 
 const PLATE_X = 20, PLATE_Y = 30, PLATE_W = 600, PLATE_H = 300;
 const CLIP_X = 24, CLIP_Y = 60, CLIP_W = 150, CLIP_H = 236;
@@ -61,13 +62,16 @@ export function inputLabel(text, slot) {
  * MOVES: every hero's move list, with an animated rig preview beside the highlighted row.
  * `params.chars` names the character index (or indices, for a shared pause during local co-op) to show;
  * defaults to hero 0. up/down moves the row (replaying its preview); left/right switches hero when more
- * than one was passed; jump/dodge/start (or Escape offline) backs out to whichever plate pushed this.
+ * than one was passed; Escape (offline) or jump / dodge backs out to whichever plate pushed this. There is
+ * no row to activate here, so CONFIRM -- ENTER or attack -- reads as "done reading" and backs out too,
+ * rather than leaving ENTER dead on a plate the rest of the game selects with (game/menuinput.js).
  */
 export class MovesScreen extends Screen {
   constructor(game) { super(game, 'moves'); this.transparent = true; }
   enter(params) {
     super.enter(params);
     this.online = !!(this.game.net && this.game.net.active);
+    this.hint = `UP/DOWN: MOVE   LEFT/RIGHT: HERO   ${backKey(input)} / ${confirmKey(input)}: BACK`;
     const idx = params.chars && params.chars.length ? params.chars : [0];
     this.chars = idx.map((i) => this.game.characters[i]).filter(Boolean);
     if (!this.chars.length) this.chars = [this.game.characters[0]];
@@ -98,12 +102,12 @@ export class MovesScreen extends Screen {
     super.update();
     const inp = this.game.input, audio = this.game.audio;
     if (this.frame < 3) return;
-    let back = !this.online && inp.globalPressed('pause');
+    let back = escapePressed(inp, this.online);
     // Every joined slot (up to 4 in local co-op), matching pause.js / trainpause.js: a pad-only P3/P4 who
     // opened MOVES from the pause plate must be able to navigate and back out with their own controller.
     for (let i = 0; i < inp.playerCount; i++) {
       if (!inp.joined(i)) continue;
-      if (inp.pressed(i, 'jump') || inp.pressed(i, 'dodge') || inp.pressed(i, 'start')) back = true;
+      if (cancelPressed(inp, i) || confirmPressed(inp, i)) back = true;
       const list = this.rows[this.heroIndex];
       if (list.length) {
         if (inp.pressed(i, 'up')) { this.cursor = (this.cursor + list.length - 1) % list.length; audio.play('menu_move'); this.playRow(); }
@@ -148,7 +152,7 @@ export class MovesScreen extends Screen {
       let dy = ROW_Y0 + rows.length * ROW_H + 8;
       for (const line of rows[this.cursor].descLines) { drawText(ctx, line, ROW_X, dy, { size: 1, color: UI.brassLight }); dy += DESC_LINE_H; }
     }
-    drawText(ctx, 'UP/DOWN: MOVE   LEFT/RIGHT: HERO   JUMP: BACK', VIEW_W / 2, PLATE_Y + PLATE_H - 22, { size: 1, color: UI.brassDark, align: 'center' });
+    drawText(ctx, this.hint, VIEW_W / 2, PLATE_Y + PLATE_H - 22, { size: 1, color: UI.brassDark, align: 'center' });
   }
   /** Test hook (tools/scenarios/training.js): the currently playing preview anim and the highlighted row. */
   preview() { return { anim: this.previews[this.heroIndex].anim.name, row: this.cursor }; }

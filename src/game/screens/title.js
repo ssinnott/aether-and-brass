@@ -19,6 +19,7 @@ import { STAGES } from '../../content/stage/index.js';
 import { progress } from '../progress.js';
 import { options } from '../options.js';
 import { joinHint } from '../party.js';
+import { confirmPressed } from '../menuinput.js';
 
 // A remapped legend line is centred at x=320 and must not clip the view; 16px clears the side gutter.
 const LEGEND_MAX_W = VIEW_W - 16;
@@ -38,7 +39,9 @@ const STACKS = [[196, 206], [372, 210], [566, 222]];
 const HERO_X = [96, 184, 456, 544], HERO_Y = 300;
 const GEAR_CX = 320, GEAR_CY = 300, GEAR_R = 140;
 
-/** Title screen. Attack / start confirm the menu item; any slot's own keys/pad join at any time. */
+/** Title screen. CONFIRM -- ENTER or attack -- picks the menu item (game/menuinput.js owns that scheme,
+ *  so `jump` is BACK here as it is everywhere else, not a third confirm key); any slot's own keys/pad
+ *  join at any time. */
 export class TitleScreen extends Screen {
   constructor(game) { super(game, 'title'); }
   enter(params) {
@@ -100,7 +103,7 @@ export class TitleScreen extends Screen {
       if (!inp.joined(p) || (joinedNow & (1 << p))) continue;
       if (inp.pressed(p, 'up')) { this.cursor = (this.cursor + MENU.length - 1) % MENU.length; audio.play('menu_move'); }
       if (inp.pressed(p, 'down')) { this.cursor = (this.cursor + 1) % MENU.length; audio.play('menu_move'); }
-      if (inp.pressed(p, 'attack') || inp.pressed(p, 'start') || inp.pressed(p, 'jump')) { this.activate(this.cursor); return; }
+      if (confirmPressed(inp, p)) { this.activate(this.cursor); return; }
     }
   }
   activate(i) {

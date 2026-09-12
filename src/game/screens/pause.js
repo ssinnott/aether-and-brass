@@ -11,6 +11,7 @@ import { Screen } from '../game.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
 import { rrect, rivetLine, gear } from '../../art/shapes.js';
 import { dropInChar, joinHint } from '../party.js';
+import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 
 // MOVES and COMMANDS are hidden under netplay (ITEMS_ONLINE): a screen-stack divergence between peers
 // must be impossible by construction (docs/MULTIPLAYER.md), and both are local-only overlays like OPTIONS.
@@ -44,7 +45,8 @@ export function consumeMenuBuffers(input) {
   for (let p = 0; p < input.playerCount; p++) for (const a of ['attack', 'jump', 'special', 'super', 'dodge', 'taunt']) input.consume(p, a);
 }
 
-/** Pause overlay. Start/Escape resumes; attack confirms the highlighted item. */
+/** Pause overlay. Escape (or jump / dodge) resumes; CONFIRM -- ENTER or attack -- picks the highlighted
+ *  row, which on the RESUME row it opens on is the same thing (game/menuinput.js owns that scheme). */
 export class PauseScreen extends Screen {
   constructor(game) { super(game, 'pause'); this.transparent = true; }
   enter(params) {
@@ -54,6 +56,7 @@ export class PauseScreen extends Screen {
     this.items = this.online ? ITEMS_ONLINE : ITEMS_LOCAL;
     this.joinKey = -1; this.hint = '';
     this.labels = this.items.slice(); this.muted = null; // forces one rebuild below
+    this.keysHint = ''; this.hintVersion = -1;           // ditto: rebuilt on the first update() below
   }
   update() {
     super.update();
@@ -61,6 +64,12 @@ export class PauseScreen extends Screen {
     if (this.muted !== audio.muted) {
       this.muted = audio.muted;
       this.labels = this.items.map((label) => label === 'MUTE' ? `MUTE  < ${this.muted ? 'ON' : 'OFF'} >` : label);
+    }
+    // OPTIONS > CONTROLS can rebind `start` while this plate sits under it, so the hint is rebuilt on a
+    // bindings change rather than once in enter() -- and before the settle guard, since draw() needs it.
+    if (this.hintVersion !== inp.bindingsVersion) {
+      this.hintVersion = inp.bindingsVersion;
+      this.keysHint = `${backKey(inp)}: RESUME   ${confirmKey(inp)}: SELECT`;
     }
     if (this.frame < 3) return;
     // Drop-in on any free slot: the join edge itself never doubles as a menu press, and the player
@@ -70,15 +79,15 @@ export class PauseScreen extends Screen {
     if (!online) for (let s = 1; s < MAX_PLAYERS; s++) if (!inp.joined(s) && inp.joinPressed(s)) { inp.setJoined(s, true); joinedNow.add(s); audio.play('join'); this.addSlot(s); }
     const k = inp.joinState();
     if (k !== this.joinKey) { this.joinKey = k; this.hint = joinHint(inp, online); }
-    let resume = !online && inp.globalPressed('pause');   // netplay resumes through the `start` bit
+    let resume = escapePressed(inp, online);   // online: Escape arrives folded into the `start` bit (see menuinput.js)
     for (let i = 0; i < MAX_PLAYERS; i++) {
       if (!inp.joined(i) || joinedNow.has(i)) continue;
-      if (inp.pressed(i, 'start') || inp.pressed(i, 'jump')) resume = true;
+      if (cancelPressed(inp, i)) resume = true;
       if (inp.pressed(i, 'up')) { this.cursor = (this.cursor + this.items.length - 1) % this.items.length; audio.play('menu_move'); }
       if (inp.pressed(i, 'down')) { this.cursor = (this.cursor + 1) % this.items.length; audio.play('menu_move'); }
       const item = this.items[this.cursor];
       if ((inp.pressed(i, 'left') || inp.pressed(i, 'right')) && item === 'MUTE') { audio.toggleMute(); audio.play('menu_move'); }
-      if (inp.pressed(i, 'attack')) {
+      if (confirmPressed(inp, i)) {
         if (item === 'RESUME') { audio.play('menu_confirm'); resume = true; }
         else if (item === 'MUTE') { audio.toggleMute(); audio.play('menu_confirm'); }
         else if (item === 'OPTIONS') { audio.play('menu_confirm'); this.game.push('options', { dim: false, lockDifficulty: true }); return; }
@@ -113,6 +122,6 @@ export class PauseScreen extends Screen {
     drawPlate(ctx, x, y, w, h, f, 'PAUSED');
     drawMenuRows(ctx, this.labels, this.cursor, y + 48, f, ROW_H);
     if (this.hint && (f % 60) < 40) drawText(ctx, this.hint, VIEW_W / 2, y + h - 22 - (hintLines - 1) * ROW_H, { size: 1, color: UI.p2, align: 'center' });
-    else drawText(ctx, 'ESC / START: RESUME', VIEW_W / 2, y + h - 22, { size: 1, color: UI.brassDark, align: 'center' });
+    else drawText(ctx, this.keysHint, VIEW_W / 2, y + h - 22, { size: 1, color: UI.brassDark, align: 'center' });
   }
 }
