@@ -10,6 +10,8 @@ import { drawText, drawTextOutlined } from '../../engine/text.js';
 import { rrect, rivetLine, gear } from '../../art/shapes.js';
 import { options, VOLUME_STEPS } from '../options.js';
 import { createControlsPanel } from './controls.js';
+import { input } from '../../engine/input.js';
+import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 
 const ROWS = ['DIFFICULTY', 'MUSIC', 'SFX', 'MUTE', 'SCREEN SHAKE', 'CONTROLS', 'RESET TO DEFAULTS', 'BACK'];
 const R_DIFF = 0, R_MUSIC = 1, R_SFX = 2, R_MUTE = 3, R_SHAKE = 4, R_CONTROLS = 5, R_RESET = 6, R_BACK = 7;
@@ -20,7 +22,6 @@ const SLIDER_W = VOLUME_STEPS * (SLIDER.cellW + SLIDER.gap) - SLIDER.gap;
 const NOTICE_FRAMES = 90, SETTLE_FRAMES = 3, FIRST_INPUT_FRAME = 3;
 // Rows end at y + 44 + 7*16 + 7 = y + 163; the notice/hint sit below that, clear of both rivet lines
 // (top y + 9, bottom y + PLATE.h - 9 = y + 223) and the outer border (y + PLATE.h).
-const HINT = 'ATTACK: SELECT  L/R: CHANGE  DODGE: BACK';
 // Precomputed uppercase labels so draw() never calls toUpperCase() (no per-frame allocation).
 const DIFF_LABELS = { easy: 'EASY', normal: 'NORMAL', hard: 'HARD' };
 const SHAKE_LABELS = { off: 'OFF', low: 'LOW', full: 'FULL' };
@@ -38,7 +39,8 @@ const SHAKE_ROW = {};
 for (const s of Object.keys(SHAKE_LABELS)) SHAKE_ROW[s] = `< ${SHAKE_LABELS[s]} >`;
 const STEP_LABELS = Array.from({ length: VOLUME_STEPS + 1 }, (_, i) => String(i));
 
-/** Options overlay screen. Attack/start confirms a row; left/right changes it in place. */
+/** Options overlay screen. CONFIRM (ENTER or attack) activates a row and BACK (Escape, jump or dodge)
+ *  closes the plate -- the one scheme in game/menuinput.js; left/right changes a row in place. */
 export class OptionsScreen extends Screen {
   constructor(game) { super(game, 'options'); this.transparent = true; }
   enter(params = {}) {
@@ -56,10 +58,17 @@ export class OptionsScreen extends Screen {
     this.notice = '';
     this.noticeTimer = 0;
     this.settle = 0;
+    // The CONTROLS sub-plate can rebind `start` under this screen, so the hint follows bindingsVersion
+    // rather than being built once here (ARCHITECTURE.md section 16: no hard-coded key names).
+    this.hint = ''; this.hintVersion = -1;
   }
   exit() { this.controls.dispose(); }
   update() {
     super.update();
+    if (this.hintVersion !== input.bindingsVersion) {
+      this.hintVersion = input.bindingsVersion;
+      this.hint = `${confirmKey(input)}: SELECT  L/R: CHANGE  ${backKey(input)}: BACK`;
+    }
     if (this.frame < FIRST_INPUT_FRAME) return;
     if (this.settle > 0) { this.settle--; return; }
     if (this.noticeTimer > 0) this.noticeTimer--;
@@ -77,8 +86,8 @@ export class OptionsScreen extends Screen {
         else if (this.cursor === R_MUTE) { audio.setMuted(!audio.muted); audio.play('menu_move'); }
         else if (this.cursor === R_SHAKE) { options.cycle('shake', dir); audio.play('menu_move'); }
       }
-      if (inp.pressed(p, 'attack') || inp.pressed(p, 'start')) { this.activate(this.cursor); return; }
-      if (inp.pressed(p, 'dodge') || inp.pressed(p, 'jump') || inp.globalPressed('pause')) { this.close(); return; }
+      if (confirmPressed(inp, p)) { this.activate(this.cursor); return; }
+      if (cancelPressed(inp, p) || escapePressed(inp)) { this.close(); return; }
     }
   }
   activate(i) {
@@ -124,7 +133,7 @@ export class OptionsScreen extends Screen {
       else if (i === R_CONTROLS) drawText(ctx, '>', x + VALUE_X, yy, { size: 1, color });
     }
     if (this.noticeTimer > 0) drawText(ctx, this.notice, VIEW_W / 2, y + PLATE.h - 34, { size: 1, color: UI.teal, align: 'center' });
-    drawText(ctx, HINT, VIEW_W / 2, y + PLATE.h - 22, { size: 1, color: UI.brassDark, align: 'center' });
+    drawText(ctx, this.hint, VIEW_W / 2, y + PLATE.h - 22, { size: 1, color: UI.brassDark, align: 'center' });
   }
   summary() {
     return {

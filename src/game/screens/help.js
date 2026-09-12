@@ -23,6 +23,7 @@ import { rivetLine, gear } from '../../art/shapes.js';
 import { input, bindings } from '../../engine/input.js';
 import { options } from '../options.js';
 import { drawPlate, consumeMenuBuffers } from './pause.js';
+import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey, menuLayout } from '../menuinput.js';
 import { drawVolumeRow } from './options.js';
 
 const PLATE_X = 20, PLATE_Y = 22, PLATE_W = 600, PLATE_H = 316;
@@ -31,7 +32,6 @@ const ACTION_X = PLATE_X + 16, KEYS_CX = PLATE_X + 150, PAD_CX = PLATE_X + 250, 
 const DIVIDER_Y = PLATE_Y + 210, SOUND_HEAD_Y = PLATE_Y + 218;
 const SOUND_Y0 = PLATE_Y + 236, SOUND_ROW_H = 16, SOUND_LABEL_X = PLATE_X + 40, SOUND_VALUE_X = PLATE_X + 150;
 const NOTE_Y0 = PLATE_Y + 238, NOTE_LINE_H = 14;
-const HINT = 'UP/DOWN: SOUND ROW   LEFT/RIGHT: CHANGE   JUMP: BACK';
 
 // One entry per command row. `action` names the bound action whose key/pad labels fill the two middle
 // columns; a row with no single binding behind it (RUN, THROW, MUTE) spells its own out in build().
@@ -76,8 +76,9 @@ function buildLabels(layout) {
 
 /**
  * COMMANDS & SOUND: the command summary plus the MUSIC / SFX / MUTE rows. up/down picks a sound row,
- * left/right changes it (attack toggles MUTE), and jump / dodge / start -- or Escape offline -- backs
- * out to whichever pause plate pushed this.
+ * left/right changes it (CONFIRM -- ENTER or attack -- steps the highlighted row, which is the only thing
+ * there is to confirm here), and Escape -- or jump / dodge, the netplay-safe half of BACK -- backs out to
+ * whichever pause plate pushed this (game/menuinput.js owns that scheme).
  */
 export class HelpScreen extends Screen {
   constructor(game) { super(game, 'help'); this.transparent = true; }
@@ -88,27 +89,28 @@ export class HelpScreen extends Screen {
     // The keyboard half this player is on right now: the arcade aliases are live until P2 joins, after
     // which P1 moves to the left half (engine/bindings.js soloAliases) -- the same rule moves.js follows.
     this.coop = input.joined(1);
-    this.layout = this.coop ? 'p1' : 'solo';
+    this.layout = menuLayout(input);   // the same rule the menu keys' own labels follow
     this.labels = buildLabels(this.layout);
     this.keysHead = this.coop ? 'P1 KEYS' : 'KEYS';
-    this.notes = ['REMAP ANY KEY IN OPTIONS > CONTROLS'];
+    this.notes = [`MENUS: ${confirmKey(input)} SELECTS, ${backKey(input)} BACKS OUT`, 'REMAP ANY KEY IN OPTIONS > CONTROLS'];
     if (this.coop) this.notes.push('P2 KEYS ARE LISTED THERE TOO');
+    this.hint = `UP/DOWN: SOUND ROW   LEFT/RIGHT: CHANGE   ${backKey(input)}: BACK`;
   }
   update() {
     super.update();
     const inp = this.game.input, audio = this.game.audio;
     if (this.frame < 3) return; // the press that opened this plate must not act on it
-    let back = !this.online && inp.globalPressed('pause');
+    let back = escapePressed(inp, this.online);
     for (let i = 0; i < MAX_PLAYERS; i++) {
       if (!inp.joined(i)) continue;
-      if (inp.pressed(i, 'jump') || inp.pressed(i, 'dodge') || inp.pressed(i, 'start')) back = true;
+      if (cancelPressed(inp, i)) back = true;
       if (inp.pressed(i, 'up')) { this.cursor = (this.cursor + SOUND_ROWS.length - 1) % SOUND_ROWS.length; audio.play('menu_move'); }
       if (inp.pressed(i, 'down')) { this.cursor = (this.cursor + 1) % SOUND_ROWS.length; audio.play('menu_move'); }
       const dir = (inp.pressed(i, 'right') ? 1 : 0) - (inp.pressed(i, 'left') ? 1 : 0);
       if (dir) this.change(dir);
       // MUTE is the only row a confirm can act on; a confirm on a slider would be a silent no-op, so it
       // nudges the slider up instead of doing nothing.
-      if (inp.pressed(i, 'attack')) this.change(1);
+      if (confirmPressed(inp, i)) this.change(1);
     }
     if (back) { audio.play('menu_back'); consumeMenuBuffers(inp); this.game.pop(); }
   }
@@ -143,7 +145,7 @@ export class HelpScreen extends Screen {
       else drawVolumeRow(ctx, SOUND_VALUE_X, yy, options.get(i === R_MUSIC ? 'music' : 'sfx'), sel, color);
     }
     for (let i = 0; i < this.notes.length; i++) drawText(ctx, this.notes[i], DESC_X, NOTE_Y0 + i * NOTE_LINE_H, { size: 1, color: UI.brassDark });
-    drawText(ctx, HINT, VIEW_W / 2, PLATE_Y + PLATE_H - 22, { size: 1, color: UI.brassDark, align: 'center' });
+    drawText(ctx, this.hint, VIEW_W / 2, PLATE_Y + PLATE_H - 22, { size: 1, color: UI.brassDark, align: 'center' });
   }
   summary() {
     return {

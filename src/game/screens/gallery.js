@@ -5,6 +5,7 @@ import { drawText } from '../../engine/text.js';
 import { buildRig, drawRig } from '../../art/rig.js';
 import { AnimPlayer } from '../animation.js';
 import { drawShadowScreen } from '../../art/fx.js';
+import { confirmPressed, cancelPressed, escapePressed } from '../menuinput.js';
 
 /** Preferred animation cycling order (only names present in at least one entry are shown). */
 export const GALLERY_ANIMS = ['idle', 'walk', 'attack1', 'hurt', 'run', 'attack2', 'attack3', 'attack4', 'jumpAttack', 'dashAttack', 'special', 'super',
@@ -13,7 +14,9 @@ const HEADER_H = 24;
 
 /**
  * Gallery screen. Entries come from `params.registry` or `game.galleryRegistry`: [{ name, build, anims }].
- * right/left = next/previous animation, up/down = scroll rows when the grid overflows.
+ * right/left = next/previous animation, up/down = scroll rows when the grid overflows. There is nothing
+ * to pick here, so CONFIRM and BACK alike (game/menuinput.js -- Escape, ENTER, attack, jump, dodge)
+ * return to the title.
  */
 export class GalleryScreen extends Screen {
   constructor(game) { super(game, 'gallery'); }
@@ -53,7 +56,7 @@ export class GalleryScreen extends Screen {
     if (inp.pressed(0, 'left') || inp.pressed(1, 'left')) { this.animIndex = (this.animIndex + this.animNames.length - 1) % this.animNames.length; this._playAll(true); this.game.audio.play('menu_move'); }
     if (inp.pressed(0, 'down')) this.scroll = Math.min(Math.max(0, this.rows - this.visibleRows), this.scroll + 1);
     if (inp.pressed(0, 'up')) this.scroll = Math.max(0, this.scroll - 1);
-    if (inp.pressed(0, 'dodge') || inp.pressed(0, 'start')) { this.game.replace('title'); return; }
+    if (escapePressed(inp) || cancelPressed(inp, 0) || confirmPressed(inp, 0)) { this.game.replace('title'); return; }
     for (const e of this.entries) {
       e.anim.tick();
       if (e.anim.done) { if (++e.hold > 30) e.anim.play(this.animName, { restart: true, fallback: 'idle' }), (e.hold = 0); }

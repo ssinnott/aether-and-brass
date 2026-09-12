@@ -28,6 +28,7 @@ import { progress } from '../progress.js';
 import { STAGES } from '../../content/stage/index.js';
 import { buildCharSlots, tickCharSlots, drawCharCard, cardX, CURSOR_COLORS, P1_CURSOR, P2_CURSOR } from './charcards.js';
 import { drawBoardPlaque, rowMetrics, PLAQUE_H } from './boardcards.js';
+import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 
 const ROLES = [['HOST A GAME', 'YOU ARE PLAYER 1'], ['JOIN A GAME', 'UP TO FOUR PLAY TOGETHER']];
 const CODE_CHARS = /^[A-Z0-9]$/;
@@ -63,7 +64,11 @@ export class LobbyScreen extends Screen {
     // whichever slot they end up owning, so the keys to name are P1's plus the arcade aliases.
     const inp = this.game.input;
     const k = (a) => inp.keyText('p1', a) === inp.keyText('solo', a) ? inp.keyText('p1', a) : `${inp.keyText('p1', a)}/${inp.keyText('solo', a)}`;
-    this.hintRole = `ATTACK (${k('attack')}): CHOOSE    DODGE (${k('dodge')}): BACK`;
+    // One scheme everywhere (game/menuinput.js): CONFIRM is ENTER or attack, BACK is Escape.
+    this.hintRole = `${confirmKey(inp)} OR ATTACK (${k('attack')}): CHOOSE    ${backKey(inp)}: BACK`;
+    this.hintCancel = `${backKey(inp)}: CANCEL`;
+    this.hintError = `${confirmKey(inp)}: BACK TO TITLE`;
+    this.hintUnready = `${backKey(inp)}: CHANGE YOUR MIND`;
     this.hintReadyHost = `LEFT/RIGHT: HERO    UP/DOWN: BOARD    ATTACK (${k('attack')}): READY`;
     this.hintReadyHost1 = `LEFT/RIGHT: HERO    ATTACK (${k('attack')}): READY`;
     this.hintReadyGuest = `LEFT/RIGHT: HERO    ATTACK (${k('attack')}): READY    THE HOST PICKS THE BOARD`;
@@ -194,13 +199,15 @@ export class LobbyScreen extends Screen {
 
     if (this.phase === 'role') {
       if (inp.pressed(0, 'up') || inp.pressed(0, 'down')) { this.cursor ^= 1; audio.play('menu_move'); }
-      if (inp.pressed(0, 'attack') || inp.pressed(0, 'start')) {
+      if (confirmPressed(inp, 0)) {
         this.isHost = this.cursor === 0;
         audio.play('menu_confirm');
         if (this.isHost) { this.typed = makeRoomCode(); this.begin(); }
         else { this.phase = 'code'; this.typed = ''; }
       }
-      if (inp.pressed(0, 'dodge')) back();
+      // Escape is a plain local key here: the fold into the `start` bit only happens once a match is
+      // live (net/session.js beforeStep needs net.ls), so BACK is the same on this screen as any other.
+      if (cancelPressed(inp, 0) || escapePressed(inp)) back();
       return;
     }
     // Typing a code reads the keyboard raw in handleKey; the action bindings must keep their hands
@@ -212,7 +219,7 @@ export class LobbyScreen extends Screen {
         this.phase = 'lobby'; this.status = ''; audio.play('join');
         this.shownChars = new Array(MAX_PLAYERS).fill(-1);
       }
-      if (inp.pressed(0, 'dodge')) { if (this.net) this.net.end('cancelled'); back(); }
+      if (cancelPressed(inp, 0) || escapePressed(inp)) { if (this.net) this.net.end('cancelled'); back(); }
       return;
     }
     if (this.phase === 'lobby') {
@@ -224,17 +231,17 @@ export class LobbyScreen extends Screen {
         // Only the host cycles the board: it is their unlocks the session runs on.
         if (this.isHost && inp.pressed(0, 'up')) this.cycleBoard(-1);
         if (this.isHost && inp.pressed(0, 'down')) this.cycleBoard(1);
-        if (inp.pressed(0, 'attack') || inp.pressed(0, 'start')) {
+        if (confirmPressed(inp, 0)) {
           this.net.setReady(true); audio.play('menu_confirm');
           this.playOn(this.net.lobby.myChar, 'win');
         }
-      } else if (inp.pressed(0, 'jump') || inp.pressed(0, 'dodge')) {
+      } else if (cancelPressed(inp, 0) || escapePressed(inp)) {
         this.net.setReady(false); audio.play('menu_back');
         this.playOn(this.net.lobby.myChar, 'idle');
       }
       return;
     }
-    if (this.phase === 'error' && (inp.pressed(0, 'attack') || inp.pressed(0, 'start') || inp.pressed(0, 'dodge'))) back();
+    if (this.phase === 'error' && (confirmPressed(inp, 0) || cancelPressed(inp, 0) || escapePressed(inp))) back();
   }
 
   /**
@@ -308,14 +315,14 @@ export class LobbyScreen extends Screen {
           if (url) drawText(ctx, url.length > 62 ? url.slice(0, 59) + '...' : url, 320, 200, { size: 1, color: UI.steel, align: 'center' });
         }
       }
-      drawText(ctx, 'DODGE: CANCEL', 320, 250, { size: 1, color: UI.brassDark, align: 'center' });
+      drawText(ctx, this.hintCancel, 320, 250, { size: 1, color: UI.brassDark, align: 'center' });
       return;
     }
 
     plate(110, 84);
     drawText(ctx, 'CONNECTION FAILED', 320, 128, { size: 2, color: UI.red, align: 'center' });
     drawText(ctx, String(this.error || '').toUpperCase().slice(0, 60), 320, 152, { size: 1, color: UI.paper, align: 'center' });
-    drawText(ctx, 'ATTACK: BACK TO TITLE', 320, 172, { size: 1, color: UI.brassDark, align: 'center' });
+    drawText(ctx, this.hintError, 320, 172, { size: 1, color: UI.brassDark, align: 'center' });
   }
 
   /**
@@ -387,8 +394,8 @@ export class LobbyScreen extends Screen {
   /** The line under the boards while this player is ready: who the match is still waiting for. */
   waitingOn() {
     const late = this.party().filter((m) => !m.local && !m.ready).map((m) => `P${m.slot + 1}`);
-    if (!late.length) return 'JUMP: CHANGE YOUR MIND';
-    return `WAITING FOR ${late.join(' AND ')}    JUMP: CHANGE YOUR MIND`;
+    if (!late.length) return this.hintUnready;
+    return `WAITING FOR ${late.join(' AND ')}    ${this.hintUnready}`;
   }
 
   /** ...and while they are still choosing: what the keys do, plus the invitation if seats are free. */

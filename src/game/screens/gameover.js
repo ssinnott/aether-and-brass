@@ -3,6 +3,7 @@
 // expiry (or no continues) -> "THE ENGINE WINS." then the results plaque with a D-rank ceiling.
 import { VIEW_W, VIEW_H, UI } from '../../constants.js';
 import { Screen } from '../game.js';
+import { confirmPressed } from '../menuinput.js';
 import { drawText, drawTextOutlined } from '../../engine/text.js';
 import { rrect, rivetLine, gear } from '../../art/shapes.js';
 import { drawCrackGear } from '../hud.js';
@@ -34,7 +35,7 @@ export class GameOverScreen extends Screen {
       const d = this.digit;
       if (d !== this.lastDigit) { this.lastDigit = d; this.crack = 8; this.game.audio.play('continue_tick'); this.spawnShards(); }
       let go = false;
-      for (let p = 0; p < inp.playerCount; p++) if (inp.pressed(p, 'attack') || inp.pressed(p, 'start')) go = true;
+      for (let p = 0; p < inp.playerCount; p++) if (confirmPressed(inp, p)) go = true;
       if (this.game.options.bot && this.frame > 30) go = true;
       if (go && this.continues > 0 && this.gameplay) {
         this.leaving = true;

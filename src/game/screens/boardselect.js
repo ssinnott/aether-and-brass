@@ -17,6 +17,8 @@ import { STAGES } from '../../content/stage/index.js';
 import { progress } from '../progress.js';
 // The plaque art is shared with the online co-op lobby, which draws the same boards small.
 import { DEFAULT_PREVIEW, clamp01, rowMetrics, wrapText, drawVignette, drawLockHatch, drawHatchDoors, drawPadlock } from './boardcards.js';
+import { input } from '../../engine/input.js';
+import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 
 const CARD_Y = 46, CARD_H = 196, GAP = 24, CARD_W_MAX = 200, ROW_PAD = 60;
 const ART_X = 9, ART_Y = 26, ART_H = 78;
@@ -44,6 +46,7 @@ export class BoardSelectScreen extends Screen {
     // A board this run just opened is revealed on its own plaque rather than simply appearing unlocked.
     const target = params.reveal ? this.boards.findIndex((b) => b.stage.id === params.reveal && b.unlocked) : -1;
     this.reveal = target >= 0 ? { index: target, t: 0, shake: 0 } : null;
+    this.hint = `LEFT / RIGHT  CHOOSE BOARD      ${confirmKey(input)}  CONFIRM      ${backKey(input)}  BACK`;
     // otherwise start on the board the options point at, or the last one that is open (the newest thing to play)
     const wanted = Math.min(this.boards.length - 1, Math.max(0, (this.game.options.stage || 1) - 1));
     this.cursor = this.reveal ? this.reveal.index : (this.boards[wanted] && this.boards[wanted].unlocked ? wanted : this.lastUnlocked());
@@ -84,8 +87,8 @@ export class BoardSelectScreen extends Screen {
       if (!inp.joined(p)) { if (inp.joinPressed(p)) { inp.setJoined(p, true); audio.play('join'); } continue; }
       const dir = (inp.pressed(p, 'right') ? 1 : 0) - (inp.pressed(p, 'left') ? 1 : 0);
       if (dir) { this.cursor = (this.cursor + dir + this.boards.length) % this.boards.length; audio.play('menu_move'); continue; }
-      if (inp.pressed(p, 'attack') || inp.pressed(p, 'start') || inp.pressed(p, 'jump')) { this.pick(); return; }
-      if (inp.pressed(p, 'dodge') && p === 0) {
+      if (confirmPressed(inp, p)) { this.pick(); return; }
+      if (p === 0 && (cancelPressed(inp, p) || escapePressed(inp))) {
         audio.play('menu_back');
         this.leaving = true;
         this.game.fadeTo(() => this.game.replace('title'), 0.08);
@@ -103,7 +106,7 @@ export class BoardSelectScreen extends Screen {
     if (r.t > RV_SKIPPABLE) {
       for (let p = 0; p < inp.playerCount; p++) {
         if (!inp.joined(p)) { if (inp.joinPressed(p)) { inp.setJoined(p, true); audio.play('join'); } continue; }
-        if (inp.pressed(p, 'attack') || inp.pressed(p, 'start')) { this.endReveal(); return; }
+        if (confirmPressed(inp, p)) { this.endReveal(); return; }
       }
     }
     const cx = this.cardX(r.index) + this.metrics.w / 2, cy = CARD_Y + ART_Y + ART_H / 2;
@@ -291,7 +294,7 @@ export class BoardSelectScreen extends Screen {
     }
     if (this.deny > 0 && (this.deny >> 2) % 2 === 0) drawTextOutlined(ctx, 'LOCKED', VIEW_W / 2, 274, { size: 2, color: UI.red, outline: '#2a1010', thickness: 1, align: 'center' });
     else if ((f % 60) < 40) drawTextOutlined(ctx, 'PRESS START', VIEW_W / 2, 274, { size: 2, color: UI.white, outline: '#3a2010', thickness: 1, align: 'center' });
-    drawText(ctx, 'LEFT / RIGHT  CHOOSE BOARD      ATTACK OR START  CONFIRM      DODGE  BACK', VIEW_W / 2, 306, { size: 1, color: UI.brass, align: 'center', shadow: false });
+    drawText(ctx, this.hint, VIEW_W / 2, 306, { size: 1, color: UI.brass, align: 'center', shadow: false });
     drawText(ctx, 'CLEAR A BOARD TO OPEN THE NEXT ONE - YOUR PROGRESS IS SAVED IN THIS BROWSER', VIEW_W / 2, 322, { size: 1, color: UI.brassDark, align: 'center', shadow: false });
   }
 }

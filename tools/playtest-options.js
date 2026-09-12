@@ -27,6 +27,8 @@ export async function options(server, { withPage, assert }) {
     const atk = () => g.press(0, { attack: true }, 2, 10);
     const dg = () => g.press(0, { dodge: true }, 2, 6);
     const strt = () => g.press(0, { start: true }, 2, 6);
+    // Escape is a global key, not a player action, so it cannot go through setInput/`press`.
+    const esc = async () => { await page.keyboard.down('Escape'); await g.step(2); await page.keyboard.up('Escape'); await g.step(8); };
 
     // 1. Title -> OPTIONS (menu is START / ONLINE CO-OP / TRAINING / OPTIONS -- issue #23 dropped START
     // (2P), issue #22 added TRAINING directly after ONLINE CO-OP).
@@ -228,13 +230,16 @@ export async function options(server, { withPage, assert }) {
     assert(sum.enemies.reduce((a, e) => a + e.hp, 0) === hp2, 'the old key (F) no longer attacks');
     assert(sum.players[0].state === 'IDLE', 'the player stays idle on the old key');
 
-    // OPTIONS is reachable from pause and returns to it; netplay's pause plate hides it.
-    await strt();
-    assert((await g.screen()) === 'pause', 'start opens pause');
+    // OPTIONS is reachable from pause and returns to it; netplay's pause plate hides it. The menu scheme
+    // (game/menuinput.js) is checked in passing here: Escape opens the plate, `start` (ENTER) PICKS the
+    // highlighted row rather than resuming, and Escape closes it again from any row.
+    await esc();
+    assert((await g.screen()) === 'pause', 'Escape opens the pause plate');
+    await g.shot('96-pause');
     assert((await g.eval(() => window.__game.game.screen.items.length)) === 6, 'local pause has 6 rows including OPTIONS, MOVES and COMMANDS');
     await dn(); await dn();
-    await atk();
-    assert((await g.screen()) === 'options', 'OPTIONS on the pause plate opens the overlay');
+    await strt();
+    assert((await g.screen()) === 'options', 'start (ENTER) on the OPTIONS row opens the overlay instead of resuming');
     // The running board already cached 'hard' at enter(); DIFFICULTY must not silently change mid-board.
     s = await g.summary();
     assert(s.cursor === 0 && s.lockDifficulty === true, 'DIFFICULTY is locked when OPTIONS opens from pause mid-board');
@@ -244,8 +249,13 @@ export async function options(server, { withPage, assert }) {
     assert((await g.eval(() => window.__game.game.options.difficulty)) === 'hard', 'game.options.difficulty is untouched by the locked row');
     await dg();
     assert((await g.screen()) === 'pause', 'dodge returns to pause');
+    assert((await g.eval(() => window.__game.game.screen.cursor)) === 2, 'the plate keeps its cursor on the OPTIONS row it came back from');
+    await esc();
+    assert((await g.screen()) === 'gameplay', 'Escape resumes gameplay from a plate whose cursor is not on RESUME');
     await strt();
-    assert((await g.screen()) === 'gameplay', 'start resumes gameplay');
+    assert((await g.screen()) === 'pause', 'start opens pause too');
+    await strt();
+    assert((await g.screen()) === 'gameplay', 'start on the RESUME row the plate opens on resumes');
     // 5b. COMMANDS (screens/help.js): the quick reference reads the LIVE bindings (attack was remapped to
     // P off the default Z above -- a hard-coded key would still say Z), and its SOUND rows drive the same
     // persisted settings as the OPTIONS plate rather than a second copy of them.
@@ -274,6 +284,8 @@ export async function options(server, { withPage, assert }) {
     assert((await g.eval(() => window.__game.audio.muted)) === false, 'attack on MUTE toggles back');
     await dg();
     assert((await g.screen()) === 'pause', 'dodge returns from COMMANDS to the pause plate');
+    const keysHint = await g.eval(() => window.__game.game.screen.keysHint);
+    assert(/ESC: RESUME\s+ENTER: SELECT/.test(keysHint), `the plate's hint names the two menu keys (got "${keysHint}")`);
     // With P2 in, P1 is on the left half of the keyboard, so the plate lists those keys instead
     // (attack was remapped to P there above) -- the same rule the MOVES screen follows.
     const coop = await g.eval(() => {
@@ -286,8 +298,8 @@ export async function options(server, { withPage, assert }) {
       return sum;
     });
     assert(coop.layout === 'p1' && coop.commandKeys[2] === 'P', `with P2 joined the plate lists P1's own keys (got ${coop.layout} "${coop.commandKeys[2]}")`);
-    await strt();
-    assert((await g.screen()) === 'gameplay', 'start resumes gameplay from the pause plate again');
+    await esc();
+    assert((await g.screen()) === 'gameplay', 'Escape resumes gameplay from the pause plate again');
     assert((await g.summary()).players[0].state === 'IDLE', 'the COMMANDS press never leaked into the sim');
 
     const onlineItems = await g.eval(() => {

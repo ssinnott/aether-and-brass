@@ -7,6 +7,8 @@ import { Screen } from '../game.js';
 import { drawText } from '../../engine/text.js';
 import { drawPlate, drawMenuRows } from './pause.js';
 import { trialProgress } from '../trials.js';
+import { input } from '../../engine/input.js';
+import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 
 const PLATE_W = 300, ROWS_Y_OFF = 60, ROW_H = 14, FOOT_PAD = 40;
 
@@ -27,7 +29,7 @@ export class TrialsScreen extends Screen {
     // must not rebuild these every frame (no-allocation-in-draw-paths contract).
     this.title = `${this.hero ? this.hero.name : ''} TRIALS`;
     const done = this.list.filter((t) => trialProgress.isDone(this.hero.id, t.id)).length;
-    this.footer = `ATTACK: START   JUMP: BACK   ${done}/${this.list.length} DONE`;
+    this.footer = `${confirmKey(input)}: START   ${backKey(input)}: BACK   ${done}/${this.list.length} DONE`;
   }
   update() {
     super.update();
@@ -35,8 +37,8 @@ export class TrialsScreen extends Screen {
     const inp = this.game.input, audio = this.game.audio;
     // Escape backs out here exactly as it does on trainpause / moves (review finding): this overlay is
     // local-only (training is single-player), so the netplay caveat that keeps pause.js from reading Escape
-    // never applies.
-    const back = inp.globalPressed('pause') || inp.pressed(0, 'jump') || inp.pressed(0, 'dodge') || inp.pressed(0, 'start');
+    // never applies. `start` is CONFIRM, not BACK (game/menuinput.js), so it starts the highlighted trial.
+    const back = escapePressed(inp) || cancelPressed(inp, 0);
     // Read the back keys before the empty-list guard: a hero def with no trials (NO TRIALS) must still be
     // possible to back out of (review finding) -- there is no other way off this overlay.
     if (!this.list.length) {
@@ -45,7 +47,7 @@ export class TrialsScreen extends Screen {
     }
     if (inp.pressed(0, 'up')) { this.cursor = (this.cursor + this.list.length - 1) % this.list.length; audio.play('menu_move'); }
     if (inp.pressed(0, 'down')) { this.cursor = (this.cursor + 1) % this.list.length; audio.play('menu_move'); }
-    if (inp.pressed(0, 'attack')) {
+    if (confirmPressed(inp, 0)) {
       audio.play('menu_confirm');
       this.tr.setTrial(this.list[this.cursor].id);
       this.game.pop();

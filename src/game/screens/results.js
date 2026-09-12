@@ -11,6 +11,7 @@ import { drawText, drawTextOutlined } from '../../engine/text.js';
 import { Camera } from '../../engine/camera.js';
 import { rrect, rivetLine, gear } from '../../art/shapes.js';
 import { particles } from '../../engine/particles.js';
+import { confirmPressed } from '../menuinput.js';
 import { buildRig, drawRig } from '../../art/rig.js';
 import { drawShadowScreen } from '../../art/fx.js';
 import { AnimPlayer } from '../animation.js';
@@ -79,7 +80,7 @@ export class ResultsScreen extends Screen {
     if (this.stamp === 6) { for (let i = 0; i < 24; i++) particles.spawn('spark', 520 + (i * 37) % 60, 150 + (i * 23) % 50, 0, { screen: true, vx: (i % 5 - 2) * 1.8, vy: -2 - (i % 3), life: 30 }); }
     particles.update();
     let go = false;
-    for (let p = 0; p < inp.playerCount; p++) if (inp.joined(p) && (inp.pressed(p, 'start') || inp.pressed(p, 'attack'))) go = true;
+    for (let p = 0; p < inp.playerCount; p++) if (inp.joined(p) && confirmPressed(inp, p)) go = true;
     if (this.game.options.bot) go = this.frame > BOT_HOLD;
     else if (this.stamp > AUTO_RETURN) go = true;
     if (go && this.frame > 30) {

@@ -8,6 +8,9 @@
 export async function training(server, h) {
   const { withPage, assert, CHARACTER_COUNT } = h;
   for (let c = 0; c < CHARACTER_COUNT; c++) await withPage(server, `seed=1&skipTo=training&chars=${c}`, async (g, page) => {
+    // Escape closes a plate from any row; `start` (ENTER) picks the highlighted row instead of resuming
+    // (game/menuinput.js), so it only doubles as "resume" while the cursor still sits on RESUME.
+    const esc = async () => { await page.keyboard.press('Escape'); await g.step(5); };
     await g.step(60);
 
     // Move-list coverage (22.4 acceptance 1): every hero anim key that is a move appears on the move list.
@@ -202,8 +205,8 @@ export async function training(server, h) {
       await g.press(0, { down: true }, 2, 2);
       await g.press(0, { right: true }, 2, 5);
       assert((await g.summary()).training.faceLock === true, 'FACING row locks the dummy facing');
-      await g.press(0, { start: true }, 2, 5);
-      assert((await g.screen()) === 'training', 'START resumes');
+      await esc();
+      assert((await g.screen()) === 'training', 'Escape resumes from the FACING row');
 
       // FACING LOCK must actually stop the dummy turning toward the player, not merely echo the plate's own
       // opts.faceLock back (review finding: nothing read enemies[0].facing before this).
@@ -218,7 +221,7 @@ export async function training(server, h) {
       for (let i = 0; i < 3; i++) await g.press(0, { down: true }, 2, 2); // RESUME -> DUMMY -> VARIANT -> FACING
       await g.press(0, { right: true }, 2, 5);
       assert((await g.summary()).training.faceLock === false, 'FACING row toggles back to TRACK');
-      await g.press(0, { start: true }, 2, 5);
+      await esc();
       await g.step(10);
       assert((await g.eval(() => window.__game.world.enemies[0].facing)) !== facing0, 'unlocked (TRACK), the dummy turns back to face the player');
 
@@ -234,7 +237,7 @@ export async function training(server, h) {
       assert(pv.row === 2 && pv.anim === want, `the preview plays the highlighted row's animation (${pv.anim} vs ${want})`);
       await g.shot('94-moves');
       await g.press(0, { jump: true }, 2, 5);
-      await g.press(0, { start: true }, 2, 5);
+      await esc();
       assert((await g.screen()) === 'training', 'back out of MOVES and resume');
 
       // COMMANDS from the training plate (the same quick reference the gameplay plate opens): 11 downs
@@ -247,8 +250,12 @@ export async function training(server, h) {
       assert(help.commandRows === 11 && help.commandKeys[2] === 'Z', `the plate lists every command with its bound key (got "${help.commandKeys[2]}")`);
       await g.press(0, { jump: true }, 2, 5);
       assert((await g.screen()) === 'trainpause', 'jump backs out of COMMANDS to the training plate');
+      // The COMMANDS row is still highlighted, so ENTER would reopen it -- Escape is what resumes.
       await g.press(0, { start: true }, 2, 5);
-      assert((await g.screen()) === 'training', 'start resumes training from the plate');
+      assert((await g.screen()) === 'help', 'start on the highlighted COMMANDS row reopens it rather than resuming');
+      await g.press(0, { jump: true }, 2, 5);
+      await esc();
+      assert((await g.screen()) === 'training', 'Escape resumes training from the plate');
     }
   });
 
@@ -330,15 +337,20 @@ export async function training(server, h) {
   // (hidden only in an active online match). pause.js's local ITEMS_LOCAL is
   // ['RESUME', 'MUTE', 'OPTIONS', 'MOVES', 'QUIT TO TITLE'] (#19's OPTIONS row already lands before
   // MOVES), so 3 downs from RESUME reach MOVES, not 2.
-  await withPage(server, 'seed=1&skipTo=gameplay&chars=2&nowaves=1', async (g) => {
+  await withPage(server, 'seed=1&skipTo=gameplay&chars=2&nowaves=1', async (g, page) => {
     await g.step(30);
     await g.press(0, { start: true }, 2, 5);
     for (let i = 0; i < 3; i++) await g.press(0, { down: true }, 2, 2);
     await g.press(0, { attack: true }, 2, 5);
     assert((await g.screen()) === 'moves', 'MOVES opens from the normal pause plate');
+    // Nothing to pick on the MOVES plate, so CONFIRM closes it as BACK does (game/menuinput.js).
+    await g.press(0, { start: true }, 2, 5);
+    assert((await g.screen()) === 'pause', 'ENTER on the MOVES plate closes it');
+    await g.press(0, { attack: true }, 2, 5);
     await g.press(0, { jump: true }, 2, 5);
     assert((await g.screen()) === 'pause', 'back out of MOVES returns to pause');
-    await g.press(0, { start: true }, 2, 5);
-    assert((await g.screen()) === 'gameplay', 'START resumes gameplay');
+    await page.keyboard.press('Escape');
+    await g.step(5);
+    assert((await g.screen()) === 'gameplay', 'Escape resumes gameplay');
   });
 }

@@ -112,6 +112,7 @@ src/
     options.js             # persisted options (difficulty, music/sfx volume, screen shake, bindings)
     trials.js              # issue #22: TrialRunner (matches world.log against a Trial's steps) + trialProgress (guarded save)
     hud.js                 # in-game HUD
+    menuinput.js           # the one menu control scheme (CONFIRM / BACK), read by every screen (section 16)
     screens/
       title.js, boardselect.js, select.js, intro.js, gameplay.js, pause.js, gameover.js, results.js
       gallery.js, lobby.js       # rig gallery; online co-op lobby (net/)
@@ -678,7 +679,8 @@ arrival that outlives its own length by 180 frames ends as an ordinary enemy rat
 ## 9. Screens (`game/screens/`)
 `Game` holds a stack `screens[]`; top screen gets `update()`, all screens draw bottom
 to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
-`update()`, `draw(ctx)`. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`.
+`update()`, `draw(ctx)`. No screen wires its own menu keys: **CONFIRM** and **BACK** come from
+`game/menuinput.js` (section 16), so the same two keys work on every plate in the game. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`.
 Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `OPTIONS`, "PRESS ATTACK", blinking; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
 (`boardcards.js`, compact) on one screen, with the room's other two to three players driving the
@@ -945,3 +947,24 @@ keys between themselves) live entirely in `engine/bindings.js` (`rebindKey` / `r
 `input.rebind`) and a loaded save. Screens must never hard-code a key name or gamepad label: every
 legend, join hint and grid cell reads through `input.legend()` / `input.joinHint()` / `input.joinKeysHint()` /
 `input.keyText()` / `input.cellText()` / `input.hasKey()`, cached and invalidated by `input.bindingsVersion`.
+
+**Menu keys (`game/menuinput.js`).** The scheme every screen and plate obeys, defined once so the two
+halves can never drift apart again (they had: `start` confirmed on the title, board select and OPTIONS but
+resumed on the pause plate, while `jump` confirmed on the title and backed out of every overlay, so ENTER
+on a highlighted pause row closed the plate instead of picking it):
+
+| | keys | helper |
+|---|---|---|
+| CONFIRM | `start` (Enter / pad START) or `attack` | `confirmPressed(input, player)` |
+| BACK | `jump` or `dodge` (pad B / X) | `cancelPressed(input, player)` |
+| BACK (global) | `Escape` | `escapePressed(input, online)` |
+
+A pause plate opens on Escape or `start` with its cursor on RESUME, so either key closes a freshly opened
+one; after a cursor move ENTER picks the row and Escape resumes. A plate with nothing to pick (`moves.js`,
+`gallery.js`) treats CONFIRM as BACK rather than leaving ENTER dead. `escapePressed(input, true)` returns
+`false`, which is how every overlay only one peer could pop stays netplay-safe (`docs/MULTIPLAYER.md`):
+online, `net/session.js` folds Escape into the `start` bit, so it arrives as a CONFIRM on the party's
+shared cursor and `jump` / `dodge` remain a deterministic BACK. Hint lines name the CONFIRM / BACK keys
+through `confirmKey(input)` / `backKey(input)` (never a hard-coded label) and are built in `enter()` — or,
+for a screen that can sit under a live rebind (`pause.js`, `trainpause.js`, `options.js`, `controls.js`),
+rebuilt when `input.bindingsVersion` changes, never per frame in `draw()`.
