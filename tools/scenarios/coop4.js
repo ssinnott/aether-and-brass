@@ -202,6 +202,63 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         assert(new Set(s.players.map((p) => p.id)).size === 2, `two distinct heroes chosen (ids ${s.players.map((p) => p.id).join()})`);
       });
 
+      // Part F: the two select-screen defects the four-player audit turned up, both of which outlive
+      // the couch cap because slot 1 can hit them too.
+      //   1. a pad press that CLAIMS a slot must not also read as that slot's confirm -- on CHOOSE
+      //      YOUR FIGHTER that locks a hero for whoever already holds the seat;
+      //   2. a joined player who goes quiet (a pad whose battery died) must not hold the READY gate
+      //      shut for everybody with no way out of it.
+      await withPage(server, 'seed=1', async (g, page) => {
+        await g.step(60);
+        await page.bringToFront();
+        // Drive P1 on REAL keys, not g.press(): a virtual slot never sets kbSeen, and kbSeen[0] is
+        // what makes a pad claim slot 1 rather than settling on P1.
+        await page.keyboard.press('KeyZ'); await g.step(25); // title -> board select
+        await page.keyboard.press('KeyZ'); await g.step(50); // board select -> character select
+        assert((await g.screen()) === 'select', `P1's own keys reach character select (got ${await g.screen()})`);
+        const sel = () => g.eval(() => ({
+          joined: window.__game.game.screen.p.map((ps) => ps.joined),
+          confirmed: window.__game.game.screen.p.map((ps) => ps.confirmed),
+          ready: window.__game.game.screen.readyTimer,
+          padOf1: window.__game.input.padOf(1),
+        }));
+        // A pad claims slot 1: P2 joins, and the claiming press is spent on the claim.
+        await g.eval(() => window.__game.input.setPadVirtual(0, [0]));
+        await g.step(4);
+        let st = await sel();
+        assert(st.joined[1] && st.padOf1 === 0, `a pad claims slot 1 on character select (${JSON.stringify(st)})`);
+        assert(!st.confirmed[1], `the claiming press does not also lock P2's hero (${JSON.stringify(st)})`);
+        await g.eval(() => window.__game.input.setPadVirtual(0, []));
+        await g.step(3);
+        // That pad dies. The seat stays joined but its pad is released, which is exactly the state a
+        // fresh pad press used to be swallowed by.
+        await g.eval(() => window.__game.input.setPadVirtual(0, null));
+        await g.step(3);
+        st = await sel();
+        assert(st.joined[1] && st.padOf1 === -1, `a disconnected pad releases its slot but not the seat (${JSON.stringify(st)})`);
+        await g.eval(() => window.__game.input.setPadVirtual(1, [0]));
+        await g.step(4);
+        st = await sel();
+        assert(st.padOf1 === 1, `a second pad re-claims the orphaned seat (${JSON.stringify(st)})`);
+        assert(!st.confirmed[1], `and that claim press still does not lock the hero of whoever holds it (${JSON.stringify(st)})`);
+        await g.eval(() => window.__game.input.setPadVirtual(1, null));
+        await g.step(3);
+        // P1 locks in. The gate must NOT fire: slot 1 is joined and has not confirmed.
+        await page.keyboard.press('KeyZ');
+        await g.step(30);
+        st = await sel();
+        assert(st.confirmed[0] && !st.confirmed[1] && st.ready === -1,
+          `a joined slot that has not confirmed holds the READY gate shut (${JSON.stringify(st)})`);
+        // BACK from that unlocked slot leaves the party, which frees the gate for everybody else.
+        await g.press(1, { jump: true }, 2, 8);
+        st = await sel();
+        assert(!st.joined[1] && !(await g.eval(() => window.__game.input.joined(1))),
+          `BACK from an unlocked slot leaves the party (${JSON.stringify(st)})`);
+        await g.step(10);
+        st = await sel();
+        assert(st.ready >= 0, `and the run can start once nobody is holding it (readyTimer ${st.ready})`);
+      });
+
       // Part E: the netplay guard. Local slots beyond the online party never make it into a match, and a
       // pad pressed mid-match still drives the local player but can never claim the peer's slot.
       await withPair(server, 'room=NET4P&transport=broadcast&host=1', 'room=NET4P&transport=broadcast', async (hostPage, guestPage, H, G) => {

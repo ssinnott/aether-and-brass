@@ -75,6 +75,9 @@ Playing online, everybody is on the first block: the keys are the same on every 
   bar, that is spent before health and refills a few seconds after the last hit. The pool, the refill rate and
   the wait are different for each hero (character select prints them), and breaking one keeps it down twice as
   long — it is a buffer, not a block, so the hit still lands, staggers and knocks down as usual.
+- On **character select**, jump or dodge unlocks your hero — or, if you haven't locked one yet, leaves: the
+  screen if you're P1, the party if you're anybody else. So a player who joined and then wandered off (or
+  whose gamepad battery died) never holds the rest of the room hostage at the READY prompt.
 - **Menus** all work the same way, from the title to the pause plate: **ESC** opens and closes them, **ENTER**
   (or attack) picks the highlighted row, and jump / dodge back out alongside ESC. A pause plate opens on
   RESUME, so ESC or ENTER straight away just resumes; move the cursor and ENTER picks the row while ESC still

@@ -255,6 +255,15 @@ export const input = {
         pl.pressedNow[a] = pressed;
         pl.bufAge[a] = pressed ? 0 : Math.min(NEVER, pl.bufAge[a] + 1);
       }
+      // The press that CLAIMS a pad to a slot is spent on the claim and produces no action edge for
+      // it. Without this the same button reads as that slot's attack on the same step, which is a
+      // confirm everywhere the menus are (game/menuinput.js): on the title it launches a run, and on
+      // CHOOSE YOUR FIGHTER it LOCKS that slot's hero -- so somebody reconnecting a pad, or picking
+      // up a spare one, chose a hero for whoever already holds that seat. `cur` is left alone (the
+      // button is genuinely held), so only the edge is spent: releasing and pressing again acts
+      // normally. screens/title.js guards the same hazard for a slot that JOINS this step with its
+      // own `joinedNow` mask; a re-claim of a slot that was already joined never reached that mask.
+      if (claimed.has(p)) for (const a of ACTIONS) { pl.pressedNow[a] = false; pl.bufAge[a] = NEVER; }
       if (pl.virtual) { for (const a of ACTIONS) if (pl.pressedNow[a]) { pl.joinNow = true; break; } }
     }
     keysPressedPending.clear();

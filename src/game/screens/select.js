@@ -1,8 +1,10 @@
 // Character select (GDD 8/9): up to four 140x200 brass-framed cards with 2.5x rig busts, name, archetype,
-// five 5-pip stat bars, hovered card plays its taunt, four cursors (P1 white, P2 cyan, P3 violet, P4
+// five 5-pip stat bars, hovered card plays its taunt, a cursor per slot (P1 white, P2 cyan, P3 violet, P4
 // magenta), attack locks / jump unlocks, any two (or more) may pick the same hero (later copies wear a
-// tint), READY state, then the stage intro. P2-P4 drop in on any of their own keys/pad buttons (issue #23).
-// The cards themselves live in screens/charcards.js, shared with the online co-op lobby.
+// tint), READY state, then the stage intro. P2 drops in on any of their own keys/pad buttons (issue #23);
+// the couch stops there (constants.js LOCAL_PLAYERS), so slots 2/3 only ever light up under the four-cursor
+// harness -- an online party picks its heroes in the lobby, not here. The cards themselves live in
+// screens/charcards.js, shared with that lobby.
 import { VIEW_W, VIEW_H, UI, MAX_PLAYERS, PLAYER_COLORS } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined, measureText } from '../../engine/text.js';
@@ -17,7 +19,8 @@ const READY_FRAMES = 24;
 const SLOT_GAP = 18;
 
 /** Character select screen. Left/right moves a cursor; CONFIRM (ENTER or attack) locks a hero and BACK
- *  (Escape, jump or dodge) unlocks it -- or, from an unlocked P1, leaves the screen (game/menuinput.js). */
+ *  (Escape, jump or dodge) unlocks it -- or, from an unlocked slot, leaves: the screen for P1, the party
+ *  for anybody else (game/menuinput.js). */
 export class SelectScreen extends Screen {
   constructor(game) { super(game, 'select'); }
   enter(params) {
@@ -79,6 +82,17 @@ export class SelectScreen extends Screen {
       if (confirmPressed(inp, i)) {
         ps.confirmed = true; audio.play('menu_confirm');
         this.slots[ps.cursor].anim.play('win', { restart: true });
+        this.dirty = true;
+      } else if (i > 0 && cancelPressed(inp, i)) {
+        // BACK from an unlocked slot 1+ LEAVES THE PARTY, the same way BACK from an unlocked P1
+        // leaves the screen. Without an exit, a slot that joined and then went quiet -- a pad whose
+        // battery died mid-screen is the way it happens -- holds the READY gate below shut for
+        // everybody (`allReady` wants every joined slot confirmed) with nothing on this screen able
+        // to clear it: `input.joined` survives backing out to BOARD SELECT and coming back, and only
+        // the title resets it. Rejoining costs one press of any of their own keys.
+        ps.joined = false; ps.confirmed = false;
+        inp.setJoined(i, false);
+        audio.play('menu_back');
         this.dirty = true;
       } else if (i === 0 && (cancelPressed(inp, i) || escapePressed(inp))) {
         audio.play('menu_back');
