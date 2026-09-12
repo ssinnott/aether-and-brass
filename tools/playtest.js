@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles stall platforms events cargo hazards playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad audio gallery botstyles options training weapons)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles stall platforms events cargo hazards bestiary playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad audio gallery botstyles options training weapons)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 // This file is already close to its ~700-line budget: further scenarios belong in their own sibling
@@ -23,6 +23,7 @@ import { events as eventScenario } from './scenarios/events.js';
 import { cargo } from './scenarios/cargo.js';
 import { stall } from './scenarios/stall.js';
 import { hazards } from './scenarios/hazards.js';
+import { bestiaryScenarios } from './scenarios/bestiary.js';
 
 const { chromium } = loadPlaywright();
 
@@ -511,6 +512,11 @@ const scenarios = {
   // 3i. Scenery entrances: a crate tipping its cargo out, a chute on a timer that can be held shut, a smashed timer
   // container becoming loot, and a wave that comes out of a named cart (issue #34, tools/scenarios/cargo.js).
   cargo: (server) => cargo(server, { withPage, assert }),
+
+  // 3i2. The bestiary: a fresh book of silhouettes, a defeat reaching it through each of its three hooks, the save
+  // surviving a reload, and a bot run of board 1 opening that board's factions (issue #26,
+  // tools/scenarios/bestiary.js). The counting RULES are in tools/simtest.js.
+  bestiary: (server) => bestiaryScenarios(server, { withPage, assert }),
 
   // 3j. Hazards: the promise a tell makes and whether the hazard keeps it -- board 3's runaway wagon rolling the
   // whole road after its tell, and staying quiet once the party has left it (tools/scenarios/hazards.js).

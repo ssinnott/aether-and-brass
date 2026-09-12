@@ -17,6 +17,7 @@ import { AnimPlayer } from '../animation.js';
 import { ENV } from '../../art/palettes.js';
 import { STAGES } from '../../content/stage/index.js';
 import { progress } from '../progress.js';
+import { bestiary } from '../bestiary.js';
 import { options } from '../options.js';
 import { joinHint } from '../party.js';
 import { confirmPressed } from '../menuinput.js';
@@ -25,8 +26,10 @@ import { confirmPressed } from '../menuinput.js';
 const LEGEND_MAX_W = VIEW_W - 16;
 // TRAINING sits directly after ONLINE CO-OP (issue #22 decision); DIFFICULTY already moved off this
 // menu onto OPTIONS (#19), so TRAINING lands where DIFFICULTY used to be rather than after it.
-const MENU = ['START', 'ONLINE CO-OP', 'TRAINING', 'OPTIONS'];
-const I_START = 0, I_ONLINE = 1, I_TRAIN = 2, I_OPTIONS = 3;
+// BESTIARY (issue #26) sits after TRAINING and before OPTIONS: both are things you do between runs rather than a way
+// to start one, and OPTIONS stays last where every menu in the game puts it.
+const MENU = ['START', 'ONLINE CO-OP', 'TRAINING', 'BESTIARY', 'OPTIONS'];
+const I_START = 0, I_ONLINE = 1, I_TRAIN = 2, I_BESTIARY = 3, I_OPTIONS = 4;
 const PLATE_H = MENU.length * 14 + 10;
 // Controls legend text is rebuilt from the live bindings (engine/input.js legend()/joinHint()) in
 // refreshLegends() below, so a remap in OPTIONS is reflected here without any hardcoded key literal.
@@ -63,6 +66,9 @@ export class TitleScreen extends Screen {
       return { rig: buildRig(c.build || {}), anim, def: c };
     });
     this.refreshLegends();
+    const book = bestiary.completion();
+    this.bookPct = `${book.pct}%`;
+    this.bookFull = book.seen === book.total && book.total > 0;
   }
   /** Rebuild the legend / footer strings from the live bindings. Called on enter and whenever
    * `input.bindingsVersion` changes (returning from the OPTIONS overlay never re-enters the title,
@@ -123,6 +129,10 @@ export class TitleScreen extends Screen {
       this.starting = true;
       audio.play('menu_confirm');
       this.game.fadeTo(() => this.game.replace('select', { next: 'training', back: 'title' }), 0.08);
+    } else if (i === I_BESTIARY) {
+      this.starting = true;
+      audio.play('menu_confirm');
+      this.game.fadeTo(() => this.game.replace('bestiary'), 0.08);
     } else if (i === I_OPTIONS) { audio.play('menu_confirm'); this.game.push('options'); }
   }
   draw(ctx) {
@@ -191,6 +201,8 @@ export class TitleScreen extends Screen {
       const label = MENU[i];
       if (sel) { gear(ctx, 320 - drawTextWidth(label) / 2 - 12, y + 4, 5, 6, UI.brass, '#3a2010', 1, f * 0.05, 1.5); }
       drawText(ctx, label, 320, y, { size: 1, color: sel ? UI.white : UI.steel, align: 'center' });
+      // How far through the book you are, on the row itself, so it is answerable without opening it.
+      if (i === I_BESTIARY) drawText(ctx, this.bookPct, 432, y, { size: 1, color: this.bookFull ? UI.teal : UI.brass, align: 'right' });
     }
     if ((f % 60) < 40) drawTextOutlined(ctx, 'PRESS START', 320, 244, { size: 2, color: '#ffffff', outline: '#3a2010', thickness: 1, align: 'center' });
     // Join status + compact controls legend on the walkway. A JOINED flash for whichever slot last

@@ -25,6 +25,10 @@ const GHOST_DELAY = 20, GHOST_SPEED = 0.8;
 const COMBO_COLORS = ['#c8c8c8', '#ffe45a', '#ff9a30', '#4DF0E0', '#ffffff'];
 const BOSS_BAR_W = 400, BOSS_BAR_Y = 349, BOSS_BAR_H = 10;
 const CUTIN_LIFE = 50, CONTINUE_FRAMES = 600, TARGET_FRAMES = 90;
+// BESTIARY unlock plate (issue #26): a small brass plate that slides in from the right edge under the strip on the
+// FIRST defeat of an enemy the book has never held. Right-aligned on purpose -- the centre under the strip is where
+// the quad-mode join hints go, and the plate must never sit on top of one.
+const NEW_ENTRY_LIFE = 140, NEW_ENTRY_SLIDE = 12, NEW_ENTRY_W = 164, NEW_ENTRY_H = 26, NEW_ENTRY_QUEUE_MAX = 6;
 const HP_COLORS = ['#59C3A0', '#F2C94C', '#FF5C5C'];
 // Four-column layout (columns at x 4, 162, 320, 478; 24px portrait + 4px gap + 120px bar = 148px fits in 158px).
 const COL_W = 158, COL_X0 = 4, QUAD_DY = 40;
@@ -43,6 +47,8 @@ export class Hud {
     this.superInst = new Array(MAX_PLAYERS).fill(-1);
     this.cont = new Array(MAX_PLAYERS).fill(null);  // per-slot continue countdown while the rest of the party plays
     this.joinKey = -1; this.hint = ''; this.slotHints = new Array(MAX_PLAYERS).fill('');
+    this.newEntry = null;           // { name, timer } -- the bestiary plate currently on screen
+    this.newEntryQueue = [];        // names waiting their turn (a crowd clear can open three entries at once)
   }
   /** The gameplay screen that owns this HUD (via the stage runner). */
   get screen() { const s = this.world.stage; return s && s.screen ? s.screen : null; }
@@ -81,6 +87,17 @@ export class Hud {
     this.banner = { text, sub, timer: 0, life, plate, inPlaque };
   }
 
+  /**
+   * A bestiary entry opened for the first time (issue #26). Plates are shown one at a time and queued rather than
+   * stacked: clearing a fresh wave can open three entries on the same frame, and three plates over each other is
+   * unreadable. The queue is capped because a `?unlockall=1` sweep could otherwise line up thirty of them.
+   */
+  showNewEntry(name) {
+    if (this.newEntry) { if (this.newEntryQueue.length < NEW_ENTRY_QUEUE_MAX) this.newEntryQueue.push(name); return; }
+    this.newEntry = { name, timer: 0 };
+    this.game.audio.play('chime');
+  }
+
   // ---------- update ----------
   update() {
     this.frame++;
@@ -100,6 +117,10 @@ export class Hud {
     }
     if (this.targetTimer > 0) this.targetTimer--; else this.target = null;
     if (this.banner && ++this.banner.timer >= this.banner.life) this.banner = null;
+    if (this.newEntry && ++this.newEntry.timer >= NEW_ENTRY_LIFE) {
+      this.newEntry = this.newEntryQueue.length ? { name: this.newEntryQueue.shift(), timer: 0 } : null;
+      if (this.newEntry) this.game.audio.play('chime');
+    }
     if (this.cutIn && ++this.cutIn.timer >= this.cutIn.life) this.cutIn = null;
     // Join hints: rebuilt only when the joined/unbound-pad bitmask (or the owning screen's own cap) changes,
     // never every frame (draw() just reads them). A screen that caps the room below MAX_PLAYERS (TrainingScreen
@@ -159,8 +180,21 @@ export class Hud {
     if (w.boss && w.boss.alive) this.drawBoss(ctx, w.boss);
     for (const p of ps) this.drawCombo(ctx, p);
     for (const p of ps) if (this.cont[p.index]) this.drawContinue(ctx, p, this.cont[p.index]);
+    if (this.newEntry) this.drawNewEntry(ctx, this.newEntry);
     if (this.cutIn) this.drawCutIn(ctx, this.cutIn);
     else if (this.banner) this.drawBanner(ctx, this.banner);
+  }
+  /** NEW ENTRY plate: slides in from the right under the strip, holds, then slides back out the way it came. */
+  drawNewEntry(ctx, e) {
+    const t = e.timer;
+    // one ease in, one ease out, both cubic; `k` is how far on screen the plate is (0 fully off, 1 fully on)
+    const inK = Math.min(1, t / NEW_ENTRY_SLIDE), outK = Math.min(1, (NEW_ENTRY_LIFE - t) / NEW_ENTRY_SLIDE);
+    const k = 1 - Math.pow(1 - Math.min(inK, outK), 3);
+    const x = VIEW_W - 8 - NEW_ENTRY_W * k, y = STRIP_H + (this.quad ? QUAD_DY : 0) + 6;
+    rrect(ctx, x, y, NEW_ENTRY_W, NEW_ENTRY_H, 3, 'rgba(60,40,24,0.9)', UI.brass, 1);
+    rivetLine(ctx, x + 5, y + 3, x + NEW_ENTRY_W - 5, y + 3, 5, 1, UI.brassDark);
+    drawText(ctx, 'NEW ENTRY', x + 6, y + 7, { size: 1, color: (t % 40) < 20 ? UI.brassLight : UI.brass });
+    drawText(ctx, e.name, x + 6, y + 17, { size: 1, color: UI.paper });
   }
   /** Cached composite join hint (never rebuilt here -- see update()): one line per free pad-only column in quad
    *  mode, else today's corner spot (slot 1 free) or a centred line below the strip (slot 1 taken, 3/4 free). */

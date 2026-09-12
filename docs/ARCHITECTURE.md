@@ -108,7 +108,8 @@ src/
     throwables.js          # issue #21: weapon + prop throw/land/shatter, held prop, lime patch, edge-loss helper
     hazards.js             # stage hazards (steam vents, pistons, conveyor floors, pits if any)
     stage.js               # StageRunner: sections, wave director, camera locks, GO arrow, boss trigger
-    storage.js             # guarded localStorage probe: store(namespace), shared by progress.js + options.js
+    storage.js             # guarded localStorage probe: store(namespace), shared by progress.js + options.js + bestiary.js
+    bestiary.js            # issue #26: the book — entries, per-scope defeat counts, derived first-appearance
     options.js             # persisted options (difficulty, music/sfx volume, screen shake, bindings)
     trials.js              # issue #22: TrialRunner (matches world.log against a Trial's steps) + trialProgress (guarded save)
     hud.js                 # in-game HUD
@@ -120,6 +121,7 @@ src/
       options.js, controls.js     # OPTIONS overlay (main plate) and its CONTROLS sub-plate
       training.js, trainpause.js  # issue #22: TrainingScreen (extends gameplay.js) + its own pause plate
       trialsScreen.js, moves.js   # issue #22: per-hero trial list with ticks; move list with animated rig previews
+      bestiary.js                 # issue #26: the BESTIARY — faction tabs, silhouette cards, animated entry panel
   content/
     characters/            # one file per playable character (rig build, palette, anims, moves)
       index.js, brass.js, ... (names from GDD)
@@ -654,6 +656,32 @@ browser that throws on storage reads as "nothing cleared yet" and the game stays
 `allowSession(i)` / `unlockAllForSession()` open boards for one page load only and are never written back,
 which is how `?stage=N` links and `?unlockall=1` work without rewriting a save.
 
+### The bestiary (`game/bestiary.js`)
+One entry per registered enemy variant and one per boss (39 today), unlocked on first defeat. Counts live in
+`localStorage` under `aetherAndBrass.bestiary.v1` as `{ version: 1, scopes: { <scope>: { <defId>: { n, thrown,
+ring, by: { <hero>: n }, phases: [] } } } }`, guarded exactly as progress is — a browser that throws on storage
+reads as an empty book and nothing else changes. The scope is **not** a second copy of progress's: this module
+reads `progress.scope`, so a co-op pairing's kills and either player's solo book can never disagree about who is
+playing.
+
+Three hooks feed it, because a defeat reaches the gameplay screen by three routes:
+`world.onEnemyKilled` (the normal death path), `world.onEnemyRungOut` (a ring-out — `items.js ringOut()` sets
+`dead` **without** calling `die()`, so `world.onDeath` never fires for it) and `world.onBossPhase` (not a defeat at
+all, but what un-hides that phase's codex block so the book cannot spoil the person inside a machine the player has
+only half fought). `TrainingScreen` overrides `countsForBestiary()` to `false`: its dummies respawn on a timer and
+their variant is picked from a plate, so counting them would fill the book from a menu.
+
+`record()` touches memory only; `flush()` serialises. The gameplay screen flushes every
+`BESTIARY_FLUSH_EVERY` (300) frames and again on `exit()` — per-kill writes would stringify the whole book in the
+middle of a fight, and exit-only writes would lose a run to a closed tab. None of it is simulation: it reads state
+the sim has already settled, writes nothing the sim reads back, and is never hashed by `src/net/checksum.js`.
+
+Entry TEXT is `content/enemies/codex.js` (`{ text, tells, weakness }` per def id, plus `<id>#<phase>` blocks),
+merged onto the defs in `content/enemies/index.js` so `def.codex` reads as if written inline. First appearance is
+**derived** at load by walking every wave, reinforcement, timed wave, prop cargo/release and event spawn in
+`content/stage/*.js` — a hand-written "board 2, section 1" note would go stale the first time a wave was re-cut,
+and the hunt hint on a locked entry is only worth showing if it is true.
+
 `StageRunner` (`game/stage.js`): tracks the furthest camera position; on wave
 trigger, locks camera, spawns enemies at `side` just outside the lock bounds (with
 `delay` frames), watches the enemy count; when 0 and no pending spawns → unlock, show
@@ -701,7 +729,7 @@ arrival that outlives its own length by 180 frames ends as an ordinary enemy rat
 to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
 `update()`, `draw(ctx)`. No screen wires its own menu keys: **CONFIRM** and **BACK** come from
 `game/menuinput.js` (section 16), so the same two keys work on every plate in the game. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`.
-Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `OPTIONS`, "PRESS ATTACK", blinking; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
+Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `BESTIARY` / `OPTIONS`, "PRESS ATTACK", blinking; the BESTIARY row carries the book's completion percentage, read once in `enter()`; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
 (`boardcards.js`, compact) on one screen, with the room's other two to three players driving the
 P2-P4 cursors, a status column per seat, and no two players allowed on one hero
@@ -725,6 +753,15 @@ built once in `enter()` from `input.moveText()` / `input.keyText()` for the live
 until P2 joins, then `p1`) and for `pad`, beside a one-line description; under a divider the MUSIC / SFX /
 MUTE rows write the same `game/options.js` settings the OPTIONS plate writes (and share its
 `drawVolumeRow`), so this is a second door onto one setting, never a second copy.
+`title → bestiary` (issue #26): `BestiaryScreen` (`screens/bestiary.js`) is the player-facing book — a faction tab
+row (five factions plus BOSSES, each with its own seen/total), a two-column grid of brass-plate cards, and the
+selected entry large on the right with its rig looping idle → walk → attack → hurt. An entry never beaten is drawn
+as a SILHOUETTE (`drawRig`'s `tint` at full alpha) with '? ? ?' and one hint: the board and section it first
+appears in. LEFT/RIGHT walks the cards, UP/DOWN changes tab, BACK returns to the title, and CONFIRM cycles a boss
+through the phases it has **reached** (on anything else it closes the book, so it is never a dead key). Rigs are
+built per tab rather than per book: 39 `buildRig()` calls up front is the hitch the debug gallery lives with
+because it is a developer tool. The screen only reads `game/bestiary.js`; nothing on it records.
+
 `title | pause → options`: `OptionsScreen` (`screens/options.js`) is a transparent overlay pushed on top
 of either opener and popped on back (both openers freeze underneath exactly like `pause` freezes
 `gameplay`, since `Game.update()` only ticks the top of the stack); it is hidden from the pause plate
@@ -738,6 +775,11 @@ Per player: portrait icon, name, shield strip (120x2, drawn by
 at < 30%), special meter bar, lives count, score. Center-top: current enemy targeted
 health bar (name + bar, last hit enemy, 2s), boss bar at bottom when a boss is active.
 Combo counter: near the player, big number + "HITS" + grade text when dropped.
+NEW ENTRY plate (issue #26): on the FIRST defeat of an enemy the bestiary has never held, a small brass plate
+slides in from the right under the strip, holds, and slides back out. Plates are shown one at a time and queued
+(a crowd clear can open three entries on the same frame, and three plates over each other is unreadable); the
+queue is capped so an `?unlockall=1` sweep cannot line up thirty of them. It is right-aligned deliberately — the
+centre under the strip is where quad-mode join hints go.
 Held pickup weapon: 14x8 icon past the health-bar end with one 2x4 durability pip per remaining hit
 (`drawWeaponSlot`, `game/hud.js` / `art/weapons.js`).
 Layout: slots 0-1 only keeps the mirrored two-column strip (P1 left, P2 right); a player in slot 2/3 switches it to four 158px columns in slot order (`PLAYER_COLORS`), name above the bar, center-top timer/`GO`/target dropped 40px, `CONTINUE` boxes below the wave-banner block. Join hints are cached, rebuilt only on `input.joinState()` change.
@@ -760,8 +802,11 @@ the same reason `?enemythrow=1` is — the START packet does not carry it, so a 
 different world), `?stage=2` (which board to play; honoured outside dev mode
 too, and it opens that board on BOARD SELECT for the page load), `?unlockall=1` (open every board for
 this page load, save untouched), `?resetprogress=1` (wipe the saved unlocks and, issue #22, the saved
-trial ticks under `aetherAndBrass.trials.v1`), `?godmode=1`, `?bot=1`
+trial ticks under `aetherAndBrass.trials.v1`, and, issue #26, the bestiary under
+`aetherAndBrass.bestiary.v1` — one player's record of one campaign, cleared together), `?godmode=1`, `?bot=1`
 (built-in autopilot that walks right and attacks the nearest enemy — used for headless playthroughs),
+`?skipTo=bestiary&tab=<faction>` (issue #26: open the book straight onto a named tab — `brassbound`, `sootborn`,
+`stormcrow`, `chandler`, `gleaning` or `boss`),
 `?difficulty=easy|normal|hard` (session-only override of the saved difficulty: sets
 `game.options.difficulty` for this page load via `userOptions.setSessionDifficulty()`, never written
 back to `aetherAndBrass.options.v1`).
@@ -778,6 +823,8 @@ window.__game = {
   setTraining(partial) -> object,    // issue #22: delegates to the top screen's setTraining(); null off training
   trialState() -> object,            // issue #22: { saved (raw aetherAndBrass.trials.v1 string, or null), heroes: { [heroId]: string[] } }
   moveAnims,                         // issue #22: MOVE_ANIMS.slice() — the anim names every hero's moveList must cover
+  bestiary() -> object,              // issue #26: { seen, total, pct, scope, entries: [{ id, name, faction, boss, seen, n, thrown, ring, top, phases: [{ index, name, seen }] }] }
+  resetBestiary(),                   // issue #26: wipe the book in every scope (memory + disk)
   errors: []                         // window.onerror + unhandledrejection push here
 }
 ```
@@ -801,7 +848,9 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
 - `npm test` → `node tools/simtest.js && node tools/playtest.js`. The first is a PURE-NODE suite (issue #33, the
   same shape as `tools/nettest.js`: no browser, no canvas, no audio context) covering the sim modules whose
   correctness is ORDERING rather than rendering — event action sequencing, entrance frame budgets, platform
-  defaults. It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
+  defaults, and (issue #26) the bestiary's counting rules plus the completeness of its 39 codex entries: every
+  registered variant and boss phase has a block, no block runs past `CODEX_MAX_CHARS`, no block keys a def that no
+  longer exists, and every entry's first appearance is derivable from the stage data. It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
   after six minutes of playthroughs. `npm run simtest` runs it alone. The second:
   starts the server, launches headless Chromium
   via the globally installed Playwright (`NODE_PATH=/opt/node22/lib/node_modules` or
@@ -856,6 +905,13 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      resumes rather than resets when you step off; a smashed brig hatch drops loot for what never came out instead of
      tipping the load; and a wave entry addressed at the yard handcart spawns AT the cart, and still delivers when the
      cart has already been broken.
+  3k. `bestiary` (`tools/scenarios/bestiary.js`, issue #26): the browser half of the book — `?skipTo=bestiary` on a
+     fresh save draws 39 silhouettes at 0% and walks every tab and card without throwing; a real defeat in the sim
+     opens an entry, raises the NEW ENTRY plate and counts a punched kill apart from a thrown one; the book survives
+     a page RELOAD (the periodic flush, since navigating away never runs the screen's `exit()`); an enemy put over
+     the Mooring Spine's rail records as a ring-out (the hook `world.onDeath` never fires for); driving the Hoister
+     through its phases un-hides the phase block; and a bot run of board 1 opens that board's two factions. The
+     counting RULES are in `tools/simtest.js`.
   4. `playthrough`: `?bot=1&godmode=1&autotest=1&seed=1`, step in chunks of 600 frames up
      to a hard cap (e.g. 30000 frames), assert progress (camera advances, waves clear,
      midboss and boss die, results screen reached). Screenshot each section + boss + results.

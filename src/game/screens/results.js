@@ -29,6 +29,31 @@ const LABEL_X = 64, COL_X = 250, COL_W = 120, ROW_Y = 104;
 const COL_X_QUAD = 176, COL_W_QUAD = 80;
 const HERO_X = [470, 560], HERO_X_QUAD = [400, 456, 512, 568], HERO_Y = 322;
 
+// New-entry list (issue #26). It shares the plaque with the hero rigs (from x ~370 in quad mode), the NEW BOARD
+// OPEN plate (rows 262..296) and PRESS START (centred on row 312), so it lives in the left column and is kept
+// inside x 368: 50 glyphs of the 5x7 font at size 1 from LABEL_X. When a board unlock owns the plate rows there is
+// no room for names at all, so it shrinks to a count.
+const ENTRY_NAMES_MAX = 50;
+const ENTRY_Y = 262, ENTRY_Y_UNDER_UNLOCK = 302;
+
+/**
+ * The names this run added, as many as fit on one line and a `+N` for the rest — or, when a board unlock is already
+ * using the plate rows, just how many there were.
+ * @returns {string[]} zero, one or two lines
+ */
+function entryLines(names, compact) {
+  if (!names || !names.length) return [];
+  if (compact) return [`NEW BESTIARY ENTRIES  x${names.length}`];
+  const shown = [];
+  let width = 0;
+  for (const n of names) {
+    if (shown.length && width + n.length + 2 > ENTRY_NAMES_MAX) break;
+    shown.push(n); width += n.length + 2;
+  }
+  const rest = names.length - shown.length;
+  return ['NEW BESTIARY ENTRIES', `${shown.join(', ')}${rest > 0 ? ` +${rest}` : ''}`];
+}
+
 /** Rank letter for a total score. */
 export function rankFor(score) { for (const r of RANKS) if (score >= r[0]) return { letter: r[1], color: r[2] }; return { letter: 'D', color: '#c8c8c8' }; }
 function fmtTime(frames) { const s = Math.floor(frames / 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
@@ -47,10 +72,14 @@ export class ResultsScreen extends Screen {
     for (const s of this.stats) { s.time = fmtTime(this.time); s.finalScore = s.score + Math.round(this.timeBonus / this.stats.length); }
     this.total = this.stats.reduce((a, s) => a + s.finalScore, 0);
     this.summaryExtra = { sectionIndex: params.sectionIndex || 0, wavesCleared: params.wavesCleared || 0, cameraX: params.cameraX || 0 };
+    // Bestiary entries this run opened (issue #26), named on the plaque so the unlock is not only a plate that
+    // flashed past mid-fight. The book itself was already written by the gameplay screen on its way out.
+    this.newEntries = Array.isArray(params.newEntries) ? params.newEntries.slice() : [];
     this.rank = this.defeat ? rankFor(0) : rankFor(this.total);
     // Which board this was, and - on a clear - the board that clear just opened (null when nothing new opened).
     this.stage = params.stage || getStage(this.game.options.stage);
     this.unlocked = this.defeat || !this.stage ? null : progress.markCleared(this.stage.id, { score: this.total, rank: this.rank.letter });
+    this.entryLines = entryLines(this.newEntries, !!this.unlocked);   // needs `unlocked`: it decides the room left
     this.rowsShown = 0; this.rowTimer = 0; this.stamp = -1; this.leaving = false;
     // victory poses: the players' rigs playing their win anims (defeat: lying)
     const chars = this.game.characters || [], picks = this.game.options.chars || [];
@@ -157,6 +186,14 @@ export class ResultsScreen extends Screen {
       particles.draw(ctx, null, 'front');
     }
     if (this.unlocked && this.stamp > 12) this.drawUnlock(ctx, f);
+    // In the plate's place when there is no board unlock, below it when there is: two brass boxes stacked there is
+    // more ceremony than an entry list is worth.
+    if (this.stamp > 12) {
+      const y0 = this.unlocked ? ENTRY_Y_UNDER_UNLOCK : ENTRY_Y;
+      for (let i = 0; i < this.entryLines.length; i++) {
+        drawText(ctx, this.entryLines[i], LABEL_X, y0 + i * 11, { size: 1, color: i ? UI.paper : ((f % 50) < 34 ? UI.brassLight : UI.brass) });
+      }
+    }
     if ((f % 60) < 40 && this.stamp > 10) drawText(ctx, 'PRESS START', VIEW_W / 2, VIEW_H - 48, { size: 1, color: UI.paper, align: 'center' });
   }
 }

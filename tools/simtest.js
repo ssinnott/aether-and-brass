@@ -13,6 +13,9 @@ import { ENTRANCES, entranceFor, entranceLength, entranceLanding } from '../src/
 import { PLATFORMS } from '../src/game/platforms.js';
 import { SFX_DEFS, CANONICAL_SFX } from '../src/engine/audio/sfx.js';
 import { TRACKS, compileTrack, scheduleSteps } from '../src/engine/audio/music.js';
+import { bestiary, sanitiseRecords, ENTRIES, entriesOf, FACTIONS } from '../src/game/bestiary.js';
+import { CODEX, CODEX_MAX_CHARS } from '../src/content/enemies/codex.js';
+import { progress, SOLO_SCOPE } from '../src/game/progress.js';
 
 let failures = 0;
 const ok = (cond, msg) => { console.log((cond ? '  ok:   ' : '  FAIL: ') + msg); if (!cond) failures++; };
@@ -222,7 +225,83 @@ function suiteAudio() {
   ok(leakyTracks.length === 0, `3 loops of every track leave no nodes in the graph (leaking: ${leakyTracks.join(', ') || 'none'})`);
 }
 
-const SUITES = { events: suiteEvents, entrances: suiteEntrances, platforms: suitePlatforms, audio: suiteAudio };
+// ================================================================ bestiary (issue #26)
+// The book is pure bookkeeping over static content, which makes it exactly the kind of thing this harness is for:
+// the completeness of 39 entries, the length budget the 640x360 panel imposes, and the counting rules — all
+// checkable in a second without a canvas. `window` is absent here, so game/storage.js hands back null and the book
+// runs memory-only, which is also the private-mode path a browser takes.
+function suiteBestiary() {
+  console.log('\n== bestiary ==');
+  const fakeDef = (id) => ({ id });
+  /** What the store reads back for `id` after a save + load: the JSON round trip, then loadAll()'s own sanitiser. */
+  const sanitiseRoundTrip = (id) => {
+    const raw = JSON.parse(JSON.stringify({ [id]: bestiary.stats(id) }));
+    return sanitiseRecords(raw)[id] || { n: 0, phases: [] };
+  };
+
+  // ---- content completeness
+  const noCodex = ENTRIES.filter((e) => !e.codex).map((e) => e.id);
+  ok(noCodex.length === 0, `every one of the ${ENTRIES.length} entries has a codex block (missing: ${noCodex.join(', ') || 'none'})`);
+  const noPhase = [];
+  for (const e of ENTRIES) for (const p of e.phases) if (!p.codex) noPhase.push(`${e.id}#${p.index}`);
+  ok(noPhase.length === 0, `every boss phase with its own rig has one too (missing: ${noPhase.join(', ') || 'none'})`);
+  const long = Object.entries(CODEX).filter(([, v]) => v.text.length > CODEX_MAX_CHARS).map(([k, v]) => `${k} (${v.text.length})`);
+  ok(long.length === 0, `no codex text exceeds ${CODEX_MAX_CHARS} chars (over: ${long.join(', ') || 'none'})`);
+  const thin = Object.entries(CODEX).filter(([, v]) => !v.tells || !v.weakness).map(([k]) => k);
+  ok(thin.length === 0, `every block names a tell and a weakness (thin: ${thin.join(', ') || 'none'})`);
+  // An orphan key is a def that was renamed or removed: the entry silently loses its text, which nothing else catches.
+  const known = new Set();
+  for (const e of ENTRIES) { known.add(e.id); for (const p of e.phases) known.add(`${e.id}#${p.index}`); }
+  const orphans = Object.keys(CODEX).filter((k) => !known.has(k));
+  ok(orphans.length === 0, `no codex block keys a def that no longer exists (orphans: ${orphans.join(', ') || 'none'})`);
+  const noFirst = ENTRIES.filter((e) => !e.firstSeen).map((e) => e.id);
+  ok(noFirst.length === 0, `every entry's first appearance is derivable from the stage data (missing: ${noFirst.join(', ') || 'none'})`);
+  const tabbed = FACTIONS.reduce((n, f) => n + entriesOf(f.id).length, 0);
+  ok(tabbed === ENTRIES.length, `every entry falls under exactly one faction tab (${tabbed} of ${ENTRIES.length})`);
+
+  // ---- counting
+  bestiary.reset(); progress.setScope(SOLO_SCOPE);
+  const footman = ENTRIES.find((e) => e.id === 'brassbound:footman');
+  ok(!bestiary.isSeen(footman.id), 'a fresh book has nothing in it');
+  ok(bestiary.completion().seen === 0, 'and reads 0% complete');
+  ok(bestiary.record(fakeDef(footman.id), { hero: 'BRUNHILD' }) === true, 'the first defeat opens the entry');
+  ok(bestiary.record(fakeDef(footman.id), { hero: 'BRUNHILD' }) === false, 'the second does not open it again');
+  ok(bestiary.stats(footman.id).n === 2, 'but it is counted');
+  bestiary.record(fakeDef(footman.id), { thrown: true, hero: 'SAEL' });
+  bestiary.record(fakeDef(footman.id), { ringOut: true, hero: 'SAEL' });
+  const st = bestiary.stats(footman.id);
+  ok(st.n === 4 && st.thrown === 1 && st.ring === 1, `throws and ring-outs are counted apart from the total (n ${st.n}, thrown ${st.thrown}, ring ${st.ring})`);
+  ok(bestiary.topHero(footman.id) === 'BRUNHILD', 'the best hunter is the hero with the most, ties broken by name');
+  ok(bestiary.completion().seen === 1, 'one entry read as one entry, however many times it was beaten');
+  ok(bestiary.record(fakeDef('nope:nothing')) === false, 'a def that is not in the book records nothing');
+
+  // ---- boss phases
+  const vane = ENTRIES.find((e) => e.id === 'boss');
+  ok(vane && vane.phases.length === 2, `the final boss carries its two later phases (${vane ? vane.phases.length : 0})`);
+  ok(!bestiary.phaseSeen('boss', 2), 'an unreached phase stays hidden');
+  bestiary.markPhase(fakeDef('boss'), 2);
+  ok(bestiary.phaseSeen('boss', 2), 'reaching it reveals it');
+  ok(!bestiary.isSeen('boss'), 'reaching a phase is not defeating the boss: the entry itself stays shut');
+  // A record holding nothing but phase marks has to survive the save round trip, or reaching a phase in a run you
+  // lost is thrown away by the next page load.
+  ok(sanitiseRoundTrip('boss').phases[2] === true, 'and a phase-only record survives being read back');
+
+  // ---- scopes: a co-op pairing keeps its own book, exactly as board progress does
+  progress.setScope(progress.groupScope('aaaa', 'bbbb'));
+  ok(!bestiary.isSeen(footman.id), 'a group scope starts from an empty book');
+  bestiary.record(fakeDef(footman.id), { hero: 'PIP' });
+  ok(bestiary.stats(footman.id).n === 1, 'and counts on its own');
+  progress.setScope(SOLO_SCOPE);
+  ok(bestiary.stats(footman.id).n === 4, 'while the solo book is untouched by it');
+
+  // ---- storage is a convenience, never a prerequisite
+  ok(bestiary.flush() === false, 'flush() with no storage available reports failure rather than throwing');
+  ok(bestiary.stats(footman.id).n === 4, 'and the in-memory book is still readable after it');
+  bestiary.reset();
+  ok(bestiary.completion().seen === 0, 'reset() empties every scope');
+}
+
+const SUITES = { events: suiteEvents, entrances: suiteEntrances, platforms: suitePlatforms, audio: suiteAudio, bestiary: suiteBestiary };
 const pick = process.argv.slice(2).filter((a) => SUITES[a]);
 for (const name of (pick.length ? pick : Object.keys(SUITES))) SUITES[name]();
 console.log(`\n${failures ? failures + ' failure(s)' : 'all sim tests passed'}`);

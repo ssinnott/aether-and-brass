@@ -22,6 +22,8 @@ import { midboss4 } from './midboss4.js';
 import { boss4 } from './boss4.js';
 // spawn-modifier art (issue #28 part 3): registers the bladder / scrip badge / salvage plate drawings in game/traits.js MOD_ART
 import './mods.js';
+// bestiary codex text (issue #26): merged onto the defs below so `def.codex` reads as if it had been written inline
+import { CODEX } from './codex.js';
 
 // keys are lower-case: resolveType() lower-cases the slug before the lookup
 const TYPE_ALIASES = {
@@ -56,6 +58,11 @@ DEFS.set('midboss3:marl', midboss3);
 DEFS.set('boss3:hasp', boss3);
 DEFS.set('midboss4:culm', midboss4);
 DEFS.set('boss4:oke', boss4);
+
+// Attach the BESTIARY entry text (issue #26). A def that declares its own `codex` inline keeps it; everything else
+// takes the block content/enemies/codex.js keys under its id. Boss PHASE blocks stay in CODEX under `id#phase` and
+// are read from there by game/bestiary.js, since a phase is not a def and has nowhere here to hang.
+for (const d of DEFS.values()) if (!d.codex && CODEX[d.id]) d.codex = CODEX[d.id];
 
 /** Resolve a type slug (accepting aliases). */
 export function resolveType(type) {

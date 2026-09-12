@@ -271,6 +271,9 @@ export function makeEnemyDef(base, v) {
     ai: { ...(base.ai || {}), ...(v.ai || {}) },
     onSpawn: v.onSpawn || null, onDeath: v.onDeath || null, onUpdate: v.onUpdate || null,
     moves: v.moves || null,
+    // bestiary entry text (issue #26): usually merged from content/enemies/codex.js in index.js, but a def may
+    // carry its own block inline and that one wins.
+    codex: v.codex || null,
   };
 }
 

@@ -563,5 +563,10 @@ export function ringOut(world, e, kind, dir = 0) {
   audio.play((e.def && e.def.sfx && e.def.sfx.death) || 'soot_death');
   if (killer && killer.addScore) killer.addScore(RING_OUT_SCORE, false);
   floatText(e.x, e.y + e.h + 12, Math.max(24, e.z), 'RING OUT +' + RING_OUT_SCORE, UI.brassLight, 2);
+  // A ring-out is a defeat, but it never reaches world.onDeath: this function sets `dead` WITHOUT calling die(),
+  // which is why onDeath hooks (and the enemy's own onDeath) do not fire for it. The bestiary (issue #26) wants it
+  // both as a defeat and as a ring-out, so it gets its own hook rather than a die() call that would change what
+  // every existing onDeath hook sees.
+  if (world.onEnemyRungOut) world.onEnemyRungOut(e, killer);
   return true;
 }

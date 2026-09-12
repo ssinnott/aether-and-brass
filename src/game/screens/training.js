@@ -48,6 +48,9 @@ export class TrainingScreen extends GameplayScreen {
   /** Single-player only (review finding): frame data, trials and the trainpause plate all read slot 0
    *  alone, so a second body in the room gets none of the room's own features. */
   maxPlayers() { return 1; }
+  /** Training defeats stay out of the bestiary (issue #26): the dummy respawns on a 45-frame timer and its variant
+   *  is picked from the trainpause plate, so counting it would fill the book from a menu instead of the campaign. */
+  countsForBestiary() { return false; }
   enter(params) {
     this.opts = { mode: 'stand', variant: 'brassbound:footman', faceLock: false, meterLock: 'normal', hitboxes: false, frameData: true };
     this.trialDef = null; this.trial = null;
