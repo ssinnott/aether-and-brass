@@ -56,11 +56,13 @@ export const stage3 = {
     // PEOPLE, NO MACHINES: seven Chandlers' worth of rites on a road gang of Sootborn who took the company's scrip.
     { id: 'w1', name: 'THE LIME ROAD', x0: 0, x1: 1800, backdrop: 'works1', floor: 'road',
       // the board-3 family on the road: lime sacks (a Meat Pie under the quicklime), a tally board (the company's scrip), the carts
+      // Four, not seven, and never more than three in a view: the road is the one stretch on the board you can see a
+      // long way down, and the wagon that rolls the whole length of it has to be readable from off screen. Everything
+      // the roadside used to carry is still here, it is just carried by fewer things.
       props: [
-        { type: 'crate', x: 280, z: 32, drops: COGS }, { type: 'keg', x: 520, z: 116, drops: SCRIP },
+        { type: 'crate', x: 280, z: 32, drops: [...COGS, 'coalScrip'] },
         { type: 'cart', x: 880, z: 26, drops: 'meatPie' }, { type: 'limeSack', x: 1140, z: 112, drops: 'meatPie' },
-        { type: 'tallyBoard', x: 1300, z: 18, drops: SCRIP }, { type: 'crate', x: 1520, z: 118, drops: COGS },
-        { type: 'keg', x: 1740, z: 30, drops: SCRIP },
+        { type: 'tallyBoard', x: 1300, z: 18, drops: SCRIP },
       ],
       // the roadside lime pits blow off (quicklime: blinded, no launch), and every ten seconds a runaway lime wagon
       // rolls the WHOLE road leftward along the middle rut — the one hazard on the board you hear coming from off screen
@@ -106,20 +108,19 @@ export const stage3 = {
     { id: 'w2', name: 'THE CART LANE', x0: 1800, x1: 2440, backdrop: 'works2', floor: 'cobble', mode: 'locked',
       /** Auto-scroll of the far / mid parallax (px per frame, works2.js): the lane is moving and so is the yard behind it. */
       drift: 0.3,
-      // two handcarts (a live Tin Footman tips out of each; the second one was crusted before it was loaded); the second
-      // cart stands ON the belt at the far end and rides it down toward the kiln head
+      // One handcart, not two: a locked screen is a single scene, and the lane already spends two of its four things
+      // on the kiln head and the vat. The cart that is left is the one that matters -- it stands ON the belt at the
+      // far end and rides it down toward the kiln, tipping out a Tin Footman crusted before it was ever loaded.
       props: [
-        { type: 'limeSack', x: 1920, z: 28, drops: 'meatPie' },
-        { type: 'handcart', x: 2080, z: 34 },
-        { type: 'keg', x: 2220, z: 26, drops: SCRIP },
-        { type: 'bucket', x: 2380, z: 62, drops: 'roastBird' },
+        { type: 'limeSack', x: 1920, z: 28, drops: ['meatPie', 'coalScrip'] },
         { type: 'handcart', x: 2410, z: 120, release: { type: B, variant: 'footman', mods: ['crusted'] } },
       ],
       // the kiln head at the belt's end (x 1972..2028, its cone reaching the whole floor band so the belt feeds INTO it;
-      // the arrival spot x 1870..1910 stays clear) and a tallow vat boiling over on the back lane
+      // the arrival spot x 1870..1910 stays clear). ONE hazard on this lane: the set piece is the belt carrying
+      // everything into the kiln, and a vat boiling over halfway down it was a second thing to watch on a screen the
+      // camera never leaves. The vats are the yard's, and the yard still has one.
       hazards: [
         { type: 'kilnMouth', x: 2000, z: 12, period: 300, tell: 36, active: 14, reach: 128, halfW: 28 },
-        { type: 'tallowVat', x: 2300, z: 40, period: 240, tell: 40, active: 30 },
       ],
       /** the belt: the front 40px of the lane drift everything LEFT at 1px/f for the whole section, a crate every 4s at its head */
       zones: [{ type: 'conveyor', x0: 1990, x1: 2440, z0: 100, active: true }],
@@ -163,27 +164,27 @@ export const stage3 = {
        *  thing that is climbing — but a body in the air is not, and the floor closes on it: a jump lands sooner than
        *  it looks like it should for as long as the climb lasts. */
       platform: { kind: 'hoist', frames: 1200, rise: 0.9 },
+      // THE YARD WAS THE BUSIEST SCREEN IN THE GAME: eleven props and hazards in one view of it, in a section whose
+      // floor is CLIMBING under the player (the hoist below) and whose two loaded carts are both things you have to
+      // decide about. Four now, and two of the four are fixed where they are -- the delivery cart the wave comes out
+      // of, and the cart shoved across the yard mouth -- so what got cut was the scenery standing between them.
       props: [
-        { type: 'keg', x: 2520, z: 120, drops: SCRIP },
-        { type: 'handcart', x: 2700, z: 30, release: { type: B, variant: 'halberdier', mods: ['crusted'] } },
+        { type: 'urn', x: 2760, z: 24, drops: 'brassHeart' },
         // issue #34: the yard's delivery cart. The wave below does not spawn its Brassbound from a side at all -- it
         // addresses THIS cart by name (`entrance: { kind: 'cargo', prop: 'yardcart' }`) and they are tipped out of it
         // where it stands. Break it first and they never arrive: the cart's load becomes loot instead.
         // `release: null` switches off the handcart TYPE's own default load (a Tin Footman): this cart's load is the
         // wave below, so it must not also tip out a second one of its own when it is broken.
         { type: 'handcart', x: 2960, z: 104, name: 'yardcart', drops: null, release: null },
-        { type: 'bucket', x: 2860, z: 120, drops: 'roastBird' }, { type: 'urn', x: 2960, z: 24, drops: 'brassHeart' },
-        { type: 'tallyBoard', x: 3080, z: 118, drops: SCRIP },
-        { type: 'keg', x: 3300, z: 30, drops: SCRIP }, { type: 'limeSack', x: 3460, z: 116, drops: 'meatPie' },
         { type: 'handcart', x: 3086, z: 70, hp: 60, barricade: true },
+        { type: 'bucket', x: 3460, z: 116, drops: 'roastBird' },
       ],
-      // the tallow vats boil over on both lanes, the draw-kiln in the shed wall flashes its cone across the back lane,
-      // and the yard crane keeps its hook swinging over the middle of it
+      // One vat and one kiln, not two vats, a kiln and a crane: the yard keeps both of the things that are ITS own and
+      // drops the hook, which every other board has one of anyway. The kiln has moved down to the head of the yard,
+      // where the Yardmaster is waiting -- board 1 puts a piston inside Grubbik's arena the same way.
       hazards: [
-        { type: 'tallowVat', x: 2600, z: 106, period: 240, tell: 40, active: 30 },
-        { type: 'kilnMouth', x: 2760, z: 12, period: 300, tell: 36, active: 14 },
-        { type: 'hook', x: 2880, z: 66, period: 120 },
-        { type: 'tallowVat', x: 3040, z: 34, period: 240, tell: 40, active: 30, offset: 120 },
+        { type: 'tallowVat', x: 2520, z: 106, period: 240, tell: 40, active: 30 },
+        { type: 'kilnMouth', x: 3280, z: 12, period: 300, tell: 36, active: 14 },
       ],
       /** Issue #31: a loaded handcart shoved across the yard mouth. The cart owns the health and the drops; the paired
        *  `solid` owns the geometry, and the wave will not clear while it stands. Breaking it tips out the Tin Footman
@@ -228,21 +229,24 @@ export const stage3 = {
     // better than two to one. The only people left in the house are the ones who keep the machines standing — the
     // Resurrection Men, the Pursers, a Tallyman, one Limeburner. No scrip hands: none of them got this far.
     { id: 'w4', name: 'THE LEDGER HOUSE', x0: 3600, x1: 5300, backdrop: 'works3', floor: 'board',
+      // Five, down from nine. The house reads as a long room with things standing IN it, and nine of them put seven in
+      // one view of the counting floor -- on the one board whose galleries drop something on you from above, which is
+      // a tell you have to be able to find. The second sprocket, the second ledger stack, the tally board and the
+      // aether cabinet have gone; their meter rides the handcart, which is the thing you were going to break anyway.
       props: [
-        { type: 'cabinet', x: 3760, z: 20, drops: 'goldenSprocket' }, { type: 'ledgerStack', x: 3900, z: 116, drops: COGS },
-        { type: 'case', x: 4120, z: 22, drops: 'goldenSprocket' }, { type: 'tallyBoard', x: 4300, z: 112, drops: SCRIP },
-        { type: 'urn', x: 4460, z: 26, drops: 'meatPie' }, { type: 'ledgerStack', x: 4640, z: 112, drops: COGS },
-        { type: 'cabinet', x: 4760, z: 24, drops: 'aetherVial' }, { type: 'urn', x: 5020, z: 118, drops: 'meatPie' },
+        { type: 'cabinet', x: 3760, z: 20, drops: 'goldenSprocket' }, { type: 'ledgerStack', x: 4160, z: 116, drops: COGS },
+        { type: 'urn', x: 4460, z: 26, drops: 'meatPie' },
         // the last handcart up from the yard, stood short of the counting floor: break it and the company loses the
         // Footman inside it before it can tip him out itself
-        { type: 'handcart', x: 4820, z: 106 },
+        { type: 'handcart', x: 4820, z: 106, drops: ['aetherVial'] },
+        { type: 'urn', x: 5020, z: 118, drops: 'meatPie' },
       ],
       // the house drops its ledgers off the galleries (a growing shadow, then the book lands), and one lime lamp on the
       // counting floor is a pit: the lamp is the tell
       hazards: [
         { type: 'ledgerDrop', name: 'galleries', x: 3980, z: 100, period: 240, tell: 36, active: 8 },
         { type: 'ledgerDrop', name: 'galleries', x: 4320, z: 40, period: 240, tell: 36, active: 8, offset: 120 },
-        { type: 'limePit', x: 4560, z: 110, period: 180, tell: 30, active: 40 },
+        { type: 'limePit', x: 4620, z: 110, period: 180, tell: 30, active: 40 },
       ],
       /** The counting floor: the desk edge vents lime as the Factor's harness eats the room (4 damage every 30f inside). */
       zones: [{ type: 'daisVents', x0: 4880, x1: 5300, color: LIME }],

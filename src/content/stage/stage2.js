@@ -42,10 +42,13 @@ export const stage2 = {
   sections: [
     // ---------------------------------------------------------------- Section 1: The Mooring Spine (dawn, storm, open air)
     { id: 'm1', name: 'THE MOORING SPINE', x0: 0, x1: 1900, backdrop: 'storm1', floor: 'grate',
+      // The spine carries four hazards of its own, so it carries five props rather than seven: a screenful out here is
+      // a mast, a boom and the two things standing between them, and the second crate and the second keg were what
+      // pushed that to six. Their drops ride the survivors.
       props: [
-        { type: 'crate', x: 300, z: 34, drops: COGS }, { type: 'keg', x: 520, z: 116, drops: KEGS },
-        { type: 'ballast', x: 900, z: 24, drops: 'meatPie' }, { type: 'crate', x: 1160, z: 110, drops: COGS },
-        { type: 'locker', x: 1290, z: 18, drops: 'goldenSprocket' }, { type: 'keg', x: 1560, z: 118, drops: KEGS },
+        { type: 'crate', x: 300, z: 34, drops: COGS }, { type: 'keg', x: 540, z: 116, drops: KEGS },
+        { type: 'ballast', x: 900, z: 24, drops: 'meatPie' },
+        { type: 'locker', x: 1340, z: 18, drops: 'goldenSprocket' },
         { type: 'ballast', x: 1810, z: 40, drops: 'meatPie' },
       ],
       // the storm earths itself through the mooring masts; the loading hook still swings between them
@@ -95,25 +98,25 @@ export const stage2 = {
     },
     // ---------------------------------------------------------------- Section 2: The Gas-Halls (interior, soft light)
     { id: 'm2', name: 'THE GAS-HALLS', x0: 1900, x1: 3600, backdrop: 'storm2', floor: 'plank',
-      // the signal locker holds the Wing's aether flasks here (meter before the winch bay); a powder tub sits under the
-      // Bosuns' wave for their kegs to cook
+      // The halls were the busiest stretch in the game -- eight things in one view halfway along, in a corridor whose
+      // whole point is two drifting clouds you have to read the edges of. Five props now, spaced so the barricade and
+      // the cloud that reaches it are never sharing a screen with more than two other things. The signal locker still
+      // holds the Wing's aether flasks (meter before the winch bay) and the powder tub has moved down to the winch bay
+      // itself, where the Bosuns' kegs are, which is where it was always cooking anyway.
       props: [
-        { type: 'ballast', x: 2040, z: 26, drops: 'meatPie' }, { type: 'keg', x: 2210, z: 112, drops: KEGS },
-        { type: 'crate', x: 2380, z: 30, drops: COGS }, { type: 'locker', x: 2560, z: 20, drops: 'aetherVial' },
-        { type: 'ballast', x: 2760, z: 118, drops: 'meatPie' }, { type: 'powderTub', x: 2900, z: 112 },
-        { type: 'bucket', x: 2980, z: 18, drops: 'roastBird' },
-        { type: 'keg', x: 3120, z: 108, drops: KEGS }, { type: 'crate', x: 3320, z: 34, drops: COGS },
+        { type: 'ballast', x: 1960, z: 26, drops: 'meatPie' }, { type: 'locker', x: 2160, z: 20, drops: 'aetherVial' },
         // issue #31: the Wing has stacked the hall shut with its own powder. `barricade: true` is what the paired
         // `solid` zone below looks for -- the keg owns the health, the hit reaction and the drops, the zone owns the
         // geometry, and the wave does not clear while it is standing. Breaking it also cooks off (keg `explode`).
         { type: 'keg', x: 2660, z: 70, hp: 60, drops: KEGS, barricade: true },
+        { type: 'powderTub', x: 3200, z: 112 }, { type: 'crate', x: 3380, z: 34, drops: ['brassCog', 'roastBird'] },
       ],
       // two gas cells have split: their clouds drift along the catwalk (one left, one right) and stun whoever they roll
       // over - and any fire inside one (a Bosun's keg, a burning body) bursts it; the loading hook still swings over the middle
       hazards: [
-        { type: 'gasCell', x: 2300, z: 70, drift: 2 },
-        { type: 'hook', x: 2680, z: 66, period: 130 },
-        { type: 'gasCell', x: 3060, z: 40, drift: -2, offset: 210 },
+        { type: 'gasCell', x: 2360, z: 70, drift: 2 },
+        { type: 'hook', x: 2800, z: 66, period: 130 },
+        { type: 'gasCell', x: 3000, z: 40, drift: -2, offset: 210 },
       ],
       /** Issue #31: the powder barricade across the hall. It spans the whole band, so there is no walking round it —
        *  and `StageRunner.barricadeHolding` keeps the wave it belongs to open until the keg is down, which is the
@@ -152,11 +155,12 @@ export const stage2 = {
       // it pushes along z, which is the axis the two gun lanes run down ("the gust is what puts you in one"). A bank
       // along x has no such conversation with the cannons, so it has gone; `tilt` still ships on board 4's Lash-Up
       // float, which has the plank gaps to make a sideways slide mean something.
-      // one powder tub at each gun port (they roll 50 and go off 30f after breaking), food and meter amidships
+      // The gun deck is one locked screen, so it is one scene and it gets four things: the two guns at the ports, the
+      // brig hatch, and the food amidships. It used to carry eight, which on a deck where BOTH edges fire down a lane
+      // and the gust decides which lane you are in is four things too many to have to look at. The powder tubs are the
+      // ones that had to go: they read as gun furniture next to the ports that are already the hazard.
       props: [
-        { type: 'powderTub', x: 3760, z: 26 }, { type: 'powderTub', x: 4080, z: 116 },
-        { type: 'ballast', x: 3900, z: 118, drops: 'meatPie' }, { type: 'locker', x: 4010, z: 18, drops: 'aetherVial' },
-        { type: 'bucket', x: 4170, z: 62, drops: 'roastBird' },
+        { type: 'bucket', x: 3880, z: 118, drops: 'roastBird' },
         // issue #34: the brig hatch amidships. It lets a re-wound Footman up onto the deck every five seconds while
         // the section is live, and STANDING ON IT HOLDS IT SHUT -- the lid rattles under you and the queued unit
         // waits. That is the co-op job on this deck: one player holds the hatch while the other clears the gun crew.
@@ -219,10 +223,13 @@ export const stage2 = {
     },
     // ---------------------------------------------------------------- Section 4: The Bridge (the flagship's upper deck)
     { id: 'm4', name: 'THE BRIDGE', x0: 4240, x1: 5200, backdrop: 'storm3', floor: 'deck',
+      // The approach to the dais is 520px long and it used to hold five props and two masts, which is the whole run-up
+      // to the Admiral spent walking round furniture. Two now, between the two masts -- the 1-UP and the meter on one
+      // urn -- and the roast bird has moved ONTO the dais, inside the vent band, so the food on this deck costs
+      // something to take. Three in a view, not four: this is the last stretch of walking before Kestrel.
       props: [
-        { type: 'keg', x: 4380, z: 112, drops: KEGS }, { type: 'urn', x: 4460, z: 24, drops: 'brassHeart' },
-        { type: 'bucket', x: 4540, z: 118, drops: 'roastBird' }, { type: 'locker', x: 4700, z: 18, drops: 'goldenSprocket' },
-        { type: 'ballast', x: 4740, z: 116, drops: 'meatPie' },
+        { type: 'urn', x: 4540, z: 24, drops: ['brassHeart', 'goldenSprocket'] },
+        { type: 'bucket', x: 5100, z: 118, drops: 'roastBird' },
       ],
       // two masts earth the storm on the bridge deck, one on each lane and half a cycle apart; no hook up here
       hazards: [

@@ -27,23 +27,27 @@ export const stage1 = {
       /** Issue #32: the crane hook at x 1500 is not just swinging any more — it is swinging a loaded cargo pallet,
        *  and the pallet is floor. Stand on it and it carries you; step off and it leaves without you. */
       platform: { kind: 'pallet', x0: 1424, x1: 1508, z0: 38, z1: 102, travel: 72, period: 280, axis: 'x' },
-      // crates: Brass Cog x2, one in four hides a Meat Pie; barrels roll 40px (10 to enemies) and drop Coal Scrip; the winch an Aether Vial
-      // bottle + lamp (issue #21, GDD 7): throwable clutter -- an empty hand near either lifts it instead of swinging
+      // SCENE DENSITY (ARCHITECTURE 7, measured by tools/stage-census.js): the quay is authored as beats of two to
+      // four, never five. The winch and the bottle open on a pair, the vent and the first quay crate close that beat.
+      // Six props where there were eleven, and one of each thing the quay has rather than three loose crates: the
+      // winch (Aether Vial), the barrel that still rolls 40px and takes 10 off anything it catches (Coal Scrip), the
+      // two crates with someone in them, and the throwable pair (issue #21, GDD 7: an empty hand near either lifts it
+      // instead of swinging). The loot the cut props carried rides the survivors -- the pie is inside a quay crate
+      // now, so the food and the fight are the same decision.
       props: [
-        { type: 'crate', x: 300, z: 30, drops: COGS }, { type: 'crate', x: 340, z: 30, drops: 'meatPie' },
-        { type: 'barrel', x: 760, z: 118, drops: 'coalScrip' }, { type: 'crate', x: 1080, z: 24, drops: COGS },
-        { type: 'winch', x: 1180, z: 14, drops: 'aetherVial' }, { type: 'barrel', x: 1450, z: 120, drops: 'coalScrip' },
-        { type: 'crate', x: 1720, z: 40, drops: COGS },
+        { type: 'winch', x: 280, z: 14, drops: 'aetherVial' },
+        { type: 'bottle', x: 520, z: 96, throwable: true },
         // issue #34: two crates on the quay with someone in them. Break one and a Cutthroat climbs out into 26f you
-        // can punish; leave it and it is just a crate -- but the cargo is only loot if you break it, so a crate you
-        // have not opened is a fight you have not had yet.
-        { type: 'crate', x: 660, z: 26, name: 'quay1', cargo: [{ type: S, variant: 'cutthroat' }] },
-        { type: 'crate', x: 1380, z: 112, name: 'quay2', cargo: [{ type: S, variant: 'cutthroat' }] },
-        { type: 'bottle', x: 520, z: 96, throwable: true }, { type: 'lamp', x: 1000, z: 110, throwable: true },
+        // can punish; leave it and it is just a crate -- but what is in it is only loot once you have opened it, so a
+        // crate you have walked past is a fight you have not had yet.
+        { type: 'crate', x: 760, z: 26, name: 'quay1', drops: ['meatPie'], cargo: [{ type: S, variant: 'cutthroat' }] },
+        { type: 'lamp', x: 1080, z: 110, throwable: true },
+        { type: 'crate', x: 1400, z: 112, name: 'quay2', drops: COGS, cargo: [{ type: S, variant: 'cutthroat' }] },
+        { type: 'barrel', x: 1720, z: 118, drops: 'coalScrip' },
       ],
       hazards: [
-        { type: 'steamVent', x: 600, z: 100, period: 180, active: 45, tell: 30 },
-        { type: 'steamVent', x: 1250, z: 40, period: 180, active: 45, tell: 30, offset: 90 },
+        { type: 'steamVent', x: 640, z: 100, period: 180, active: 45, tell: 30 },
+        { type: 'steamVent', x: 1240, z: 40, period: 180, active: 45, tell: 30, offset: 90 },
         { type: 'hook', x: 1500, z: 70, period: 120 },
       ],
       waves: [
@@ -64,21 +68,23 @@ export const stage1 = {
     },
     // ---------------------------------------------------------------- Section 2: Foundry Row (interior, heat)
     { id: 's2', name: 'FOUNDRY ROW', x0: 1800, x1: 3800, backdrop: 'section2', floor: 'grate',
+      // The row keeps one of each of its own things -- mold, chute, drum, case, bucket, cart -- rather than two of
+      // several, so a screenful of Foundry Row is four objects that are all doing different jobs. The second mold and
+      // the second drum are gone and the mold at the head of the row carries the pie they used to leave lying about.
       props: [
-        { type: 'mold', x: 1960, z: 24, drops: 'brassCog' }, { type: 'cart', x: 2250, z: 110, drops: 'meatPie' },
-        { type: 'drum', x: 2380, z: 30, drops: 'aetherVial' }, { type: 'case', x: 2700, z: 20, drops: 'goldenSprocket' },
-        { type: 'mold', x: 2760, z: 120, drops: 'brassCog' }, { type: 'bucket', x: 3100, z: 16, drops: 'roastBird' },
-        { type: 'drum', x: 3150, z: 110, drops: 'aetherVial' }, { type: 'cart', x: 3480, z: 30, drops: 'meatPie' },
+        { type: 'mold', x: 1960, z: 24, drops: ['brassCog', 'meatPie'] },
         // the coal chute at the head of the row: it lets a Sootborn out every four seconds while the wave is live
         // (`cargoOn: 'timer'`), and it can be STOOD ON to hold it shut -- the clock stops while somebody is on the lip.
         { type: 'mold', x: 2180, z: 96, name: 'chute', drops: null, cargoOn: 'timer', cargoEvery: 240,
           cargo: [{ type: S, variant: 'cutthroat' }, { type: S, variant: 'cutthroat' }] },
+        { type: 'drum', x: 2340, z: 30, drops: 'aetherVial' }, { type: 'case', x: 2700, z: 20, drops: 'goldenSprocket' },
+        { type: 'bucket', x: 3200, z: 16, drops: 'roastBird' }, { type: 'cart', x: 3540, z: 30, drops: 'meatPie' },
       ],
       hazards: [
-        { type: 'steamVent', x: 2500, z: 110, period: 180, active: 40, tell: 30 },
-        { type: 'steamVent', x: 2800, z: 30, period: 180, active: 40, tell: 30, offset: 90 },
-        { type: 'piston', x: 3000, z: 60, period: 240, active: 10, tell: 36 },
-        { type: 'piston', x: 3300, z: 90, period: 240, active: 10, tell: 36, offset: 120 },
+        { type: 'steamVent', x: 2520, z: 110, period: 180, active: 40, tell: 30 },
+        { type: 'steamVent', x: 2880, z: 30, period: 180, active: 40, tell: 30, offset: 90 },
+        { type: 'piston', x: 3040, z: 60, period: 240, active: 10, tell: 36 },
+        { type: 'piston', x: 3360, z: 90, period: 240, active: 10, tell: 36, offset: 120 },
       ],
       // the back 20px is the molten channel (10 + burn and a bounce; enemies knocked in die, +200); the cargo bay's front
       // 40px is a conveyor that drifts everything left at 1px/f and carries a crate every 4s while the Hoister is up
@@ -111,9 +117,12 @@ export const stage1 = {
     },
     // ---------------------------------------------------------------- Section 3: The Brass Funicular (one locked screen, timed waves)
     { id: 's3', name: 'THE BRASS FUNICULAR', x0: 3800, x1: 4440, backdrop: 'section3', floor: 'brass', mode: 'locked',
+      // A locked section IS one scene -- the camera never moves off it -- so the car carries three things and the
+      // crossbar that sweeps them: a trunk, the mail cart, and a bar coming down the middle of a room you cannot walk
+      // out of. The second trunk and the two lanterns were the other three, and their load rides the mail cart.
       props: [
-        { type: 'trunk', x: 3900, z: 20, drops: 'meatPie' }, { type: 'trunk', x: 4300, z: 120, drops: 'brassCog' },
-        { type: 'mailcart', x: 4120, z: 16, drops: 'goldenSprocket' }, { type: 'lantern', x: 3860, z: 126, drops: 'coalScrip' }, { type: 'lantern', x: 4400, z: 126, drops: 'coalScrip' },
+        { type: 'trunk', x: 3900, z: 20, drops: 'meatPie' },
+        { type: 'mailcart', x: 4280, z: 16, drops: ['goldenSprocket', 'brassCog', 'coalScrip'] },
       ],
       hazards: [{ type: 'crossbar', x: 4120, z: 0, period: 360, active: 12, tell: 40 }],
       /** front / back 12px are railings: enemies thrown over them are instant KOs (+200). Issue #31: the roof plating
@@ -143,11 +152,15 @@ export const stage1 = {
     },
     // ---------------------------------------------------------------- Section 4: The Heart-Engine (summit cathedral)
     { id: 's4', name: 'THE HEART-ENGINE', x0: 4440, x1: 6000, backdrop: 'section4', floor: 'marble',
-      // urns (Meat Pie; the third hides the Brass Heart 1-UP), a chandelier that drops on a jump attack, a cabinet, the dais valves
+      // Two urns, the chandelier and the two dais valves. The nave used to carry a third urn and a cabinet as well,
+      // which put six things plus a vent in one view of a room whose whole job is to be READ -- three vents firing on
+      // the downbeat and a dais you have to be standing on. The cabinet's meter rides the first urn and the 1-UP moves
+      // up the nave, so nothing the player can collect has gone; the vents stay exactly where they were, because the
+      // run of three of them down the nave is the thing this section teaches.
       props: [
-        { type: 'urn', x: 4700, z: 20, drops: 'meatPie' }, { type: 'urn', x: 5000, z: 120, drops: 'meatPie' }, { type: 'urn', x: 5350, z: 24, drops: 'brassHeart' },
-        { type: 'chandelier', x: 4960, z: 60, drops: null },
-        { type: 'cabinet', x: 5250, z: 16, drops: 'goldenSprocket' },
+        { type: 'urn', x: 4620, z: 20, drops: ['meatPie', 'goldenSprocket'] },
+        { type: 'chandelier', x: 4780, z: 60, drops: null },
+        { type: 'urn', x: 5100, z: 120, drops: 'brassHeart' },
         { type: 'valve', x: 5590, z: 12, drops: null }, { type: 'valve', x: 5970, z: 12, drops: null },
       ],
       // aether floor vents fire together on the music's downbeat (2s bars at 120 BPM)
