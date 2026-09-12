@@ -60,10 +60,11 @@ export class LobbyScreen extends Screen {
     this.slots = buildCharSlots(this.game.characters || []);
     this.boards = []; this.boardsKey = '';
     this.shownChars = new Array(MAX_PLAYERS).fill(-1);   // last drawn hero per seat, so a change can taunt
-    // The local player is always sampled through slot 0's keyboard (net/session.js pollRaw(0, { solo: true }))
-    // whichever slot they end up owning, so the keys to name are P1's plus the arcade aliases.
+    // The local player is always sampled through slot 0's keyboard (net/session.js pollRaw(0))
+    // whichever seat they end up owning, so the keys to name are P1's -- the same nine everyone
+    // online is using on their own machine.
     const inp = this.game.input;
-    const k = (a) => inp.keyText('p1', a) === inp.keyText('solo', a) ? inp.keyText('p1', a) : `${inp.keyText('p1', a)}/${inp.keyText('solo', a)}`;
+    const k = (a) => inp.keyText('p1', a);
     // One scheme everywhere (game/menuinput.js): CONFIRM is ENTER or attack, BACK is Escape.
     this.hintRole = `${confirmKey(inp)} OR ATTACK (${k('attack')}): CHOOSE    ${backKey(inp)}: BACK`;
     this.hintCancel = `${backKey(inp)}: CANCEL`;
@@ -94,9 +95,9 @@ export class LobbyScreen extends Screen {
   /**
    * Raw key capture for the room code; the game bindings cannot type letters.
    *
-   * While this is up it is the ONLY thing reading the keyboard (see update()). Half the room-code
-   * alphabet is also a game key - B, C, N, V, X, Z are P1's arcade keys and C is dodge - so a code
-   * with a C in it used to bounce the player straight back out of the screen mid-typing.
+   * While this is up it is the ONLY thing reading the keyboard (see update()). Every letter of the
+   * room-code alphabet is also a game key - C X Z are P1's dodge, jump and attack and V B N are P2's -
+   * so a code with a C in it used to bounce the player straight back out of the screen mid-typing.
    */
   handleKey(e) {
     if (this.phase !== 'code') return;

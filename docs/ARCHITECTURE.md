@@ -195,8 +195,8 @@ export const input = {
   consume(player, action),
   axis(player) -> { x: -1|0|1, y: -1|0|1 },
   anyPressed() -> bool,               // for title screen "press any key"
-  joinPressed(player) -> bool,        // player pressed one of their OWN keys/buttons this step (P2 drop-in; shared arrows never count for P2)
-  setJoined(player, bool) / joined(player),   // while P2 is not joined, P1 also accepts the solo alias keys (RECONCILIATION table)
+  joinPressed(player) -> bool,        // player pressed one of their OWN keys/buttons this step (P2 drop-in; the blocks are disjoint, so no key is ambiguous)
+  setJoined(player, bool) / joined(player),   // joining changes nothing about anyone else's keys (RECONCILIATION table)
   runHeld(player) -> bool,            // gamepad RT held (run without double-tap); virtual { run:true }
   globalPressed('pause'|'mute'|'debug') -> bool,
   setVirtual(player, actionsObject),  // test hook: { left:true, attack:true ... } overrides devices until cleared
@@ -204,7 +204,7 @@ export const input = {
   setPadVirtual(index, buttons),      // test hook: number[] of pressed button indices (or null to remove the fake pad); fakes navigator.getGamepads()[index] for pollGamepads()
   bindings,                           // mutable clone of engine/bindings.js DEFAULT_BINDINGS; edited in place by rebind/importBindings/resetBindings
   bindingsVersion,                    // bumps on every bindings change; screens diff it to know when to rebuild cached hint strings
-  rebind(layout, action, code) -> { ok: true, swapped?: string } | { ok: false, reason: string },  // layout: 'solo'|'p1'|'p2'|'pad'; code is a KeyboardEvent.code for solo/p1/p2, a gamepad button index for pad
+  rebind(layout, action, code) -> { ok: true, swapped?: string } | { ok: false, reason: string },  // layout: 'p1'|'p2'|'pad'; code is a KeyboardEvent.code for p1/p2, a gamepad button index for pad
   importBindings(raw) / exportBindings() / resetBindings(),  // round-trip through engine/bindings.js sanitiseBindings()
   legend(layout) -> string,           // e.g. "WASD MOVE  F ATTACK  G JUMP  ..." style legend line for a layout, built from current bindings
   joinHint(slot) -> string,           // "P2: PRESS J TO JOIN" style hint (single primary key), built from the slot's own (non-shared) keys
@@ -220,13 +220,12 @@ export const input = {
 }
 ```
 Players are `0..3` (`MAX_PLAYERS`); keyboard halves exist for slots 0/1 only, so slots 2/3 need a claimed gamepad or a test virtual. Gamepads are not index-bound: an unbound pad's first BUTTON edge (axes ignored) claims the lowest slot with no pad whose keyboard half is unused (`kbSeen`) and that isn't a netplay virtual slot — that press also counts as the slot's join. Claims (and `kbSeen`) reset on title entry (`resetClaims()`). Netplay turns claiming off (`setPadClaiming(false)`, `lobby.js`/`session.js`); while off, `pollRaw(player)` reads the pad bound to that slot plus every unbound pad, so a pad drives the local player whether pressed before or after the keyboard and can never claim the peer's slot mid-match. Use the standard gamepad mapping (d-pad + left stick, buttons per GDD).
-The four binding layouts are `solo` (1P arcade aliases), `p1`, `p2`
-(both keyboard) and `pad` (shared gamepad map); `engine/bindings.js` owns `DEFAULT_BINDINGS`, `LAYOUTS`
-and the pure `cloneBindings` / `sanitiseBindings` / `rebindKey` / `rebindPad` / `keyLabel` / `padLabel` /
-`legendFor` / `joinLabels` / `joinCodesFor` helpers that `input.js`'s wrappers above delegate to; the six
-rebind conflict invariants (same-layout swap, same-side sibling strip with refusal if it would unbind
-something, other-side / global / RT refusal, and the same-code exemption that lets P1 and P2 rearrange
-the shared arrow keys) live there and are re-checked by `sanitiseBindings` on every load, so no path —
+The three binding layouts are `p1`, `p2` (one nine-key block each) and `pad` (shared gamepad map) —
+one per player, because one player has one set of keys; `engine/bindings.js` owns `DEFAULT_BINDINGS`,
+`BINDINGS_LAYOUT`, `LAYOUTS` and the pure `cloneBindings` / `sanitiseBindings` / `rebindKey` /
+`rebindPad` / `keyLabel` / `padLabel` / `legendFor` / `joinLabels` / `joinCodesFor` helpers that
+`input.js`'s wrappers above delegate to; the rebind conflict invariants (same-layout swap, other-player
+/ global / RT refusal) live there and are re-checked by `sanitiseBindings` on every load, so no path —
 UI, a hand-edited save, or a future import — can put one key on two actions or a P1 key into P2's join set.
 
 ### `engine/camera.js`
@@ -788,8 +787,8 @@ bound key via `inputLabel()`. `trialsScreen.js` lists a hero's `trials` with a `
 `gameplay ⇄ pause → moves` too (hidden online, same guard) so the move list is reachable from a real run.
 `help.js` is the COMMANDS & SOUND quick reference, pushed from either pause plate (hidden from the normal
 plate while `game.net.active`, same guard and same reason as MOVES / OPTIONS): eleven command rows, each
-built once in `enter()` from `input.moveText()` / `input.keyText()` for the live keyboard half (`solo`
-until P2 joins, then `p1`) and for `pad`, beside a one-line description; under a divider the MUSIC / SFX /
+built once in `enter()` from `input.moveText()` / `input.keyText()` for the local player's block (`p1`,
+whether or not anyone else has joined) and for `pad`, beside a one-line description; under a divider the MUSIC / SFX /
 MUTE rows write the same `game/options.js` settings the OPTIONS plate writes (and share its
 `drawVolumeRow`), so this is a second door onto one setting, never a second copy.
 `title → bestiary` (issue #26): `BestiaryScreen` (`screens/bestiary.js`) is the player-facing book — a faction tab
@@ -894,7 +893,11 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   correctness is ORDERING rather than rendering — event action sequencing, entrance frame budgets, platform
   defaults, and (issue #26) the bestiary's counting rules plus the completeness of its 39 codex entries: every
   registered variant and boss phase has a block, no block runs past `CODEX_MAX_CHARS`, no block keys a def that no
-  longer exists, and every entry's first appearance is derivable from the stage data. It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
+  longer exists, and every entry's first appearance is derivable from the stage data. The `bindings` suite holds the
+  keyboard layout to its own rules (`engine/bindings.js` header): every action bound in every layout, no key under
+  two actions or in two players' hands, no global key bound to a player action, nine distinct primary keys per
+  block with taunt and start on the digits above it, the rebind refusals, and that a save from an older default
+  table is dropped rather than merged. It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
   after six minutes of playthroughs. `npm run simtest` runs it alone. The second:
   starts the server, launches headless Chromium
   via the globally installed Playwright (`NODE_PATH=/opt/node22/lib/node_modules` or
@@ -980,7 +983,7 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      RESET TO DEFAULTS. Further scenarios that don't fit in `playtest.js` follow this sibling-module
      pattern: a small file exporting one function of the form `(server, { withPage, assert }) => {...}`,
      imported and added to the `scenarios` map here.
-  9. `coop4` (`tools/scenarios/coop4.js`, issue #23): a four-bot run to results (`attackTokens.max===4`, 4 stats rows); pad-only drop-in mid-run/pause; title pad-claim assignment (arrows-then-pad stays P2, `resetClaims()` releases on title entry); a four-cursor select into gameplay; the netplay guard (own room) — `beginMatch` un-joins local slots above `NET_PLAYERS`, no pad claims the peer's slot, no desync.
+  9. `coop4` (`tools/scenarios/coop4.js`, issue #23): a four-bot run to results (`attackTokens.max===4`, 4 stats rows); pad-only drop-in mid-run/pause; title pad-claim assignment (P1's-arrows-then-pad stays P2, `resetClaims()` releases on title entry); a four-cursor select into gameplay; the netplay guard (own room) — `beginMatch` un-joins local slots above `NET_PLAYERS`, no pad claims the peer's slot, no desync.
   10. `training` (`tools/scenarios/training.js`, issue #22 — same sibling-module pattern as `options`/`coop4`,
      registered from here as `training: (server) => trainingScenario(server, { withPage, assert, CHARACTER_COUNT })`):
      Part A, per hero, `?skipTo=training`: lands on `training` with one STAND Tin Footman dummy and no props/
@@ -1060,16 +1063,17 @@ directly while `training` is the top screen; `partial` may set any of `mode`, `v
 ids, independent of which screen is on top. `__game.moveAnims` is `MOVE_ANIMS.slice()` (`content/characters/common.js`) — the animation names a hero's `moveList` must cover (move-list coverage assertion, scenario `training`).
 
 ## 16. Input bindings
-The authoritative binding table lives in `docs/RECONCILIATION.md` (P1 = WASD + F G R H Y T Enter; P2 = Arrows + J K U L O I Backspace; P1 solo aliases Arrows + Z X C V N B until P2 joins; Space jumps on both P1 sets; gamepads are not index-bound — an unbound pad's first button press claims the lowest free slot; P3/P4 are gamepad-only, no keyboard half). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
-`engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.soloAliases`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). Drop-in for any slot 1-3: poll `input.joinPressed(slot)` and call `input.setJoined(slot, true)`; the title screen resets every claim (`input.resetClaims()`).
+The authoritative binding table lives in `docs/RECONCILIATION.md` (one nine-key block per keyboard player plus the two digits above it: P1 = W A S D + Q E Z X C + 1 2, with the arrows as a permanent second movement set and Enter as start; P2 = the same block three columns right, T F G H + R Y V B N + 4 5. P1's block is the same alone, in co-op and online — there is no second P1 layout to swap to. Gamepads are not index-bound — an unbound pad's first button press claims the lowest free slot; P3/P4 have no keyboard block). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
+`engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). Drop-in for any slot 1-3: poll `input.joinPressed(slot)` and call `input.setJoined(slot, true)`; the title screen resets every claim (`input.resetClaims()`).
 The table above is only the shipped default: `game/options.js` persists any remapping under
 `aetherAndBrass.options.v1` (same guarded-`localStorage` pattern as `game/progress.js`, via
-`game/storage.js`'s `store()`), loading it once at boot and re-sanitising it against the defaults. The
-six binding conflict invariants (one key per action per layout; a same-layout collision swaps; a
-same-side sibling strip refuses if it would leave an action unbound; the other player's key, the
-sibling layout's key for a different action, and the three global keys are always refused; a code the
-edited layout already owns under the same action is exempt, so P1 and P2 can rearrange the shared arrow
-keys between themselves) live entirely in `engine/bindings.js` (`rebindKey` / `rebindPad` /
+`game/storage.js`'s `store()`), loading it once at boot and re-sanitising it against the defaults. A
+saved blob carries a `layout` stamp (`BINDINGS_LAYOUT`); one written against an older default table is
+dropped whole rather than merged, since a stale-but-self-consistent table would otherwise survive every
+invariant check and leave a returning player on keys the game no longer teaches. The binding conflict
+invariants (one key per action per layout; a same-layout collision swaps, the displaced action taking
+the codes the edited one gives up; the other player's key and the three global keys are always refused;
+RT is always refused on the pad) live entirely in `engine/bindings.js` (`rebindKey` / `rebindPad` /
 `sanitiseBindings`) and are enforced identically for a live rebind (`screens/controls.js` via
 `input.rebind`) and a loaded save. Screens must never hard-code a key name or gamepad label: every
 legend, join hint and grid cell reads through `input.legend()` / `input.joinHint()` / `input.joinKeysHint()` /
@@ -1082,7 +1086,7 @@ on a highlighted pause row closed the plate instead of picking it):
 
 | | keys | helper |
 |---|---|---|
-| CONFIRM | `start` (Enter / pad START) or `attack` | `confirmPressed(input, player)` |
+| CONFIRM | `start` (Enter / `2` / pad START) or `attack` | `confirmPressed(input, player)` |
 | BACK | `jump` or `dodge` (pad B / X) | `cancelPressed(input, player)` |
 | BACK (global) | `Escape` | `escapePressed(input, online)` |
 

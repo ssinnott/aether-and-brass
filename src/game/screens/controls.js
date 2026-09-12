@@ -1,5 +1,6 @@
-// CONTROLS sub-plate (ARCHITECTURE.md section 16): an 11-action x 4-layout grid (1P ARCADE, P1, P2,
-// PAD) shown inside the options overlay. Attack on a cell begins capture; the next raw keydown, or the
+// CONTROLS sub-plate (ARCHITECTURE.md section 16): an 11-action x 3-layout grid (P1, P2, PAD) shown
+// inside the options overlay. One column per player, because one player has one set of keys: there
+// is no longer a separate "1P arcade" column that took over whenever P2 was out. Attack on a cell begins capture; the next raw keydown, or the
 // next new gamepad button, is handed to input.rebind() (engine/bindings.js owns the conflict model),
 // and a red notice reports a refusal. Capture is local only: the title / pause screen beneath does not
 // update while options is on top (Game.update() ticks only the top of the stack), so a P2 join key
@@ -15,14 +16,15 @@ import { ACTIONS } from '../../engine/input.js';
 import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 
 const PLATE = { x: 20, y: 25, w: 600, h: 310 };
-const COLS = [['1P ARCADE', 'solo'], ['P1', 'p1'], ['P2', 'p2'], ['PAD', 'pad']];
-const COL_X0 = 120, COL_W = 120, ACTION_X = 14, HEAD_Y = 34, ROW_Y0 = 50, ROW_H = 18;
+const COLS = [['P1', 'p1'], ['P2', 'p2'], ['PAD', 'pad']];
+// Three 140px columns end flush with the plate's right edge: 180 + 3*140 = 600 = PLATE.w.
+const COL_X0 = 180, COL_W = 140, ACTION_X = 14, HEAD_Y = 34, ROW_Y0 = 50, ROW_H = 18;
 const CAPTURE_SETTLE = 2, NOTICE_FRAMES = 90, BLINK = 30, BLINK_ON = 20;
 // 11 rows end at y + 50 + 11*18 = y + 248; notice sits at y + h - 40, hint at y + h - 24 (h = 310).
 const ACTION_LABELS = ACTIONS.map((a) => a.toUpperCase());
 /** Hint line, rebuilt whenever a rebind changes what CONFIRM is bound to (`hintFor` below). Escape is
  *  the one key that means two things here: it cancels a capture in progress, and otherwise backs out. */
-const hintFor = (key) => `${key}: REBIND   ESC: CANCEL OR BACK   ARROWS ARE SHARED BY 1P AND P2`;
+const hintFor = (key) => `${key}: REBIND   ESC: CANCEL OR BACK   NO KEY IS SHARED BETWEEN PLAYERS`;
 const PROMPT_KEY = 'PRESS A KEY', PROMPT_PAD = 'PRESS A BUTTON';
 
 /**

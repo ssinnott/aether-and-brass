@@ -3,11 +3,11 @@
 // sequencing mistake fails in a second rather than after six minutes of playthroughs.
 //
 //   node tools/simtest.js              run every suite
-//   node tools/simtest.js events       run selected suites (events entrances platforms audio)
+//   node tools/simtest.js events       run selected suites (events entrances platforms audio bestiary bindings)
 //
 // These cover the parts whose CORRECTNESS IS ORDERING rather than rendering: which action of a script runs on which
-// frame, how long an arrival takes, where a platform is at a given frame, and which audio nodes are still in the
-// graph after a sound has finished. Exit code 1 on any failure.
+// frame, how long an arrival takes, where a platform is at a given frame, which audio nodes are still in the graph
+// after a sound has finished, and the keyboard layout's own invariants. Exit code 1 on any failure.
 import { EventRunner, eventLength, EVENT_ACTIONS } from '../src/game/events.js';
 import { ENTRANCES, entranceFor, entranceLength, entranceLanding } from '../src/game/entrances.js';
 import { PLATFORMS } from '../src/game/platforms.js';
@@ -16,6 +16,10 @@ import { TRACKS, compileTrack, scheduleSteps } from '../src/engine/audio/music.j
 import { bestiary, sanitiseRecords, ENTRIES, entriesOf, FACTIONS } from '../src/game/bestiary.js';
 import { CODEX, CODEX_MAX_CHARS } from '../src/content/enemies/codex.js';
 import { progress, SOLO_SCOPE } from '../src/game/progress.js';
+import {
+  DEFAULT_BINDINGS, BINDINGS_LAYOUT, LAYOUTS, joinCodesFor, joinLabels, legendFor,
+  moveLabelFor, rebindKey, cloneBindings, sanitiseBindings,
+} from '../src/engine/bindings.js';
 
 let failures = 0;
 const ok = (cond, msg) => { console.log((cond ? '  ok:   ' : '  FAIL: ') + msg); if (!cond) failures++; };
@@ -301,7 +305,101 @@ function suiteBestiary() {
   ok(bestiary.completion().seen === 0, 'reset() empties every scope');
 }
 
-const SUITES = { events: suiteEvents, entrances: suiteEntrances, platforms: suitePlatforms, audio: suiteAudio, bestiary: suiteBestiary };
+
+/**
+ * The keyboard layout's own invariants (engine/bindings.js file header), checked against the shipped
+ * DEFAULT_BINDINGS rather than against a copy of the table: a nine-key block per player, no key in two
+ * players' hands, nothing landing on a global key. These are the rules the whole join / rebind / save
+ * machinery assumes, so a table edited without them is worth catching in a second here rather than six
+ * minutes into the browser harness.
+ */
+function suiteBindings() {
+  console.log('\n== bindings ==');
+  const ACT = ['left', 'right', 'up', 'down', 'attack', 'jump', 'special', 'super', 'dodge', 'taunt', 'start'];
+  const D = DEFAULT_BINDINGS;
+  const codesOf = (map) => ACT.flatMap((a) => map[a] || []);
+
+  // (a) every action of every layout is bound
+  let unbound = [];
+  for (let i = 0; i < D.keyboard.length; i++) for (const a of ACT) if (!(D.keyboard[i][a] || []).length) unbound.push(`P${i + 1}.${a}`);
+  for (const a of ACT) if (!(D.gamepad[a] || []).length) unbound.push(`pad.${a}`);
+  ok(unbound.length === 0, `every action of every layout has a code (${unbound.join() || 'none missing'})`);
+
+  // (b) no code sits under two actions of the same layout
+  let dup = [];
+  for (let i = 0; i < D.keyboard.length; i++) {
+    const seen = new Map();
+    for (const a of ACT) for (const c of D.keyboard[i][a]) { if (seen.has(c)) dup.push(`P${i + 1} ${c}=${seen.get(c)}/${a}`); seen.set(c, a); }
+  }
+  ok(dup.length === 0, `no key sits under two actions of one layout (${dup.join() || 'none'})`);
+
+  // (c) the blocks are disjoint -- the rule joinCodesFor relies on to say whose press it was
+  const p1Codes = new Set(codesOf(D.keyboard[0]));
+  const shared = codesOf(D.keyboard[1]).filter((c) => p1Codes.has(c));
+  ok(shared.length === 0, `no key belongs to two players (${shared.join() || 'none shared'})`);
+
+  // (d) no global key is bound to a player action
+  const globals = new Set(Object.values(D.global).flat());
+  const onGlobal = [];
+  for (let i = 0; i < D.keyboard.length; i++) for (const c of codesOf(D.keyboard[i])) if (globals.has(c)) onGlobal.push(`P${i + 1}:${c}`);
+  ok(onGlobal.length === 0, `no global key (Escape / M / F1) is bound to a player action (${onGlobal.join() || 'none'})`);
+
+  // (e) the pad's run button is not also an action
+  ok(!ACT.some((a) => D.gamepad[a].some((b) => D.gamepadRun.includes(b))), 'the gamepad run button is not also an action button');
+
+  // The shape the docs promise: nine keys for movement and the five buttons, two digits above for the rest.
+  for (let i = 0; i < D.keyboard.length; i++) {
+    const nine = new Set(['up', 'left', 'down', 'right', 'attack', 'jump', 'dodge', 'special', 'super'].map((a) => D.keyboard[i][a][0]));
+    ok(nine.size === 9, `P${i + 1}'s movement and five buttons are nine distinct primary keys (${nine.size})`);
+    ok(['taunt', 'start'].every((a) => D.keyboard[i][a].some((c) => /^Digit\d$/.test(c))),
+      `P${i + 1}'s taunt and start sit on the digits above the block`);
+  }
+  ok(LAYOUTS.join() === 'p1,p2,pad', `one layout per player plus the pad (${LAYOUTS.join()})`);
+  ok(moveLabelFor(D, 'p1') === 'WASD', `P1 moves on WASD (${moveLabelFor(D, 'p1')})`);
+  ok(/^ARROWS|WASD$/.test(moveLabelFor(D, 'p1')) && D.keyboard[0].up.includes('ArrowUp'),
+    'the arrows are P1\'s second movement set, so they never need switching off');
+
+  // Every key of a block is a join key for that block, and a slot with no block does not throw.
+  const join1 = joinCodesFor(D, 1);
+  ok(codesOf(D.keyboard[1]).every((c) => join1.has(c)), 'every key of P2\'s block counts as a P2 join press');
+  ok(![...join1].some((c) => p1Codes.has(c)), 'no P1 key can ever read as a P2 join press');
+  ok(joinCodesFor(D, 2).size === 0 && joinLabels(D, 2).key === '',
+    'a slot with no keyboard block yields an empty join set and an empty label rather than throwing');
+  ok(joinLabels(D, 1).key === 'V', `the P2 join hint names P2's attack key (${joinLabels(D, 1).key})`);
+  ok(legendFor(D, 'p2').startsWith('TFGH MOVE'), `P2's legend reads from the live table (${legendFor(D, 'p2').slice(0, 24)})`);
+
+  // Rebinding: the other player's keys and the globals are refused; a same-layout collision swaps.
+  const b = cloneBindings(D);
+  ok(rebindKey(b, 'p1', 'attack', 'KeyV').ok === false, 'rebinding P1 attack onto a P2 key is refused');
+  ok(rebindKey(b, 'p1', 'attack', 'KeyM').ok === false, 'rebinding onto a global key is refused');
+  ok(rebindKey(b, 'p2', 'attack', 'KeyC').ok === false, 'and the refusal works in the other direction too');
+  ok(b.keyboard[0].attack.join() === 'KeyZ' && b.keyboard[1].attack.join() === 'KeyV', 'a refused rebind changes nothing');
+  const swap = rebindKey(b, 'p1', 'jump', 'KeyZ');
+  ok(swap.ok && swap.swapped === 'attack' && b.keyboard[0].jump.join() === 'KeyZ' && b.keyboard[0].attack.join() === 'KeyX',
+    'a same-layout collision swaps: JUMP takes Z and the displaced ATTACK takes JUMP\'s old X');
+
+  // A save from the previous layout must not survive: it is self-consistent, so nothing would revert it.
+  const oldSave = {
+    solo: { attack: ['KeyZ'], jump: ['KeyX', 'Space'] },
+    keyboard: [
+      { left: ['KeyA'], right: ['KeyD'], up: ['KeyW'], down: ['KeyS'], attack: ['KeyF'], jump: ['KeyG', 'Space'],
+        dodge: ['KeyR'], special: ['KeyH'], super: ['KeyY'], taunt: ['KeyT'], start: ['Enter'] },
+      { left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'], attack: ['KeyJ'],
+        jump: ['KeyK'], dodge: ['KeyU'], special: ['KeyL'], super: ['KeyO'], taunt: ['KeyI'], start: ['Backspace'] },
+    ],
+    pad: D.gamepad,
+  };
+  const migrated = sanitiseBindings(oldSave, D, ACT);
+  ok(migrated.keyboard[0].attack.join() === 'KeyZ' && migrated.keyboard[1].attack.join() === 'KeyV',
+    'a save from the previous layout is dropped whole, not merged into a hybrid');
+  const stamped = sanitiseBindings({ layout: BINDINGS_LAYOUT, keyboard: D.keyboard, pad: D.gamepad }, D, ACT);
+  ok(JSON.stringify(stamped.keyboard) === JSON.stringify(D.keyboard), 'a save carrying the current stamp round-trips unchanged');
+  const remap = sanitiseBindings({ layout: BINDINGS_LAYOUT, keyboard: [{ attack: ['KeyP'] }, {}], pad: D.gamepad }, D, ACT);
+  ok(remap.keyboard[0].attack.join() === 'KeyP', 'and a legitimate remap inside a stamped save is kept');
+  ok(sanitiseBindings('nonsense', D, ACT).keyboard[0].attack.join() === 'KeyZ', 'garbage falls back to the defaults');
+}
+
+const SUITES = { events: suiteEvents, entrances: suiteEntrances, platforms: suitePlatforms, audio: suiteAudio, bestiary: suiteBestiary, bindings: suiteBindings };
 const pick = process.argv.slice(2).filter((a) => SUITES[a]);
 for (const name of (pick.length ? pick : Object.keys(SUITES))) SUITES[name]();
 console.log(`\n${failures ? failures + ' failure(s)' : 'all sim tests passed'}`);

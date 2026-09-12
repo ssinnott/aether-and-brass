@@ -4,8 +4,8 @@
 // window/navigator); this file owns the mutable live `bindings` object, device polling and caching.
 import { INPUT_BUFFER, MAX_PLAYERS } from '../constants.js';
 import {
-  DEFAULT_BINDINGS, LAYOUTS, layoutMap, cloneBindings, sanitiseBindings, rebindKey, rebindPad,
-  joinCodesFor, keyLabel, padLabel, legendFor, moveLabelFor, joinLabels,
+  DEFAULT_BINDINGS, BINDINGS_LAYOUT, LAYOUTS, layoutMap, cloneBindings, sanitiseBindings, rebindKey,
+  rebindPad, joinCodesFor, keyLabel, padLabel, legendFor, moveLabelFor, joinLabels,
 } from './bindings.js';
 
 /** All per-player actions. */
@@ -60,7 +60,6 @@ function rebuildBoundCodes() {
     for (const a of ACTIONS) for (const c of bindings.keyboard[p][a] || []) boundCodes.add(c);
     joinCodes[p] = joinCodesFor(bindings, p);
   }
-  for (const a of ACTIONS) for (const c of bindings.soloAliases[a] || []) boundCodes.add(c);
   for (const k of Object.keys(bindings.global)) for (const c of bindings.global[k]) boundCodes.add(c);
 }
 /** Invalidate everything that is derived from `bindings` (boundCodes, joinCodes, cached hint/legend strings). */
@@ -181,7 +180,8 @@ function keyHeld(codes) {
 /** Touch-control state, OR-ed into player 1's input each step (see engine/touch.js). */
 let touchActions = null;
 
-/** Input singleton (ARCHITECTURE.md section 3 / 16). Players are 0..3 (MAX_PLAYERS); gamepads claim
+/** Input singleton (ARCHITECTURE.md section 3 / 16). Players are 0..3 (MAX_PLAYERS); slots 0 and 1
+ *  own a nine-key keyboard block each, slots 2/3 are pad or netplay-virtual only; gamepads claim
  *  slots on their first button press (never index-bound); claims reset when the title screen is
  *  entered (resetClaims()); netplay turns claiming off (setPadClaiming(false)) and reads unbound
  *  pads as slot 0's local player. */
@@ -211,7 +211,6 @@ export const input = {
     }
     pollGamepads();
     const claimed = claimPads();
-    const soloActive = !players[1].joined;
     for (let p = 0; p < players.length; p++) {
       const pl = players[p];
       const map = bindings.keyboard[p];
@@ -227,8 +226,7 @@ export const input = {
       } else {
         let kb = false;
         for (const a of ACTIONS) {
-          let v = map ? keyHeld(map[a]) : false;
-          if (!v && p === 0 && soloActive) v = keyHeld(bindings.soloAliases[a] || []);
+          const v = map ? keyHeld(map[a]) : false;
           pl.cur[a] = v;
           if (v) kb = true;
         }
@@ -240,10 +238,10 @@ export const input = {
           if (touchActions.run) pl.run = true;
         }
         pl.device = touched ? 'touch' : pl.gpAny ? 'gamepad' : kb ? 'keyboard' : pl.device;
-        // "this player pressed one of their OWN keys" (used for P2+ drop-in): keyboard edge on a
-        // non-shared key, or a gamepad edge. Slot 0's kbSeen comes from `kb` above (own map or solo
-        // aliases); slots >= 1 set kbSeen ONLY here, inside their own join-code edge (decision #2:
-        // P1 steering with the shared arrows must never mark slot 1 as used).
+        // "this player pressed one of their OWN keys" (used for P2+ drop-in): an edge on any key of
+        // this player's own block (the blocks are disjoint, invariant (c) in bindings.js, so there
+        // is nothing to exclude), or a gamepad edge. Slot 0's kbSeen comes from `kb` above; slots
+        // >= 1 set kbSeen ONLY here, inside their own join-code edge.
         for (const code of keysPressedPending) if (joinCodes[p] && joinCodes[p].has(code)) { pl.joinNow = true; if (p > 0) pl.kbSeen = true; break; }
         if (pl.gpAny && !pl.gpAnyPrev) pl.joinNow = true;
       }
@@ -297,9 +295,9 @@ export const input = {
     for (const a of ACTIONS) if (pl.pressedNow[a]) return true;
     return false;
   },
-  /** True if this player pressed one of their OWN keys/buttons this step (P2 drop-in; arrows are shared so they do not count for P2). */
+  /** True if this player pressed one of their OWN keys/buttons this step (P2 drop-in; the blocks are disjoint, so no key is ambiguous). */
   joinPressed(player) { return !!players[player].joinNow; },
-  /** Mark a player as joined. While P2 is not joined, P1 also accepts the solo alias keys. */
+  /** Mark a player as joined. P1's own keys are the same either way -- joining changes nothing about them. */
   setJoined(player, joined = true) { players[player].joined = !!joined; },
   /** Has the player joined? (P1 is always joined.) */
   joined(player) { return player === 0 || !!players[player].joined; },
@@ -347,24 +345,20 @@ export const input = {
    * the peer's delayed input into the same slot through setVirtual(). update() cannot do both, so
    * this reads devices and update() then computes edges from the injected virtuals.
    *
-   * `solo` controls the P1 alias keys (arrows, Z X C V B N, Space). They are normally live only until
-   * P2 joins, but netplay must call setJoined(1, true) for the remote slot — which would silently
-   * kill half of the local player's keyboard. Netplay passes solo:true to keep them.
+   * There is no longer a second, conditional keyboard half to keep alive: slot 0's block is the same
+   * whether anyone else has joined or not, so netplay's setJoined(1, true) for a remote slot cannot
+   * take any of the local player's keys away.
    *
    * Mutates nothing: prev, pressedNow, bufAge, joinNow, device and keysPressedPending are all
    * written only inside update().
    * @returns {object} action map plus `run`
    */
-  pollRaw(player = 0, { solo = !players[1].joined } = {}) {
+  pollRaw(player = 0) {
     if (!boundCodes) rebuildBoundCodes();
     pollGamepads();
     const o = {};
     const map = bindings.keyboard[player];
-    for (const a of ACTIONS) {
-      let v = map ? keyHeld(map[a]) : false;
-      if (!v && player === 0 && solo) v = keyHeld(bindings.soloAliases[a] || []);
-      o[a] = v;
-    }
+    for (const a of ACTIONS) o[a] = map ? keyHeld(map[a]) : false;
     // Reads the pad bound to `player` (if any) plus every unbound pad -- readUnboundPads keys off
     // padSlot, not `claiming`, so this also covers the ended-session pump (claiming already back on).
     const pl = players[player];
@@ -393,7 +387,7 @@ export const input = {
   /** Bumped on every successful rebind / import / reset. Screens rebuild cached text when it changes. */
   get bindingsVersion() { return bindingsVersion; },
   /**
-   * Rebind `action` of `layout` ('solo' | 'p1' | 'p2' | ... | 'pad') to `code`: a KeyboardEvent.code
+   * Rebind `action` of `layout` ('p1' | 'p2' | ... | 'pad') to `code`: a KeyboardEvent.code
    * string for a keyboard layout, or a gamepad button index for 'pad'.
    * @param {string} layout
    * @param {string} action
@@ -407,15 +401,16 @@ export const input = {
     if (r.ok) refreshBindings();
     return r;
   },
-  /** Plain-object snapshot of the live bindings, shaped for persistence (game/options.js). */
+  /** Plain-object snapshot of the live bindings, shaped for persistence (game/options.js). The
+   *  `layout` stamp is what lets a save written against an older default table be dropped rather
+   *  than merged (engine/bindings.js BINDINGS_LAYOUT). */
   exportBindings() {
     const c = cloneBindings(bindings);
-    return { solo: c.soloAliases, keyboard: c.keyboard, pad: c.gamepad };
+    return { layout: BINDINGS_LAYOUT, keyboard: c.keyboard, pad: c.gamepad };
   },
   /** Sanitise `raw` (a save's `bindings` field, or null) and copy it into the live bindings object. */
   importBindings(raw) {
     const s = sanitiseBindings(raw, DEFAULT_BINDINGS, ACTIONS);
-    for (const a of ACTIONS) bindings.soloAliases[a] = s.soloAliases[a];
     for (let i = 0; i < bindings.keyboard.length; i++) for (const a of ACTIONS) bindings.keyboard[i][a] = s.keyboard[i][a];
     for (const a of ACTIONS) bindings.gamepad[a] = s.gamepad[a];
     refreshBindings();
@@ -443,10 +438,15 @@ export const input = {
     }
     return v;
   },
-  /** Cached long "P{slot+1}: PRESS X/Y/Z OR W TO JOIN" hint (lists every joinable key). */
+  /** Cached long "P{slot+1}: PRESS X/Y/Z OR W TO JOIN" hint (lists every joinable key), falling back to
+   *  joinHint()'s pad form for a slot with no keyboard block -- there is no key list to spell out there,
+   *  and the two hints must never disagree about how that slot joins. */
   joinKeysHint(slot = 1) {
     let v = joinKeysHintCache[slot];
-    if (v === undefined) { v = `P${slot + 1}: PRESS ${joinLabels(bindings, slot).keys} TO JOIN`; joinKeysHintCache[slot] = v; }
+    if (v === undefined) {
+      v = !bindings.keyboard[slot] ? this.joinHint(slot) : `P${slot + 1}: PRESS ${joinLabels(bindings, slot).keys} TO JOIN`;
+      joinKeysHintCache[slot] = v;
+    }
     return v;
   },
   /** Cached label of the primary (first) code bound to `layout`/`action`, or '' if unbound. */

@@ -723,7 +723,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     // After a session ends the surviving player must keep their own keyboard: the local slot is
     // still virtual-injected, so keep feeding it from the real devices rather than clearing it,
     // which would move them to another binding set.
-    if (net.endedPump) { input.setVirtual(Math.max(0, net.localSlot), input.pollRaw(0, { solo: true })); return; }
+    if (net.endedPump) { input.setVirtual(Math.max(0, net.localSlot), input.pollRaw(0)); return; }
     if (!net.active || !net.ls) return;
     if (net.ls.desync) { net.end(`desync at frame ${net.ls.desync.frame}`); return; }
     if (!net.waiting) return;
@@ -750,7 +750,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     if (!net.ls.canAdvance()) return false;
     retireReachedSlots();
     if (!net.active || !net.ls) return false;    // the last of the party left on this very frame
-    const raw = input.pollRaw(0, { solo: true });
+    const raw = input.pollRaw(0);
     // Escape must not pause locally: routed through `start`, the whole party pauses on one frame.
     if (input.globalPressed('pause')) raw.start = true;
     const p = net.ls.recordLocal(packActions(raw));
@@ -796,9 +796,8 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     game.options.netplay = false;
     progress.setScope(null);    // back to this player's own solo progress
     // Hand every REMOTE slot to the bot - on a guest that includes slot 0, not just the slots above
-    // ours. Clearing every virtual would also drop the local player onto another binding set
-    // (arrows / J K U L O I) mid-run, so the local slot keeps being driven from their own keyboard
-    // by the ended pump.
+    // ours. The local slot keeps being driven from their own keyboard by the ended pump rather than
+    // being cleared, so the run carries on under the same hand without a hitch.
     const players = game.players || [];
     for (let s = 0; s < Math.max(net.players, players.length); s++) {
       if (s === net.localSlot) continue;

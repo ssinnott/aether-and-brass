@@ -19,31 +19,44 @@ rules from ARCHITECTURE.
 | Boards 2-4 (issues #27/#28) | Every board has four sections, one of them `mode: 'locked'` with `timedWaves` (board 2 the Cold Sovereign's gun deck, board 3 the Cart Lane, board 4 the Lash-Up), exactly 640px wide and never containing a boss trigger; it exits through `transition: { kind: 'dock', banner, look, pies }`. Hazards and zones come from the table in `game/hazards.js`; no two sections in the game share a hazard layout (`tools/stage-census.js` checks). Spawn entries may carry `mods` (`game/traits.js` SPAWN_MODS); a modifier counts as its own variant. Each board fields two factions with at least four variants each, 60-75 enemies, no variant over 30% of its spawns, at least two mixed-faction waves per section, one reinforcement wave, and its own mid-boss track (`midboss`, `midboss2`, `midboss3`, `midboss4`). The balance reference is board 1: the engine's win rate on every board stays within a few points of board 1's (`npm run winrate`). |
 
 ## Final controls (replaces GDD §8 and ARCHITECTURE §16 tables)
-Two people share one keyboard, so each player owns one half of it — but **one player alone uses the arcade
-layout** (arrows under the right hand, one contiguous `Z X C V B N` row under the left), which is what the
-title screen leads with. The split-keyboard P1 half is the co-op layout, and it stays reachable at all times.
+**One key set per player, always.** A keyboard player owns a nine-key block — a 3×3 square of the main
+keyboard whose cross is movement and whose five remaining keys are the buttons — plus the two digits
+directly above that block for taunt and start. P1 takes the leftmost block; a second local player's block
+is the same nine keys shifted three columns right, finger for finger. **P1's block never moves**: alone, in
+local co-op or online, the keys under your hand are the same ones. (This replaces the old "1P arcade" set,
+which swapped itself out for a different layout the moment a second player joined.)
 
-| Action  | 1P arcade (active only until P2 joins) | P1 (left half) | P2 (right half) | Gamepad (standard map) |
-|---------|----------------------------------------|----------------|-----------------|------------------------|
-| move    | Arrow keys                             | W A S D        | Arrow keys      | D-pad / left stick (deadzone 0.25) |
-| attack  | Z                                      | F              | J (Numpad1)     | 0 (A / Cross) |
-| jump    | X (or Space)                           | G (or Space)   | K (Numpad2)     | 1 (B / Circle) |
-| dodge   | C                                      | R              | U (Numpad4)     | 2 (X / Square) |
-| special | V                                      | H              | L (Numpad3)     | 3 (Y / Triangle) |
-| super   | N                                      | Y              | O (Numpad6)     | 5 (RB / R1) |
-| taunt   | B                                      | T              | I (Numpad5)     | 4 (LB / L1) |
-| start   | Enter                                  | Enter          | Backspace (Numpad0) | 9 (Start) |
+```
+P1   Q W E        P2   R T Y        digits 1 2 above P1's block
+     A S D             F G H        digits 4 5 above P2's block
+     Z X C             V B N
+```
 
-Both keyboard button clusters are the same contiguous 2×3 block under one hand, finger for finger — P1's
-`R T Y` over `F G H` mirrors P2's `U I O` over `J K L` (index attack, middle jump, ring special on the home
-row; index dodge, middle taunt, ring super above). Nothing requires a finger to cross the keyboard's centre.
-`Space` jumps on both P1 layouts, per genre convention; it is not a P2 key.
+| Action  | P1 (and every player online) | P2 (local co-op) | Gamepad (standard map) |
+|---------|------------------------------|------------------|------------------------|
+| move    | W A S D (or the arrow keys)  | T F G H          | D-pad / left stick (deadzone 0.25) |
+| attack  | Z                            | V                | 0 (A / Cross) |
+| jump    | X                            | B                | 1 (B / Circle) |
+| dodge   | C                            | N                | 2 (X / Square) |
+| special | Q                            | R                | 3 (Y / Triangle) |
+| super   | E                            | Y                | 5 (RB / R1) |
+| taunt   | 1                            | 4                | 4 (LB / L1) |
+| start   | Enter (or 2)                 | 5                | 9 (Start) |
+
+Within a block the roles sit in the same place for everybody: attack / jump / dodge along the bottom row
+where the arcade layout always had `Z X C`, special and super on the row above the movement cross. The
+arrow keys are a second set of movement codes for P1 and are live at all times — no other player's block
+uses them, so nothing has to switch them off. Nothing requires a finger to cross the keyboard's centre.
+
+**Online, everybody is on P1's block.** Each peer is slot 0 on their own keyboard (`net/session.js` samples
+the local player through `input.pollRaw(0)` whichever seat they hold), so the nine keys are identical on
+every machine in the room.
 
 - Run = double-tap left/right (12f window) or hold RT (gamepad 7). Dash attack = attack while running.
 - Grab = attack within grab reach of an enemy that is NOT in hitstun and not armored (never interrupts a combo). Throw = direction + attack while holding; attack = hold hit.
 - Global: `Escape` pauses/unpauses for everyone, `M` mutes, `F1` toggles the debug overlay. `preventDefault()` on all bound keys.
-- Menus (every screen and plate, one definition in `src/game/menuinput.js`): **CONFIRM** = `start` (Enter / pad START) or `attack`, **BACK** = `Escape` or `jump` / `dodge`. `start` is never a back key and `jump` is never a confirm key — before this the pause plate resumed on Enter while the title and board select confirmed on it, so Enter on a highlighted pause row closed the plate instead of picking it. Escape and `start` both open a pause plate, whose cursor starts on RESUME, so either still closes a freshly opened one. Online, Escape is folded into the `start` bit (`net/session.js`), so it arrives as a CONFIRM on the party's shared cursor — RESUME while nobody has moved it — and `jump` / `dodge` stay a deterministic BACK on any row.
-- P2 joins (title, select, pause, or in-game) by pressing any P2-only key (J K U L O I Backspace or Numpad). When P2 joins, the 1P arcade keys switch off and P1 moves to the left half; the title legend swaps to match. Gamepads are not index-bound: an unbound pad's first button press (axes ignored) claims the lowest slot with no pad whose keyboard half has not been used, OR-merged with that slot's keyboard keys once claimed. P3/P4 are gamepad only (no keyboard half); claims reset whenever the title screen is entered; online co-op stays two players (the session un-joins any local slot above 2 and turns pad claiming off).
+- Menus (every screen and plate, one definition in `src/game/menuinput.js`): **CONFIRM** = `start` (Enter / `2` / pad START) or `attack`, **BACK** = `Escape` or `jump` / `dodge`. `start` is never a back key and `jump` is never a confirm key — before this the pause plate resumed on Enter while the title and board select confirmed on it, so Enter on a highlighted pause row closed the plate instead of picking it. Escape and `start` both open a pause plate, whose cursor starts on RESUME, so either still closes a freshly opened one. Online, Escape is folded into the `start` bit (`net/session.js`), so it arrives as a CONFIRM on the party's shared cursor — RESUME while nobody has moved it — and `jump` / `dodge` stay a deterministic BACK on any row.
+- P2 joins (title, select, pause, or in-game) by pressing any key of their own block (R T Y F G H V B N 4 5). Nothing about P1's keys changes when they do — the title's second legend line simply stops being dimmed. The blocks are disjoint by invariant, so no key is ambiguous about who pressed it. Gamepads are not index-bound: an unbound pad's first button press (axes ignored) claims the lowest slot with no pad whose keyboard half has not been used, OR-merged with that slot's keyboard keys once claimed. P3/P4 have no keyboard block (gamepad or netplay-virtual only); claims reset whenever the title screen is entered.
 - Super = separate button (no attack+jump chord).
 
 ## Scope tiers — final ship status (verified 2026-09-07 against the tree)

@@ -2,44 +2,48 @@
 // (docs/ARCHITECTURE.md section 16). No `window` / `navigator` reference anywhere in this file:
 // `tools/nettest.js` imports `engine/input.js`, which imports this module, under plain Node.
 //
+// ONE KEY SET PER PLAYER, ALWAYS. Each keyboard player owns a nine-key block: a 3x3 square of the
+// main keyboard whose cross is movement and whose five remaining keys are the buttons, plus the two
+// digits directly above the block for taunt and start. P1 takes the leftmost block; every further
+// local player's block is the same nine keys shifted three columns right, finger for finger. P1's
+// block never moves -- alone, in local co-op or online, the keys under your hand are the same nine,
+// which is the whole point of the layout (it replaces the old "1P arcade" set that swapped itself
+// out for a different one the moment a second player joined).
+//
+//     P1  Q W E / A S D / Z X C  + digits 1 2      P2  R T Y / F G H / V B N  + digits 4 5
+//
 // The binding invariants enforced by `rebindKey` / `rebindPad` and re-enforced on load by
 // `sanitiseBindings` (so a hand-edited save can never violate them):
 //   (a) every action in every layout has at least one code;
 //   (b) within a layout no code sits under two actions;
-//   (c) across the side-0 pair (1P ARCADE `soloAliases` and P1 `keyboard[0]`) no code sits under
-//       two *different* actions (the same action may share a code, e.g. Space jumps in both);
-//   (d) no code of `keyboard[1]` appears on side 0 except the codes that are shared in the
-//       defaults (the arrows) — a shared code may be rearranged inside the layout that owns it
-//       but can never be *added* to the other side, so the P2 join set (`joinCodesFor`) can never
-//       gain a side-0 key and J can never leave it;
-//   (e) no global key (Escape / M / F1) is bound anywhere;
-//   (f) gamepad: at least one button per action, no button under two actions, none of `gamepadRun`.
+//   (c) no code of one player's keyboard appears in another player's, under any action -- which is
+//       what lets `joinCodesFor` say "this press was P2's own" with no exceptions to carve out;
+//   (d) no global key (Escape / M / F1) is bound anywhere;
+//   (e) gamepad: at least one button per action, no button under two actions, none of `gamepadRun`.
 
 /**
- * @typedef {{ keyboard: Array<Record<string, string[]>>, soloAliases: Record<string, string[]>,
- *   gamepad: Record<string, number[]>, gamepadRun: number[], global: Record<string, string[]>,
- *   stickDeadzone: number }} Bindings
+ * @typedef {{ keyboard: Array<Record<string, string[]>>, gamepad: Record<string, number[]>,
+ *   gamepadRun: number[], global: Record<string, string[]>, stickDeadzone: number }} Bindings
  */
 /** @typedef {{ ok: true, swapped?: string } | { ok: false, reason: string }} RebindResult */
 
 /** Default bindings. Keyboard entries are KeyboardEvent.code values; gamepad entries are standard-mapping button indices. */
 export const DEFAULT_BINDINGS = {
   keyboard: [
-    // Buttons form an R T Y / F G H block: one shifted-left right hand rests on it while the left hand holds WASD.
-    // This mirrors P2's U I O / J K L block finger for finger (index attack, middle jump, ring special).
-    { left: ['KeyA'], right: ['KeyD'], up: ['KeyW'], down: ['KeyS'], attack: ['KeyF'], jump: ['KeyG', 'Space'], dodge: ['KeyR'],
-      special: ['KeyH'], super: ['KeyY'], taunt: ['KeyT'], start: ['Enter', 'NumpadEnter'] },
-    { left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'], attack: ['KeyJ', 'Numpad1'],
-      jump: ['KeyK', 'Numpad2'], dodge: ['KeyU', 'Numpad4'], special: ['KeyL', 'Numpad3'], super: ['KeyO', 'Numpad6'],
-      taunt: ['KeyI', 'Numpad5'], start: ['Backspace', 'Numpad0'] },
+    // P1 -- the block in the keyboard's first three columns. The cross of the square moves
+    // (W up, A left, S down, D right); its corners and lid are the five buttons, with attack /
+    // jump / dodge kept on Z X C where the arcade layout always had them and special / super on
+    // the row above. Arrows are a second set of movement codes, live at all times: no other
+    // player's block uses them, so nothing has to switch them off.
+    { left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'],
+      attack: ['KeyZ'], jump: ['KeyX'], dodge: ['KeyC'], special: ['KeyQ'], super: ['KeyE'],
+      taunt: ['Digit1'], start: ['Enter', 'Digit2'] },
+    // P2 (local co-op) -- the same nine keys three columns right, finger for finger: T is P2's W,
+    // F G H are P2's A S D, V B N are P2's Z X C, and digits 4 5 are P2's 1 2.
+    { left: ['KeyF'], right: ['KeyH'], up: ['KeyT'], down: ['KeyG'],
+      attack: ['KeyV'], jump: ['KeyB'], dodge: ['KeyN'], special: ['KeyR'], super: ['KeyY'],
+      taunt: ['Digit4'], start: ['Digit5'] },
   ],
-  /**
-   * Extra P1 keys, active only until P2 joins (`input.setJoined(1, true)`). This is the arcade layout the title
-   * screen leads with for one player: arrows under the right hand, one contiguous Z X C V B N row under the left.
-   * Arrows are shared with P2, so they never count as a P2 join key.
-   */
-  soloAliases: { left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'], attack: ['KeyZ'], jump: ['KeyX', 'Space'],
-    dodge: ['KeyC'], special: ['KeyV'], super: ['KeyN'], taunt: ['KeyB'], start: ['Enter', 'NumpadEnter'] },
   gamepad: { attack: [0], jump: [1], dodge: [2], special: [3], taunt: [4], super: [5], start: [9], up: [12], down: [13], left: [14], right: [15] },
   /** Held gamepad buttons that mean "run" (RT). Exposed as `input.runHeld(player)`. */
   gamepadRun: [7],
@@ -47,8 +51,17 @@ export const DEFAULT_BINDINGS = {
   stickDeadzone: 0.25,
 };
 
-/** Layout identifiers: 1P arcade aliases, per-slot keyboards, and the gamepad map. */
-export const LAYOUTS = ['solo', 'p1', 'p2', 'pad'];
+/** Layout identifiers: one per keyboard slot, plus the gamepad map. */
+export const LAYOUTS = ['p1', 'p2', 'pad'];
+
+/**
+ * Stamp carried by a persisted bindings blob, bumped whenever the DEFAULT table is re-laid-out.
+ * `sanitiseBindings` drops a save that does not carry the current stamp instead of merging it: the
+ * old two-halves-of-one-keyboard table is itself internally consistent under the invariants above,
+ * so not one action would revert and a returning player would silently keep a set of keys the game
+ * no longer documents, teaches or shows a legend for.
+ */
+export const BINDINGS_LAYOUT = 2;
 
 /**
  * The action->codes map a layout name addresses, or `null` for an unknown layout.
@@ -57,7 +70,6 @@ export const LAYOUTS = ['solo', 'p1', 'p2', 'pad'];
  * @returns {Record<string, string[]>|Record<string, number[]>|null}
  */
 export function layoutMap(b, layout) {
-  if (layout === 'solo') return b.soloAliases;
   if (layout === 'pad') return b.gamepad;
   if (layout[0] === 'p') {
     const i = Number(layout.slice(1)) - 1;
@@ -67,19 +79,7 @@ export function layoutMap(b, layout) {
 }
 
 /** Which physical side (0 = P1, 1 = P2, ...) a keyboard layout belongs to. @param {string} layout @returns {number} */
-export function sideOf(layout) { return layout === 'solo' ? 0 : Number(layout.slice(1)) - 1; }
-
-/**
- * The layout that shares side-0 keys with `layout` (solo <-> p1), or `null` (p2 / pad have none).
- * @param {Bindings} b
- * @param {string} layout
- * @returns {Record<string, string[]>|null}
- */
-export function siblingMap(b, layout) {
-  if (layout === 'solo') return b.keyboard[0];
-  if (layout === 'p1') return b.soloAliases;
-  return null;
-}
+export function sideOf(layout) { return Number(layout.slice(1)) - 1; }
 
 /** @param {Record<string, Array<string|number>>} m @returns {Record<string, Array<string|number>>} */
 function cloneActionMap(m) {
@@ -93,7 +93,6 @@ function cloneActionMap(m) {
 export function cloneBindings(src) {
   return {
     keyboard: src.keyboard.map((m) => /** @type {Record<string, string[]>} */ (cloneActionMap(m))),
-    soloAliases: /** @type {Record<string, string[]>} */ (cloneActionMap(src.soloAliases)),
     gamepad: /** @type {Record<string, number[]>} */ (cloneActionMap(src.gamepad)),
     gamepadRun: src.gamepadRun.slice(),
     global: /** @type {Record<string, string[]>} */ (cloneActionMap(src.global)),
@@ -132,9 +131,9 @@ export const PAD_LABELS = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'SELECT',
 export function padLabel(i) { return PAD_LABELS[i] || 'B' + i; }
 
 /**
- * Codes that count as "player `slot` pressed one of their own keys" (P2 drop-in). The single
- * definition of that rule: every code bound to `keyboard[slot]`, minus the codes shared with
- * `soloAliases` when `slot !== 0` (those keys are also P1's, so they can never trigger a P2 join).
+ * Codes that count as "player `slot` pressed one of their own keys" (drop-in). The single definition
+ * of that rule: every code bound to `keyboard[slot]`. Invariant (c) keeps the blocks disjoint, so
+ * there is nothing to subtract -- a press on one of these keys can only ever have been this player.
  * @param {Bindings} b
  * @param {number} slot
  * @returns {Set<string>}
@@ -145,7 +144,6 @@ export function joinCodesFor(b, slot) {
   const map = b.keyboard[slot];
   if (!map) return set;
   for (const a of Object.keys(map)) for (const c of map[a]) set.add(c);
-  if (slot !== 0) for (const a of Object.keys(b.soloAliases)) for (const c of b.soloAliases[a]) set.delete(c);
   return set;
 }
 
@@ -172,7 +170,7 @@ export function moveLabelFor(b, layout) {
 }
 
 /**
- * Legend line for a layout, e.g. `'ARROWS MOVE  Z ATTACK  X JUMP  C DODGE  V SPECIAL  N SUPER  B TAUNT  ENTER START'`.
+ * Legend line for a layout, e.g. `'WASD MOVE  Z ATTACK  X JUMP  C DODGE  Q SPECIAL  E SUPER  1 TAUNT  ENTER START'`.
  * @param {Bindings} b
  * @param {string} layout
  * @returns {string}
@@ -191,15 +189,17 @@ export function legendFor(b, layout) {
 }
 
 /**
- * The P2-join hint pieces for a keyboard slot: `key` is the single primary label shown in the
- * short hint, `keys` lists every joinable primary plus the alternate START label.
+ * The join-hint pieces for a keyboard slot: `key` is the single primary label shown in the short
+ * hint, `keys` lists every joinable primary plus the alternate START label. Both are '' for a slot
+ * with no keyboard half at all (P3/P4), whose hint is "ANY PAD BUTTON" instead.
  * @param {Bindings} b
  * @param {number} slot
  * @returns {{ key: string, keys: string }}
  */
 export function joinLabels(b, slot) {
-  const join = joinCodesFor(b, slot);
   const map = b.keyboard[slot];
+  if (!map) return { key: '', keys: '' };
+  const join = joinCodesFor(b, slot);
   const prim = (a) => { for (const c of map[a] || []) if (join.has(c)) return c; return ''; };
   let key = '';
   for (const a of LEGEND_BUTTONS) { const c = prim(a); if (c) { key = keyLabel(c); break; } }
@@ -218,8 +218,9 @@ function isGlobalCode(b, code) {
 }
 
 /**
- * Rebind a keyboard action to `code`, mutating `b` in place. See the file header for the
- * invariants this enforces.
+ * Rebind a keyboard action to `code`, mutating `b` in place. See the file header for the invariants
+ * this enforces. A code already in this layout under another action swaps: that action takes the
+ * codes this one is giving up (invariant (a) guarantees there is at least one).
  * @param {Bindings} b
  * @param {string} layout
  * @param {string} action
@@ -241,17 +242,6 @@ export function rebindKey(b, layout, action, code) {
       if (i === side) continue;
       for (const a of Object.keys(b.keyboard[i])) if (b.keyboard[i][a].includes(code)) return { ok: false, reason: `${L} IS PLAYER ${i + 1}'S KEY` };
     }
-    if (side !== 0) for (const a of Object.keys(b.soloAliases)) if (b.soloAliases[a].includes(code)) return { ok: false, reason: `${L} IS PLAYER 1'S KEY` };
-  }
-  const sib = siblingMap(b, layout);
-  /** @type {string[]} */
-  const stripActions = [];
-  if (sib) {
-    for (const a of Object.keys(sib)) {
-      if (a === action || !sib[a].includes(code)) continue;
-      if (sib[a].length === 1) return { ok: false, reason: `${L} IS ${layout === 'solo' ? 'P1' : '1P ARCADE'}'S ${a.toUpperCase()}` };
-      stripActions.push(a);
-    }
   }
   const old = map[action].slice();
   let swapped = '';
@@ -260,16 +250,10 @@ export function rebindKey(b, layout, action, code) {
   for (const a of Object.keys(map)) {
     if (a === action || !map[a].includes(code)) continue;
     let next = map[a].filter((c) => c !== code);
-    if (next.length === 0) {
-      const restore = old.filter((c) => !sib || !Object.keys(sib).some((x) => x !== a && sib[x].includes(c)));
-      if (restore.length === 0) return { ok: false, reason: `REBIND ${a.toUpperCase()} FIRST` };
-      next = restore;
-      swapped = a;
-    }
+    if (next.length === 0) { next = old; swapped = a; }
     updates[a] = next;
   }
-  // Every check above passed: commit the sibling strips, the same-layout updates, then the new code.
-  if (sib) for (const a of stripActions) sib[a] = sib[a].filter((c) => c !== code);
+  // Every check above passed: commit the same-layout updates, then the new code.
   for (const a of Object.keys(updates)) map[a] = updates[a];
   map[action] = [code];
   return swapped ? { ok: true, swapped } : { ok: true };
@@ -302,56 +286,34 @@ export function rebindPad(b, action, button) {
   return swapped ? { ok: true, swapped } : { ok: true };
 }
 
-/** @param {Record<string, string[]>} m @returns {Set<string>} */
-function allCodes(m) {
-  /** @type {Set<string>} */
-  const s = new Set();
-  for (const a of Object.keys(m)) for (const c of m[a]) s.add(c);
-  return s;
-}
-
-/** Codes present in both `defaults.keyboard[1]` and the default side-0 pair (the shared arrows). @param {Bindings} defaults */
-function sharedCodes(defaults) {
-  const side0 = new Set([...allCodes(defaults.soloAliases), ...allCodes(defaults.keyboard[0])]);
-  const kb1 = allCodes(defaults.keyboard[1]);
-  return new Set([...kb1].filter((c) => side0.has(c)));
-}
-
-/**
- * True if any code in `codes` (the current value of `map[action]`) violates a keyboard invariant,
- * read against the CURRENT (possibly still-invalid) state of `out` — callers batch every revert
- * this pass finds and apply them together, so a symmetric collision reverts both sides.
- * @param {Bindings} out
- * @param {Record<string, string[]>} map
- * @param {string[]} codes
- * @param {Record<string, string[]>|null} sib
- * @param {number} side
- * @param {Set<string>} shared
- * @param {string} action
- */
-function codesInvalid(out, map, codes, sib, side, shared, action) {
-  for (const code of codes) {
-    if (isGlobalCode(out, code)) return true;
-    if (Object.keys(map).some((a2) => a2 !== action && map[a2].includes(code))) return true;
-    if (sib && Object.keys(sib).some((a2) => a2 !== action && sib[a2].includes(code))) return true;
-    if (!shared.has(code)) {
-      let otherSide = false;
-      for (let i = 0; i < out.keyboard.length && !otherSide; i++) {
-        if (i === side) continue;
-        if (Object.keys(out.keyboard[i]).some((a2) => out.keyboard[i][a2].includes(code))) otherSide = true;
-      }
-      if (!otherSide && side !== 0 && Object.keys(out.soloAliases).some((a2) => out.soloAliases[a2].includes(code))) otherSide = true;
-      if (otherSide) return true;
-    }
-  }
-  return false;
-}
 
 /** @param {Record<string, number[]>} gamepad @param {number[]} gamepadRun @param {number[]} codes @param {string} action */
 function padInvalid(gamepad, gamepadRun, codes, action) {
   for (const btn of codes) {
     if (gamepadRun.includes(btn)) return true;
     if (Object.keys(gamepad).some((a2) => a2 !== action && gamepad[a2].includes(btn))) return true;
+  }
+  return false;
+}
+
+/**
+ * True if any code in `codes` (the current value of `map[action]`) violates a keyboard invariant,
+ * read against the CURRENT (possibly still-invalid) state of `out` -- callers batch every revert
+ * this pass finds and apply them together, so a symmetric collision reverts both sides.
+ * @param {Bindings} out
+ * @param {Record<string, string[]>} map
+ * @param {string[]} codes
+ * @param {number} side
+ * @param {string} action
+ */
+function codesInvalid(out, map, codes, side, action) {
+  for (const code of codes) {
+    if (isGlobalCode(out, code)) return true;
+    if (Object.keys(map).some((a2) => a2 !== action && map[a2].includes(code))) return true;
+    for (let i = 0; i < out.keyboard.length; i++) {
+      if (i === side) continue;
+      if (Object.keys(out.keyboard[i]).some((a2) => out.keyboard[i][a2].includes(code))) return true;
+    }
   }
   return false;
 }
@@ -378,10 +340,13 @@ function mergeAction(target, rawMap, actions, isValid) {
  * Sanitise a raw (possibly hand-edited, possibly garbage) save into a fully valid `Bindings`
  * object. Starts from a clone of `defaults`, merges in whatever of `raw` is well-shaped, then
  * repeatedly reverts any action whose codes violate an invariant (see file header) back to its
- * default list until a pass finds nothing left to revert — bounded at
+ * default list until a pass finds nothing left to revert -- bounded at
  * `(keyboard layouts + 1) * actions.length + 1` passes (each pass that changes anything reverts
  * at least one more keyboard or gamepad entry to its default, and there are at most that many
  * entries to revert), which is always enough because an all-default layout satisfies every rule.
+ * A save that does not carry the current `BINDINGS_LAYOUT` stamp is dropped whole (see that
+ * constant): it was written against a different default table, so it loads as today's defaults
+ * rather than as a stale layout the game no longer teaches.
  * @param {*} raw
  * @param {Bindings} [defaults]
  * @param {string[]} [actions]
@@ -389,15 +354,13 @@ function mergeAction(target, rawMap, actions, isValid) {
  */
 export function sanitiseBindings(raw, defaults = DEFAULT_BINDINGS, actions = Object.keys(DEFAULT_BINDINGS.gamepad)) {
   const out = cloneBindings(defaults);
-  if (!raw || typeof raw !== 'object') return out;
+  if (!raw || typeof raw !== 'object' || raw.layout !== BINDINGS_LAYOUT) return out;
   const isStr = (v) => typeof v === 'string' && v.length > 0;
   const isBtn = (v) => Number.isInteger(v) && /** @type {number} */ (v) >= 0;
-  mergeAction(out.soloAliases, raw.solo, actions, isStr);
   if (Array.isArray(raw.keyboard)) for (let i = 0; i < out.keyboard.length && i < raw.keyboard.length; i++) mergeAction(out.keyboard[i], raw.keyboard[i], actions, isStr);
   mergeAction(out.gamepad, raw.pad, actions, isBtn);
 
-  const shared = sharedCodes(defaults);
-  const kbLayouts = ['solo'];
+  const kbLayouts = [];
   for (let i = 0; i < out.keyboard.length; i++) kbLayouts.push('p' + (i + 1));
   const maxPasses = (kbLayouts.length + 1) * actions.length + 1;
   for (let pass = 0; pass < maxPasses; pass++) {
@@ -406,11 +369,10 @@ export function sanitiseBindings(raw, defaults = DEFAULT_BINDINGS, actions = Obj
     for (const L of kbLayouts) {
       const map = /** @type {Record<string, string[]>} */ (layoutMap(out, L));
       const defMap = /** @type {Record<string, string[]>} */ (layoutMap(defaults, L));
-      const sib = siblingMap(out, L);
       const side = sideOf(L);
       for (const a of actions) {
         if (!map[a]) continue;
-        if (codesInvalid(out, map, map[a], sib, side, shared, a)) reverts.push({ map, a, value: defMap[a].slice() });
+        if (codesInvalid(out, map, map[a], side, a)) reverts.push({ map, a, value: defMap[a].slice() });
       }
     }
     for (const a of actions) {

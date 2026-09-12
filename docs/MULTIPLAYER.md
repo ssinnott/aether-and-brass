@@ -163,8 +163,9 @@ roster it sends back still shows the hero the asker had, so nobody starts a matc
 did not choose.
 
 While the room code is being typed the lobby reads the keyboard raw and the action bindings are
-ignored: half the code alphabet (B, C, N, V, X, Z) is also a P1 arcade key, and `C` is dodge, so a code
-with a `C` in it used to back the player out of the screen mid-word.
+ignored: every letter of the code alphabet (B, C, N, V, X, Z) is a bound key -- `C X Z` are P1's dodge,
+jump and attack, `V B N` are P2's -- so a code with a `C` in it used to back the player out of the
+screen mid-word.
 
 **Deferred**, deliberately: rollback (M2), state-transfer resync after a desync (a desync still
 ends the session and hands the other seats to the bot), host migration, more than four players,

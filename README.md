@@ -32,23 +32,31 @@ directly from disk or hand to someone as one file.
 
 ## Controls
 
-**Playing alone?** Use the arcade layout: **arrows** to move with your right hand, **Z X C V B N** under
-your left. That's the whole scheme — one contiguous row, nothing to reach for.
+**One set of nine keys, and they never move.** Your whole hand sits on one 3×3 square of the keyboard:
+the cross of it moves you, the other five are your buttons. Alone, in couch co-op or online, it is
+always the same nine — plus the two digits just above them for taunt and start.
 
-| Action  | One player (arcade) | Co-op P1 (left half) | Co-op P2 (right half) | Gamepad |
-|---------|---------------------|----------------------|-----------------------|---------|
-| Move    | Arrow keys          | W A S D              | Arrow keys            | D-pad / left stick |
-| Attack  | Z                   | F                    | J                     | A / Cross |
-| Jump    | X (or Space)        | G (or Space)         | K                     | B / Circle |
-| Dodge   | C                   | R                    | U                     | X / Square |
-| Special | V                   | H                    | L                     | Y / Triangle |
-| Super   | N                   | Y                    | O                     | RB / R1 |
-| Taunt   | B                   | T                    | I                     | LB / L1 |
-| Start   | Enter               | Enter                | Backspace             | Start |
+```
+    Q W E          1 2  taunt / start
+    A S D
+    Z X C
+```
 
-The arcade keys are live until a second player joins, at which point P1 moves to the left half of the
-keyboard so both players fit. Each half puts its six buttons in one 2×3 block under a single hand —
-P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
+| Action  | You (P1, and everyone online) | Couch co-op P2 | Gamepad |
+|---------|-------------------------------|----------------|---------|
+| Move    | W A S D (or the arrow keys)   | T F G H        | D-pad / left stick |
+| Attack  | Z                             | V              | A / Cross |
+| Jump    | X                             | B              | B / Circle |
+| Dodge   | C                             | N              | X / Square |
+| Special | Q                             | R              | Y / Triangle |
+| Super   | E                             | Y              | RB / R1 |
+| Taunt   | 1                             | 4              | LB / L1 |
+| Start   | Enter (or 2)                  | 5              | Start |
+
+A second player on the same keyboard gets the identical square shifted three columns right — `R T Y`
+over `F G H` over `V B N`, with `4` and `5` above it — so the two hands never meet in the middle and
+every finger does the same job for both players. **Nothing about your keys changes when they join.**
+Playing online, everybody is on the first block: the keys are the same on every machine in the room.
 
 - **Run**: double-tap left or right (or hold RT). **Dash attack**: attack while running.
 - **Grab**: attack next to an enemy that isn't reeling. **Throw**: direction + attack while holding.
@@ -71,9 +79,10 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
   (or attack) picks the highlighted row, and jump / dodge back out alongside ESC. A pause plate opens on
   RESUME, so ESC or ENTER straight away just resumes; move the cursor and ENTER picks the row while ESC still
   resumes. On a plate with nothing to pick — MOVES, the debug gallery — ENTER simply closes it.
-- Player 2 joins at any time by pressing any of their own keys (J K U L O I or Backspace — the arrows are
-  shared, so they don't count). Escape pauses, M mutes, F1 shows the debug overlay. The on-screen legends and
-  the "P2: PRESS J TO JOIN" hint follow whatever is actually bound, so they change if you remap keys below.
+- Player 2 joins at any time by pressing any key of their own block (R T Y F G H V B N 4 5). No key belongs to
+  two players, so there is never any doubt about who pressed what. Escape pauses, M mutes, F1 shows the debug
+  overlay. The on-screen legends and the "P2: PRESS V TO JOIN" hint follow whatever is actually bound, so they
+  change if you remap keys below.
 - Players 3 and 4 use gamepads: press any button on a pad and it takes the next free slot, on the title,
   character select, pause or mid-run. A pad is never tied to a fixed slot — whichever one you press first
   becomes P1 if nobody else has, and a pad you set down keeps its slot until you return to the title screen,
@@ -84,8 +93,8 @@ P1's `R T Y` over `F G H` mirrors P2's `U I O` over `J K L`.
   MOVES and OPTIONS it is hidden during online co-op.
 - Keys and gamepad buttons can be remapped from **OPTIONS** (a row on the title menu, or on the pause plate
   during a local game) → **CONTROLS**: one key per action per layout. A key already used by the other player,
-  by the arcade / co-op sibling layout for a different action, or a global key (Escape, M, F1) is refused;
-  a collision within the same layout swaps the two actions instead. OPTIONS also has MUSIC and SFX volume
+  or a global key (Escape, M, F1), is refused; a collision within your own layout swaps the two actions
+  instead, so you can rearrange your block without ever unbinding anything. OPTIONS also has MUSIC and SFX volume
   sliders, a SCREEN SHAKE setting (off / low / full) and difficulty, and everything there persists in the
   browser under `aetherAndBrass.options.v1` — same caveat as progress: if storage is unavailable the game
   still plays, it just falls back to defaults every session and nothing throws.

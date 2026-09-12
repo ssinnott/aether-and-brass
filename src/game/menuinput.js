@@ -5,8 +5,8 @@
 // board select but BACKED OUT of every overlay. Pressing ENTER on a highlighted pause row therefore
 // closed the plate instead of picking the row.
 //
-//   CONFIRM  attack (Z / pad A) or start (ENTER / pad START)   picks the highlighted row
-//   BACK     Escape, or jump (X / SPACE / pad B) or dodge (C / pad X)   closes the plate
+//   CONFIRM  attack (Z / pad A) or start (ENTER / 2 / pad START)   picks the highlighted row
+//   BACK     Escape, or jump (X / pad B) or dodge (C / pad X)   closes the plate
 //
 // Escape and start both OPEN a pause plate, and every plate opens with its cursor on RESUME, so either
 // key still closes a freshly opened one; after a cursor move, ENTER picks the row and Escape resumes.
@@ -48,9 +48,6 @@ export function cancelPressed(inp, player) { return inp.pressed(player, 'jump') 
  */
 export function escapePressed(inp, online = false) { return !online && inp.globalPressed('pause'); }
 
-/** The keyboard half the local player is on right now: the 1P arcade aliases until P2 joins, P1's own keys after. */
-export function menuLayout(inp) { return inp.joined(1) ? 'p1' : 'solo'; }
-
 /**
  * Label of the CONFIRM key on the local keyboard half ('ENTER' by default, whatever `start` is bound to
  * after a remap -- screens never hard-code a key name, ARCHITECTURE.md section 16). Allocation-free
@@ -59,7 +56,7 @@ export function menuLayout(inp) { return inp.joined(1) ? 'p1' : 'solo'; }
  * @param {Input} inp
  * @returns {string}
  */
-export function confirmKey(inp) { return inp.keyText(menuLayout(inp), 'start') || 'ENTER'; }
+export function confirmKey(inp) { return inp.keyText('p1', 'start') || 'ENTER'; }
 
 /** Label of the global BACK key ('ESC'). Global keys are not remappable. @param {Input} inp @returns {string} */
 export function backKey(inp) { return inp.keyLabel(bindings.global.pause[0]); }

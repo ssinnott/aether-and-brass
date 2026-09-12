@@ -80,8 +80,9 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         await g.shot('20d-dropin-4p');
       });
 
-      // Part C: pad-claim slot assignment on the title. A real key drives P1's steering (the shared
-      // arrows); virtual pads (#19's input.setPadVirtual, read through pollGamepads) drive the claims.
+      // Part C: pad-claim slot assignment on the title. A real key drives P1's steering (the arrows,
+      // which are P1's own second movement set); virtual pads (#19's input.setPadVirtual, read
+      // through pollGamepads) drive the claims.
       await withPage(server, 'seed=1', async (g, page) => {
         const padState = () => g.eval(() => ({
           padOf1: window.__game.input.padOf(1), padOf2: window.__game.input.padOf(2),
@@ -89,18 +90,18 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         }));
         await g.step(30);
         await page.bringToFront();
-        await page.keyboard.press('ArrowRight'); // P1 steering with the shared arrows: must not mark slot 1 as used
+        await page.keyboard.press('ArrowRight'); // P1 steering with their own arrows: must not mark slot 1 as used
         await g.step(3);
         await g.eval(() => window.__game.input.setPadVirtual(0, [0]));
         await g.step(2);
         let st = await padState();
-        assert(st.padOf1 === 0 && st.joined1, `a pad pressed after P1 steered with the shared arrows becomes P2, not P3 (${JSON.stringify(st)})`);
+        assert(st.padOf1 === 0 && st.joined1, `a pad pressed after P1 steered with their own arrows becomes P2, not P3 (${JSON.stringify(st)})`);
         await g.eval(() => window.__game.input.setPadVirtual(0, []));
         await g.step(2);
-        // Slot 1's own key sets its kbSeen (decision #2). KeyL (P2's SPECIAL) rather than P2's own
-        // ATTACK: slot 1 already joined above, and the title menu lets any joined slot confirm with
-        // ATTACK/START/JUMP -- pressing P2's attack here would double as "START" and leave the title.
-        await page.keyboard.press('KeyL');
+        // Slot 1's own key sets its kbSeen. KeyR (P2's SPECIAL) rather than P2's own ATTACK: slot 1
+        // already joined above, and the title menu lets any joined slot confirm with ATTACK/START/JUMP
+        // -- pressing P2's attack here would double as "START" and leave the title.
+        await page.keyboard.press('KeyR');
         await g.step(3);
         await g.eval(() => window.__game.input.setPadVirtual(1, [0]));
         await g.step(2);
@@ -125,14 +126,14 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         // The two-keyboard-halves-plus-two-pads case: with BOTH keyboard halves already used (kbSeen
         // set on slots 0 and 1), a pad pressed after them must skip straight past slot 1 to slot 2 --
         // this is the one assertion that actually depends on the kbSeen(1) write inside the join-code
-        // edge branch (decision #2); every other coop4 check here would stay green without it, since
+        // edge branch; every other coop4 check here would stay green without it, since
         // by the time a pad is pressed slot 1 already holds a pad and `pad < 0` alone rules it out.
         await g.eval(() => window.__game.input.setPadVirtual(1, []));
         await g.eval(() => window.__game.game.reset('title'));
         await g.step(5);
         await page.bringToFront();
         await page.keyboard.press('KeyD'); // P1's own key: kbSeen[0]
-        await page.keyboard.press('KeyL'); // P2's own key (SPECIAL): joins slot 1, kbSeen[1]
+        await page.keyboard.press('KeyR'); // P2's own key (SPECIAL): joins slot 1, kbSeen[1]
         await g.step(3);
         await g.eval(() => window.__game.input.setPadVirtual(0, [0]));
         await g.step(2);
@@ -200,7 +201,7 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
           padOf0: window.__game.input.padOf(0),
           padOf1: window.__game.input.padOf(1),
           joined2: window.__game.input.joined(2),
-          attack: window.__game.input.pollRaw(0, { solo: true }).attack === true,
+          attack: window.__game.input.pollRaw(0).attack === true,
         }));
         await hostPage.evaluate(() => window.__game.input.setPadVirtual(0, null));
         assert(held.attack, 'a pad pressed after the keyboard still drives the local player online');
