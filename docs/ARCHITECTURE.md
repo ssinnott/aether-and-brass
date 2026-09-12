@@ -75,6 +75,7 @@ src/
     text.js                # drawText(ctx, str, x, y, opts) using a built-in procedural pixel font (see 9)
     particles.js           # pooled particle system (sparks, dust, smoke, steam, debris, floating text)
     audio.js               # WebAudio synth: sfx.play(name, opts), music.play(track), master mute
+    links.js               # the one module that navigates: opens the repo in a tab, owns the canvas's clickable rect
     math.js                # clamp, lerp, approach, sign, rectsOverlap, easing helpers
     timer.js               # simple cooldown/tween helpers (optional)
   art/
@@ -281,6 +282,25 @@ export const audio = {
 }
 ```
 Test mode (`?autotest=1`) must never create an AudioContext (all calls no-op).
+
+### `engine/links.js`
+The only module in the build that leaves the canvas: the title's SOURCE CODE row and the repository
+address drawn under it (`constants.js` `REPO_URL` / `REPO_LABEL`).
+```js
+export const links = {
+  init(view),                    // main.js, beside touch.init: mouse listeners on the display canvas
+  open(url) -> bool,             // new tab; false when the browser refused it (popup blocker)
+  setZone({ x, y, w, h, url, onOpen }),  // the clickable rect, in internal 640x360 px
+  clearZone(),                   // screens release it in exit()
+  hot,                           // true while a mouse rests on the zone, so the screen can light it
+};
+```
+One zone at a time, claimed by the screen on top of the stack. Two ways to follow one link because
+neither alone covers every player: a **menu row** calls `open()` from the fixed step (keyboard, pad and
+the on-screen touch buttons), which a popup blocker may refuse — hence the boolean, and the address
+printed on screen either way; a **mouse click** on the drawn address runs inside the click event, which
+is a real user gesture, so it always opens. Mouse only: `engine/touch.js` preventDefaults `touchstart`,
+so a tap never produces a synthetic click here.
 
 ### `engine/rng.js`
 ```js
@@ -768,7 +788,7 @@ arrival that outlives its own length by 180 frames ends as an ordinary enemy rat
 to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
 `update()`, `draw(ctx)`. No screen wires its own menu keys: **CONFIRM** and **BACK** come from
 `game/menuinput.js` (section 16), so the same two keys work on every plate in the game. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`.
-Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `BESTIARY` / `OPTIONS`, "PRESS ATTACK", blinking; the BESTIARY row carries the book's completion percentage, read once in `enter()`; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
+Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `BESTIARY` / `SOURCE CODE` / `OPTIONS`, "PRESS ATTACK", blinking; the BESTIARY row carries the book's completion percentage, read once in `enter()`; `SOURCE CODE` opens the repository in a new tab (`engine/links.js`) without leaving the title and says whether the tab actually opened, and the address itself is drawn along the credit line — lit while the row is highlighted or a mouse is on it, clickable there, and readable (typeable) either way; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
 (`boardcards.js`, compact) on one screen, with the room's other two to three players driving the
 P2-P4 cursors, a status column per seat, and no two players allowed on one hero
@@ -980,6 +1000,12 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      RESET TO DEFAULTS. Further scenarios that don't fit in `playtest.js` follow this sibling-module
      pattern: a small file exporting one function of the form `(server, { withPage, assert }) => {...}`,
      imported and added to the `scenarios` map here.
+  8b. `sourcelink` (`tools/playtest-link.js`, the same sibling-module pattern): the title's SOURCE CODE row
+     sits directly above OPTIONS, following it opens the drawn `REPO_URL` in a new tab without leaving the
+     title and reports that it did, a refused `window.open` reads as blocked rather than as success, the
+     drawn address is inside the view, a real mouse click on it opens the same URL, and leaving the title
+     releases the zone so that click opens nothing. `window.open` is stubbed in the page, so the run never
+     navigates anywhere.
   9. `coop4` (`tools/scenarios/coop4.js`, issue #23): a four-bot run to results (`attackTokens.max===4`, 4 stats rows); pad-only drop-in mid-run/pause; title pad-claim assignment (arrows-then-pad stays P2, `resetClaims()` releases on title entry); a four-cursor select into gameplay; the netplay guard (own room) — `beginMatch` un-joins local slots above `NET_PLAYERS`, no pad claims the peer's slot, no desync.
   10. `training` (`tools/scenarios/training.js`, issue #22 — same sibling-module pattern as `options`/`coop4`,
      registered from here as `training: (server) => trainingScenario(server, { withPage, assert, CHARACTER_COUNT })`):

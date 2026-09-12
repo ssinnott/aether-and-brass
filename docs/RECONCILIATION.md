@@ -99,10 +99,11 @@ HUD uses the simple delayed second bar), no typewriter text, no friendly fire, n
 music / SFX volume mixer, a screen-shake setting (off / low / full) and key + gamepad remapping under a
 CONTROLS sub-plate, all persisted in `localStorage` (`game/options.js`, `aetherAndBrass.options.v1`).
 This diverges from GDD 9's menu lists: the title menu is now **START / ONLINE CO-OP / TRAINING /
-BESTIARY / OPTIONS** (difficulty and mute both moved off the title into OPTIONS; TRAINING added by issue
-#22 and BESTIARY by issue #26, which also puts the book's completion percentage on its own row) and the
-pause plate is **RESUME / MUTE / OPTIONS / MOVES / COMMANDS / QUIT TO TITLE** (OPTIONS, MOVES and
-COMMANDS hidden under netplay). CONTROLS is a sub-plate of OPTIONS, not a menu row of its own.
+BESTIARY / SOURCE CODE / OPTIONS** (difficulty and mute both moved off the title into OPTIONS; TRAINING
+added by issue #22 and BESTIARY by issue #26, which also puts the book's completion percentage on its own
+row; SOURCE CODE opens the repository in a new tab and prints its address along the credit line, where a
+mouse can click it — `engine/links.js`) and the pause plate is **RESUME / MUTE / OPTIONS / MOVES /
+COMMANDS / QUIT TO TITLE** (OPTIONS, MOVES and COMMANDS hidden under netplay). CONTROLS is a sub-plate of OPTIONS, not a menu row of its own.
 Friendly-fire and scale toggles remain cut, as above.
 
 ## Game title

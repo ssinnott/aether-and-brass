@@ -94,3 +94,9 @@ export const PLAYER_COLORS = Object.freeze([UI.p1, UI.p2, UI.p3, UI.p4]);
 /** Bust tint for the Nth duplicate copy of a hero (index = other players already on that hero, capped at 3). */
 export const DUP_TINTS = Object.freeze([null, '#1a1a2e', '#2e1a1a', '#1a2e1a']);
 export const DUP_TINT_ALPHA = 0.3;
+
+/** Where this build came from (screens/title.js SOURCE CODE row). `REPO_LABEL` is the same address
+ *  without the scheme, for the 5x7 font: it is drawn under the menu so a player can read -- or type --
+ *  it even when the browser refuses to open the tab. */
+export const REPO_URL = 'https://github.com/ssinnott/aether-and-brass';
+export const REPO_LABEL = 'GITHUB.COM/SSINNOTT/AETHER-AND-BRASS';

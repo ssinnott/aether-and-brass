@@ -30,6 +30,10 @@ Then open <http://localhost:8080/> in a modern browser. Any static file server w
 `npm run build` bundles everything into a self-contained `dist/index.html` you can open
 directly from disk or hand to someone as one file.
 
+However you came by a build, it can point you back here: the title screen's **SOURCE CODE** row opens
+this repository in a new tab, and the address is drawn along the bottom of the title screen — click it
+with a mouse, or just read it off the screen if the browser refuses the tab.
+
 ## Controls
 
 **Playing alone?** Use the arcade layout: **arrows** to move with your right hand, **Z X C V B N** under
