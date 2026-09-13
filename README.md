@@ -34,6 +34,14 @@ However you came by a build, it can point you back here: the title screen's **SO
 this repository in a new tab, and the address is drawn along the bottom of the title screen — click it
 with a mouse, or just read it off the screen if the browser refuses the tab.
 
+**On a phone:** open the link above and add it to your home screen — Android's *Install app* /
+*Add to Home screen*, or Share → *Add to Home Screen* on iOS. It then launches from its own icon with
+no browser chrome, in landscape, and **works with no network at all**: the whole game is one page, and
+an installed copy keeps it. There is no app store and nothing to download; a new version arrives on the
+launch after the one that fetched it. Touch controls appear the first time you tap the screen — a
+floating stick under your left thumb, and the buttons under your right — so no keyboard is needed.
+Turn the phone sideways; upright is too short a window to play in.
+
 ## Controls
 
 **One set of nine keys, and they never move.** Your whole hand sits on one 3×3 square of the keyboard:
@@ -56,6 +64,12 @@ always the same nine — plus the two digits just above them for taunt and start
 | Super   | E                             | Y              | RB / R1 |
 | Taunt   | 1                             | 4              | LB / L1 |
 | Start   | Enter (or 2)                  | 5              | Start |
+
+**On a touchscreen** the same actions are under your thumbs instead: hold anywhere on the left half to
+raise the movement stick (push it far enough and you run — there is no double-tap to fumble), and the
+right half carries ATK, JMP, DDG, SPC and SUP in a diamond, with the two that are not a fight move —
+pause and TAU (taunt) — up the right-hand edge. They appear the first time you touch the screen and stay
+hidden on a desktop with a touchscreen until you do, so a keyboard player never sees them.
 
 A second player on the same keyboard gets the identical square shifted three columns right — `R T Y`
 over `F G H` over `V B N`, with `4` and `5` above it — so the two hands never meet in the middle and

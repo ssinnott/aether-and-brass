@@ -2,10 +2,15 @@
 //   dist/index.html    a complete standalone HTML file (open from disk or serve anywhere)
 //   dist/artifact.html the same page as body-content only (no doctype/html/head/body wrapper),
 //                      for hosts that supply their own document skeleton
+// Beside them, the installable-app files the deployed site also serves (tools/pwa.js):
+//   dist/manifest.webmanifest, dist/sw.js, dist/icons/*.png
+// The page links those by relative path but never needs them: dist/index.html on its own is still
+// the whole game, which is what makes it a thing you can hand to someone as one file.
 import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pwaAssets, ICONS } from './pwa.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = path.join(ROOT, 'dist');
@@ -57,3 +62,12 @@ const focusHelper = `<script>
 const artifact = `${title}\n${styles}\n<style>\n  /* The host supplies the document skeleton, so paint our own ground and fill it. */\n  :root { color-scheme: dark; }\n  html, body { background: #000; }\n  body { min-height: 100vh; }\n</style>\n${body.trim()}\n${focusHelper}\n`;
 fs.writeFileSync(path.join(OUT_DIR, 'artifact.html'), artifact);
 console.log(`built dist/artifact.html (${(artifact.length / 1024).toFixed(0)} KB)`);
+
+// ---- installable-app files ---------------------------------------------
+// Generated from the page just written, so the worker's cache name changes whenever the game does.
+for (const [rel, bytes] of pwaAssets(html)) {
+  const file = path.join(OUT_DIR, rel);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, bytes);
+}
+console.log(`built dist/manifest.webmanifest, dist/sw.js and dist/icons/ (${ICONS.length} icons)`);
