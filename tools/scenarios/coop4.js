@@ -1,18 +1,23 @@
-// Four-player local co-op scenario for tools/playtest.js (issue #23). Receives the harness helpers
-// so this file shares one browser, one assert and one results list with the main harness, exactly
-// like tools/scenarios/weapons.js and tools/scenarios/thrown.js. tools/playtest.js is already close
-// to its ~700-line budget, so new scenarios live in their own sibling module.
+// Four-player party scenario for tools/playtest.js (issue #23). Receives the harness helpers so this
+// file shares one browser, one assert and one results list with the main harness, exactly like
+// tools/scenarios/weapons.js and tools/scenarios/thrown.js. tools/playtest.js is already close to its
+// ~700-line budget, so new scenarios live in their own sibling module.
 //
-// Parts (added across steps 23.2-23.5):
-//   A - a four-bot run: all four slots fill in order, party-scaled attack tokens, everyone stays on
-//       screen, at least one wave cleared, then (23.5) the results plaque shows four stats.
-//   B - mid-run and pause drop-in: a pad-only slot (2) drops in before the keyboard's P2 (slot 1),
-//       P2 can still drop in after it, and a further drop-in from the pause overlay lands on another
-//       pad-only slot (3).
-//   C - pad-claim slot assignment on the title (23.4).
-//   D - four cursors through character select into gameplay (23.4).
+// A four-player party is an ONLINE room (constants.js LOCAL_PLAYERS): two people share one keyboard,
+// one nine-key block each, and a pad never claims past the second seat. So this file has two jobs --
+// prove the four-player SIM still scales (Part A, seated through the `?chars=` debug hook, which is
+// the only way to put four heroes on one machine headlessly), and prove couch play really does stop
+// at two from every screen that can seat anybody (Parts B-D).
+//
+// Parts:
+//   A - a four-bot party: all four slots fill in order, party-scaled attack tokens and wave clones,
+//       everyone stays on screen, at least one wave cleared, and the results plaque shows four stats.
+//   B - the couch cap mid-run and from the pause overlay: P2 drops in, a third seat never does.
+//   C - pad-claim slot assignment on the title: the first pad takes a local seat, the second finds
+//       none, and claims release on title entry.
+//   D - two cursors through character select into gameplay, and no third.
 //   E - the netplay guard: local slots beyond the online party never reach a match, pads never
-//       claim another player's slot (23.5).
+//       claim another player's slot.
 /**
  * @param {{ withPage: Function, withPair: Function, assert: Function, readyUp: Function }} deps
  * @returns {{ coop4: Function }}
@@ -20,7 +25,9 @@
 export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
   return {
     async coop4(server) {
-      // Part A: four bots run themselves to the wave-clear/results milestones.
+      // Part A: four bots run themselves to the wave-clear/results milestones. `?chars=0,1,2,3` is the
+      // debug party hook (screens/gameplay.js enter): couch play can no longer produce four, so this is
+      // what stands in for an online room's seating while staying a single headless page.
       await withPage(server, 'seed=3&skipTo=gameplay&chars=0,1,2,3&bot=1&godmode=1', async (g) => {
         await g.step(3000);
         const s = await g.summary();
@@ -29,6 +36,22 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         assert(s.wavesCleared >= 1, `four-player bots clear at least one wave (cleared ${s.wavesCleared})`);
         assert((await g.eval(() => window.__game.world.attackTokens.max)) === 4, 'four heroes standing lets four enemies attack at once');
         assert(s.players.every((p) => p.x >= s.cameraX - 40 && p.x <= s.cameraX + 680), 'every hero stays on screen');
+        // WAVE_EXTRA_BY_PARTY (stage.js queueSpawns) is a THREE-or-more-hero feature ([0,0,0,1,2]), so
+        // this four-player party is the only place in the suite that can see it fire. Nothing else reads
+        // runner.pending or a spawn total, so the clone branch would stay green with the concat deleted.
+        // Push a 2-spec list straight onto the runner and inspect what actually landed in `pending`, then
+        // roll `pending.length` back so nothing is really spawned. An unsided lead spec (no `side`) is
+        // mirrored to whichever side its own default alternation is NOT (stage.js: `side: s.side ===
+        // 'left' ? 'right' : 'left'`), which for spec index 0 is 'left', so the clone is counted by
+        // side === 'left', not 'right'.
+        const wp = await g.eval(() => {
+          const r = window.__game.game.screen.runner, n0 = r.pending.length;
+          r.queueSpawns([{ type: 'a', variant: 'b' }, { type: 'a', variant: 'b', side: 'sky' }]);
+          const added = r.pending.slice(n0);
+          r.pending.length = n0;
+          return { n: added.length, sky: added.filter((e) => e.spec.side === 'sky').length, cloned: added.filter((e) => e.spec.side === 'left').length };
+        });
+        assert(wp.n === 3 && wp.sky === 1 && wp.cloned === 1, `a four-hero party gets one non-sky clone mirrored to the opposite side, and the sky spec is never cloned (${JSON.stringify(wp)})`);
         await g.shot('20b-coop4');
         // The results plaque takes the same four-player summary and lays out four stat columns.
         await g.eval(() => window.__game.game.screen.showResults(false));
@@ -40,139 +63,217 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         await g.shot('20c-results-4p');
       });
 
-      // Part B: mid-run drop-in on a pad-only slot before P2, then P2 itself, then a pause-overlay
-      // drop-in onto the remaining pad-only slot.
+      // Part B: the couch cap (constants.js LOCAL_PLAYERS). P2 still drops in mid-run and the party
+      // still scales to two, but no local press from any screen can reach a third seat -- that seat is
+      // an online room's to hand out, and there is no second keyboard to hand the person anyway.
       await withPage(server, 'seed=3&skipTo=gameplay&chars=0&nowaves=1&godmode=1', async (g) => {
-        // WAVE_EXTRA_BY_PARTY (stage.js queueSpawns): the only assertion in this whole file of the
-        // party-scaled wave-clone count -- nothing else reads runner.pending or a spawn total, so the
-        // clone branch would stay green with the concat deleted. Push a 2-spec list straight onto the
-        // runner and inspect what actually landed in `pending`, then roll `pending.length` back so
-        // nothing is really spawned (nowaves=1 already means updateSpawns never drains it anyway). An
-        // unsided lead spec (no `side`) is mirrored to whichever side its own default alternation is
-        // NOT (stage.js: `side: s.side === 'left' ? 'right' : 'left'`), which for spec index 0 is
-        // 'left', so the clone is counted by side === 'left', not 'right'.
-        const wavePendingProbe = () => g.eval(() => {
+        const joinedFlags = () => g.eval(() => [0, 1, 2, 3].map((s) => window.__game.input.joined(s)));
+        await g.step(30);
+        await g.press(2, { attack: true }, 2, 10);
+        let s = await g.summary();
+        let jf = await joinedFlags();
+        assert(s.players.length === 1 && !jf[2], `a third seat cannot drop in, even pressing its own buttons (indices ${s.players.map((p) => p.index).join()})`);
+        await g.press(1, { attack: true }, 2, 10);
+        s = await g.summary();
+        assert(s.players.length === 2 && s.players.some((p) => p.index === 1), `P2 still drops in mid-run (indices ${s.players.map((p) => p.index).join()})`);
+        await g.press(2, { attack: true }, 2, 10);
+        s = await g.summary();
+        assert(s.players.length === 2, `and a third still cannot once the couch is full at two (indices ${s.players.map((p) => p.index).join()})`);
+        // The pause overlay does its own drop-in, so it needs the cap independently of the gameplay loop.
+        await g.press(0, { start: true }, 2, 5);
+        assert((await g.screen()) === 'pause', 'a joined player\'s start button pauses the run');
+        await g.press(3, { attack: true }, 2, 5);
+        await g.press(0, { start: true }, 2, 10);
+        assert((await g.screen()) === 'gameplay', 'resuming from pause returns to gameplay');
+        s = await g.summary();
+        jf = await joinedFlags();
+        assert(s.players.length === 2, `the pause overlay cannot seat a third either (indices ${s.players.map((p) => p.index).join()})`);
+        assert(jf[0] && jf[1] && !jf[2] && !jf[3], `slots 0-1 joined, slots 2-3 left for an online room (${JSON.stringify(jf)})`);
+        // WAVE_EXTRA_BY_PARTY[2] is 0, so a full couch is still the identity spawn stream -- byte for
+        // byte what solo and every pre-#23 two-player run produced, which the checksums depend on.
+        const wp = await g.eval(() => {
           const r = window.__game.game.screen.runner, n0 = r.pending.length;
           r.queueSpawns([{ type: 'a', variant: 'b' }, { type: 'a', variant: 'b', side: 'sky' }]);
           const added = r.pending.slice(n0);
           r.pending.length = n0;
-          return { n: added.length, sky: added.filter((e) => e.spec.side === 'sky').length, cloned: added.filter((e) => e.spec.side === 'left').length };
+          return { n: added.length, cloned: added.filter((e) => e.spec.side === 'left').length };
         });
-        await g.step(30);
-        let wp = await wavePendingProbe();
-        assert(wp.n === 2, `a solo party gets no wave clones -- identity, byte-for-byte the pre-#23 spawn list (${JSON.stringify(wp)})`);
-        await g.press(2, { attack: true }, 2, 10);
-        let s = await g.summary();
-        assert(s.players.length === 2 && s.players.some((p) => p.index === 2), `a pad-only slot drops in before P2 (indices ${s.players.map((p) => p.index).join()})`);
-        await g.press(1, { attack: true }, 2, 10);
-        s = await g.summary();
-        assert(s.players.length === 3 && s.players.some((p) => p.index === 1), `P2 can still drop in after a pad-only slot (indices ${s.players.map((p) => p.index).join()})`);
-        await g.press(0, { start: true }, 2, 5);
-        assert((await g.screen()) === 'pause', 'a joined player\'s start button pauses the run');
-        await g.press(3, { attack: true }, 2, 5); // the join edge is consumed by the pause overlay, which does its own drop-in
-        await g.press(0, { start: true }, 2, 10);
-        assert((await g.screen()) === 'gameplay', 'resuming from pause returns to gameplay');
-        s = await g.summary();
-        assert(s.players.length === 4 && s.players.some((p) => p.index === 3), `drop-in from the pause overlay on a pad slot (indices ${s.players.map((p) => p.index).join()})`);
-        assert(await g.eval(() => [1, 2, 3].every((sl) => window.__game.input.joined(sl))), 'slots 1-3 all report joined');
-        wp = await wavePendingProbe();
-        assert(wp.n === 3 && wp.sky === 1 && wp.cloned === 1, `a four-hero party gets one non-sky clone mirrored to the opposite side, and the sky spec is never cloned (${JSON.stringify(wp)})`);
-        await g.shot('20d-dropin-4p');
+        assert(wp.n === 2 && wp.cloned === 0, `a full couch gets no wave clones -- identity, byte-for-byte the solo spawn list (${JSON.stringify(wp)})`);
+        // One player standing still must not veto the run. Before engine/camera.js grew its leader
+        // floor, the mean-follow and the left-edge clamp settled into a standstill the moment the
+        // party was a screen apart: the idle hero pinned the left edge, the moving one was stuck
+        // against the right, and the camera never advanced again -- on a 6000px stage, from x 132.
+        await g.eval(() => window.__game.clearInput(1));
+        const camBefore = await g.eval(() => Math.round(window.__game.world.camera.x));
+        await g.eval(() => window.__game.setInput(0, { right: true }));
+        await g.step(600);
+        const walk = await g.eval(() => {
+          const ps = window.__game.summary().players;
+          const at = (i) => { const p = ps.find((q) => q.index === i); return p ? Math.round(p.x) : null; };
+          return { cam: Math.round(window.__game.world.camera.x), lead: at(0), idle: at(1) };
+        });
+        await g.eval(() => window.__game.clearInput(0));
+        assert(walk.cam > camBefore + 400, `one player walking while the other stands still still moves the camera (${camBefore} -> ${walk.cam})`);
+        assert(walk.idle > camBefore + 300, `the player standing still is carried along rather than stranding the run (idle at ${walk.idle})`);
+        assert(walk.idle >= walk.cam - 8 && walk.lead <= walk.cam + 640, `and both stay on screen (cam ${walk.cam}, lead ${walk.lead}, idle ${walk.idle})`);
+        await g.shot('20d-dropin-2p');
       });
 
-      // Part C: pad-claim slot assignment on the title. A real key drives P1's steering (the shared
-      // arrows); virtual pads (#19's input.setPadVirtual, read through pollGamepads) drive the claims.
+      // Part C: pad-claim slot assignment on the title, and the cap on claiming itself. A real key
+      // drives P1's steering (the arrows, which are P1's own second movement set); virtual pads
+      // (#19's input.setPadVirtual, read through pollGamepads) drive the claims.
       await withPage(server, 'seed=1', async (g, page) => {
         const padState = () => g.eval(() => ({
-          padOf1: window.__game.input.padOf(1), padOf2: window.__game.input.padOf(2),
+          padOf0: window.__game.input.padOf(0), padOf1: window.__game.input.padOf(1),
+          padOf2: window.__game.input.padOf(2), padOf3: window.__game.input.padOf(3),
           joined1: window.__game.input.joined(1), joined2: window.__game.input.joined(2),
+          nextPad: window.__game.input.nextPadSlot(),
         }));
         await g.step(30);
         await page.bringToFront();
-        await page.keyboard.press('ArrowRight'); // P1 steering with the shared arrows: must not mark slot 1 as used
+        await page.keyboard.press('ArrowRight'); // P1 steering with their own arrows: must not mark slot 1 as used
         await g.step(3);
         await g.eval(() => window.__game.input.setPadVirtual(0, [0]));
         await g.step(2);
         let st = await padState();
-        assert(st.padOf1 === 0 && st.joined1, `a pad pressed after P1 steered with the shared arrows becomes P2, not P3 (${JSON.stringify(st)})`);
+        assert(st.padOf1 === 0 && st.joined1, `a pad pressed after P1 steered with their own arrows becomes P2, not P1 (${JSON.stringify(st)})`);
         await g.eval(() => window.__game.input.setPadVirtual(0, []));
         await g.step(2);
-        // Slot 1's own key sets its kbSeen (decision #2). KeyL (P2's SPECIAL) rather than P2's own
-        // ATTACK: slot 1 already joined above, and the title menu lets any joined slot confirm with
-        // ATTACK/START/JUMP -- pressing P2's attack here would double as "START" and leave the title.
-        await page.keyboard.press('KeyL');
+        // Slot 1's own key sets its kbSeen. KeyR (P2's SPECIAL) rather than P2's own ATTACK: slot 1
+        // already joined above, and the title menu lets any joined slot confirm with ATTACK/START/JUMP
+        // -- pressing P2's attack here would double as "START" and leave the title.
+        await page.keyboard.press('KeyR');
         await g.step(3);
         await g.eval(() => window.__game.input.setPadVirtual(1, [0]));
         await g.step(2);
         st = await padState();
-        assert(st.padOf2 === 1 && st.joined2, `a second pad claims P3 once P2's keyboard has been used (${JSON.stringify(st)})`);
+        assert(st.padOf2 === -1 && st.padOf3 === -1 && !st.joined2,
+          `a SECOND pad finds no seat to claim once both couch slots are spoken for (${JSON.stringify(st)})`);
+        assert(st.nextPad === -1, `and nextPadSlot() agrees, so no hint can advertise a seat that press cannot reach (${st.nextPad})`);
         await g.eval(() => window.__game.input.setPadVirtual(1, []));
         await g.step(2);
         await g.eval(() => window.__game.input.setPadVirtual(0, [0]));
         await g.step(2);
         st = await padState();
-        assert(st.padOf1 === 0 && st.padOf2 === 1, `a claimed pad keeps its slot (${JSON.stringify(st)})`);
+        assert(st.padOf1 === 0, `a claimed pad keeps its slot (${JSON.stringify(st)})`);
         await g.eval(() => window.__game.input.setPadVirtual(0, []));
-        await g.shot('01b-title-4p');
+        await g.shot('01b-title-2p');
         await g.eval(() => window.__game.game.reset('title'));
         await g.step(5);
         st = await padState();
-        assert(st.padOf1 === -1 && !st.joined1 && !st.joined2, `entering the title releases every claim (${JSON.stringify(st)})`);
+        assert(st.padOf1 === -1 && !st.joined1, `entering the title releases every claim (${JSON.stringify(st)})`);
         await g.eval(() => window.__game.input.setPadVirtual(1, [0]));
         await g.step(2);
         const padOf0 = await g.eval(() => window.__game.input.padOf(0));
         assert(padOf0 === 1, `after the reset the first pad pressed is P1 (got ${padOf0})`);
-        // The two-keyboard-halves-plus-two-pads case: with BOTH keyboard halves already used (kbSeen
-        // set on slots 0 and 1), a pad pressed after them must skip straight past slot 1 to slot 2 --
-        // this is the one assertion that actually depends on the kbSeen(1) write inside the join-code
-        // edge branch (decision #2); every other coop4 check here would stay green without it, since
-        // by the time a pad is pressed slot 1 already holds a pad and `pad < 0` alone rules it out.
+        // Both keyboard blocks in use: before the cap a pad pressed here skipped past slot 1 to slot 2.
+        // Now there is no slot 2 to skip to, so the press claims nothing at all rather than seating a
+        // third player nobody has a keyboard for.
         await g.eval(() => window.__game.input.setPadVirtual(1, []));
         await g.eval(() => window.__game.game.reset('title'));
         await g.step(5);
         await page.bringToFront();
         await page.keyboard.press('KeyD'); // P1's own key: kbSeen[0]
-        await page.keyboard.press('KeyL'); // P2's own key (SPECIAL): joins slot 1, kbSeen[1]
+        await page.keyboard.press('KeyR'); // P2's own key (SPECIAL): joins slot 1, kbSeen[1]
         await g.step(3);
         await g.eval(() => window.__game.input.setPadVirtual(0, [0]));
         await g.step(2);
-        const afterBothKb = await g.eval(() => ({
-          padOf1: window.__game.input.padOf(1), padOf2: window.__game.input.padOf(2), joined2: window.__game.input.joined(2),
-        }));
-        assert(afterBothKb.padOf2 === 0 && afterBothKb.padOf1 === -1 && afterBothKb.joined2, `a pad pressed after both keyboard halves are in use becomes P3, not P2 (${JSON.stringify(afterBothKb)})`);
+        const afterBothKb = await padState();
+        assert(afterBothKb.padOf0 === -1 && afterBothKb.padOf1 === -1 && afterBothKb.padOf2 === -1 && !afterBothKb.joined2,
+          `a pad pressed after both keyboard blocks are in use claims nothing (${JSON.stringify(afterBothKb)})`);
+        // ...and the join hints cannot lie about it: party.js builds every hint out of these two, so
+        // with no free seat and no claimable slot there is nothing left for one to advertise.
+        const invitable = await g.eval(() => ({ free: window.__game.input.freeSlots(), next: window.__game.input.nextPadSlot() }));
+        assert(invitable.free.length === 0 && invitable.next === -1,
+          `nothing is left to invite once both couch seats are taken (${JSON.stringify(invitable)})`);
         await g.eval(() => window.__game.input.setPadVirtual(0, null));
         await g.eval(() => window.__game.input.setPadVirtual(1, null));
       });
 
-      // Part D: four cursors through character select into gameplay. P2-P4 join on their own edge
-      // (never doubling as a confirm), move independently and end up on four distinct heroes.
+      // Part D: two cursors through character select into gameplay, and no third. P2 joins on its own
+      // edge (never doubling as a confirm), both cursors move independently and end on distinct heroes.
       await withPage(server, 'seed=1', async (g) => {
         await g.step(60);
         await g.press(0, { attack: true }, 2, 20); // title -> board select
         await g.press(0, { attack: true }, 2, 45); // board select -> character select
-        await g.press(1, { attack: true }, 2, 6);  // P2 joins (keyboard half)
-        await g.press(2, { attack: true }, 2, 6);  // P3 joins (pad-only slot)
-        await g.press(3, { attack: true }, 2, 6);  // P4 joins (pad-only slot)
-        for (let s = 0; s < 4; s++) for (let m = 0; m < s; m++) await g.press(s, { right: true }, 2, 8);
-        await g.shot('02c-select-4p');
-        // With four characters, "slot s moves right s times" leaves P1/P3 sharing one card and P2/P4
-        // another (2s mod 4 collides for s and s+2) -- exactly the tinted-duplicate overlap the
-        // screenshot above shows. One more right-press each spreads P3 and P4 onto their own cards
-        // before anyone confirms, so the run that follows gets four distinct heroes.
-        await g.press(2, { right: true }, 2, 8);
-        await g.press(3, { right: true }, 2, 8);
-        for (let s = 0; s < 4; s++) await g.press(s, { attack: true }, 2, 6);
+        await g.press(1, { attack: true }, 2, 6);  // P2 joins (their own keyboard block)
+        await g.press(2, { attack: true }, 2, 6);  // a third seat cannot join here either
+        await g.press(3, { attack: true }, 2, 6);
+        const seated = await g.eval(() => window.__game.game.screen.p.map((ps) => ps.joined));
+        assert(seated[0] && seated[1] && !seated[2] && !seated[3],
+          `character select seats the two couch players and no more (${JSON.stringify(seated)})`);
+        await g.press(1, { right: true }, 2, 8);   // move P2 off P1's card
+        await g.shot('02c-select-2p');
+        await g.press(0, { attack: true }, 2, 6);
+        await g.press(1, { attack: true }, 2, 6);
         await g.step(40);
         const scr = await g.screen();
-        assert(scr === 'intro' || scr === 'gameplay', `four cursors confirm into intro/gameplay (got ${scr})`);
-        await g.shot('02d-intro-4p');
+        assert(scr === 'intro' || scr === 'gameplay', `two cursors confirm into intro/gameplay (got ${scr})`);
+        await g.shot('02d-intro-2p');
         await g.step(200);
         await g.press(0, { attack: true }, 2, 30); // skip the intro card if any
         await g.step(30);
         const s = await g.summary();
-        assert(s.screen === 'gameplay', `four-player select reaches gameplay (got ${s.screen})`);
-        assert(s.players.length === 4, `all four players present (got ${s.players.length})`);
-        assert(new Set(s.players.map((p) => p.id)).size === 4, `four distinct heroes chosen (ids ${s.players.map((p) => p.id).join()})`);
+        assert(s.screen === 'gameplay', `couch select reaches gameplay (got ${s.screen})`);
+        assert(s.players.length === 2, `both players present (got ${s.players.length})`);
+        assert(new Set(s.players.map((p) => p.id)).size === 2, `two distinct heroes chosen (ids ${s.players.map((p) => p.id).join()})`);
+      });
+
+      // Part F: the two select-screen defects the four-player audit turned up, both of which outlive
+      // the couch cap because slot 1 can hit them too.
+      //   1. a pad press that CLAIMS a slot must not also read as that slot's confirm -- on CHOOSE
+      //      YOUR FIGHTER that locks a hero for whoever already holds the seat;
+      //   2. a joined player who goes quiet (a pad whose battery died) must not hold the READY gate
+      //      shut for everybody with no way out of it.
+      await withPage(server, 'seed=1', async (g, page) => {
+        await g.step(60);
+        await page.bringToFront();
+        // Drive P1 on REAL keys, not g.press(): a virtual slot never sets kbSeen, and kbSeen[0] is
+        // what makes a pad claim slot 1 rather than settling on P1.
+        await page.keyboard.press('KeyZ'); await g.step(25); // title -> board select
+        await page.keyboard.press('KeyZ'); await g.step(50); // board select -> character select
+        assert((await g.screen()) === 'select', `P1's own keys reach character select (got ${await g.screen()})`);
+        const sel = () => g.eval(() => ({
+          joined: window.__game.game.screen.p.map((ps) => ps.joined),
+          confirmed: window.__game.game.screen.p.map((ps) => ps.confirmed),
+          ready: window.__game.game.screen.readyTimer,
+          padOf1: window.__game.input.padOf(1),
+        }));
+        // A pad claims slot 1: P2 joins, and the claiming press is spent on the claim.
+        await g.eval(() => window.__game.input.setPadVirtual(0, [0]));
+        await g.step(4);
+        let st = await sel();
+        assert(st.joined[1] && st.padOf1 === 0, `a pad claims slot 1 on character select (${JSON.stringify(st)})`);
+        assert(!st.confirmed[1], `the claiming press does not also lock P2's hero (${JSON.stringify(st)})`);
+        await g.eval(() => window.__game.input.setPadVirtual(0, []));
+        await g.step(3);
+        // That pad dies. The seat stays joined but its pad is released, which is exactly the state a
+        // fresh pad press used to be swallowed by.
+        await g.eval(() => window.__game.input.setPadVirtual(0, null));
+        await g.step(3);
+        st = await sel();
+        assert(st.joined[1] && st.padOf1 === -1, `a disconnected pad releases its slot but not the seat (${JSON.stringify(st)})`);
+        await g.eval(() => window.__game.input.setPadVirtual(1, [0]));
+        await g.step(4);
+        st = await sel();
+        assert(st.padOf1 === 1, `a second pad re-claims the orphaned seat (${JSON.stringify(st)})`);
+        assert(!st.confirmed[1], `and that claim press still does not lock the hero of whoever holds it (${JSON.stringify(st)})`);
+        await g.eval(() => window.__game.input.setPadVirtual(1, null));
+        await g.step(3);
+        // P1 locks in. The gate must NOT fire: slot 1 is joined and has not confirmed.
+        await page.keyboard.press('KeyZ');
+        await g.step(30);
+        st = await sel();
+        assert(st.confirmed[0] && !st.confirmed[1] && st.ready === -1,
+          `a joined slot that has not confirmed holds the READY gate shut (${JSON.stringify(st)})`);
+        // BACK from that unlocked slot leaves the party, which frees the gate for everybody else.
+        await g.press(1, { jump: true }, 2, 8);
+        st = await sel();
+        assert(!st.joined[1] && !(await g.eval(() => window.__game.input.joined(1))),
+          `BACK from an unlocked slot leaves the party (${JSON.stringify(st)})`);
+        await g.step(10);
+        st = await sel();
+        assert(st.ready >= 0, `and the run can start once nobody is holding it (readyTimer ${st.ready})`);
       });
 
       // Part E: the netplay guard. Local slots beyond the online party never make it into a match, and a
@@ -200,13 +301,97 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
           padOf0: window.__game.input.padOf(0),
           padOf1: window.__game.input.padOf(1),
           joined2: window.__game.input.joined(2),
-          attack: window.__game.input.pollRaw(0, { solo: true }).attack === true,
+          attack: window.__game.input.pollRaw(0).attack === true,
         }));
         await hostPage.evaluate(() => window.__game.input.setPadVirtual(0, null));
         assert(held.attack, 'a pad pressed after the keyboard still drives the local player online');
         assert(held.padOf0 === -1 && held.padOf1 === -1 && !held.joined2, `a pad held across several real frames with claiming off never claims a slot, not even the peer's (${JSON.stringify(held)})`);
         const desyncs = await Promise.all([hostPage, guestPage].map((p) => p.evaluate(() => window.__game.netState().desync)));
         assert(desyncs[0] === null && desyncs[1] === null, `no desync from the extra local join/pad activity (${JSON.stringify(desyncs)})`);
+      });
+
+      // Part I: a seat is only taken over when it is the LAST thing holding the run open. Standing
+      // still is ordinary play, so an idle partner keeps their hero while somebody else is still up --
+      // the camera's leader floor already stops them holding the run up. But once every other player is
+      // out, GAME OVER's `anyAlive` gate (every player `out`) was suppressed for good by that one
+      // alive-but-silent hero: no continue countdown, no results, and with their partner gone no camera
+      // movement, no section advance, no wave, so nothing was ever going to kill them either.
+      await withPage(server, 'seed=3&skipTo=gameplay&chars=0,1&nowaves=1&godmode=1', async (g) => {
+        await g.step(30);
+        const seats = () => g.eval(() => window.__game.summary().players.map((p) => ({ i: p.index, bot: !!p.bot })));
+        const botAt = async (i) => (await seats()).find((p) => p.i === i).bot;
+        let st = await seats();
+        assert(st.length === 2 && st.every((p) => !p.bot), `two human seats to start (${JSON.stringify(st)})`);
+        // 1. Nobody is up for takeover while a partner is still playing, however long they stand still.
+        await g.press(1, { left: true }, 2, 2);           // zero P2's idle clock
+        await g.eval(() => window.__game.setInput(0, { right: true }));
+        await g.step(1200);                                // well past ABANDONED_SEAT_FRAMES
+        await g.eval(() => window.__game.clearInput(0));
+        st = await seats();
+        assert(st.every((p) => !p.bot), `a hero is not taken from its owner just for standing still (${JSON.stringify(st)})`);
+        // 2. Their partner goes out: now that silent seat is the only thing keeping the run open.
+        await g.eval(() => { window.__game.game.screen.players[0].out = true; });
+        await g.press(1, { left: true }, 2, 2);           // zero the clock again, so the window is measured
+        await g.step(840);
+        assert(!(await botAt(1)), 'still nobody handed over 840 frames in -- inside the 900-frame window');
+        await g.step(120);
+        assert(await botAt(1), 'the last living seat goes to the bot once it is all that holds the run open');
+        // 3. One press takes it straight back.
+        await g.press(1, { left: true }, 2, 3);
+        assert(!(await botAt(1)), 'one press takes the seat straight back from the bot');
+      });
+
+      // Part G: a room you can leave. The lobby's start gate needs EVERY seated player ready
+      // (net/session.js partyReady) and the disconnect watchdog is only armed once a match starts, so
+      // a peer who goes quiet without closing the tab is never dropped. Until lobby.js grew a
+      // back-out in its 'lobby' phase there was no key at all -- Escape included -- that got anybody
+      // out of that wait; reloading the page was the only way.
+      await withPair(server, 'room=NETOUT&transport=broadcast&host=1', 'room=NETOUT&transport=broadcast', async (hostPage, guestPage, H, G) => {
+        for (const p of [hostPage, guestPage]) await p.evaluate(() => window.__game.startLoop());
+        for (const p of [hostPage, guestPage]) await p.waitForFunction(() => ((window.__game.netState() || {}).state === 'lobby'), null, { timeout: 20000 });
+        // The guest must have reached the LOBBY phase: 'connecting' has always had its own back-out,
+        // so testing there would pass whether or not the lobby phase has one.
+        await guestPage.waitForFunction(() => window.__game.game.screen.phase === 'lobby', null, { timeout: 20000 });
+        const phase = await guestPage.evaluate(() => window.__game.game.screen.phase);
+        assert(phase === 'lobby', `the guest is past 'connecting' and in the room proper (got ${phase})`);
+        // The host readies and then waits on the guest for good -- nothing times this out.
+        assert(await readyUp(hostPage), 'the host registered its ready press');
+        assert(await hostPage.evaluate(() => (window.__game.netState() || {}).state) === 'lobby',
+          'one ready peer does not start the match: the room still waits on the other');
+        // The guest has NOT readied. BACK must actually leave the room, not sit there doing nothing.
+        await guestPage.bringToFront();
+        await guestPage.keyboard.press('KeyX'); // P1 JUMP = BACK (game/menuinput.js)
+        await guestPage.waitForFunction(() => window.__game.screen() === 'title', null, { timeout: 10000 })
+          .catch(() => { /* asserted below with the actual screen in the message */ });
+        const left = await G.screen();
+        assert(left === 'title', `BACK from a room you have not readied in leaves it for the title (got ${left})`);
+      });
+
+      // Part H: a seat nothing can drive never holds CHOOSE YOUR FIGHTER shut. An ended online session
+      // used to leave its remote slots joined-but-undrivable (net/session.js end() cleared the virtual
+      // and stopped there), and results.js reaches BOARD SELECT directly on a board unlock, so the
+      // ghosts rode past the only screen that un-joins anything. Slots 2/3 have no keyboard block, so
+      // BACK could not retire them either: the READY gate waited on them for good.
+      await withPage(server, 'seed=1', async (g) => {
+        await g.step(60);
+        // Stand in for the ghosts: joined, no keyboard block, no pad, no virtual -- exactly what
+        // end() left behind.
+        await g.eval(() => { window.__game.input.setJoined(2, true); window.__game.input.setJoined(3, true); });
+        const before = await g.eval(() => [0, 1, 2, 3].map((s) => window.__game.input.joined(s)));
+        assert(before[2] && before[3], `the ghost seats are joined before select (${JSON.stringify(before)})`);
+        await g.press(0, { attack: true }, 2, 20); // title -> board select
+        await g.press(0, { attack: true }, 2, 45); // board select -> character select
+        assert((await g.screen()) === 'select', `reached character select (got ${await g.screen()})`);
+        const seated = await g.eval(() => ({
+          screen: window.__game.game.screen.p.map((ps) => ps.joined),
+          input: [0, 1, 2, 3].map((s) => window.__game.input.joined(s)),
+        }));
+        assert(!seated.screen[2] && !seated.screen[3], `a seat nothing can drive is retired at the door (${JSON.stringify(seated.screen)})`);
+        assert(!seated.input[2] && !seated.input[3], `and it is un-joined for good, not just hidden (${JSON.stringify(seated.input)})`);
+        // P1 alone can now start the run, which is the whole point.
+        await g.press(0, { attack: true }, 2, 40);
+        const ready = await g.eval(() => (window.__game.game.screen.readyTimer !== undefined ? window.__game.game.screen.readyTimer : 1));
+        assert(ready >= 0 || (await g.screen()) !== 'select', `P1 can start alone rather than waiting on a ghost (readyTimer ${ready})`);
       });
     },
   };

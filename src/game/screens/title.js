@@ -120,11 +120,11 @@ export class TitleScreen extends Screen {
   refreshLegends() {
     const inp = this.game.input;
     this.legends = {
-      solo: fitLegend('1P  ' + inp.legend('solo')),
+      solo: fitLegend('1P  ' + inp.legend('p1')),
       p1: fitLegend('P1  ' + inp.legend('p1')),
       p2: fitLegend('P2  ' + inp.legend('p2')),
-      coop: fitLegend('CO-OP P1  ' + inp.legend('p1'), 'P1  ' + inp.legend('p1')),
-      foot: (inp.hasKey('p1', 'jump', 'Space') || inp.hasKey('solo', 'jump', 'Space') ? 'SPACE JUMPS   ' : '') + FOOT_FIXED,
+      coop: fitLegend('CO-OP P2  ' + inp.legend('p2'), 'P2  ' + inp.legend('p2')),
+      foot: FOOT_FIXED,
     };
     this.legendVersion = inp.bindingsVersion;
   }
@@ -260,8 +260,9 @@ export class TitleScreen extends Screen {
     } else if (this.hint && (f % 90) < 60) drawText(ctx, this.hint, 320, HINT_Y, { size: 1, color: UI.p2, align: 'center' });
     // What the SOURCE CODE row (or a click on the address) just did, on the walkway above the address.
     if (this.noticeTimer > 0) drawText(ctx, this.notice, 320, NOTICE_Y, { size: 1, color: this.notice === LINK_OPENED ? UI.teal : UI.copper, align: 'center' });
-    // Alone, the arcade row leads and the split-keyboard half is only a dimmed footnote; once P2 is in, the
-    // two halves are what matter, so they swap places. Matches input.js soloAliases, which are live iff !p2.
+    // The lead line is this player's own block, which is the same nine keys either way -- only its
+    // label changes from '1P' to 'P1'. The second line is P2's block: a dimmed advertisement of the
+    // keys a friend would take while nobody has, and their live legend once somebody has.
     const lead = p2 ? this.legends.p1 : this.legends.solo;
     const second = p2 ? this.legends.p2 : this.legends.coop;
     drawText(ctx, lead, 320, 318, { size: 1, color: UI.paper, align: 'center', shadow: false });

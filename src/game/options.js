@@ -139,7 +139,7 @@ export const options = {
       storage: !!s,
       saved,
       bindings: input.exportBindings(),
-      legend: { solo: input.legend('solo'), p1: input.legend('p1'), p2: input.legend('p2') },
+      legend: { p1: input.legend('p1'), p2: input.legend('p2') },
       joinHint: input.joinHint(1),
     };
   },

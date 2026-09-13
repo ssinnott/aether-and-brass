@@ -23,7 +23,7 @@ import { rivetLine, gear } from '../../art/shapes.js';
 import { input, bindings } from '../../engine/input.js';
 import { options } from '../options.js';
 import { drawPlate, consumeMenuBuffers } from './pause.js';
-import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey, menuLayout } from '../menuinput.js';
+import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 import { drawVolumeRow } from './options.js';
 
 const PLATE_X = 20, PLATE_Y = 22, PLATE_W = 600, PLATE_H = 316;
@@ -54,8 +54,8 @@ const MUTE_VALUE = { on: '< ON >', off: '< OFF >' };
 const NO_BUTTON = '-';
 
 /**
- * Build the eleven [keys, pad] label pairs for `layout` (the keyboard half the local player is actually
- * using: the 1P arcade aliases until P2 joins, P1's own keys after). Reads every label through
+ * Build the eleven [keys, pad] label pairs for `layout` (the local player's own block, which is the
+ * same whether or not anybody else has joined). Reads every label through
  * `input.moveText()` / `input.keyText()` so a remapped key shows up here too (ARCHITECTURE.md 16 --
  * screens never hard-code a key name).
  * @param {string} layout
@@ -86,10 +86,10 @@ export class HelpScreen extends Screen {
     super.enter(params);
     this.online = !!(this.game.net && this.game.net.active);
     this.cursor = 0;
-    // The keyboard half this player is on right now: the arcade aliases are live until P2 joins, after
-    // which P1 moves to the left half (engine/bindings.js soloAliases) -- the same rule moves.js follows.
+    // P1's block is the same nine keys alone or in co-op (engine/bindings.js), so the local player's
+    // layout never moves -- `coop` only decides whether P2's half is worth a line of its own.
     this.coop = input.joined(1);
-    this.layout = menuLayout(input);   // the same rule the menu keys' own labels follow
+    this.layout = 'p1';
     this.labels = buildLabels(this.layout);
     this.keysHead = this.coop ? 'P1 KEYS' : 'KEYS';
     this.notes = [`MENUS: ${confirmKey(input)} SELECTS, ${backKey(input)} BACKS OUT`, 'REMAP ANY KEY IN OPTIONS > CONTROLS'];

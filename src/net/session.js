@@ -6,8 +6,9 @@
 // rules that keep every peer identical live here, and every one of them exists because breaking it
 // desyncs the match:
 //
-//  * The local device is always read through binding set 0 with the solo aliases live, whichever
-//    game slot this peer owns. Everyone sits alone at their own keyboard using WASD.
+//  * The local device is always read through binding set 0, whichever game slot this peer owns.
+//    Everyone sits alone at their own keyboard on the same nine keys (engine/bindings.js), and that
+//    block never changes, so there is nothing for a seat assignment to switch out from under them.
 //  * Escape is folded into the `start` bit, so pause is a simulated event the whole party agrees on
 //    rather than a local keyboard edge that would pause one machine only.
 //  * Missing remote input NEVER becomes a neutral mask. Zero-filling manufactures a release edge
@@ -589,8 +590,9 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     game.options.netplay = false;      // nothing is under lockstep control again until the next match
     for (let s = 0; s < Math.max(net.players, input.playerCount || net.players); s++) {
       input.clearVirtual(s);
-      // Slots 1+ were joined by beginMatch for the seats the party held. Releasing them again is
-      // what gives the local player their solo alias keys back (engine/input.js soloActive).
+      // Slots 1+ were joined by beginMatch for the seats the party held. Releasing them again is what
+      // leaves the couch free to fill them: a seat left joined with its virtual cleared is one nothing
+      // can drive and nothing can clear (see net.end below, and screens/select.js's door).
       if (s > 0 && typeof input.setJoined === 'function') input.setJoined(s, false);
     }
     if (typeof input.clearBuffers === 'function') input.clearBuffers();
@@ -800,7 +802,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     // After a session ends the surviving player must keep their own keyboard: the local slot is
     // still virtual-injected, so keep feeding it from the real devices rather than clearing it,
     // which would move them to another binding set.
-    if (net.endedPump) { input.setVirtual(Math.max(0, net.localSlot), input.pollRaw(0, { solo: true })); return; }
+    if (net.endedPump) { input.setVirtual(Math.max(0, net.localSlot), input.pollRaw(0)); return; }
     if (!net.active || !net.ls) return;
     if (net.ls.desync) { net.end(`desync at frame ${net.ls.desync.frame}`); return; }
     if (!net.waiting) return;
@@ -827,7 +829,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     if (!net.ls.canAdvance()) return false;
     retireReachedSlots();
     if (!net.active || !net.ls) return false;    // the last of the party left on this very frame
-    const raw = input.pollRaw(0, { solo: true });
+    const raw = input.pollRaw(0);
     // Escape must not pause locally: routed through `start`, the whole party pauses on one frame.
     if (input.globalPressed('pause')) raw.start = true;
     const p = net.ls.recordLocal(packActions(raw));
@@ -873,13 +875,18 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     game.options.netplay = false;
     progress.setScope(null);    // back to this player's own solo progress
     // Hand every REMOTE slot to the bot - on a guest that includes slot 0, not just the slots above
-    // ours. Clearing every virtual would also drop the local player onto another binding set
-    // (arrows / J K U L O I) mid-run, so the local slot keeps being driven from their own keyboard
-    // by the ended pump.
+    // ours. The local slot keeps being driven from their own keyboard by the ended pump rather than
+    // being cleared, so the run carries on under the same hand without a hitch.
     const players = game.players || [];
     for (let s = 0; s < Math.max(net.players, players.length); s++) {
       if (s === net.localSlot) continue;
       input.clearVirtual(s);
+      // ...and un-JOIN it, not just un-drive it. A seat left joined with its virtual cleared is a
+      // seat nothing can drive and nothing can clear: the title is the only other place that un-joins
+      // (title.js), and results.js reaches BOARD SELECT directly on a board unlock, so the ghosts ride
+      // into CHOOSE YOUR FIGHTER, where the READY gate waits on every joined slot. Slots 2/3 have no
+      // keyboard block, so not even BACK can retire them there -- the party would be stuck for good.
+      if (typeof input.setJoined === 'function' && s > 0) input.setJoined(s, false);
       if (players[s]) players[s].bot = true;
     }
     net.endedPump = true;

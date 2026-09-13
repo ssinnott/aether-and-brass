@@ -39,8 +39,8 @@ function wrapDesc(text, width = DESC_WRAP) {
 
 /**
  * Replace each control word in a MoveEntry.input string with 'WORD [K]', K the on-screen label of the
- * live key bound to that action for keyboard `slot` (or the 1P-arcade solo alias while P2 has not
- * joined) -- a single call site so a future rebinding UI only has to change what this reads. RUN has no
+ * live key bound to that action for keyboard `slot` (P1's block for a slot that has none of its own) --
+ * a single call site so a future rebinding UI only has to change what this reads. RUN has no
  * binding of its own (double-tap direction / gamepad RT held), so it is always spelled out literally.
  * @param {string} text
  * @param {number} slot
@@ -51,7 +51,7 @@ export function inputLabel(text, slot) {
   for (const word of ACTION_WORDS) {
     if (!out.includes(word)) continue;
     const action = word.toLowerCase();
-    const codes = input.joined(1) ? bindings.keyboard[slot][action] : (bindings.soloAliases[action] || bindings.keyboard[0][action]);
+    const codes = (bindings.keyboard[slot] || bindings.keyboard[0])[action];
     const key = codes && codes.length ? input.keyLabel(codes[0]) : '?';
     out = out.replace(new RegExp(`\\b${word}\\b`, 'g'), `${word} [${key}]`);
   }

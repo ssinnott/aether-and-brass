@@ -295,7 +295,7 @@ const suites = {
     ok(!net.lobby.myReady && net.lobby.members.every((m) => !m.ready),
       'every ready flag is cleared: a peer still reading its results plaque cannot be dragged into the next match');
     ok(virtual.size === 0, 'every seat gets its real devices back - a mask frozen on the last frame is not a menu');
-    ok(joined.size === 0, "...which is also what gives the local player their solo alias keys back");
+    ok(joined.size === 0, '...and no seat is left joined with nothing able to drive it');
     ok(stubInput.buffersCleared && stubInput.claimsReset, 'and the match cannot leak a press into the lobby');
     ok(!net.waiting && net.missing.length === 0, 'the waiting overlay is down');
     ok(game.options.netplay === false, 'nothing is under lockstep control until the next match starts');

@@ -8,7 +8,7 @@
 // counter with grade word / colour climb / scale pop on each side. Elite armor icons, 400x10 boss bar with name
 // plate + phase segments, banners / boss name plates, the super cut-in (portrait slam + name banner during the 12f
 // freeze) and the per-player CONTINUE countdown while the rest of the party keeps playing.
-import { VIEW_W, VIEW_H, FLOOR_TOP, METER, UI, ST, MAX_PLAYERS, PLAYER_COLORS } from '../constants.js';
+import { VIEW_W, VIEW_H, FLOOR_TOP, METER, UI, ST, MAX_PLAYERS, LOCAL_PLAYERS, PLAYER_COLORS } from '../constants.js';
 import { drawText, drawTextOutlined, measureText } from '../engine/text.js';
 import { buildRig } from '../art/rig.js';
 import { rrect, gear, rivetLine, pathPoly, paint } from '../art/shapes.js';
@@ -134,8 +134,10 @@ export class Hud {
       this.joinKey = k;
       const online = !!(this.game.net && this.game.net.active);
       this.hint = full ? '' : joinHint(inp, online);
+      // Only a slot couch play can actually seat gets a hint: slots at or above LOCAL_PLAYERS are an
+      // online room's seats, and a pad press can never land on one, so inviting them would be a lie.
       for (let s = 1; s < MAX_PLAYERS; s++) {
-        this.slotHints[s] = full || online || inp.joined(s) || (!inp.hasKeyboard(s) && inp.unboundPads === 0) ? '' : inp.joinHint(s);
+        this.slotHints[s] = s >= LOCAL_PLAYERS || full || online || inp.joined(s) || (!inp.hasKeyboard(s) && inp.unboundPads === 0) ? '' : inp.joinHint(s);
       }
     }
   }

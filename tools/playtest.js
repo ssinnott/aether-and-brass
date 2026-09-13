@@ -111,11 +111,12 @@ function withPair(server, hostParams, guestParams, fn, opts) {
 }
 
 /** Focus a page, press ready, and wait until that page has actually registered it. A backgrounded
- * page suspends rAF, so the press must be confirmed before the next page steals focus. */
+ * page suspends rAF, so the press must be confirmed before the next page steals focus. KeyZ is the
+ * local player's ATTACK on every machine -- online, everybody is on P1's block (engine/bindings.js). */
 async function readyUp(page) {
   await page.bringToFront();
   for (let i = 0; i < 20; i++) {
-    await page.keyboard.press('KeyF');
+    await page.keyboard.press('KeyZ');
     try {
       await page.waitForFunction(() => { const n = window.__game.game.net; return !!(n && n.lobby && n.lobby.myReady); }, null, { timeout: 1000 });
       return true;

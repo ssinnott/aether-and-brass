@@ -67,25 +67,25 @@ export async function options(server, { withPage, assert }) {
     s = await g.summary();
     assert(s.panel === 'controls', 'CONTROLS opens the key/gamepad remapping sub-plate');
 
-    // 3. Grid navigation and capture. row 4 = attack, col 1 = p1 (ACTIONS order in engine/input.js).
+    // 3. Grid navigation and capture. row 4 = attack, col 0 = p1 (ACTIONS order in engine/input.js;
+    // COLS in screens/controls.js is P1 / P2 / PAD -- one column per player, no arcade column).
     await dn(); await dn(); await dn(); await dn();
-    await rt();
     s = await g.summary();
-    assert(s.row === 4 && s.col === 1, 'down x4 + right lands on ATTACK / P1');
+    assert(s.row === 4 && s.col === 0, 'down x4 lands on ATTACK / P1');
     await atk();
     s = await g.summary();
     assert(s.capturing === true, 'attack on a cell begins capture');
     await g.shot('91-controls');
 
     // A key already bound to P2 is refused.
-    await page.keyboard.press('KeyJ');
+    await page.keyboard.press('KeyV');
     await g.step(4);
     s = await g.summary();
     st = await g.eval(() => window.__game.optionsState());
     assert(!s.capturing, 'capture ends on a refusal');
     assert(/PLAYER 2/.test(s.controlsNotice), `refusal names the other player (got "${s.controlsNotice}")`);
     assert(s.controlsBad === true, 'the notice is flagged bad');
-    assert(st.bindings.keyboard[0].attack.join() === 'KeyF', 'rebinding P1 attack to J is refused: J is a P2 join key');
+    assert(st.bindings.keyboard[0].attack.join() === 'KeyZ', 'rebinding P1 attack to V is refused: V is a P2 join key');
 
     // A global key is refused and never toggles mute.
     await atk();
@@ -103,33 +103,33 @@ export async function options(server, { withPage, assert }) {
     st = await g.eval(() => window.__game.optionsState());
     assert(st.bindings.keyboard[0].attack.join() === 'KeyP', 'a free key rebinds P1 attack');
 
-    // A same-layout collision swaps: JUMP takes ATTACK's old code (KeyP); ATTACK, displaced, takes
-    // JUMP's old code minus whatever the sibling (solo) layout still holds under another action
-    // (Space stays on solo's jump, so only KeyG survives the swap).
+    // A same-layout collision swaps: JUMP takes ATTACK's old code (KeyP) and ATTACK, displaced,
+    // takes JUMP's old code. There is no second side-0 layout to strip a code on the way past.
     await dn(); // row 5 = jump
     await atk();
     await page.keyboard.press('KeyP');
     await g.step(4);
     st = await g.eval(() => window.__game.optionsState());
     assert(st.bindings.keyboard[0].jump.join() === 'KeyP', 'JUMP takes the just-freed KeyP');
-    assert(st.bindings.keyboard[0].attack.join() === 'KeyG', 'the displaced ATTACK takes JUMP\'s old KeyG (Space stays with solo\'s jump)');
+    assert(st.bindings.keyboard[0].attack.join() === 'KeyX', 'the displaced ATTACK takes JUMP\'s old KeyX');
     await up_(); // back to row 4 = attack
     await atk();
     await page.keyboard.press('KeyP');
     await g.step(4);
     st = await g.eval(() => window.__game.optionsState());
     assert(st.bindings.keyboard[0].attack.join() === 'KeyP', 'ATTACK takes KeyP back');
-    assert(st.bindings.keyboard[0].jump.join() === 'KeyG', 'the displaced JUMP takes KeyG (same swap, in reverse)');
+    assert(st.bindings.keyboard[0].jump.join() === 'KeyX', 'the displaced JUMP takes KeyX (same swap, in reverse)');
 
-    // A key the 1P ARCADE (solo) layout already uses for a different single-key action is refused.
-    await dn(); // row 5 = jump
+    // The same refusal in the other direction: P2's column will not take one of P1's keys either.
+    await rt(); // col 1 = p2
     await atk();
-    await page.keyboard.press('KeyZ');
+    await page.keyboard.press('KeyC'); // P1's dodge
     await g.step(4);
     s = await g.summary();
     st = await g.eval(() => window.__game.optionsState());
-    assert(/1P ARCADE'S ATTACK/.test(s.controlsNotice), `refusal names the arcade layout's action (got "${s.controlsNotice}")`);
-    assert(st.bindings.keyboard[0].jump.join() === 'KeyG', 'the refused rebind leaves JUMP unchanged');
+    assert(/PLAYER 1/.test(s.controlsNotice), `refusal names the other player (got "${s.controlsNotice}")`);
+    assert(st.bindings.keyboard[1].attack.join() === 'KeyV', 'the refused rebind leaves P2 ATTACK unchanged');
+    await lt(); // back to col 0 = p1
 
     // Escape cancels capture without backing out of the panel.
     await atk();
@@ -140,24 +140,24 @@ export async function options(server, { withPage, assert }) {
     s = await g.summary();
     assert(!s.capturing && s.panel === 'controls', 'Escape cancels capture and stays on the CONTROLS panel');
 
-    // P2's shared arrows can be rearranged; the join set is untouched.
-    await rt(); // col 2 = p2
-    await up_(); await up_(); await up_(); // row 2 = up
+    // P2 can rearrange keys inside its own block; the join set (every key of that block) is untouched.
+    await rt(); // col 1 = p2
+    await up_(); await up_(); // row 4 = attack -> row 2 = up
     s = await g.summary();
-    assert(s.row === 2 && s.col === 2, 'right + up x3 lands on UP / P2');
+    assert(s.row === 2 && s.col === 1, 'right + up x2 lands on UP / P2');
     await atk();
-    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('KeyG'); // P2's own DOWN
     await g.step(4);
     st = await g.eval(() => window.__game.optionsState());
-    assert(st.bindings.keyboard[1].up.join() === 'ArrowDown' && st.bindings.keyboard[1].down.join() === 'ArrowUp',
-      'P2 up/down swap the shared arrows');
-    assert(st.joinHint === 'P2: PRESS J TO JOIN', 'the join hint (and join set) is untouched by rearranging shared arrows');
+    assert(st.bindings.keyboard[1].up.join() === 'KeyG' && st.bindings.keyboard[1].down.join() === 'KeyT',
+      'P2 up/down swap inside P2\'s own block');
+    assert(st.joinHint === 'P2: PRESS V TO JOIN', 'the join hint (and join set) is untouched by rearranging P2\'s block');
 
     // PAD column: RT is refused (gamepadRun), a free button succeeds and a same-layout collision swaps.
-    await rt(); // col 3 = pad
+    await rt(); // col 2 = pad
     await dn(); await dn(); // row 4 = attack
     s = await g.summary();
-    assert(s.row === 4 && s.col === 3, 'right + down x2 lands on ATTACK / PAD');
+    assert(s.row === 4 && s.col === 2, 'right + down x2 lands on ATTACK / PAD');
     await atk();
     await g.eval(() => window.__game.input.setPadVirtual(0, [7]));
     await g.step(3);
@@ -190,7 +190,7 @@ export async function options(server, { withPage, assert }) {
     assert(st.sfx === 9, `reload keeps sfx (got ${st.sfx})`);
     assert(st.shake === 'low', `reload keeps shake (got ${st.shake})`);
     assert(st.bindings.keyboard[0].attack[0] === 'KeyP', 'reload keeps the P1 attack rebind');
-    assert(st.bindings.keyboard[1].up[0] === 'ArrowDown', 'reload keeps the P2 arrow swap');
+    assert(st.bindings.keyboard[1].up[0] === 'KeyG', 'reload keeps the P2 up/down swap');
     assert(st.bindings.pad.attack[0] === 1, 'reload keeps the PAD rebind');
     assert(/P ATTACK/.test(st.legend.p1), `the P1 legend follows the saved binding (got "${st.legend.p1}")`);
     assert(st.saved.includes('"KeyP"'), 'the save actually contains the remapped key');
@@ -206,7 +206,7 @@ export async function options(server, { withPage, assert }) {
       gm.pop();
       return h;
     });
-    assert(/ATTACK \(P\/Z\)/.test(lobbyHint), `the lobby hint names the local attack keys (got "${lobbyHint}")`);
+    assert(/ATTACK \(P\)/.test(lobbyHint), `the lobby hint names the local attack key (got "${lobbyHint}")`);
 
     // 5. The remapped key drives the hero in gameplay; the old key no longer does.
     await page.goto(`http://localhost:${server.port}/index.html?autotest=1&seed=1&skipTo=gameplay&chars=0&nowaves=1&godmode=1`, { waitUntil: 'load' });
@@ -227,9 +227,9 @@ export async function options(server, { withPage, assert }) {
     await g.step(2);
     sum = await g.summary();
     const hp2 = sum.enemies.reduce((a, e) => a + e.hp, 0); // 'hard' difficulty (set earlier) scales enemy hp, so re-read it rather than assume the base 40
-    await page.keyboard.down('KeyF'); await g.step(2); await page.keyboard.up('KeyF'); await g.step(30);
+    await page.keyboard.down('KeyZ'); await g.step(2); await page.keyboard.up('KeyZ'); await g.step(30);
     sum = await g.summary();
-    assert(sum.enemies.reduce((a, e) => a + e.hp, 0) === hp2, 'the old key (F) no longer attacks');
+    assert(sum.enemies.reduce((a, e) => a + e.hp, 0) === hp2, 'the old key (Z) no longer attacks');
     assert(sum.players[0].state === 'IDLE', 'the player stays idle on the old key');
 
     // OPTIONS is reachable from pause and returns to it; netplay's pause plate hides it. The menu scheme
@@ -267,11 +267,12 @@ export async function options(server, { withPage, assert }) {
     assert((await g.screen()) === 'help', 'COMMANDS on the pause plate opens the quick reference');
     s = await g.summary();
     assert(s.commandRows === 11 && s.cursor === 0, 'the plate lists 11 commands and opens on the MUSIC row');
-    // One player, so the plate shows the 1P arcade half (Z), and the PAD column follows the rebind
-    // made above (attack moved to button 1 = B, off the default A) rather than a hard-coded label.
-    assert(s.layout === 'solo' && s.commandKeys[2] === 'Z', `the ATTACK row shows the arcade key while P2 is out (got "${s.commandKeys[2]}")`);
+    // There is one keyboard layout per player and it never swaps, so the plate always shows P1's own
+    // keys -- here the remapped P rather than the default Z. The PAD column follows the rebind made
+    // above (attack moved to button 1 = B, off the default A) rather than a hard-coded label.
+    assert(s.layout === 'p1' && s.commandKeys[2] === 'P', `the ATTACK row shows P1's live attack key (got "${s.commandKeys[2]}")`);
     assert(s.commandPads[2] === 'B', `the PAD column follows the remapped button (got "${s.commandPads[2]}")`);
-    assert(s.commandKeys[8] === 'DIR + Z' && s.commandPads[8] === 'DIR + B', 'the THROW row is built from the same attack binding');
+    assert(s.commandKeys[8] === 'DIR + P' && s.commandPads[8] === 'DIR + B', 'the THROW row is built from the same attack binding');
     assert(s.commandPads[1] === 'HOLD RT', 'the RUN row names the gamepad run button');
     assert(/ESC$/.test(s.commandKeys[9]) && s.commandKeys[10] === 'M', 'the global keys (pause / mute) are listed as they are bound');
     await g.shot('95-commands');
@@ -288,8 +289,8 @@ export async function options(server, { withPage, assert }) {
     assert((await g.screen()) === 'pause', 'dodge returns from COMMANDS to the pause plate');
     const keysHint = await g.eval(() => window.__game.game.screen.keysHint);
     assert(/ESC: RESUME\s+ENTER: SELECT/.test(keysHint), `the plate's hint names the two menu keys (got "${keysHint}")`);
-    // With P2 in, P1 is on the left half of the keyboard, so the plate lists those keys instead
-    // (attack was remapped to P there above) -- the same rule the MOVES screen follows.
+    // With P2 in, P1's own keys are exactly the same ones -- that is the point of the layout -- so
+    // the plate reads identically rather than swapping to a second set.'
     const coop = await g.eval(() => {
       const gm = window.__game.game;
       window.__game.input.setJoined(1, true);
@@ -299,7 +300,7 @@ export async function options(server, { withPage, assert }) {
       window.__game.input.setJoined(1, false);
       return sum;
     });
-    assert(coop.layout === 'p1' && coop.commandKeys[2] === 'P', `with P2 joined the plate lists P1's own keys (got ${coop.layout} "${coop.commandKeys[2]}")`);
+    assert(coop.layout === 'p1' && coop.commandKeys[2] === 'P', `P2 joining does not move P1's keys (got ${coop.layout} "${coop.commandKeys[2]}")`);
     await esc();
     assert((await g.screen()) === 'gameplay', 'Escape resumes gameplay from the pause plate again');
     assert((await g.summary()).players[0].state === 'IDLE', 'the COMMANDS press never leaked into the sim');
@@ -330,8 +331,8 @@ export async function options(server, { withPage, assert }) {
     assert(st.difficulty === 'normal', 'RESET restores the default difficulty');
     assert(st.music === 5 && st.sfx === 10, 'RESET restores the default volumes');
     assert(st.shake === 'full', 'RESET restores the default shake');
-    assert(st.bindings.keyboard[0].attack[0] === 'KeyF', 'RESET restores the default P1 attack');
-    assert(st.bindings.keyboard[1].up[0] === 'ArrowUp', 'RESET restores the default P2 up');
+    assert(st.bindings.keyboard[0].attack[0] === 'KeyZ', 'RESET restores the default P1 attack');
+    assert(st.bindings.keyboard[1].up[0] === 'KeyT', 'RESET restores the default P2 up');
     assert(st.bindings.pad.attack[0] === 0, 'RESET restores the default PAD attack');
     assert(st.storage === true && st.saved === null, 'RESET clears the save entirely');
   });

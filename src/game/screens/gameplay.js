@@ -1,6 +1,6 @@
 // Gameplay screen: World + players + HUD + StageRunner (ARCHITECTURE.md sections 7, 9, 12, 15).
 // Exposes spawnEnemy / spawnEnemyAt / killAllEnemies / fillMeter / facePlayerToNearestEnemy / summary for window.__game.
-import { VIEW_W, VIEW_H, TEAM, ST, Z_MAX, METER, UI, MAX_PLAYERS, NET_PLAYERS } from '../../constants.js';
+import { VIEW_W, VIEW_H, TEAM, ST, Z_MAX, METER, UI, MAX_PLAYERS, LOCAL_PLAYERS, NET_PLAYERS, ABANDONED_SEAT_FRAMES } from '../../constants.js';
 import { Screen } from '../game.js';
 import { World } from '../world.js';
 import { Player } from '../player.js';
@@ -67,7 +67,11 @@ export class GameplayScreen extends Screen {
     this.continues = params.continues != null ? params.continues : this.difficulty.continues;
     this.continuesUsed = 0;
     this.hud = new Hud(this.world, game);
-    chars.slice(0, this.maxPlayers()).forEach((ci, i) => { if (ci != null && ci >= 0) this.addPlayer(ci, i); });
+    // The party you arrive with is the party you play: online the lobby seated it (session.js already
+    // trims to the room size), and couch play cannot hand over more than LOCAL_PLAYERS because nothing
+    // local can join past that. A longer local list therefore only ever comes from the `?chars=` debug
+    // hook, which is how the four-player party scaling an online room needs stays headlessly testable.
+    chars.slice(0, MAX_PLAYERS).forEach((ci, i) => { if (ci != null && ci >= 0) this.addPlayer(ci, i); });
     this.players.forEach((p, i) => { if (p && i > 0) game.input.setJoined(i, true); });
     game.players = this.players;
     this.gameOverTimer = 0; this.gameOverShown = false;
@@ -120,10 +124,12 @@ export class GameplayScreen extends Screen {
   }
   /** Swap the backdrop (StageRunner calls this on section changes). */
   setBackdrop(b) { this.backdrop = b; this.world.backdrop = b; }
-  /** Slots this run may fill: the party the lockstep session seated under netplay (two to four),
-   *  four for couch co-op. A method (not a constant) so #22's training arena can cap the run at one. */
+  /** Slots a DROP-IN may still fill: the party the lockstep session seated under netplay (two to
+   *  four), LOCAL_PLAYERS on the couch. A method (not a constant) so #22's training arena can cap
+   *  the run at one. The party a run ARRIVES with is a separate thing (see enter()): online the
+   *  lobby has already seated it, and couch play cannot produce more than two anyway. */
   maxPlayers() {
-    if (!this.game.options.netplay) return MAX_PLAYERS;
+    if (!this.game.options.netplay) return LOCAL_PLAYERS;
     const net = this.game.net;
     return Math.min(NET_PLAYERS, (net && net.players) || NET_PLAYERS);
   }
@@ -155,13 +161,44 @@ export class GameplayScreen extends Screen {
     // a pause press. A Set per update is fine -- this is the sim tick, not a per-frame draw path.
     const joinedNow = new Set();
     if (!online) {
-      for (let s = 1; s < MAX_PLAYERS; s++) {
+      for (let s = 1; s < LOCAL_PLAYERS; s++) {
         if (inp.joined(s) || this.players[s] || !inp.joinPressed(s)) continue;
         if (this.players.filter(Boolean).length >= this.maxPlayers()) break;
         inp.setJoined(s, true); joinedNow.add(s);
         this.addPlayer(dropInChar(this.game.options, this.game.characters, s), s);
         this.game.audio.play('join');
         this.hud.showBanner(`P${s + 1} JOINS!`, '', 60);
+      }
+    }
+    // A seat nobody is driving must not be able to hold the run. Netplay has had this since the drop
+    // protocol (net/session.js hands a lost peer's slot to the bot and the survivors play on); the
+    // couch had no equivalent, and the gap ran deep: GAME OVER needs EVERY player `out` (below), so
+    // one abandoned-but-alive hero suppressed the continue countdown, `continueRun()` and the results
+    // plaque together -- and once their partner was out, that hero was the only living player, so the
+    // camera settled on them, the section never advanced, no wave ever spawned and nothing was left
+    // that could kill them. Stable forever, with QUIT TO TITLE the only way out.
+    //
+    // Only when that seat is the LAST thing holding the run open -- every other player already out --
+    // because that is precisely the deadlock and nothing else is. Standing still is ordinary play: you
+    // hang back from a hazard, you let your partner take the boss, you put the pad down for twenty
+    // seconds while somebody answers the door. Taking a hero off its owner then would be theft, and the
+    // camera's leader floor already means an idle partner cannot hold the run up on its own.
+    // Only with company too (one player alone blocks nobody, and the training room is a party of one,
+    // where standing still reading the frame-data readout is the whole point) and only offline: online,
+    // seats are the session's to retire, and flipping `bot` from a local timer would diverge the
+    // lockstep. A single press takes the seat straight back.
+    if (!online && this.players.filter(Boolean).length > 1) {
+      const alive = this.players.filter((q) => q && !q.out);
+      for (const p of this.players) {
+        if (!p || p.out) continue;
+        const idle = inp.idleFrames(p.index);
+        if (!p.bot && alive.length === 1 && idle >= ABANDONED_SEAT_FRAMES) {
+          p.bot = true; p.abandoned = true;
+          this.hud.showBanner(`PLAYER ${p.index + 1} AWAY`, 'THE BOT TAKES OVER', 90);
+        } else if (p.abandoned && idle === 0) {
+          p.bot = false; p.abandoned = false;
+          this.hud.showBanner(`PLAYER ${p.index + 1} IS BACK`, '', 60);
+        }
       }
     }
     // pause: Escape (global) or a joined player's start button
@@ -284,7 +321,7 @@ export class GameplayScreen extends Screen {
     return {
       ...rs,
       sectionIndex: w.sectionIndex, cameraX: w.camera.x, locked: w.camera.locked, wavesCleared: w.wavesCleared,
-      players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, shield: p.shield, shieldMax: p.shieldMax, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out, weapon: p.weaponId, weaponHits: p.weaponHits, index: p.index, id: p.def.id })),
+      players: this.players.filter(Boolean).map((p) => ({ hp: p.hp, lives: p.lives, shield: p.shield, shieldMax: p.shieldMax, x: p.x, z: p.z, state: p.state, meter: p.meter, score: p.score, combo: p.combo, out: p.out, weapon: p.weaponId, weaponHits: p.weaponHits, index: p.index, id: p.def.id, bot: !!p.bot })),
       enemies: w.enemies.filter((e) => e.kind !== 'boss').map((e) => ({ name: e.name, type: e.def.type || '', variant: e.def.variant || '', mods: e.mods || [], hp: e.hp, state: e.state, x: e.x, z: e.z, ai: e.aiState })),
       boss: b ? { kind: b.bossKind || 'boss', name: b.name, hp: b.hpTotal != null ? b.hpTotal : b.hp, maxHp: b.hpTotalMax || b.maxHp, phase: b.phase || 1, state: b.state, phaseName: b.phaseName } : null,
       enemiesDefeated: this.enemiesDefeated, time: this.time, continues: this.continues,

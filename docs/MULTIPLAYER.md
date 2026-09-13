@@ -172,6 +172,22 @@ flavours are gone — three doors onto one feature is three things to explain an
 working. `?transport=broadcast` still drives BroadcastChannel for `tools/playtest.js`, and is not
 offered in the UI.
 
+**A seat nothing can drive is retired, not left joined.** `net.end()` hands every remote slot to the
+bot; it also un-joins it. Clearing the virtual without un-joining leaves a seat no device can drive and
+no screen can clear — the title is the only other place that un-joins, and `results.js` reaches BOARD
+SELECT directly on a board unlock, so the ghosts rode straight into CHOOSE YOUR FIGHTER, whose READY
+gate waits on every joined slot. Slots 2/3 have no keyboard block, so not even BACK could retire them
+there. `screens/select.js` holds the same line at its own door, retiring any joined slot with neither a
+keyboard block nor a pad, so no future path can reintroduce the hang.
+
+**Every wait has a way out of it.** The match starts only when every seated player is ready
+(`partyReady`), and the disconnect watchdog is not armed until the match itself starts — so a peer who
+stops responding without closing their tab is never dropped, and the rest of the room waits on them
+indefinitely. BACK therefore leaves: from a room you have not readied in it ends your session and
+returns you to the title, exactly as it does from the 'connecting' phase; once you are ready, the
+first BACK un-readies you and the second leaves. Before that the 'lobby' phase read no back-out at
+all, and reloading the page was the only way out of a room somebody had gone quiet in.
+
 One room topic now carries up to six pairings' signalling, so a peer publishes under its own short
 id and addresses each message to one other peer; `createSignalMux` splits that back into the
 one-pairing channel `peer.js` expects. Two things there are load-bearing: a message addressed to
@@ -198,18 +214,22 @@ roster it sends back still shows the hero the asker had, so nobody starts a matc
 did not choose.
 
 While the room code is being typed the lobby reads the keyboard raw and the action bindings are
-ignored: half the code alphabet (B, C, N, V, X, Z) is also a P1 arcade key, and `C` is dodge, so a code
-with a `C` in it used to back the player out of the screen mid-word.
+ignored: every letter of the code alphabet (B, C, N, V, X, Z) is a bound key -- `C X Z` are P1's dodge,
+jump and attack, `V B N` are P2's -- so a code with a `C` in it used to back the player out of the
+screen mid-word.
 
 **Deferred**, deliberately: rollback (M2), state-transfer resync after a desync (a desync still
 ends the session and hands the other seats to the bot), host migration, more than four players,
 and the MQTT transport is untested against a live broker from this environment — BroadcastChannel
 is the verified path.
 
-**Local co-op and the session are now the same size.** `engine/input.js` owns four player records
+**Three or four players is an online room.** `engine/input.js` owns four player records
 (`MAX_PLAYERS = 4`) and an online room seats at most as many (`NET_PLAYERS = 4`, minimum
-`NET_MIN_PLAYERS = 2`); no new sim state was added for any of it, so `src/net/checksum.js` needs no
-new fields. `session.js beginMatch` calls `input.resetClaims(); input.setPadClaiming(false)` and
+`NET_MIN_PLAYERS = 2`), but couch play fills only the first `LOCAL_PLAYERS = 2` of them: two people
+share one keyboard, a nine-key block each, and a pad never claims past the second seat. Slots 2/3
+therefore only ever hold a remote peer, which is what makes seating unambiguous — a seat here is
+handed out by the lobby, never guessed from which button somebody pressed. No new sim state was
+added for any of it, so `src/net/checksum.js` needs no new fields. `session.js beginMatch` calls `input.resetClaims(); input.setPadClaiming(false)` and
 un-joins any local slot beyond the party before the match starts, so an online match is exactly the
 party the lobby seated regardless of how many slots were joined locally beforehand. With claiming
 off, `pollRaw(player)` reads the pad bound to that slot plus every unbound pad, so a pad drives the

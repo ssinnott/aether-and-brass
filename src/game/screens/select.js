@@ -1,8 +1,10 @@
 // Character select (GDD 8/9): up to four 140x200 brass-framed cards with 2.5x rig busts, name, archetype,
-// five 5-pip stat bars, hovered card plays its taunt, four cursors (P1 white, P2 cyan, P3 violet, P4
+// five 5-pip stat bars, hovered card plays its taunt, a cursor per slot (P1 white, P2 cyan, P3 violet, P4
 // magenta), attack locks / jump unlocks, any two (or more) may pick the same hero (later copies wear a
-// tint), READY state, then the stage intro. P2-P4 drop in on any of their own keys/pad buttons (issue #23).
-// The cards themselves live in screens/charcards.js, shared with the online co-op lobby.
+// tint), READY state, then the stage intro. P2 drops in on any of their own keys/pad buttons (issue #23);
+// the couch stops there (constants.js LOCAL_PLAYERS), so slots 2/3 only ever light up under the four-cursor
+// harness -- an online party picks its heroes in the lobby, not here. The cards themselves live in
+// screens/charcards.js, shared with that lobby.
 import { VIEW_W, VIEW_H, UI, MAX_PLAYERS, PLAYER_COLORS } from '../../constants.js';
 import { Screen } from '../game.js';
 import { drawText, drawTextOutlined, measureText } from '../../engine/text.js';
@@ -17,7 +19,8 @@ const READY_FRAMES = 24;
 const SLOT_GAP = 18;
 
 /** Character select screen. Left/right moves a cursor; CONFIRM (ENTER or attack) locks a hero and BACK
- *  (Escape, jump or dodge) unlocks it -- or, from an unlocked P1, leaves the screen (game/menuinput.js). */
+ *  (Escape, jump or dodge) unlocks it -- or, from an unlocked slot, leaves: the screen for P1, the party
+ *  for anybody else (game/menuinput.js). */
 export class SelectScreen extends Screen {
   constructor(game) { super(game, 'select'); }
   enter(params) {
@@ -32,6 +35,13 @@ export class SelectScreen extends Screen {
     // true all the way into the single-player training room with no P2 player: P2's start would pause the
     // room and P2's own keys would drive the training plate, trials and moves overlays (review finding).
     if (this.single) for (let i = 1; i < MAX_PLAYERS; i++) if (this.game.input.joined(i)) this.game.input.setJoined(i, false);
+    // A slot only takes a seat here if something can actually DRIVE it. A joined slot with no
+    // keyboard block and no pad -- the ghosts an ended online session used to leave behind -- would
+    // otherwise hold the READY gate shut with no input in existence that could confirm it or back it
+    // out, since BACK is read from that slot's own keys. Retired at the door rather than papered over,
+    // so its cursor and "same hero" bookkeeping never appear either (the same reason `single` does).
+    const canAct = (i) => this.game.input.hasKeyboard(i) || this.game.input.padOf(i) >= 0;
+    for (let i = 1; i < MAX_PLAYERS; i++) if (this.game.input.joined(i) && !canAct(i)) this.game.input.setJoined(i, false);
     this.p = Array.from({ length: MAX_PLAYERS }, (_, i) => ({
       joined: i === 0 || (!this.single && this.game.input.joined(i)),
       cursor: Math.min(i, Math.max(0, this.chars.length - 1)),
@@ -79,6 +89,17 @@ export class SelectScreen extends Screen {
       if (confirmPressed(inp, i)) {
         ps.confirmed = true; audio.play('menu_confirm');
         this.slots[ps.cursor].anim.play('win', { restart: true });
+        this.dirty = true;
+      } else if (i > 0 && cancelPressed(inp, i)) {
+        // BACK from an unlocked slot 1+ LEAVES THE PARTY, the same way BACK from an unlocked P1
+        // leaves the screen. Without an exit, a slot that joined and then went quiet -- a pad whose
+        // battery died mid-screen is the way it happens -- holds the READY gate below shut for
+        // everybody (`allReady` wants every joined slot confirmed) with nothing on this screen able
+        // to clear it: `input.joined` survives backing out to BOARD SELECT and coming back, and only
+        // the title resets it. Rejoining costs one press of any of their own keys.
+        ps.joined = false; ps.confirmed = false;
+        inp.setJoined(i, false);
+        audio.play('menu_back');
         this.dirty = true;
       } else if (i === 0 && (cancelPressed(inp, i) || escapePressed(inp))) {
         audio.play('menu_back');

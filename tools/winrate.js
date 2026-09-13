@@ -13,7 +13,7 @@
 // Options (all comma-separated lists):
 //   --stages 1,2,3,4          boards to play
 //   --chars 0,1,2,3           hero indices; in party=2 each is paired with the next hero
-//   --party 1,2,3,4           party size (2-4 = local co-op, every slot on autopilot)
+//   --party 1,2,3,4           party size (2 = a couch, 3-4 = an online room; every slot on autopilot)
 //   --styles balanced,...     autopilot archetypes (see BOT_STYLES in src/game/bot.js), or `all`
 //   --difficulty easy,normal,hard
 //   --seeds N                 runs per cell (default 5)

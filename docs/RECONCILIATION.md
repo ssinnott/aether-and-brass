@@ -19,31 +19,47 @@ rules from ARCHITECTURE.
 | Boards 2-4 (issues #27/#28) | Every board has four sections, one of them `mode: 'locked'` with `timedWaves` (board 2 the Cold Sovereign's gun deck, board 3 the Cart Lane, board 4 the Lash-Up), exactly 640px wide and never containing a boss trigger; it exits through `transition: { kind: 'dock', banner, look, pies }`. Hazards and zones come from the table in `game/hazards.js`; no two sections in the game share a hazard layout (`tools/stage-census.js` checks). Spawn entries may carry `mods` (`game/traits.js` SPAWN_MODS); a modifier counts as its own variant. Each board fields two factions with at least four variants each, 60-75 enemies, no variant over 30% of its spawns, at least two mixed-faction waves per section, one reinforcement wave, and its own mid-boss track (`midboss`, `midboss2`, `midboss3`, `midboss4`). The balance reference is board 1: the engine's win rate on every board stays within a few points of board 1's (`npm run winrate`). |
 
 ## Final controls (replaces GDD §8 and ARCHITECTURE §16 tables)
-Two people share one keyboard, so each player owns one half of it — but **one player alone uses the arcade
-layout** (arrows under the right hand, one contiguous `Z X C V B N` row under the left), which is what the
-title screen leads with. The split-keyboard P1 half is the co-op layout, and it stays reachable at all times.
+**One key set per player, always.** A keyboard player owns a nine-key block — a 3×3 square of the main
+keyboard whose cross is movement and whose five remaining keys are the buttons — plus the two digits
+directly above that block for taunt and start. P1 takes the leftmost block; a second local player's block
+is the same nine keys shifted three columns right, finger for finger. **P1's block never moves**: alone, in
+local co-op or online, the keys under your hand are the same ones. (This replaces the old "1P arcade" set,
+which swapped itself out for a different layout the moment a second player joined.)
 
-| Action  | 1P arcade (active only until P2 joins) | P1 (left half) | P2 (right half) | Gamepad (standard map) |
-|---------|----------------------------------------|----------------|-----------------|------------------------|
-| move    | Arrow keys                             | W A S D        | Arrow keys      | D-pad / left stick (deadzone 0.25) |
-| attack  | Z                                      | F              | J (Numpad1)     | 0 (A / Cross) |
-| jump    | X (or Space)                           | G (or Space)   | K (Numpad2)     | 1 (B / Circle) |
-| dodge   | C                                      | R              | U (Numpad4)     | 2 (X / Square) |
-| special | V                                      | H              | L (Numpad3)     | 3 (Y / Triangle) |
-| super   | N                                      | Y              | O (Numpad6)     | 5 (RB / R1) |
-| taunt   | B                                      | T              | I (Numpad5)     | 4 (LB / L1) |
-| start   | Enter                                  | Enter          | Backspace (Numpad0) | 9 (Start) |
+```
+P1   Q W E        P2   R T Y        digits 1 2 above P1's block
+     A S D             F G H        digits 4 5 above P2's block
+     Z X C             V B N
+```
 
-Both keyboard button clusters are the same contiguous 2×3 block under one hand, finger for finger — P1's
-`R T Y` over `F G H` mirrors P2's `U I O` over `J K L` (index attack, middle jump, ring special on the home
-row; index dodge, middle taunt, ring super above). Nothing requires a finger to cross the keyboard's centre.
-`Space` jumps on both P1 layouts, per genre convention; it is not a P2 key.
+| Action  | P1 (and every player online) | P2 (local co-op) | Gamepad (standard map) |
+|---------|------------------------------|------------------|------------------------|
+| move    | W A S D (or the arrow keys)  | T F G H          | D-pad / left stick (deadzone 0.25) |
+| attack  | Z                            | V                | 0 (A / Cross) |
+| jump    | X                            | B                | 1 (B / Circle) |
+| dodge   | C                            | N                | 2 (X / Square) |
+| special | Q                            | R                | 3 (Y / Triangle) |
+| super   | E                            | Y                | 5 (RB / R1) |
+| taunt   | 1                            | 4                | 4 (LB / L1) |
+| start   | Enter (or 2)                 | 5                | 9 (Start) |
 
+Within a block the roles sit in the same place for everybody: attack / jump / dodge along the bottom row
+where the arcade layout always had `Z X C`, special and super on the row above the movement cross. The
+arrow keys are a second set of movement codes for P1 and are live at all times — no other player's block
+uses them, so nothing has to switch them off. Nothing requires a finger to cross the keyboard's centre.
+
+**Online, everybody is on P1's block.** Each peer is slot 0 on their own keyboard (`net/session.js` samples
+the local player through `input.pollRaw(0)` whichever seat they hold), so the nine keys are identical on
+every machine in the room.
+
+- A couch seat that holds or presses nothing for `ABANDONED_SEAT_FRAMES` (900, 15s) is handed to the bot **once every other player is out** — precisely the deadlock, and nothing else. Standing still is ordinary play (hanging back from a hazard, letting a partner take the boss, putting the pad down while somebody answers the door), and the camera's leader floor already stops an idle partner holding the run up, so taking a hero off its owner then would be theft. One press takes the seat straight back. Only with company (one player alone blocks nobody, and the training room is a party of one) and only offline, where seats are not the session's to retire. Netplay has had the same handoff since the drop protocol; without a couch equivalent an abandoned-but-alive hero suppressed GAME OVER for good — it needs EVERY player `out` — and with their partner out, that hero was the only living player, so the camera settled on them, the section never advanced, no wave spawned and nothing was left that could kill them.
+- The camera follows the party's mean x, but never lets the LEADING player be held against the right edge: the target is at least `leader - VIEW_W * 0.75`. Without that floor one player standing still vetoed the whole run — the idle hero is pushed to the left edge by the bounds clamp, the one still playing is pinned against the right edge, the mean lands exactly mid-screen and the camera stops for good (measured: an idle hero at x 140 froze the camera at 132 on a 6000px stage, and 16 seconds of holding right moved it 0px). The floor only binds once the party is more than half a screen apart, so ordinary co-op is unchanged and one player is identical to before; past that spread the camera travels at the leader's pace and the straggler is carried along at the left edge.
 - Run = double-tap left/right (12f window) or hold RT (gamepad 7). Dash attack = attack while running.
 - Grab = attack within grab reach of an enemy that is NOT in hitstun and not armored (never interrupts a combo). Throw = direction + attack while holding; attack = hold hit.
 - Global: `Escape` pauses/unpauses for everyone, `M` mutes, `F1` toggles the debug overlay. `preventDefault()` on all bound keys.
-- Menus (every screen and plate, one definition in `src/game/menuinput.js`): **CONFIRM** = `start` (Enter / pad START) or `attack`, **BACK** = `Escape` or `jump` / `dodge`. `start` is never a back key and `jump` is never a confirm key — before this the pause plate resumed on Enter while the title and board select confirmed on it, so Enter on a highlighted pause row closed the plate instead of picking it. Escape and `start` both open a pause plate, whose cursor starts on RESUME, so either still closes a freshly opened one. Online, Escape is folded into the `start` bit (`net/session.js`), so it arrives as a CONFIRM on the party's shared cursor — RESUME while nobody has moved it — and `jump` / `dodge` stay a deterministic BACK on any row.
-- P2 joins (title, select, pause, or in-game) by pressing any P2-only key (J K U L O I Backspace or Numpad). When P2 joins, the 1P arcade keys switch off and P1 moves to the left half; the title legend swaps to match. Gamepads are not index-bound: an unbound pad's first button press (axes ignored) claims the lowest slot with no pad whose keyboard half has not been used, OR-merged with that slot's keyboard keys once claimed. P3/P4 are gamepad only (no keyboard half); claims reset whenever the title screen is entered; online co-op stays two players (the session un-joins any local slot above 2 and turns pad claiming off).
+- Character select: BACK from an *unlocked* slot leaves — the screen for P1, the party for anybody else. A joined slot with neither a keyboard block nor a pad is retired as the screen opens: nothing could confirm it and nothing could back it out, so it would hold the READY gate shut for good (an ended online session used to leave exactly that behind). Without that exit a slot that joined and went quiet (a pad whose battery died) holds the READY gate shut for the whole room, and nothing on the screen can clear it: `input.joined` survives backing out to BOARD SELECT and returning, and only the title resets it.
+- Menus (every screen and plate, one definition in `src/game/menuinput.js`): **CONFIRM** = `start` (Enter / `2` / pad START) or `attack`, **BACK** = `Escape` or `jump` / `dodge`. `start` is never a back key and `jump` is never a confirm key — before this the pause plate resumed on Enter while the title and board select confirmed on it, so Enter on a highlighted pause row closed the plate instead of picking it. Escape and `start` both open a pause plate, whose cursor starts on RESUME, so either still closes a freshly opened one. Online, Escape is folded into the `start` bit (`net/session.js`), so it arrives as a CONFIRM on the party's shared cursor — RESUME while nobody has moved it — and `jump` / `dodge` stay a deterministic BACK on any row.
+- P2 joins (title, select, pause, or in-game) by pressing any key of their own block (R T Y F G H V B N 4 5). Nothing about P1's keys changes when they do — the title's second legend line simply stops being dimmed. The blocks are disjoint by invariant, so no key is ambiguous about who pressed it. Gamepads are not index-bound: an unbound pad's first button press (axes ignored) claims the lowest COUCH seat (below `LOCAL_PLAYERS = 2`) with no pad whose keyboard block has not been used, OR-merged with that seat's keyboard keys once claimed; claims reset whenever the title screen is entered. **The press that claims a pad is spent on the claim** and fires no action for that seat on the same step — otherwise it doubles as that seat's `attack`, which is a CONFIRM everywhere the menus are: it starts a run from the title, and on CHOOSE YOUR FIGHTER it locks a hero for whoever already holds the seat. Release and press again to act. **The couch seats two.** Slots 2/3 exist for an online room (`NET_PLAYERS = 4`) and hold nothing else but a test virtual: no local press from any screen reaches them, and no pad claims one — three or four players is a room, where the lobby hands out seats and nobody shares a keyboard.
 - Super = separate button (no attack+jump chord).
 
 ## Scope tiers — final ship status (verified 2026-09-07 against the tree)
@@ -65,7 +81,7 @@ card; it was screenshot-verified separately with `skipTo=intro`), and
 | Pickups, lives/continues, score/combo/grades/rank | `game/items.js`, `game/hud.js` (per-player CONTINUE countdown), `game/screens/results.js` |
 | Meter / specials / supers, dodge i-frames, juggles, grabs & throws (thrown enemies hit others) | `game/player.js`, `game/fighter.js`, `game/grabs.js` |
 | Hit-stop / shake, HUD, title / select / intro / pause / game-over / results | `game/screens/*`, `game/hud.js` |
-| Local co-op, gamepad | `engine/input.js` (drop-in on any free slot's own key or pad; up to 4 local slots, gamepads claim by first button press, not index; P3/P4 are gamepad only; claims reset on the title screen) |
+| Local co-op, gamepad | `engine/input.js` (drop-in on either couch seat's own keys or pad; `LOCAL_PLAYERS = 2` seats on one machine, gamepads claim by first button press, not index; claims reset on the title screen; three or four players is an online room) |
 | Synthesized SFX + music per section | `engine/audio/{sfx,music,synth}.js` — all canonical names below implemented |
 
 Nothing from MUST is missing.
