@@ -11,6 +11,7 @@
     "simtest": "node tools/simtest.js",
     "winrate": "node tools/winrate.js",
     "art-check": "node tools/art-check.js",
+    "pwa-check": "node tools/pwa-check.js",
     "lint": "node --check src/main.js && npm run typecheck",
     "typecheck": "tsc -p tsconfig.json",
     "nettest": "node tools/nettest.js"

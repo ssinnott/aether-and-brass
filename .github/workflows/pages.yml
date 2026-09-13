@@ -63,9 +63,15 @@ jobs:
       - name: Assemble the site
         run: |
           mkdir -p _site
-          cp dist/index.html _site/index.html
+          cp dist/index.html dist/manifest.webmanifest dist/sw.js _site/
+          cp -r dist/icons _site/icons
           touch _site/.nojekyll
           ls -la _site
+
+      # The game never imports any of the files above, so only this gate stands between a broken
+      # manifest or a missing icon and a phone that quietly refuses to install the site.
+      - name: Check the installable-app files
+        run: node tools/pwa-check.js _site
 
       - uses: actions/upload-pages-artifact@v3
         with:
