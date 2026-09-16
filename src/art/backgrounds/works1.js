@@ -2,9 +2,11 @@
 // flattest light in the game — a chalk-white morning with no sun in it and no weather to hide behind.
 // Far (0.2): a bone sky, Calderwick on its mountain far behind, the works' long roof and four chimneys ahead with
 //            their smoke standing straight up, and a band of lime haze along the horizon.
-// Mid (0.5): lime spoil banks, milestones, standing wagons under tarpaulins and the company's pole lamps.
+// Mid (0.5): a lime shoulder with spoil banks and milestones on it, the company's fence at the road's edge with a
+//            gateway every so often, and its pole lamps. EVERYTHING IN THIS LAYER STANDS ON THE SHOULDER
+//            (MID_GROUND): without a surface under them the objects here hang in the far layer's haze.
 // Floor: a rutted lime road over old rail — cart ruts, sleeper lines, spilled quicklime and gravel.
-// Near (1.2, drawFront): cart shafts and a tarpaulin corner at the screen edges; lime dust blowing along the ground.
+// Near (1.2, drawFront): cart shafts and a tarpaulin corner at the BOTTOM edge of the frame; lime dust along the ground.
 //
 // THE BOARD IS PALE AND SO IS THE FACTION, so the floor band is deliberately the DARKEST thing on screen apart from
 // the ink: a grey lime road at HSV v42 under a v90 sky. Everything the Chandlery is made of — tallow v76, quicklime
@@ -19,7 +21,16 @@ import { pathPoly, paint } from '../shapes.js';
 const FAR_W = 1280;
 const FLOOR_TILE = 480;
 const DUST_N = 30;
-const NEAR_Y = 176;
+/** Near layer origin: the front of the frame, so its props are cropped by the bottom of the screen (section1: 280). */
+const NEAR_Y = 296;
+/** Mid layer: the row everything in it stands on — the far edge of the road's lime shoulder. */
+const MID_GROUND = 190;
+/** Mid layer: where the shoulder meets the road (the floor band is blitted over everything below it). */
+const MID_ROAD = 200;
+/** Where the fence opens for the yard: a gateway GATE_HALF*2 wide every GATE_STEP of shoulder. */
+const GATE_X0 = 150, GATE_STEP = 430, GATE_HALF = 28;
+/** Pole lamps, on a rhythm that shares no factor with the fence's gateways, so the two never lock into one tile. */
+const LAMP_X0 = 170, LAMP_STEP = 268;
 /** Far-layer x of the four works chimneys (smoke is drawn per frame over the pre-rendered stacks). */
 const STACKS = [880, 946, 1012, 1078];
 
@@ -64,50 +75,69 @@ function paintFar(g, w, h, rnd) {
   vGradient(g, 0, 176, w, 30, [[0, 'rgba(239,234,218,0)'], [1, 'rgba(239,234,218,0.85)']]);
   g.fillStyle = HAZE; g.fillRect(0, 202, w, FLOOR_TOP - 202 + BLEED);
 }
-function paintMid(g, w, h, rnd) {
-  g.translate(0, BLEED);
-  // spoil banks: rounded heaps of burnt lime along the back of the road, dark only where they meet the ground
-  for (let x = -40; x < w + 40; x += 150) {
-    const bx = x + Math.round(rnd() * 40), bh = 26 + Math.round(rnd() * 26), bw = 90 + Math.round(rnd() * 60);
-    g.fillStyle = SPOIL_D;
-    g.beginPath(); g.ellipse(bx, 200, bw / 2, bh * 0.55, 0, Math.PI, 0); g.fill();
-    g.fillStyle = SPOIL;
-    g.beginPath(); g.ellipse(bx, 198, bw / 2 - 4, bh * 0.5, 0, Math.PI, 0); g.fill();
-    g.fillStyle = 'rgba(255,255,255,0.22)';
-    g.beginPath(); g.ellipse(bx - bw * 0.14, 196, bw * 0.2, bh * 0.24, 0, Math.PI, 0); g.fill();
+/** The road's lime shoulder: the churned strip the fence, the lamps and the milestones all stand on. */
+function paintShoulder(g, w, rnd) {
+  g.fillStyle = SPOIL_D; g.fillRect(0, MID_GROUND, w, MID_ROAD - MID_GROUND + 4);
+  g.fillStyle = SPOIL; g.fillRect(0, MID_GROUND + 1, w, 4);
+  // a ragged lime crust along its far edge, so the shoulder is not a ruled line
+  for (let x = 0; x < w; x += 7) {
+    const d = Math.round(rnd() * 2);
+    g.fillStyle = LIME; g.fillRect(x, MID_GROUND - d, 7, 2 + d);
   }
-  // the company's roadside fence: lime-crusted posts with two rails, breaking for the wagons
+  // wheel churn down where it meets the road
+  for (let i = 0; i < w / 40; i++) {
+    g.fillStyle = 'rgba(0,0,0,0.12)';
+    g.fillRect(Math.round(rnd() * w), MID_GROUND + 4 + Math.round(rnd() * 3), 10 + Math.round(rnd() * 26), 2);
+  }
+}
+/** The company's roadside fence: lime-crusted posts, two rails, and a break every GATE_STEP where the wagon trains
+ *  turn off the road into the yard. POSTS AND RAILS BOTH BREAK — the rails used to run the layer's whole width, so
+ *  the breaks in the posts read as three missing posts rather than as a way in. */
+function paintFence(g, w) {
+  const gaps = [];
+  for (let c = GATE_X0; c < w + GATE_HALF; c += GATE_STEP) gaps.push([c - GATE_HALF, c + GATE_HALF]);
   for (let x = 0; x < w; x += 46) {
-    if ((x / 46) % 7 === 3) continue;
+    if (gaps.some(([a, b]) => x + 5 > a && x < b)) continue;
     g.fillStyle = WOOD; g.fillRect(x, 172, 5, 30);
     g.fillStyle = LIME; g.fillRect(x, 172, 5, 5);
   }
   g.fillStyle = WOOD;
-  for (const y of [180, 192]) g.fillRect(0, y, w, 3);
-  // standing wagons under tarpaulins, waiting for the yard to weigh them
-  for (let x = 60; x < w; x += 322) {
-    const wx = x + Math.round(rnd() * 30);
-    boxOutlined(g, wx, 168, 62, 26, WOOD, INK, 2);
-    pathPoly(g, [wx + 2, 168, wx + 12, 152, wx + 50, 152, wx + 60, 168]); paint(g, TARP, INK, 2);
-    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(wx + 2, 184, 58, 10);
-    for (const cx of [wx + 14, wx + 48]) {
-      g.fillStyle = INK; g.beginPath(); g.arc(cx, 196, 9, 0, Math.PI * 2); g.fill();
-      g.fillStyle = IRON; g.beginPath(); g.arc(cx, 196, 7, 0, Math.PI * 2); g.fill();
-      g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(cx - 7, 195, 14, 2);
-    }
-    rivets(g, wx + 6, 172, wx + 56, 12, '#8A7A5A', 'rgba(0,0,0,0.4)');
+  let x0 = 0;
+  for (const [a, b] of gaps) {
+    if (a > x0) for (const y of [180, 192]) g.fillRect(x0, y, a - x0, 3);
+    x0 = Math.max(x0, b);
   }
-  // pole lamps: the company lights its own road, and the glass is the same lime as its rites
-  for (let x = 170; x < w; x += 322) {
-    g.fillStyle = IRON; g.fillRect(x, 130, 4, 72);
-    boxOutlined(g, x - 6, 120, 16, 14, '#3E4A42', INK, 2);
-    g.fillStyle = LAMP; g.fillRect(x - 3, 124, 10, 7);
-    g.fillStyle = 'rgba(216,255,110,0.18)'; g.fillRect(x - 12, 116, 28, 24);
+  for (const y of [180, 192]) g.fillRect(x0, y, w - x0, 3);
+}
+function paintMid(g, w, h, rnd) {
+  g.translate(0, BLEED);
+  // THE MID LAYER NEEDS A GROUND IN IT. Everything here used to stop at the floor band's top edge with nothing
+  // underneath, so the objects in it hung in the far layer's haze. A fence post gets away with that — it is a
+  // vertical line entering a cut — but nothing with a horizontal mass to it ever will.
+  paintShoulder(g, w, rnd);
+  // spoil banks: rounded heaps of burnt lime along the back of the shoulder, dark only where they meet the ground
+  for (let x = -40; x < w + 40; x += 150) {
+    const bx = x + Math.round(rnd() * 40), bh = 26 + Math.round(rnd() * 26), bw = 90 + Math.round(rnd() * 60);
+    g.fillStyle = SPOIL_D;
+    g.beginPath(); g.ellipse(bx, MID_GROUND + 1, bw / 2, bh * 0.55, 0, Math.PI, 0); g.fill();
+    g.fillStyle = SPOIL;
+    g.beginPath(); g.ellipse(bx, MID_GROUND - 1, bw / 2 - 4, bh * 0.5, 0, Math.PI, 0); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.22)';
+    g.beginPath(); g.ellipse(bx - bw * 0.14, MID_GROUND - 3, bw * 0.2, bh * 0.24, 0, Math.PI, 0); g.fill();
   }
   // milestones: the company measures the road it charges you for
   for (let x = 250; x < w; x += 644) {
-    boxOutlined(g, x, 182, 12, 20, SPOIL, INK, 2);
-    g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(x + 3, 187, 6, 2); g.fillRect(x + 3, 192, 6, 2);
+    boxOutlined(g, x, 172, 12, 18, SPOIL, INK, 2);
+    g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(x + 3, 177, 6, 2); g.fillRect(x + 3, 182, 6, 2);
+  }
+  paintFence(g, w);
+  // pole lamps: the company lights its own road, and the glass is the same lime as its rites
+  for (let x = LAMP_X0; x < w; x += LAMP_STEP) {
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(x - 6, MID_ROAD - 4, 16, 3);       // the scuff at its foot
+    g.fillStyle = IRON; g.fillRect(x, 130, 4, MID_ROAD - 130);
+    boxOutlined(g, x - 6, 120, 16, 14, '#3E4A42', INK, 2);
+    g.fillStyle = LAMP; g.fillRect(x - 3, 124, 10, 7);
+    g.fillStyle = 'rgba(216,255,110,0.18)'; g.fillRect(x - 12, 116, 28, 24);
   }
 }
 function paintFloor(g, w, h, rnd) {
@@ -138,25 +168,68 @@ function paintFloor(g, w, h, rnd) {
   g.fillStyle = INK; g.fillRect(0, 0, w, 3);
   g.fillStyle = '#12110E'; g.fillRect(0, Z_MAX, w, h - Z_MAX);
 }
+/**
+ * The corner of a parked cart the camera passes behind: bed, under-frame, axle and one open wheel, all of it cropped
+ * by the bottom of the frame. The wheel has to hang off something — a bar and a wheel with air between them is the
+ * one arrangement that reads as two decals instead of a cart.
+ */
+function paintCartCorner(g, x, dir) {
+  const bedY = 6, bedH = 12, wx = x + (dir > 0 ? 34 : 76), wy = 42;
+  // shaft first, out of frame ahead of it
+  const sx = x + (dir > 0 ? 104 : 6), ex = x + (dir > 0 ? 160 : -50);
+  g.lineCap = 'round';
+  for (const [c, lw] of [[INK, 8], [WOOD, 5]]) {
+    g.strokeStyle = c; g.lineWidth = lw;
+    g.beginPath(); g.moveTo(sx, bedY + bedH); g.lineTo(ex, bedY - 2); g.stroke();
+  }
+  // bed, under-frame and the axle the wheel turns on
+  boxOutlined(g, x, bedY, 110, bedH, WOOD, INK, 2);
+  g.fillStyle = 'rgba(0,0,0,0.30)'; g.fillRect(x, bedY + bedH - 5, 110, 5);
+  g.fillStyle = INK; g.fillRect(x + 6, bedY + bedH + 2, 98, 5);
+  g.fillStyle = IRON; g.fillRect(wx - 5, bedY + bedH, 10, wy - bedY - bedH);
+  // the wheel: a rim, six spokes and a hub, and NOTHING filled — a solid 36px disc this close to camera is an
+  // opaque hole in the arena at exactly the height a fighter's chest is; you would lose a Wickboy behind it.
+  g.strokeStyle = INK; g.lineWidth = 5;
+  g.beginPath(); g.arc(wx, wy, 18, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = IRON; g.lineWidth = 3;
+  g.beginPath(); g.arc(wx, wy, 18, 0, Math.PI * 2); g.stroke();
+  for (let k = 0; k < 6; k++) {
+    const a = k * Math.PI / 3;
+    g.strokeStyle = INK; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(wx, wy); g.lineTo(wx + Math.cos(a) * 17, wy + Math.sin(a) * 17); g.stroke();
+    g.strokeStyle = IRON; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(wx, wy); g.lineTo(wx + Math.cos(a) * 17, wy + Math.sin(a) * 17); g.stroke();
+  }
+  g.fillStyle = '#5E8072'; g.beginPath(); g.arc(wx, wy, 4, 0, Math.PI * 2); g.fill();
+}
+/** A tarpaulined load passing the camera: WIDE and low, so it reads as the top of something roped down on a cart
+ *  bed rather than a lump standing in the road. Only its crown ever clears the dark band. */
+function paintTarpCorner(g, x) {
+  pathPoly(g, [x, 80, x + 14, 52, x + 60, 44, x + 116, 47, x + 168, 55, x + 182, 80]);
+  paint(g, TARP, INK, 2);
+  // folds falling off the crown, and the rope over the top that says it is lashed to something
+  g.fillStyle = 'rgba(0,0,0,0.20)';
+  for (const k of [34, 72, 104, 140]) g.fillRect(x + k, 48, 2, 32);
+  g.fillStyle = 'rgba(255,255,255,0.14)'; g.fillRect(x + 24, 51, 34, 2); g.fillRect(x + 112, 50, 26, 2);
+  g.strokeStyle = INK; g.lineWidth = 3; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(x + 6, 66); g.lineTo(x + 58, 50); g.lineTo(x + 120, 53); g.lineTo(x + 176, 68); g.stroke();
+  g.strokeStyle = '#8A7A5A'; g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(x + 6, 66); g.lineTo(x + 58, 50); g.lineTo(x + 120, 53); g.lineTo(x + 176, 68); g.stroke();
+}
 function paintNear(g, w, h, rnd) {
-  // The shafts of parked carts pass in front of the fight every 340px. Everything here is OPEN — a bar, a rim and
-  // six spokes — because a filled 40px wheel in the near layer is an opaque hole in the arena at exactly the height
-  // a fighter's chest is: you would lose a Wickboy behind it and never know he was there.
-  for (let x = 0; x < w; x += 340) {
-    boxOutlined(g, x, 22, 96, 10, WOOD, INK, 2);
-    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(x, 27, 96, 5);
-    g.strokeStyle = INK; g.lineWidth = 5;
-    g.beginPath(); g.arc(x + 24, 52, 18, 0, Math.PI * 2); g.stroke();
-    g.strokeStyle = IRON; g.lineWidth = 3;
-    g.beginPath(); g.arc(x + 24, 52, 18, 0, Math.PI * 2); g.stroke();
-    for (let k = 0; k < 6; k++) {
-      const a = k * Math.PI / 3;
-      g.strokeStyle = INK; g.lineWidth = 3;
-      g.beginPath(); g.moveTo(x + 24, 52); g.lineTo(x + 24 + Math.cos(a) * 17, 52 + Math.sin(a) * 17); g.stroke();
-      g.strokeStyle = IRON; g.lineWidth = 1.5;
-      g.beginPath(); g.moveTo(x + 24, 52); g.lineTo(x + 24 + Math.cos(a) * 17, 52 + Math.sin(a) * 17); g.stroke();
-    }
-    g.fillStyle = '#5E8072'; g.beginPath(); g.arc(x + 24, 52, 4, 0, Math.PI * 2); g.fill();
+  // Layer row 0 is screen row NEAR_Y, and NEAR_Y puts this layer at the FRONT of the frame, where everything in it
+  // is cropped by the bottom of the screen. It used to be blitted at row 176 — the road's BACK edge — and a 1.2x
+  // layer standing at the back of the road is a contradiction the eye picks up immediately: it slides past the
+  // ground it appears to be standing on, so a shaft and a wheel up there read as a plank floating in the arena
+  // rather than a cart the camera is passing behind. Down here the same two marks read as the cart.
+  // Everything is still OPEN — a bar, a rim and six spokes — because a filled 40px wheel in the near layer is an
+  // opaque hole in the arena at exactly the height a fighter's chest is: you would lose a Wickboy behind it and
+  // never know he was there.
+  let x = 40, k = 0;
+  while (x < w) {
+    if (k % 3 === 2) paintTarpCorner(g, x); else paintCartCorner(g, x, k % 2 ? -1 : 1);
+    x += 300 + Math.round(rnd() * 150);
+    k++;
   }
 }
 
@@ -213,7 +286,7 @@ export function create(section) {
       blitAt(ctx, midL, mid.originX(cam), -BLEED + sy);
       // the pole lamps burn through the mid layer (the one saturated colour in the section)
       const midOrigin = mid.originX(cam);
-      for (let lx = 170; lx < mid.width; lx += 322) {
+      for (let lx = LAMP_X0; lx < mid.width; lx += LAMP_STEP) {
         const x = midOrigin + lx;
         if (x < -40 || x > VIEW_W + 40) continue;
         ctx.drawImage(lampGlow.canvas, x - 22, 127 - 22 + sy);
