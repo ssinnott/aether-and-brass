@@ -387,7 +387,7 @@ export class Fighter extends Entity {
     for (let i = 0; i < ev.length; i++) {
       const e = ev[i];
       if (e.type === 'sfx') audio.play(e.name);
-      else if (e.type === 'fx') world.addFx(e.value.kind, this.x + (e.value.x || 0) * this.facing, -(e.value.y || 0), this.z, { facing: this.facing, ...e.value });
+      else if (e.type === 'fx') world.addFx(e.value.kind, this.x + (e.value.x || 0) * this.facing, e.value.y || 0, this.z, { facing: this.facing, ...e.value });
       else if (e.type === 'event') { const fr = this.anim.def ? this.anim.def.frames[e.frameIndex] : null; if (this.callHook('onAnimEvent', e.name, fr, world) !== true) this.onAnimEvent(e.name, fr, world); }
     }
     ev.length = 0;

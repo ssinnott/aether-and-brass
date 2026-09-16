@@ -896,5 +896,18 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     net.ls = null;
   };
 
+  /**
+   * The run the ended pump was holding open is over: give the local slot back to the real devices.
+   * end() deliberately leaves that slot virtual-injected so a session dying MID-match does not move
+   * the survivor onto a different binding set in the middle of a fight (see end()). Once the match
+   * screen is torn down there is nothing left to protect, and a pump left running would keep
+   * injecting slot input across the title, CHOOSE YOUR FIGHTER and every later offline run.
+   */
+  net.release = function release() {
+    if (!net.endedPump) return;
+    net.endedPump = false;
+    input.clearVirtual(Math.max(0, net.localSlot));
+  };
+
   return net;
 }

@@ -137,7 +137,7 @@ const CULM_STANCE = { stance: { torso: -4, head: 8, legR: [17, 4], legL: [-19, 6
 const BC = { armR: [20, 30], weapon: -70, armL: [-24, -8] };
 const CC = { armR: [24, 26], weapon: -60, armL: [-28, -12] };
 const RAM_BOX = frontBox(64, hit(19, 'knockdown', 6, 3, 24));
-const SWEEP_BOX = { ...frontBox(56, hit(15, 'knockdown', 4, 4, 20)), ...LOW };
+const SWEEP_BOX = frontBox(56, hit(15, 'knockdown', 4, 4, 20), LOW);
 const PRESS_BOX = areaBox(56, hit(20, 'knockdown', 5, 5, 24));
 const common = {
   // intro: she sets the hook in the spoil, the press draws, and she prices the four of you without hurrying

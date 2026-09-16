@@ -310,6 +310,10 @@ export class GameplayScreen extends Screen {
       if (this.toResults && typeof net.matchOver === 'function') net.matchOver();
       else net.end('left the match');
     }
+    // A session that died DURING the match never reaches the branch above -- it is already inactive
+    // by the time we get here -- and end() leaves the local slot virtual-injected on purpose so the
+    // survivor keeps their own hand for the rest of the run. The run ends here, so hand it back.
+    if (net && typeof net.release === 'function') net.release();
     this.game.players = [];
     if (this.runner) this.runner.dispose();
   }
