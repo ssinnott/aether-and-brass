@@ -174,14 +174,15 @@ a hazard layout no other section in the game shares.
   The caption is the board's thesis stated flat (*the war is over; the company is still billing for it*), and the
   stinger under the section plate is this doc's own line: *everything here keeps the thing that kills you standing
   up*. Six seconds, no enemies, and the player has control throughout.
-- **Setting:** the cart road up to the works, white with spilled lime, wagon trains standing in it and the works'
-  four chimneys drawing smoke straight up ahead of you.
+- **Setting:** the cart road up to the works, white with spilled lime, empty of traffic all the way down it — the
+  wagon trains are the ones you meet at its foot (section 2) — and the works' four chimneys drawing smoke straight
+  up ahead of you.
 - **Parallax:** *Far* (0.2x): a chalk sky with no sun in it, the low line of the works and its chimneys, the city on
-  its mountain far behind. *Mid* (0.5x): a lime **shoulder** — the strip of churned ground the whole layer stands on —
-  with spoil banks, milestones, standing wagons (tarped, heaped or tipped out and waiting) and roadside lamps on
-  poles, all of it *behind* the company's fence, whose rails cross in front of the wagons' wheels and break where
-  each one pulled off the road. *Near* (1.2x): a parked cart's bed, shaft and one open wheel, and a tarpaulined load,
-  along the BOTTOM edge of the frame where a 1.2x layer's ground contact belongs; lime dust blowing along the ground.
+  its mountain far behind. *Mid* (0.5x): a lime **shoulder** — the strip of churned ground the whole layer stands on,
+  without which its contents hang in the far layer's haze — with spoil banks and milestones on it, the company's
+  fence at the road's edge in front of them with a gateway into the yard every 430px, and its pole lamps.
+  *Near* (1.2x): a parked cart's bed, shaft and one open wheel, and a tarpaulined load, along the BOTTOM edge of the
+  frame where a 1.2x layer's ground contact belongs; lime dust blowing along the ground.
 - **Floor:** rutted lime road over old rail, sleeper lines, spilled quicklime, cart tracks.
 - **Props (4):** a crate at x 280 (Brass Cogs and the road gang's Coal Scrip), a cart at x 880 (Meat Pie), a **lime
   sack** at x 1140 (a Meat Pie under the quicklime, which goes up in a white puff), a **tally board** at x 1300 (the
