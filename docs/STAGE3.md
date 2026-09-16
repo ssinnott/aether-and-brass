@@ -177,9 +177,11 @@ a hazard layout no other section in the game shares.
 - **Setting:** the cart road up to the works, white with spilled lime, wagon trains standing in it and the works'
   four chimneys drawing smoke straight up ahead of you.
 - **Parallax:** *Far* (0.2x): a chalk sky with no sun in it, the low line of the works and its chimneys, the city on
-  its mountain far behind. *Mid* (0.5x): lime spoil banks, milestones, standing wagons under tarpaulins, roadside
-  lamps on poles. *Near* (1.2x): cart shafts and hanging tarpaulin at the screen edges, lime dust blowing along the
-  ground.
+  its mountain far behind. *Mid* (0.5x): a lime **shoulder** — the strip of churned ground the whole layer stands on —
+  with spoil banks, milestones, standing wagons (tarped, heaped or tipped out and waiting) and roadside lamps on
+  poles, all of it *behind* the company's fence, whose rails cross in front of the wagons' wheels and break where
+  each one pulled off the road. *Near* (1.2x): a parked cart's bed, shaft and one open wheel, and a tarpaulined load,
+  along the BOTTOM edge of the frame where a 1.2x layer's ground contact belongs; lime dust blowing along the ground.
 - **Floor:** rutted lime road over old rail, sleeper lines, spilled quicklime, cart tracks.
 - **Props (4):** a crate at x 280 (Brass Cogs and the road gang's Coal Scrip), a cart at x 880 (Meat Pie), a **lime
   sack** at x 1140 (a Meat Pie under the quicklime, which goes up in a white puff), a **tally board** at x 1300 (the
