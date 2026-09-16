@@ -59,7 +59,7 @@
 //  explodeOnDeath { delay, radius, damage, friendly } | onSpawn/onUpdate/onDeath (legacy aliases of the hooks)
 //  moves { throwFwd / throwBack: { damage, vx, vy, releaseAt, shockwave: { r, damage }, selfVy, bounce: true|vy }, grabHit: { damage, hits } }
 import { ST, TEAM, GRAVITY, FLOOR_TOP, Z_MIN, Z_MAX, HITSTOP, FIGHTER_DEFAULTS, LAUNCH_VY, JUGGLE_VY, KNOCKDOWN_POP_VY, JUMP_VY, UI, VIEW_W } from '../constants.js';
-import { Entity } from './entity.js';
+import { Entity, worldHitbox } from './entity.js';
 import { AnimPlayer } from './animation.js';
 import { buildRig, drawRig } from '../art/rig.js';
 import { burstHit, burstDust, floatText } from '../art/fx.js';
@@ -748,10 +748,3 @@ export class Fighter extends Entity {
 }
 
 Object.assign(Fighter.prototype, grabMethods);
-
-/** Convert a local hitbox (feet origin, y negative up, +x toward facing) to a world AABB. */
-export function worldHitbox(owner, hb) {
-  const f = owner.facing;
-  const lx0 = f > 0 ? hb.x : -(hb.x + hb.w);
-  return { x0: owner.x + lx0, x1: owner.x + lx0 + hb.w, y0: owner.y - (hb.y + hb.h), y1: owner.y - hb.y, z: hb.z != null ? hb.z : 24 };
-}

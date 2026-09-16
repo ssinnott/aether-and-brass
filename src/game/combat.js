@@ -2,7 +2,7 @@
 // reflectable projectiles (a player attack bats a bomb / bolt back), hitbox maxTargets / pierceDamage, grounded-only area hits.
 import { ST } from '../constants.js';
 import { audio } from '../engine/audio.js';
-import { worldHitbox } from './fighter.js';
+import { worldHitbox } from './entity.js';
 
 const TARGET_KINDS = new Set(['player', 'enemy', 'boss', 'prop']);
 

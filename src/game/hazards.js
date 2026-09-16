@@ -54,7 +54,7 @@ import { FLOOR_TOP, TEAM, VIEW_W, ST, Z_MIN, Z_MAX } from '../constants.js';
 import { Entity } from './entity.js';
 import { Projectile } from './projectile.js';
 import { Prop, ringOut } from './items.js';
-import { worldHitbox } from './fighter.js';
+import { worldHitbox } from './entity.js';
 import { particles } from '../engine/particles.js';
 import { audio } from '../engine/audio.js';
 import { rng, makeRng } from '../engine/rng.js';
