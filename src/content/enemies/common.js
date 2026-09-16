@@ -7,12 +7,9 @@ import { rrect, circle, pathPoly, paint, line, gear } from '../../art/shapes.js'
 export { strike, frontBox, areaBox, STYLES, P };
 
 /** GDD rig sizes were written for a 48px base; the engine rig is ~72px (RECONCILIATION: x1.4). */
-export const GDD_SCALE = 1.4;
 /** Faction colours (GDD 1 / 3 / 4). */
 export const BRASS = { steel: '#7F8C99', darkSteel: '#4A5563', brass: '#C89B3C', lens: '#4DF0E0', lensTell: '#FF5C5C' };
 export const SOOT = { skin: '#6BA84F', shade: '#3F6B2E', rags: '#5A4A3A', scrap: '#B0B0B0', eye: '#F2C94C' };
-export const OUTLINE = '#2B2B30';
-
 // ---------------------------------------------------------------- Brassbound hooks
 /** Boxy automaton head with one lens (cyan, red while `rig.tell` is set by the AI during wind-ups). */
 export function brassHead(ctx, rig, pose, info) {
@@ -39,21 +36,7 @@ export function brassTorso(ctx, rig, pose, info) {
   gear(ctx, -w / 2, -h + 2, 5, 6, rig.col(pal.accent), ol, 1, 0.3, 1.5);
 }
 /** Wind-up key on the back; the AI spins `rig.keyAngle` while the automaton acts. */
-export function windKey(ctx, rig) {
-  const p = rig.p, ol = rig.col(rig.outline), a = rig.keyAngle || 0;
-  const x = -p.torsoW / 2 - 3, y = -p.torsoH * 0.55;
-  rrect(ctx, x - 6, y - 2, 8, 4, 1, rig.col(rig.palette.accent), ol, 1);
-  ctx.save(); ctx.translate(x - 8, y); ctx.rotate(a);
-  rrect(ctx, -2, -7, 4, 14, 1, rig.col(rig.palette.accent), ol, 1);
-  circle(ctx, 0, -7, 3, rig.col(rig.palette.accent), ol, 1); circle(ctx, 0, 7, 3, rig.col(rig.palette.accent), ol, 1);
-  ctx.restore();
-}
 /** Ball-jointed limb segment (any limb part hook). */
-export function brassLimb(ctx, rig, pose, info) {
-  const ol = rig.col(rig.outline), r = info.r, len = info.len;
-  rrect(ctx, -r + 1, 0, r * 2 - 2, len, 2, rig.col(info.far ? rig.paletteFar.secondary : rig.palette.secondary), ol, rig.ow);
-  circle(ctx, 0, 0, r * 0.9, rig.col(info.far ? rig.paletteFar.accent : rig.palette.accent), ol, 1);
-}
 /** Plate boot. */
 export function brassFoot(ctx, rig, pose, info) {
   const ol = rig.col(rig.outline);
@@ -63,34 +46,8 @@ export function brassFoot(ctx, rig, pose, info) {
 
 // ---------------------------------------------------------------- Sootborn hooks
 /** Oversized goblin head: nose triangle, ear triangles, yellow eye. */
-export function sootHead(ctx, rig, pose, info) {
-  const r = info.r, ol = rig.col(rig.outline), pal = rig.palette;
-  pathPoly(ctx, [-r * 0.5, -r * 0.2, -r * 1.6, -r * 0.9, -r * 0.6, r * 0.3]); paint(ctx, rig.col(pal.skin), ol, 1.5); // back ear
-  circle(ctx, 0, 0, r, rig.col(pal.skin), ol, rig.ow);
-  ctx.fillStyle = rig.col('rgba(0,0,0,0.18)'); ctx.beginPath(); ctx.arc(0, 0, r - 1, 0.1, Math.PI - 0.1); ctx.fill();
-  pathPoly(ctx, [r * 0.7, -r * 0.1, r * 1.7, r * 0.1, r * 0.7, r * 0.45]); paint(ctx, rig.col(pal.skin), ol, 1.5); // nose
-  ctx.fillStyle = rig.col(pal.glow); ctx.fillRect(r * 0.15, -r * 0.45, 3.5, 3); // eye
-  ctx.fillStyle = rig.col(rig.outline); ctx.fillRect(r * 0.3, -r * 0.4, 1.5, 2);
-  ctx.fillStyle = rig.col(rig.outline); ctx.fillRect(r * 0.2, r * 0.5, r * 0.6, 1.5); // grin
-  ctx.fillStyle = rig.col('#ffffff'); ctx.fillRect(r * 0.55, r * 0.5, 2, 2);
-}
 /** Numbered brass badge on the chest (every Sootborn wears one). */
-export function sootBadge(ctx, rig) {
-  const p = rig.p, ol = rig.col(rig.outline);
-  circle(ctx, p.torsoW * 0.15, -p.torsoH * 0.6, 3.5, rig.col(BRASS.brass), ol, 1);
-  ctx.fillStyle = rig.col(rig.outline); ctx.fillRect(p.torsoW * 0.15 - 1, -p.torsoH * 0.6 - 1.5, 1.5, 3);
-}
 /** Ragged torso with a clan-colour sash. */
-export function sootTorso(ctx, rig, pose, info) {
-  const w = info.w, h = info.h, ol = rig.col(rig.outline), pal = rig.palette;
-  rrect(ctx, -w / 2, -h, w, h + 4, 5, rig.col(pal.primary), ol, rig.ow);
-  ctx.fillStyle = rig.col('rgba(0,0,0,0.22)'); ctx.fillRect(-w / 2 + 1, -h / 2, w - 2, h / 2 + 2);
-  ctx.save(); ctx.beginPath(); ctx.rect(-w / 2, -h, w, h + 4); ctx.clip();
-  ctx.fillStyle = rig.col(rig.build.clan || '#9A4A22');
-  ctx.beginPath(); ctx.moveTo(-w / 2, -h + 2); ctx.lineTo(-w / 2 + 6, -h); ctx.lineTo(w / 2, h * 0.1); ctx.lineTo(w / 2 - 6, h * 0.25); ctx.closePath(); ctx.fill();
-  ctx.restore();
-}
-
 // ---------------------------------------------------------------- weapons (hand space: +x along the forearm)
 export function drawClub(ctx, rig) {
   const ol = rig.col(rig.outline);
@@ -194,11 +151,6 @@ export function drawCap(ctx, rig) {
   pathPoly(ctx, [-r - 1, -r * 0.5, r + 5, -r * 0.5, r, -r - 2, -r + 2, -r - 3]); paint(ctx, rig.col(rig.build.clan || '#D9A62B'), ol, 1.5);
 }
 /** Welding goggles (head accessory). */
-export function drawWeldGoggles(ctx, rig) {
-  const r = rig.p.headR, ol = rig.col(rig.outline);
-  ctx.fillStyle = rig.col('#2a2a30'); ctx.fillRect(-r + 1, -r * 0.55, r * 2 - 2, 3);
-  circle(ctx, r * 0.3, -r * 0.45, 3.5, rig.col('#3a4a3a'), ol, 1); circle(ctx, -r * 0.4, -r * 0.45, 3.5, rig.col('#3a4a3a'), ol, 1);
-}
 /** Crested helmet (head accessory). */
 export function drawCrest(ctx, rig) {
   const r = rig.p.headR, ol = rig.col(rig.outline);
@@ -221,18 +173,6 @@ export function drawCollar(ctx, rig) {
  * attacks: { name: { style, tell, active, recovery, reach, dmg, type, kbX, kbY, hitstun, behind, area, low, high, move, sfx, tellSfx, hitSfx,
  *   event, projectile, armor, invuln, hitboxes, extraActive, rehit, once, fx, aimEvent } }
  */
-export function makeEnemyAnims({ carry = {}, attacks = {}, extra = {} }) {
-  const anims = makeBaseAnims(carry);
-  for (const name of Object.keys(attacks)) anims[name] = enemyAttack(attacks[name], carry);
-  anims.stagger = { loop: true, frames: [
-    { dur: 6, pose: P({ ...carry, torso: -14, head: -10, root: [-2, 2, -6], legR: [15, 10], legL: [-10, 12], armL: [-40, -30] }) },
-    { dur: 6, pose: P({ ...carry, torso: -10, head: 8, root: [2, 2, 6], legR: [12, 8], legL: [-8, 10], armL: [-30, -40] }) },
-  ] };
-  anims.flee = anims.run;
-  Object.assign(anims, extra);
-  return anims;
-}
-
 /** One telegraphed enemy attack: tell (wind-up, `tell:true` frames light the lens red) -> active -> recovery -> return. */
 export function enemyAttack(o, carry = {}) {
   const st = STYLES[o.style] || STYLES.swing;
@@ -316,7 +256,7 @@ export const BRASS_PROPS = { headR: 8.5, neck: 3, neckR: 3, torsoW: 22, torsoH: 
 export const FK = (dur, spec, extra) => ({ dur, pose: P(spec), ...(extra || {}) });
 
 /** Boxy automaton head (head space): rounded 17px plate, dark brow band, brass jaw plate, hinge bolt at the back. */
-export function brassHeadB(ctx, rig, pose, inf) {
+function brassHeadB(ctx, rig, pose, inf) {
   const r = inf.r, pal = inf.pal;
   celRect(ctx, rig, -r, -r, r * 2, r * 2, 3, pal.primary, 0.34, 0.3);
   if (rig.override) return;
@@ -360,7 +300,7 @@ export function brassTorsoB(ctx, rig, pose, inf) {
   if (face !== FACE.dazed) { ctx.fillStyle = rig.col('#FFFFFF'); ctx.fillRect(-3, cy - 3, 2, 2); }
 }
 /** Gear pauldron at the shoulder joint (shoulder hook, torso space); ticks round with the wind-up key while the automaton acts. */
-export function brassPauldronB(ctx, rig, pose, inf) {
+function brassPauldronB(ctx, rig, pose, inf) {
   // holdout (game/traits.js) takes the key off the back; the gears run off the SAME keyAngle, so without this they kept
   // ticking and the tell the mod means to remove stayed legible at the shoulders. No key, no drive: the gears sit still.
   const p = rig.p, hw = RB(p.torsoW / 2), a = rig.build.noKey ? 0 : (rig.keyAngle || 0) * 0.5 * (inf.far ? -1 : 1);
@@ -407,7 +347,7 @@ export function brassLimbB(ctx, rig, pose, inf) {
   ctx.restore();
 }
 /** Plate boot (ankle space): steel plate with a deep sole and a brass toe cap. */
-export function brassFootB(ctx, rig, pose, inf) {
+function brassFootB(ctx, rig, pose, inf) {
   const w = inf.w, h = inf.h, pal = inf.pal, heel = RB(w * 0.4), toe = RB(w * 0.62);
   celPoly(ctx, rig, [-heel, -h, toe - 3, -h, toe, -h + 2, toe, 2, -heel, 2], pal.primary, 0.34, 0.3);
   if (rig.override) return;
@@ -415,12 +355,12 @@ export function brassFootB(ctx, rig, pose, inf) {
   ctx.fillStyle = rig.col(pal.accent); ctx.fillRect(toe - 4, -h + 2, 4, 3);             // toe cap: rivet-class detail (3), under hiMin
 }
 /** Mitten fist with a brass wrist ball (hand space). */
-export function brassHandB(ctx, rig, pose, inf) {
+function brassHandB(ctx, rig, pose, inf) {
   drawFist(ctx, rig, inf.r, inf.pal.skin);
   celBall(ctx, rig, -1, 0, 2.5, inf.pal.joint || inf.pal.accent, false);
 }
 /** Pelvis plate with a brass buckle plate (hip space). */
-export function brassHipsB(ctx, rig, pose, inf) {
+function brassHipsB(ctx, rig, pose, inf) {
   const hw = RB(inf.w / 2), pal = inf.pal;
   celRect(ctx, rig, -hw, -5, inf.w, 10, 2, pal.secondary, 0.4, 0.2);
   if (rig.override) return;
@@ -573,7 +513,7 @@ export const GOB = { skin: '#6BA84F', shade: '#3F6B2E', rags: '#5A4A3A', ragsDar
  * every other section. `sleeve` stays `skin`: these are bare arms, and the outline plus the contact shadow are what
  * separate an arm from the chest it crosses.
  */
-export const GOB_LIMB = '#81C95F';
+const GOB_LIMB = '#81C95F';
 export const GOB_PAL = { skin: GOB.skin, hair: GOB.shade, primary: GOB.rags, sleeve: GOB.skin, secondary: GOB_LIMB, accent: GOB.brass, metal: GOB.scrap, dark: GOB.wrap, glow: GOB.eye };
 /** GDD 40px goblin x1.4: 24px head, 20x20 torso, long 29px arms, short 17px legs (~64px at scale 1, 54px at the 0.85 Sootborn scale). */
 export const GOB_PROPS = { headR: 12, neck: 2, neckR: 3, torsoW: 20, torsoH: 20, hip: 18, upperArm: 15, lowerArm: 14, armR: 4.5, handR: 5, upperLeg: 10, lowerLeg: 9, legR: 5, footL: 11, footH: 5, shoulderX: 3, hipX: 4, bulge: 0.3 };
@@ -700,7 +640,7 @@ export function gobTorso(ctx, rig, pose, inf) {
   gobBadgeAt(ctx, rig, GR(hw * 0.35), GR(-H * 0.6));
 }
 /** Numbered brass badge (a brass disc with a dark '1' mark): drawn by gobTorso; also usable as a torso accessory. */
-export function gobBadgeAt(ctx, rig, x, y) {
+function gobBadgeAt(ctx, rig, x, y) {
   celBall(ctx, rig, x, y, 4, rig.palette.accent, false);
   if (rig.override) return;
   ctx.fillStyle = tones(rig, rig.palette.accent).deep; ctx.fillRect(x - 1, y - 2, 2, 5); ctx.fillRect(x - 2, y - 1, 1, 1);
@@ -767,4 +707,3 @@ export const GOB_PARTS = { head: gobHead, face: gobFace, torso: gobTorso, hips: 
 /** Rim-light helper re-export for goblin accessories (keeps sootborn.js free of extra shading imports). */
 export const gobRimTop = gobRim;
 /** Flat-fill helper re-export (outline + fill, no bands) for goblin accessories. */
-export const gobFlat = flatFill;
