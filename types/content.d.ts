@@ -223,6 +223,10 @@ interface CharacterLines {
   /** A combo crossed 20 (the BRASSY grade). Fires often, so it carries more than one row. */
   combo20?: Exchange[];
   results?: Exchange[];
+  /** Raised by a board's opening beat, one row per board: `{ say: { trigger: 'boardOpen', row: 2 } }`. */
+  boardOpen?: Exchange[];
+  /** The same, later in the same walk — what the party is about to do rather than what they have arrived in. */
+  boardWalk?: Exchange[];
 }
 
 /** A boss's own call-outs. `phase[i]` is spoken on entering phase i; `phase[0]` goes up with the name plate. */

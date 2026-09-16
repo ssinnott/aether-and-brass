@@ -2,7 +2,7 @@
 // side / sky spawns with delays, reinforcements, timed waves for locked sections, props / hazards / zones, GO arrow,
 // scripted transitions (lift, funicular boarding, docking), mid-boss and boss triggers with intro cutscene / spotlight /
 // name plates, the defeat spectacle and results after a 240f pose hold.
-import { VIEW_W, ST, UI, WAVE_EXTRA_BY_PARTY, PARTY_EXTRA_DELAY } from '../constants.js';
+import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MAX, ST, UI, WAVE_EXTRA_BY_PARTY, PARTY_EXTRA_DELAY } from '../constants.js';
 import { createBackdrop, backdropsReady } from '../art/backgrounds/index.js';
 import { Prop } from './items.js';
 import { Hazard, Zone, ZoneFlash } from './hazards.js';
@@ -12,6 +12,7 @@ import { createPlatform } from './platforms.js';
 import { EventRunner } from './events.js';
 import { Actor, Sign } from './actors.js';
 import { Dialogue, PLATE_COOLDOWN } from './dialogue.js';
+import { STRIP_H } from './hud.js';
 import { getEnemyDef } from '../content/enemies/index.js';
 import { CHARACTERS, getCharacter } from '../content/characters/index.js';
 import { BANTER, SOLO } from '../content/characters/lines.js';
@@ -19,6 +20,7 @@ import { clamp } from '../engine/math.js';
 import { audio } from '../engine/audio.js';
 import { particles } from '../engine/particles.js';
 import { floatText } from '../art/fx.js';
+import { ease } from '../art/poses.js';
 
 const SPAWN_MARGIN = 50;
 const GO_FRAMES = 150;
@@ -43,6 +45,19 @@ const BOSS_REPLY_DELAY = PLATE_COOLDOWN + 24;
 const SECTION_REPLY_DELAY = 50;
 /** Life of a dock transition's arrival banner. */
 const DOCK_BANNER_LIFE = 60;
+/**
+ * The story-beat LETTERBOX. A beat is the one moment the game narrates at you while you still hold the controls, and
+ * with nothing on screen to mark it "the opening is still running" and "the opening finished and the quay is simply
+ * quiet" look exactly alike -- which is the whole of why an intro was hard to tell the end of. Two bars slide in with
+ * the beat and slide back out when it ends, so the state is something the screen says rather than something the
+ * player infers from a caption they may not have been looking at.
+ *
+ * The depth is DERIVED rather than picked: FLOOR_TOP + Z_MAX is the bottom edge of the floor band, so a bar this deep
+ * is exactly the strip below the last row any body can stand on. The letterbox can never cover a pair of feet.
+ */
+const CINEMA_H = VIEW_H - (FLOOR_TOP + Z_MAX);
+/** Frames the bars take to slide in, and the same again to slide back out. */
+const CINEMA_SLIDE = 18;
 
 /** Drives one stage for a World. The gameplay screen owns it and forwards update()/draw(). */
 export class StageRunner {
@@ -83,6 +98,8 @@ export class StageRunner {
     this.actors = [];
     /** @type {import('./actors.js').Sign[]} lettered boards the running beat put up, dropped with it */
     this.signs = [];
+    /** Letterbox travel in frames, 0..CINEMA_SLIDE: counts up while a beat runs and back down once it is over. */
+    this.cinemaT = 0;
     /** A scheduled exchange: `{ trigger, t, focus }`, counted down in update(). See saySoon(). */
     this.pendingSay = null;
     /** Last frame's `out` / `combo` per slot — the edges pollDialogue() turns into triggers. */
@@ -191,6 +208,26 @@ export class StageRunner {
     return x;
   }
 
+  /**
+   * True while a STORY beat is running. Deliberately keyed on `beat: true` rather than on "an event is running": a
+   * mid-board combat script (the over-fire, the broadside) is a thing happening TO the player in the middle of a
+   * fight, not a scene, and framing one would say the fight had stopped when it very much has not.
+   */
+  get beatRunning() { return !!(this.events.running && this.events.event && this.events.event.beat); }
+
+  /**
+   * Step the letterbox one frame toward open or shut.
+   *
+   * Driven from "is a beat running THIS frame" rather than from the places a beat starts and stops, because a beat
+   * ends four different ways -- its script running out, the outrun valve, a section change, and a `?event=` jump --
+   * and a close that had to be remembered at each of them is a close that will be forgotten at one of them. This
+   * also gives the retract for free when a beat is cut off mid-caption, which is the case that most needs it.
+   */
+  updateCinema() {
+    if (this.beatRunning) { if (this.cinemaT < CINEMA_SLIDE) this.cinemaT++; }
+    else if (this.cinemaT > 0) this.cinemaT--;
+  }
+
   /** Stop a running beat early and strike everything it staged. The script's own end goes through clearActors(). */
   endBeat() { this.events.cancel(); this.clearActors(); }
 
@@ -206,11 +243,12 @@ export class StageRunner {
    * rule is enforced in exactly one place, and so the whole system can be switched off with a single flag.
    *
    * @param {string} trigger one of dialogue.TRIGGERS
-   * @param {{ focus?: object }} [o] the hero the moment belongs to, when there is one
+   * @param {{ focus?: object, row?: number|null }} [o] the hero the moment belongs to, when there is one, and the
+   *   authored row an opening beat names so that board 3 hears board 3's exchange (see Dialogue.index)
    */
-  say(trigger, { focus = null } = {}) {
+  say(trigger, { focus = null, row = null } = {}) {
     if (!this.dialogue || !trigger) return false;
-    return this.dialogue.say(trigger, this.world.players, this.world.frame, { focus });
+    return this.dialogue.say(trigger, this.world.players, this.world.frame, { focus, row });
   }
 
   /**
@@ -420,6 +458,9 @@ export class StageRunner {
     if (this.pendingSay && --this.pendingSay.t <= 0) { const s = this.pendingSay; this.pendingSay = null; this.say(s.trigger, { focus: s.focus }); }
     if (this.plate && ++this.plate.timer >= this.plate.life) this.plate = null;
     if (this.spotlightT >= 0 && ++this.spotlightT > SPOTLIGHT_FRAMES) this.spotlightT = -1;
+    // The letterbox ages HERE, above the transition early-return, for the same reason the companion plates do: a
+    // beat cut short by a section change has to finish retracting rather than hang open behind the lift ride.
+    this.updateCinema();
     // The platform is stepped BEFORE the transition early-return: a hoist does not stop climbing because the party is
     // boarding something. `carry` is false during a transition so its clock runs on while nothing shoves a held body.
     if (this.platform) this.platform.update(world, !this.transition);
@@ -865,7 +906,34 @@ export class StageRunner {
     const cam = this.world.camera;
     if (this.spotlightT >= 0 && this.bossEntity && this.midbossState === 'active') drawSpotlight(ctx, cam, this.bossEntity, this.spotlightT);
     if (this.transition) this.transition.draw(ctx);
+    this.drawCinema(ctx);
     if (this.dialogue) this.dialogue.draw(ctx, cam);
+  }
+
+  /**
+   * The story-beat letterbox: two bars that slide in for the length of a beat and back out when it ends.
+   *
+   * The top bar slides out from UNDER the HUD strip rather than from row 0. The strip already owns rows 0..STRIP_H-1
+   * and is drawn after this pass, so a bar anchored at the top would spend its whole travel hidden behind the strip
+   * and then appear as a finished band; anchored at the strip's own bottom edge, every frame of the travel is
+   * visible. The bottom bar starts at the floor band's bottom edge -- see CINEMA_H -- so nothing standing on the
+   * floor is ever behind it. Speech plates draw after this, because a companion line is not scenery to be framed.
+   */
+  drawCinema(ctx) {
+    if (this.cinemaT <= 0) return;
+    const h = Math.round(CINEMA_H * ease('out', this.cinemaT / CINEMA_SLIDE));
+    if (h <= 0) return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(8,5,10,0.94)';
+    ctx.fillRect(0, STRIP_H, VIEW_W, h);
+    ctx.fillRect(0, VIEW_H - h, VIEW_W, h);
+    // a brass hairline on each inner edge: the same trim the HUD strip and every plate in the game are lined with,
+    // so the bars read as part of the machine rather than as two rectangles the renderer forgot to clear
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = UI.brass;
+    ctx.fillRect(0, STRIP_H + h - 1, VIEW_W, 1);
+    ctx.fillRect(0, VIEW_H - h, VIEW_W, 1);
+    ctx.restore();
   }
 
   /** window.__game.summary() contribution. */
@@ -874,7 +942,8 @@ export class StageRunner {
     return { sectionIndex: this.sectionIndex, wavesCleared: this.wavesCleared, transition: this.transition ? this.transition.kind : null,
       platform: pf ? { kind: pf.kind, phase: pf.phase, progress: pf.progress(this.world), offset: Math.round(pf.offset || 0) } : null,
       event: this.events.running ? { id: this.events.event.id || '', step: this.events.step, t: this.events.t } : null,
-      beat: { on: !!this.beats, actors: this.actors.length, signs: this.signs.length, ...(this.dialogue ? this.dialogue.summary() : {}) } };
+      beat: { on: !!this.beats, running: this.beatRunning, letterbox: this.cinemaT / CINEMA_SLIDE,
+        actors: this.actors.length, signs: this.signs.length, ...(this.dialogue ? this.dialogue.summary() : {}) } };
   }
 }
 

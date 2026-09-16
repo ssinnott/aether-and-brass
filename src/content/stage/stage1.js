@@ -66,43 +66,76 @@ export const stage1 = {
       stinger: 'EVERYTHING LEAVING THIS CITY GOES THROUGH HERE',
       /**
        * THE SOOTFOOT GANGWAY (issue #25). The board opens on a walk rather than a title card: the party comes down
-       * the gangway in the rain, two dockers go the other way with their shift finished, and the board's name is on
-       * the hoarding at the head of the quay instead of on a plate in the middle of the screen.
+       * the gangway in the rain, and the board's name is on the hoarding at the head of the quay instead of on a
+       * plate in the middle of the screen.
        *
-       * `holdWaves` is what buys the six seconds. The first wave triggers at x 400 and the party spawns at 100, so
-       * the walk the quay already had is about two seconds; rather than re-cut the level, the wave director waits
+       * NOBODY IS STAGED IN IT. The opening used to walk two dockers past the party, and every body a beat puts on
+       * the quay is a body wearing an enemy's rig: the player squares up to it, finds it cannot be hit, and then
+       * watches it vanish when the script ends. A scene the player spends swinging at scenery is a scene they were
+       * not watching. What the beat has instead is the quay itself -- the hoardings, the rain, the hook and the
+       * pallet -- so everything on screen during an opening is either the level or the party.
+       *
+       * `holdWaves` is what buys the eleven seconds. The first wave triggers at x 400 and the party spawns at 100,
+       * so the walk the quay already had is about two seconds; rather than re-cut the level, the wave director waits
        * while the script runs. Nothing else waits — the player walks the whole time, and the rain, the hook and the
-       * pallet all keep running.
+       * pallet all keep running. The letterbox (game/stage.js drawCinema) is up for exactly this stretch.
        */
       events: [
         { id: 'intro1', atX: 40, once: true, beat: true, holdWaves: true, actions: [
           { sign: { text: 'SOOTFOOT DOCKS', sub: 'CALDERWICK, LOWER', x: 330, z: 6, style: 'hoarding', life: 900 } },
-          // two dockers walking off the quay past the party, on the far lane so they never crowd the walk
-          { actor: { id: 'docker1', def: 'sootborn', variant: 'cutthroat', x: 700, z: 18, facing: -1, vx: -0.55, frames: 420, anim: 'walk' } },
-          { actor: { id: 'docker2', def: 'sootborn', variant: 'cutthroat', x: 764, z: 32, facing: -1, vx: -0.5, frames: 420, anim: 'walk' } },
           // The stage banner (gameplay.js) holds the screen for its first 120 frames, and `showBanner` is one slot:
           // a caption raised before then would delete the board's own title. The scenery goes up straight away; the
           // words wait their turn.
           { wait: 130 },
-          { caption: 'CALDERWICK', sub: 'CITY OF THE HEART-ENGINE - AND THE CHANCELLOR HAS SEALED THE SKY', life: 170 },
-          { wait: 150 },
+          { caption: 'CALDERWICK', sub: 'CITY OF THE HEART-ENGINE - AND THE CHANCELLOR HAS SEALED THE SKY', life: 190 },
+          { wait: 100 },
+          // THE PARTY TALKS THROUGH IT (issue #25 part 2). An opening is eleven seconds of walking with nothing to
+          // fight, and what fills that is the heroes, not more narration. Two exchanges are raised by hand here on
+          // top of the `sectionStart` one the section already schedules, so an opening is a conversation rather
+          // than three captions in a row.
+          //
+          // `row` is the BOARD, not a rotation: these two tables are written about one quay, one gantry, one road
+          // and one heap (content/characters/lines.js), so board 1 asks for row 0 and must get it. See
+          // Dialogue.index -- an authored row also drops the per-slot offset, or two players in the same online
+          // room would watch two different conversations.
+          //
+          // The frames are picked against the dialogue cooldown rather than the captions: `sectionStart` fires at
+          // world frame 50 and holds the floor until ~185, this lands at 230, and `boardWalk` at 560 clears this
+          // one's own floor (~365) with room to spare. A plate that lost the tie would be DROPPED, not delayed.
+          { say: { trigger: 'boardOpen', row: 0 } },
+          { wait: 80 },
           { sfx: 'hydraulic' },
-          { wait: 60 },
-          { caption: 'FOUR UNLIKELY DELIVERIES', sub: 'ARE ABOUT TO BE MADE, UPWARD', life: 150 },
-          { wait: 170 },
+          // A SECOND hoarding, up the quay where the walk has got to by now. It is what the removed dockers were
+          // really for: something to arrive at in the middle of the beat, so the stretch between the first caption
+          // and the last is a walk toward something rather than a walk past nothing.
+          { sign: { text: 'NO CARGO LEAVES BY AIR', sub: 'BY ORDER OF THE CHANCELLOR', x: 880, z: 8, style: 'hoarding', life: 900 } },
+          { caption: 'THE QUAY IS STILL WORKING', sub: 'NOTHING ON IT IS GOING ANYWHERE', life: 180 },
+          { wait: 180 },
+          { sfx: 'gear_slip' },
+          { caption: 'FOUR UNLIKELY DELIVERIES', sub: 'ARE ABOUT TO BE MADE, UPWARD', life: 190 },
+          { wait: 70 },
+          { say: { trigger: 'boardWalk', row: 0 } },
+          { wait: 140 },
         ] },
       ],
       /** The dock gate rotates open; a 180f freight-lift ride down with one Meat Pie, and the Chandlery goes past. */
       transition: { kind: 'lift', atX: 1740, gateX: 1800,
         /**
          * Issue #25 vignette: the freight lift's 180-frame ride is the first time the party stands still, so it is
-         * the first time they can be shown something. What goes past is a Brassbound being taken DOWN while they go
-         * down with it — the board's own cargo, on the company's own lift.
+         * the first time they can be shown something.
+         *
+         * NOBODY RIDES DOWN WITH THEM. This used to put a Brassbound on the lift as cargo, and a vignette body is
+         * the same mistake an opening's was, made where it is harder to notice: a figure in an enemy's rig appears
+         * for a second and a half and is deleted, and the party is held for the whole of it, so the one thing the
+         * player can do about it is wonder what it was. Held or not, a scene in this game stages nobody -- what it
+         * shows is the machinery, and what it says it says in words.
          */
         vignette: { cues: [
-          { at: 70, caption: 'THE FREIGHT LIFT', sub: 'IT ONLY RUNS DOWN', life: 110 },
-          // `dx` is from the left edge of the view: the lift parks the camera wherever the gate was.
-          { at: 120, actor: { id: 'cargo', def: 'brassbound', variant: 'footman', dx: 470, z: 14, facing: -1, anim: 'idle' } },
+          { at: 20, sfx: 'hydraulic' },
+          // 80 frames each: the ride is 50..230 (transitions.js PHASES), so two captions fill it exactly and
+          // neither is cut mid-read by the other. The lift clunks as the second one lands.
+          { at: 70, caption: 'THE FREIGHT LIFT', sub: 'IT ONLY RUNS DOWN', life: 80 },
+          { at: 150, caption: 'AND EVERYTHING ON THE QUAY WITH IT', sub: 'NOTHING HAS LEFT CALDERWICK BY AIR IN A MONTH', life: 80 },
           { at: 150, sfx: 'gear_slip' },
         ] } },
     },
@@ -152,11 +185,12 @@ export const stage1 = {
       events: [],
       /** The cargo gate rises; the players board the Aether Funicular tram car. */
       transition: { kind: 'board', atX: 3740, gateX: 3800,
-        /** Issue #25 vignette: the funicular car waiting, and the queue that will not be getting on it. */
+        /** Issue #25 vignette: the funicular car waiting, with nobody queueing for it. The docker who used to
+         *  stand here went with every other staged body -- see the note on s1's lift -- and the line carries it
+         *  alone, which it can: a car going up half empty is a shift with nobody left on it. */
         vignette: { cues: [
-          { at: 10, caption: 'THE CAR GOES UP HALF EMPTY', sub: '', life: 100 },
+          { at: 10, caption: 'THE CAR GOES UP HALF EMPTY', sub: 'THERE IS NOBODY LEFT ON THIS SHIFT TO FILL IT', life: 100 },
           { at: 16, sfx: 'chime' },
-          { at: 26, actor: { id: 'queue', def: 'sootborn', variant: 'cutthroat', dx: 120, z: 22, facing: 1, anim: 'idle' } },
         ] } },
     },
     // ---------------------------------------------------------------- Section 3: The Brass Funicular (one locked screen, timed waves)
