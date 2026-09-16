@@ -227,10 +227,9 @@ export class GameplayScreen extends Screen {
     const cam = this.world.camera;
     this.players.forEach((p, i) => {
       if (!p) return;
-      p.out = false; p.dead = false; p.alive = true; p.removeMe = false; p.lives = 3; p.continuesUsed++;
-      p.hp = p.maxHp; p.meter = 0; p.state = ST.IDLE; p.stateTimer = 0; p.hitstop = 0; p.grabbedBy = null; p.grabTarget = null; p.heldBody = null; p.heldProp = null;
-      p.hurtTimer = 0; p.juggleCount = 0; p.juggleGravity = 0; p.juggleImmune = false; p.chainHits = 0; p.combo = 0; p.comboTimer = 0; p.running = false; p.comboStep = 0; p.busy = 0;
-      p.clearWeapon();
+      p.resetBody();
+      p.out = false; p.lives = 3; p.continuesUsed++;
+      p.state = ST.IDLE; p.stateTimer = 0; p.hurtTimer = 0; p.running = false; p.comboStep = 0; p.busy = 0;
       p.x = clamp(cam.x + VIEW_W / 2 - 40 + i * 60, cam.left + 20, cam.right - 20); p.z = PLAYER_START_Z + i * PLAYER_Z_PITCH; p.y = 0; p.vy = 0; p.vx = 0;
       p.invuln = 120; p.play('idle');
       if (!this.world.entities.includes(p)) this.world.add(p);

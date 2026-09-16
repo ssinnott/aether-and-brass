@@ -11,6 +11,9 @@
     "simtest": "node tools/simtest.js",
     "winrate": "node tools/winrate.js",
     "art-check": "node tools/art-check.js",
+    "art-selftest": "node tools/art-invariants/selftest.js",
+    "check": "npm run typecheck && npm run simtest && npm run nettest && npm run art-check && npm run art-selftest",
+    "check:browser": "node tools/playtest.js",
     "lint": "node --check src/main.js && npm run typecheck",
     "typecheck": "tsc -p tsconfig.json",
     "nettest": "node tools/nettest.js"

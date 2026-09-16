@@ -382,6 +382,28 @@ export class Fighter extends Entity {
     if (s === ST.HURT) { this.setState(ST.IDLE, 'idle'); }
   }
 
+  /**
+   * Put this body back in a clean, fightable state: full HP and a full shield, no death flags, every
+   * combat counter at zero and every reference to another fighter dropped. WHERE the body wakes -- its
+   * position, facing, state, lives -- is the caller's business; this is only the "nothing is still
+   * holding it" half. Every revive path needs that half, and each used to spell it out by hand, which
+   * is how GameplayScreen.continueRun came to miss the shield and `deathHooked`: a continued hero
+   * returned with the broken shield they died holding, and with the death hook already spent so their
+   * NEXT death skipped it (fighter.js onDeath early-returns on deathHooked).
+   * Boss.nextPhase deliberately does NOT route through here -- a phase change is not a revive, and
+   * applyPhase owns that rig's HP.
+   */
+  resetBody() {
+    this.hp = this.maxHp; this.meter = 0;
+    initShield(this);
+    this.dead = false; this.deathHooked = false; this.alive = true; this.removeMe = false;
+    this.combo = 0; this.comboTimer = 0; this.juggleCount = 0; this.juggleGravity = 0;
+    this.juggleImmune = false; this.chainHits = 0;
+    this.grabTarget = null; this.grabbedBy = null; this.heldBody = null; this.heldProp = null;
+    this.hitstop = 0; this.flashTimer = 0; this.status = {};
+    this.clearWeapon();
+  }
+
   processEvents(world) {
     const ev = this.anim.events;
     for (let i = 0; i < ev.length; i++) {

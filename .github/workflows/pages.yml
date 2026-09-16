@@ -47,15 +47,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Type-checks engine/ and net/ against their JSDoc (tsconfig.json). Emits nothing — src/
-      # ships as the same plain ES modules either way.
-      - name: Typecheck
-        run: npm run typecheck
+      # Every gate that needs no browser: typecheck (engine/, net/, content/, art/ against their
+      # JSDoc — emits nothing, src/ ships as the same plain ES modules either way), the sim suite,
+      # the lockstep/protocol tests, and both halves of the art-invariant gate. Fast, and it runs
+      # before the build so nothing red reaches a deploy. Two of these gates had drifted red while
+      # CI ran neither of them, which is the reason this step exists as one command.
+      - name: Gates (typecheck, sim, net, art)
+        run: npm run check
 
-      # Pure Node, no browser download. This is the only gate between a netcode protocol
-      # regression and a deploy, so it runs before the build.
-      - name: Net protocol and lockstep tests
-        run: npm run nettest
+      # The browser tier is separate because it is the only thing here that needs Chromium, and a
+      # ~6-minute playthrough should not be what stands between a docs typo and a deploy.
+      - name: Install Chromium for the playtest harness
+        run: npx playwright install --with-deps chromium
+
+      - name: Headless playthrough
+        run: npm run check:browser
 
       - name: Build the single-file game
         run: npm run build
