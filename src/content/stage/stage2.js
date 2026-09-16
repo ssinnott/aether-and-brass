@@ -109,7 +109,10 @@ export const stage2 = {
           // words wait their turn.
           { wait: 130 },
           { caption: 'THE SKY IS OPEN', sub: 'THE NINTH WING HAS DECIDED TO CLOSE IT AGAIN', life: 190 },
-          { wait: 180 },
+          { wait: 100 },
+          // the party's own two exchanges, placed clear of each other's cooldown -- see the note on board 1
+          { say: { trigger: 'boardOpen', row: 1 } },
+          { wait: 80 },
           { sfx: 'gale' },
           { camera: { shake: 3, frames: 40 } },
           // the second plate is further along the walk, where the handrail stops -- see the note on board 1
@@ -119,7 +122,9 @@ export const stage2 = {
           { sfx: 'thunder_strike' },
           { camera: { shake: 5, frames: 30 } },
           { caption: 'NINE HUNDRED FEET OF WEATHER', sub: 'ON BOTH SIDES OF THE WALK', life: 190 },
-          { wait: 210 },
+          { wait: 70 },
+          { say: { trigger: 'boardWalk', row: 1 } },
+          { wait: 140 },
         ] },
       ],
       /** The freighter warps in against the spine and the cargo gate comes down: the players board. */

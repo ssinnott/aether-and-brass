@@ -243,11 +243,12 @@ export class StageRunner {
    * rule is enforced in exactly one place, and so the whole system can be switched off with a single flag.
    *
    * @param {string} trigger one of dialogue.TRIGGERS
-   * @param {{ focus?: object }} [o] the hero the moment belongs to, when there is one
+   * @param {{ focus?: object, row?: number|null }} [o] the hero the moment belongs to, when there is one, and the
+   *   authored row an opening beat names so that board 3 hears board 3's exchange (see Dialogue.index)
    */
-  say(trigger, { focus = null } = {}) {
+  say(trigger, { focus = null, row = null } = {}) {
     if (!this.dialogue || !trigger) return false;
-    return this.dialogue.say(trigger, this.world.players, this.world.frame, { focus });
+    return this.dialogue.say(trigger, this.world.players, this.world.frame, { focus, row });
   }
 
   /**

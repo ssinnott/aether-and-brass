@@ -146,7 +146,10 @@ export const stage4 = {
           // words wait their turn.
           { wait: 130 },
           { caption: 'EVERYTHING YOU BROKE', sub: 'IS BEING CARRIED AWAY', life: 190 },
-          { wait: 180 },
+          { wait: 100 },
+          // the party's own two exchanges, placed clear of each other's cooldown -- see the note on board 1
+          { say: { trigger: 'boardOpen', row: 3 } },
+          { wait: 80 },
           { sfx: 'hydraulic' },
           // the second stencil, further up the climb -- see the note on board 1
           { sign: { text: 'LOT 41 - SORTED AND BALED', sub: 'GLEANING GUILD - WEIGH BEFORE LIFT', x: 880, z: 10, style: 'bale', life: 900, color: '#efe4c6' } },
@@ -154,7 +157,9 @@ export const stage4 = {
           { wait: 180 },
           { sfx: 'gear_slip' },
           { caption: 'THE GLEANING GOT HERE FIRST', sub: 'IT ALWAYS DOES', life: 190 },
-          { wait: 210 },
+          { wait: 70 },
+          { say: { trigger: 'boardWalk', row: 3 } },
+          { wait: 140 },
         ] },
       ],
       /** The guild's own cargo hoist takes the party UP off the field (`up: true`: the shaft runs the other way). */

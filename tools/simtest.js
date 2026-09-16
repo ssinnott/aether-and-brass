@@ -538,6 +538,40 @@ function suiteBeats() {
     ok(gaps.length === 0, `every pairing and solo table covers all ${TRIGGERS.length} triggers${gaps.length ? ' (missing ' + gaps.join(', ') + ')' : ''}`);
   }
 
+  // (i2) CONTENT: the two BOARD triggers are row-indexed by board, so every table needs one row per board. The
+  //      coverage check above cannot see this — a table with a single row passes it and then plays the quay's
+  //      conversation on the spoil heap, because Dialogue.index wraps an out-of-range authored row rather than
+  //      going silent. Adding a fifth board means appending a fifth row to all ten tables.
+  {
+    const n = STAGES.length, short = [];
+    for (const t of ['boardOpen', 'boardWalk']) {
+      for (let i = 0; i < ORDER.length; i++) {
+        for (let j = i + 1; j < ORDER.length; j++) {
+          const k = pairKey(ORDER[i], ORDER[j], ORDER), rows = (BANTER[k] || {})[t] || [];
+          if (rows.length !== n) short.push(`${k}.${t} has ${rows.length}`);
+        }
+      }
+      for (const h of ORDER) { const rows = (SOLO[h] || {})[t] || []; if (rows.length !== n) short.push(`solo.${h}.${t} has ${rows.length}`); }
+    }
+    ok(short.length === 0, `every board table carries one row per board (${n})${short.length ? ' (' + short.join(', ') + ')' : ''}`);
+  }
+
+  // (i3) ...and every opening actually raises them, each asking for ITS OWN board's row. A `row` off by one is
+  //      silent at runtime in the worst way: the conversation plays, it is simply the wrong board's.
+  {
+    const bad = [];
+    STAGES.forEach((st, i) => {
+      const ev = (st.sections[0].events || []).find((e) => e.beat);
+      if (!ev) return;
+      for (const t of ['boardOpen', 'boardWalk']) {
+        const says = (ev.actions || []).filter((a) => a.say && a.say.trigger === t);
+        if (says.length !== 1) { bad.push(`${st.id}: ${says.length} ${t}`); continue; }
+        if (says[0].say.row !== i) bad.push(`${st.id}: ${t} asks for row ${says[0].say.row}, not ${i}`);
+      }
+    });
+    ok(bad.length === 0, `every opening raises both board exchanges on its own row${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
+  }
+
   // (j) CONTENT: no line is wider than a plate can be. Past this a speaker at the screen edge is unreadable.
   {
     const MAX = 42, over = [];

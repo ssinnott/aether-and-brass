@@ -14,8 +14,13 @@
 //     player is offered and then denied;
 //   - the LETTERBOX is in for the whole beat and out again afterwards, which is the only thing on screen that says
 //     whether the opening is still running;
+//   - the party TALKS through it, and says this board's lines rather than another board's: `row` is an index into a
+//     table written per-board, so an off-by-one there is not silence, it is the quay's conversation on the spoil
+//     heap. That is invisible to a unit test of the runner and has to be read off a real run;
 //   - the wave director is only HELD, never broken: the first wave arrives normally once the beat is over;
 //   - `?bot=1` skips the whole thing, which is what keeps tools/winrate.js seeing the run it saw before.
+import { SOLO } from '../../src/content/characters/lines.js';
+
 const BOARD1 = 'seed=1&skipTo=gameplay&chars=0&stage=1&godmode=1';
 const BOARD1_BOT = 'seed=1&skipTo=gameplay&chars=0&stage=1&godmode=1&bot=1';
 /** Board 1's first wave triggers at x 400 (src/content/stage/stage1.js); the beat holds it until the script ends. */
@@ -25,6 +30,11 @@ const FIRST_WAVE_X = 400;
 const SIGN_SHOT_AT = 40;
 /** Frames allowed for the bars to travel back out once a beat has ended — CINEMA_SLIDE with room to spare. */
 const CINEMA_OUT = 30;
+/** `chars=0` is CHARACTERS[0], Brunhild, alone — so every board exchange below comes out of her SOLO table. */
+const HERO = 'brunhild';
+/** Frames to run a board to before reading its opening exchange: the script raises `boardOpen` at 230 and the plate
+ *  lives 120 frames, so anywhere in 232..352 reads it. */
+const BOARD_OPEN_AT = 280;
 
 /**
  * @param {object} server
@@ -60,6 +70,8 @@ export async function beats(server, { withPage, assert }) {
     // the beat has already been running for the frames spent lining up the screenshot above, and the assertion
     // below is about how long the BEAT lasts, not how long this loop ran
     let maxEnemies = 0, maxActors = 0, maxSigns = 0, frames = SIGN_SHOT_AT, moved = 0;
+    /** Every speech plate raised while the beat ran, so the two board exchanges can be checked after it. */
+    const spoken = new Set();
     while (frames < 1100) {
       await g.press(0, { right: true }, 10, 0);
       frames += 10;
@@ -68,6 +80,7 @@ export async function beats(server, { withPage, assert }) {
       const b = await beat(g);
       if (b.actors > maxActors) maxActors = b.actors;
       if (b.signs > maxSigns) maxSigns = b.signs;
+      for (const line of b.lines || []) spoken.add(line);
       const running = await ev(g);
       if (!running || running.id !== 'intro1') break;
       moved = (await px(g)) - startX;
@@ -77,6 +90,9 @@ export async function beats(server, { withPage, assert }) {
     assert(maxActors === 0, `and no body is staged in it either, at any point (peak ${maxActors})`);
     assert(maxSigns === 2, `the second hoarding goes up further along the quay (peak ${maxSigns} signs)`);
     assert(moved > 120, `the player walks the beat under their own control (moved ${moved}px)`);
+    // the party talks through the walk, and both lines are BOARD 1's (row 0 of Brunhild's solo tables)
+    assert(spoken.has(SOLO[HERO].boardOpen[0]), `the opening exchange is board 1's (heard: ${[...spoken].join(' | ')})`);
+    assert(spoken.has(SOLO[HERO].boardWalk[0]), `and so is the second one (heard: ${[...spoken].join(' | ')})`);
     assert(await px(g) > FIRST_WAVE_X, 'the party is past the first wave trigger by the time the beat ends');
     await g.shot('25-intro-beat');
 
@@ -142,6 +158,13 @@ export async function beats(server, { withPage, assert }) {
       assert((await beat(g)).letterbox === 1, `board ${stage} frames its opening in the letterbox`);
       await g.shot(`25-intro-board${stage}`);
       assert(await enemies(g) === 0, `board ${stage} has nothing to fight while its beat runs`);
+      // ...and it says ITS OWN board's line. `row` is an index into a per-board table, so this is the assertion
+      // that catches an off-by-one there — which produces the wrong board's conversation, never silence.
+      await g.step(BOARD_OPEN_AT - SIGN_SHOT_AT);
+      const heard = (await beat(g)).lines || [];
+      assert(heard.includes(SOLO[HERO].boardOpen[stage - 1]),
+        `board ${stage} speaks board ${stage}'s opening line (wanted "${SOLO[HERO].boardOpen[stage - 1]}", heard: ${heard.join(' | ')})`);
+      await g.shot(`25-intro-board${stage}-talk`);
     });
   }
 

@@ -706,6 +706,15 @@ when it ends, however it ends — script exhausted, outrun valve, section change
 pair of feet; the top bar slides out from under the HUD strip, which already owns rows 0..39. A mid-board combat
 script gets no bars: it is a thing happening in the middle of a fight, not a scene.
 
+An opening also **talks**. On top of the `sectionStart` exchange every section schedules, each opening raises
+`boardOpen` and `boardWalk` by hand (`{ say: { trigger, row } }`) at frames picked against the dialogue cooldown
+rather than against the captions — a plate that loses the rank tie is DROPPED, not delayed, so 230 and 560 are
+chosen to clear `sectionStart`'s floor and then each other's. These two triggers are the only ones written
+per-board, so `say` takes a `row`: it names the row instead of letting `world.frame` index it, and it drops the
+per-slot offset with it, because two players in one online room must watch the same conversation. `tools/simtest.js`
+checks that every table carries one row per board and that each opening asks for its own — an off-by-one there is
+not silence, it is the quay's conversation played on the spoil heap.
+
 An opening also stages **no bodies**. `actor` still exists and vignettes still use it, but every def in the roster is
 an enemy's or a hero's rig, and a body on the floor during an opening — where the player has the controls — is one
 they walk up to, swing at, cannot hit (`Actor.takeHit` returns false by design), and then watch deleted when the

@@ -27,6 +27,13 @@
  * in the order they are written here whichever slot each player is sitting in.
  *
  * sectionStart and combo20 carry two rows because they fire many times in a run; the other five fire once or twice.
+ *
+ * boardOpen and boardWalk are the exception to how a row is chosen. Every other trigger lets `world.frame` pick, so
+ * the rows are interchangeable by construction — any of them can be heard in any room. These two are the opening
+ * beats' own conversation and are written ABOUT a board, so the row IS the board: index 0 is the Sootfoot quay, 1
+ * the mooring spine, 2 the Lime Road, 3 the tailings, and the stage names the one it wants (`{ say: { trigger:
+ * 'boardOpen', row: 2 } }`). Writing a fifth board means appending a fifth row to all ten tables below, and the
+ * coverage check in tools/simtest.js will not tell you that — it counts triggers, not boards.
  * @type {Record<string, CharacterLines>}
  */
 export const BANTER = {
@@ -54,6 +61,18 @@ export const BANTER = {
     results: [
       { a: 'HOW MANY OF THOSE LETTERS LEFT?', b: 'THREE HUNDRED AND EIGHTY-SIX. TWO OFF.' },
     ],
+    boardOpen: [
+      { a: 'PLANKS ARE SOUND. THE CRANES AREN\'T.', b: 'NOTHING\'S LIFTED OFF HERE IN WEEKS.' },  // board 1, the quay
+      { a: 'THIS RAIL IS HELD BY FOUR BOLTS.', b: 'I\'VE LANDED ON WORSE. NOT MUCH.' },  // board 2, the spine
+      { a: 'GOOD ROAD. SOMEBODY PAID FOR IT.', b: 'AND CHARGED THE SAME ROAD BOTH WAYS.' },  // board 3, the road
+      { a: 'HALF THIS HEAP WAS MACHINERY.', b: 'ALL OF IT CAME OFF SOMEBODY\'S ROUTE.' },  // board 4, the heap
+    ],
+    boardWalk: [
+      { a: 'WE GO UP. NOTHING ELSE DOES.', b: 'ONE LIFT STILL WORKING. I COUNTED.' },  // board 1, the quay
+      { a: 'WALK THE MIDDLE. IT\'S THE ONLY LANE.', b: 'THIRTY YARDS OF IT. THEN NOTHING.' },  // board 2, the spine
+      { a: 'UPHILL THE WHOLE WAY.', b: 'FOUR MINUTES IF WE DON\'T STOP.' },  // board 3, the road
+      { a: 'FIND WHAT\'S STILL WORTH BREAKING.', b: 'FIND WHO SIGNED FOR IT FIRST.' },  // board 4, the heap
+    ],
   },
   'brunhild+rook': {
     sectionStart: [
@@ -78,6 +97,18 @@ export const BANTER = {
     ],
     results: [
       { a: 'THE PLATE HELD. IT\'LL WANT RE-RIVETING.', b: 'IT ALWAYS DOES. PUT IT ON THE TAB.' },
+    ],
+    boardOpen: [
+      { a: 'THAT GANTRY HAS BEEN WELDED TWICE.', b: 'AND BILLED FOR THREE TIMES.' },  // board 1, the quay
+      { a: 'EVERY JOINT UP HERE IS MOVING.', b: 'IT\'S A MOORING. IT\'S MEANT TO.' },  // board 2, the spine
+      { a: 'LIME DUST. THEY\'RE STILL SHIPPING.', b: 'TO A WAR THAT ENDED IN SPRING.' },  // board 3, the road
+      { a: 'SOMEBODY STRIPPED THIS TO THE FRAME.', b: 'SOMEBODY WITH A LEDGER.' },  // board 4, the heap
+    ],
+    boardWalk: [
+      { a: 'SKY\'S SHUT. SO WE TAKE THE LIFT.', b: 'THE ONE THING DOWN HERE STILL PAID FOR.' },  // board 1, the quay
+      { a: 'KEEP OFF THE EDGE AND KEEP MOVING.', b: 'NO ARGUMENT. NOTHING TO LAND ON.' },  // board 2, the spine
+      { a: 'THE WORKS ARE AT THE TOP.', b: 'SO IS EVERY SIGNATURE ON THIS ROAD.' },  // board 3, the road
+      { a: 'THEY\'RE WORKING WHILE WE WALK.', b: 'THEY ALWAYS ARE. IT\'S THE TRADE.' },  // board 4, the heap
     ],
   },
   'brunhild+pip': {
@@ -104,6 +135,18 @@ export const BANTER = {
     results: [
       { a: 'ALL OF IT WAS BUILT BY THE HOUR.', b: 'I\'M TAKING THE GOOD BITS ANYWAY.' },
     ],
+    boardOpen: [
+      { a: 'THIS QUAY TOOK REAL FREIGHT ONCE.', b: 'STILL WOULD. RATING\'S GOOD ON IT.' },  // board 1, the quay
+      { a: 'HOW MUCH DOES THIS GANTRY HOLD?', b: 'US. PROBABLY. LET\'S NOT ALL JUMP.' },  // board 2, the spine
+      { a: 'THAT WEIGHBRIDGE IS HONEST WORK.', b: 'THE ONLY HONEST THING ON THE ROAD.' },  // board 3, the road
+      { a: 'GOOD STEEL. THROWN AWAY.', b: 'NOT THROWN. FILED. IT HAS A LOT NUMBER.' },  // board 4, the heap
+    ],
+    boardWalk: [
+      { a: 'MIND THE PUDDLES. THERE\'S CURRENT.', b: 'RIG\'S EARTHED. I CHECKED IT TWICE.' },  // board 1, the quay
+      { a: 'ONE GUST AND YOU\'RE OVER THE SIDE.', b: 'SEVEN FOOT OF ME SAYS OTHERWISE.' },  // board 2, the spine
+      { a: 'SAVE YOUR LEGS. IT\'S A LONG CLIMB.', b: 'GOOD SURFACE, THOUGH. NICE AND FLAT.' },  // board 3, the road
+      { a: 'WATCH THE GROUND. IT MOVES.', b: 'SPREAD THE LOAD. THAT\'S ALL IT IS.' },  // board 4, the heap
+    ],
   },
   'sael+rook': {
     sectionStart: [
@@ -128,6 +171,18 @@ export const BANTER = {
     ],
     results: [
       { a: 'THREE HUNDRED AND NINETY-FOUR LEFT.', b: 'SIX DELIVERED. THAT GOES IN THE LOG.' },
+    ],
+    boardOpen: [
+      { a: 'TWO WAYS OFF THIS QUAY. BOTH SHUT.', b: 'THE THIRD ONE COSTS.' },  // board 1, the quay
+      { a: 'I\'VE FLOWN THIS LANE A HUNDRED TIMES.', b: 'NOT WITH THE NINTH WING IN IT.' },  // board 2, the spine
+      { a: 'CARTS EVERY MINUTE. BOTH WAYS.', b: 'ONE WAY IS PAID. GUESS WHICH.' },  // board 3, the road
+      { a: 'NOTHING FLIES OUT OF HERE.', b: 'IT ALL GOES OUT ON A LEDGER LINE.' },  // board 4, the heap
+    ],
+    boardWalk: [
+      { a: 'NINETY YARDS TO THE GATE.', b: 'AND EVERY YARD OF IT SOMEBODY\'S.' },  // board 1, the quay
+      { a: 'STAY ON THE SPINE. I MEAN IT.', b: 'I\'VE NO INTENTION OF LEAVING IT.' },  // board 2, the spine
+      { a: 'UPHILL. FOUR MINUTES, MAYBE FIVE.', b: 'TAKE SIX. NOTHING UP THERE IMPROVES.' },  // board 3, the road
+      { a: 'NO ROUTE ACROSS THIS. ONLY THROUGH.', b: 'THEN WE GO THROUGH IT.' },  // board 4, the heap
     ],
   },
   'sael+pip': {
@@ -154,6 +209,18 @@ export const BANTER = {
     results: [
       { a: 'BOOT\'S SCORCHED. HALF AN OUNCE LIGHTER.', b: 'GIVE IT HERE. YOU\'LL HAVE IT BY DAWN.' },
     ],
+    boardOpen: [
+      { a: 'RAIN LIKE THIS GROUNDS EVERYTHING.', b: 'NOT THE RIG. RIG LIKES THE WET.' },  // board 1, the quay
+      { a: 'WIND\'S COMING ACROSS, NOT ALONG.', b: 'SO LEAN INTO IT. THAT\'S THE TRICK.' },  // board 2, the spine
+      { a: 'THIS ROAD RUNS ALL DAY.', b: 'AND ALL NIGHT, BY THE RUTS ON IT.' },  // board 3, the road
+      { a: 'YOU COULD LOSE A CART IN THIS.', b: 'SOMEBODY DID. IT\'S OVER THERE.' },  // board 4, the heap
+    ],
+    boardWalk: [
+      { a: 'I\'LL TAKE THE HIGH SIDE.', b: 'I\'LL TAKE THE HEAVY ONE. FAIR SWAP.' },  // board 1, the quay
+      { a: 'IF YOU GO OVER, I CAN\'T CATCH YOU.', b: 'THEN I WON\'T GO OVER. SIMPLE.' },  // board 2, the spine
+      { a: 'KEEP LEFT. CARTS HAVE RIGHT OF WAY.', b: 'THEY DO TODAY. NOT ON THE WAY BACK.' },  // board 3, the road
+      { a: 'EVERYTHING HERE USED TO BE SOMETHING.', b: 'IT\'LL BE SOMETHING AGAIN. THAT\'S US.' },  // board 4, the heap
+    ],
   },
   'rook+pip': {
     sectionStart: [
@@ -179,6 +246,18 @@ export const BANTER = {
     results: [
       { a: 'SCORE\'S UP. THE SHIP\'S STILL IMPOUNDED.', b: 'I\'LL GO AND LOOK AT HER BOILER.' },
     ],
+    boardOpen: [
+      { a: 'MY SHIP IS FOUR BERTHS THAT WAY.', b: 'STILL IMPOUNDED? THAT\'S A SHAME.' },  // board 1, the quay
+      { a: 'THE NINTH WING HASN\'T STOOD DOWN.', b: 'DO THEY KNOW THE WAR ENDED?' },  // board 2, the spine
+      { a: 'EVERY CART UP HERE IS ON ACCOUNT.', b: 'SOMEBODY\'S DOING WELL, THEN.' },  // board 3, the road
+      { a: 'THEY SELL WHAT WE BREAK.', b: 'THEN WE\'VE BEEN GENEROUS ALL WEEK.' },  // board 4, the heap
+    ],
+    boardWalk: [
+      { a: 'NOTHING LEAVES THIS CITY BY AIR.', b: 'WE\'LL GO UP AND ASK WHY, THEN.' },  // board 1, the quay
+      { a: 'COUNT THEM BEFORE YOU WALK IN.', b: 'COUNTED. IT\'S A LOT. STILL GOING.' },  // board 2, the spine
+      { a: 'THE WORKS WILL HAVE THE LEDGERS.', b: 'AND A VERY LARGE DOOR, I HOPE.' },  // board 3, the road
+      { a: 'LAST STRETCH. THEN THE FIELD.', b: 'RIG\'S GOT ONE MORE IN IT. EASY.' },  // board 4, the heap
+    ],
   },
 };
 
@@ -197,6 +276,8 @@ export const SOLO = {
     partnerContinue: ['PATCHED AND BACK ON THE JOB.'],
     combo20: ['THEY KEEP COMING TO THE HAMMER.', 'NOT ONE OF THEM CHANGED LANE.'],
     results: ['NOBODY\'S REPAIRING THAT LOT.'],
+    boardOpen: ['SOMEBODY BUILT THIS QUAY PROPERLY.', 'EVERY JOINT UP HERE IS WORKING LOOSE.', 'GOOD ROAD. BAD REASON FOR IT.', 'THAT WAS A MACHINE THIS MORNING.'],
+    boardWalk: ['WE GO UP. NOTHING ELSE IS GOING TO.', 'WALK THE MIDDLE AND DON\'T STOP.', 'UPHILL. THE WHOLE WAY.', 'FIND OUT WHO IS BUYING.'],
   },
   sael: {
     sectionStart: ['TWO WAYS OUT. BOTH BEHIND ME.', 'FOUR MINUTES END TO END.'],
@@ -206,6 +287,8 @@ export const SOLO = {
     partnerContinue: ['UP. ROUTE\'S STILL THE ROUTE.'],
     combo20: ['NONE OF THEM WATCHED THE BACK LANE.', 'THEY ALL AIM WHERE I WAS.'],
     results: ['STILL OWE THE SAME FOUR HUNDRED.'],
+    boardOpen: ['TWO WAYS OFF THIS QUAY. BOTH SHUT.', 'I HAVE FLOWN THIS LANE A HUNDRED TIMES.', 'CARTS EVERY MINUTE, BOTH DIRECTIONS.', 'NOTHING FLIES OUT OF HERE NOW.'],
+    boardWalk: ['NINETY YARDS TO THE GATE.', 'STAY ON THE SPINE. THAT IS THE LANE.', 'FOUR MINUTES UP. MAYBE FIVE.', 'NO ROUTE ACROSS. ONLY THROUGH.'],
   },
   rook: {
     sectionStart: ['NEW GROUND. SAME PEOPLE GETTING PAID.', 'STAND OFF AND COUNT THEM FIRST.'],
@@ -215,6 +298,8 @@ export const SOLO = {
     partnerContinue: ['THAT ONE GOES ON THE TAB.'],
     combo20: ['THEY COME IN ORDER. CHEAPER THAT WAY.', 'STILL ON THE FIRST CYLINDER.'],
     results: ['LOGGED. THE SHIP IS STILL IMPOUNDED.'],
+    boardOpen: ['MY SHIP IS FOUR BERTHS THAT WAY.', 'THE NINTH WING NEVER STOOD DOWN.', 'EVERY CART UP HERE IS ON ACCOUNT.', 'THEY SELL WHAT WE BREAK.'],
+    boardWalk: ['NOTHING LEAVES THIS CITY BY AIR.', 'COUNT THEM BEFORE YOU WALK IN.', 'THE WORKS WILL HAVE THE LEDGERS.', 'LAST STRETCH. THEN THE FIELD.'],
   },
   pip: {
     sectionStart: ['PLENTY OF ROOM TO SWING IN HERE.', 'GROUND TAKES A TON OF US SO FAR.'],
@@ -224,6 +309,8 @@ export const SOLO = {
     partnerContinue: ['STOOD IT BACK UP. IT STILL RUNS.'],
     combo20: ['THAT\'S TWENTY LIFTS WITHOUT A DROP.', 'GOOD SHAPES. THEY STACK.'],
     results: ['NOTHING CRACKED. NICE AFTERNOON.'],
+    boardOpen: ['GOOD RATING ON THIS DECKING.', 'THAT GANTRY HOLDS. PROBABLY.', 'THE WEIGHBRIDGE IS HONEST WORK.', 'GOOD STEEL, THIS. FILED AND LOTTED.'],
+    boardWalk: ['RIG\'S EARTHED. PUDDLES ARE FINE.', 'SEVEN FOOT OF ME AGAINST THE WIND.', 'NICE FLAT SURFACE FOR A LONG CLIMB.', 'SPREAD THE LOAD AND IT ALL HOLDS.'],
   },
 };
 

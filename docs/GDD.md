@@ -28,9 +28,12 @@
 # 2. Playable Characters (4)
 
 **Companion dialogue (issue #25).** The four talk to each other while they fight: short two-line exchanges on a plate
-over the head, at seven moments — a section opening, a mid-boss or boss arriving, a partner going out, a partner
-spending a continue, a combo crossing 20, and the results plaque. All six pairings are written at all seven, and a
-hero playing alone mutters the same beats to themselves, so the system is not co-op only. The voices are the ones
+over the head, at nine moments — a section opening, a mid-boss or boss arriving, a partner going out, a partner
+spending a continue, a combo crossing 20, the results plaque, and **twice during a board's opening walk**. All six
+pairings are written at all nine, and a hero playing alone mutters the same beats to themselves, so the system is not
+co-op only. The two opening triggers (`boardOpen`, `boardWalk`) are the only ones written per-BOARD rather than for
+any room in the game: the party remarks on the quay, the gantry, the road or the heap they are actually standing on,
+which is what an eleven-second walk with nothing to fight is for. The voices are the ones
 this section gives them: **Brunhild blunt** (diagnosis, then instruction, then nothing — she judges a place by its
 workmanship), **Sael quick** (exits, distances and times, read the moment she walks in), **Rook dry** (everything
 priced, nothing ordered, the flat fact instead of the feeling) and **Pip cheerful** (about load ratings; she talks

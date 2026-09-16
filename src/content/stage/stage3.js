@@ -119,7 +119,10 @@ export const stage3 = {
           // words wait their turn.
           { wait: 130 },
           { caption: 'THE WAR IS OVER', sub: 'THE COMPANY IS STILL BILLING FOR IT', life: 190 },
-          { wait: 180 },
+          { wait: 100 },
+          // the party's own two exchanges, placed clear of each other's cooldown -- see the note on board 1
+          { say: { trigger: 'boardOpen', row: 2 } },
+          { wait: 80 },
           { sfx: 'crate_drop' },
           // the second tally board, up the road at the turn -- see the note on board 1
           { sign: { text: 'LOADS DOWN - EMPTIES UP', sub: 'WEIGHED BOTH WAYS - NO EXCEPTIONS', x: 880, z: 8, style: 'tally', life: 900, color: '#cfe0a8' } },
@@ -127,7 +130,9 @@ export const stage3 = {
           { wait: 180 },
           { sfx: 'gear_slip' },
           { caption: 'THE ROAD GOES UP TO THE WORKS', sub: 'SO DO WE', life: 190 },
-          { wait: 210 },
+          { wait: 70 },
+          { say: { trigger: 'boardWalk', row: 2 } },
+          { wait: 140 },
         ] },
       ],
       /** The works' cargo lift takes the road party down into the yard — onto the cart lane. */

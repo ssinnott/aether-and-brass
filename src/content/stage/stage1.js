@@ -88,7 +88,22 @@ export const stage1 = {
           // words wait their turn.
           { wait: 130 },
           { caption: 'CALDERWICK', sub: 'CITY OF THE HEART-ENGINE - AND THE CHANCELLOR HAS SEALED THE SKY', life: 190 },
-          { wait: 180 },
+          { wait: 100 },
+          // THE PARTY TALKS THROUGH IT (issue #25 part 2). An opening is eleven seconds of walking with nothing to
+          // fight, and what fills that is the heroes, not more narration. Two exchanges are raised by hand here on
+          // top of the `sectionStart` one the section already schedules, so an opening is a conversation rather
+          // than three captions in a row.
+          //
+          // `row` is the BOARD, not a rotation: these two tables are written about one quay, one gantry, one road
+          // and one heap (content/characters/lines.js), so board 1 asks for row 0 and must get it. See
+          // Dialogue.index -- an authored row also drops the per-slot offset, or two players in the same online
+          // room would watch two different conversations.
+          //
+          // The frames are picked against the dialogue cooldown rather than the captions: `sectionStart` fires at
+          // world frame 50 and holds the floor until ~185, this lands at 230, and `boardWalk` at 560 clears this
+          // one's own floor (~365) with room to spare. A plate that lost the tie would be DROPPED, not delayed.
+          { say: { trigger: 'boardOpen', row: 0 } },
+          { wait: 80 },
           { sfx: 'hydraulic' },
           // A SECOND hoarding, up the quay where the walk has got to by now. It is what the removed dockers were
           // really for: something to arrive at in the middle of the beat, so the stretch between the first caption
@@ -98,7 +113,9 @@ export const stage1 = {
           { wait: 180 },
           { sfx: 'gear_slip' },
           { caption: 'FOUR UNLIKELY DELIVERIES', sub: 'ARE ABOUT TO BE MADE, UPWARD', life: 190 },
-          { wait: 210 },
+          { wait: 70 },
+          { say: { trigger: 'boardWalk', row: 0 } },
+          { wait: 140 },
         ] },
       ],
       /** The dock gate rotates open; a 180f freight-lift ride down with one Meat Pie, and the Chandlery goes past. */
