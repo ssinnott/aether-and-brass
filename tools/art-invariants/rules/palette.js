@@ -419,7 +419,10 @@ export const RULES = [
       if (forbidden && seen.has(CYAN)) out.push(finding(`aether cyan #4DF0E0 appears in this rig (${seen.get(CYAN)}) — it is Concordat-only`, detail, seen.get(CYAN)));
       // (b) source half: every #4DF0E0 under src/content must sit in a Concordat file. Reported on the canonical subject.
       if (isAnchor(subject)) {
-        const ALLOWED = ['src/content/enemies/common.js', 'src/content/enemies/brassbound.js', 'src/content/enemies/midboss.js', 'src/content/enemies/boss.js'];
+        // Concordat machinery is not only ever a rig: stage1's Engine over-fire paints the dais zone in the
+        // Concordat's own cyan while the machine runs away with itself, which is the colour doing exactly its job.
+        const ALLOWED = ['src/content/enemies/common.js', 'src/content/enemies/brassbound.js', 'src/content/enemies/midboss.js', 'src/content/enemies/boss.js',
+          'src/content/stage/stage1.js'];
         const hits = grepContent(/#4DF0E0/i);
         const bad = hits.filter((h) => !ALLOWED.includes(h.path));
         const where = hits.map((h) => `${h.path}:${h.line}`).join(', ');
