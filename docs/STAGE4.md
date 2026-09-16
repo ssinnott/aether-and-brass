@@ -171,11 +171,11 @@ press, `brassbound` — winged and salvaged — from the press onward.
 > **THE BRASSGUARD ARE GOING OUT TO THE TAILINGS TO SEE WHO IS BUYING.**
 
 ## Section 1, The Tailings (x 0–1800; rose dusk, open field; `glean1`)
-- **The opening beat (issue #25):** the party climbs the spoil heap while a picker works the slope and a **salvage
-  bladder goes up in front of them with something under it** — the last board opening on its own argument before a
-  single Gleaning has been fought. The board's name is stencilled on a strapped bale at the top of the climb
-  (`GLEANING - LOT 41`). Six seconds, no enemies, full control; the stinger under the section plate is *every piece
-  of this was somebody else's*.
+- **The opening beat (issue #25):** the party climbs the spoil heap past the guild's own stencils — the board's name
+  on a strapped bale at the foot of the climb (`GLEANING - LOT 41`) and the lot's weigh-before-lift rule on a bale
+  further up — the last board opening on its own argument before a single Gleaning has been fought. Eleven seconds,
+  nothing to fight, nobody staged, full control, and the letterbox in for the length of it; the stinger under the
+  section plate is *every piece of this was somebody else's*.
 
 Spoil heaps, gas seeping out of them, a dead Brassbound half-buried in the slag with its chest already cut out, and
 salvage lines going up into a sky with bladders in it. Flat, open, and the longest stretch of ground on the board

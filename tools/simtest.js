@@ -538,6 +538,40 @@ function suiteBeats() {
     ok(gaps.length === 0, `every pairing and solo table covers all ${TRIGGERS.length} triggers${gaps.length ? ' (missing ' + gaps.join(', ') + ')' : ''}`);
   }
 
+  // (i2) CONTENT: the two BOARD triggers are row-indexed by board, so every table needs one row per board. The
+  //      coverage check above cannot see this — a table with a single row passes it and then plays the quay's
+  //      conversation on the spoil heap, because Dialogue.index wraps an out-of-range authored row rather than
+  //      going silent. Adding a fifth board means appending a fifth row to all ten tables.
+  {
+    const n = STAGES.length, short = [];
+    for (const t of ['boardOpen', 'boardWalk']) {
+      for (let i = 0; i < ORDER.length; i++) {
+        for (let j = i + 1; j < ORDER.length; j++) {
+          const k = pairKey(ORDER[i], ORDER[j], ORDER), rows = (BANTER[k] || {})[t] || [];
+          if (rows.length !== n) short.push(`${k}.${t} has ${rows.length}`);
+        }
+      }
+      for (const h of ORDER) { const rows = (SOLO[h] || {})[t] || []; if (rows.length !== n) short.push(`solo.${h}.${t} has ${rows.length}`); }
+    }
+    ok(short.length === 0, `every board table carries one row per board (${n})${short.length ? ' (' + short.join(', ') + ')' : ''}`);
+  }
+
+  // (i3) ...and every opening actually raises them, each asking for ITS OWN board's row. A `row` off by one is
+  //      silent at runtime in the worst way: the conversation plays, it is simply the wrong board's.
+  {
+    const bad = [];
+    STAGES.forEach((st, i) => {
+      const ev = (st.sections[0].events || []).find((e) => e.beat);
+      if (!ev) return;
+      for (const t of ['boardOpen', 'boardWalk']) {
+        const says = (ev.actions || []).filter((a) => a.say && a.say.trigger === t);
+        if (says.length !== 1) { bad.push(`${st.id}: ${says.length} ${t}`); continue; }
+        if (says[0].say.row !== i) bad.push(`${st.id}: ${t} asks for row ${says[0].say.row}, not ${i}`);
+      }
+    });
+    ok(bad.length === 0, `every opening raises both board exchanges on its own row${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
+  }
+
   // (j) CONTENT: no line is wider than a plate can be. Past this a speaker at the screen edge is unreadable.
   {
     const MAX = 42, over = [];
@@ -577,17 +611,22 @@ function suiteBeats() {
     ok(missing.length === 0, `every board opens on a beat and every transition carries a vignette${missing.length ? ' (' + missing.join('; ') + ')' : ''}`);
   }
 
-  // (m) an intro beat runs for the six to ten seconds issue #25 asks for, and holds the wave director while it does
+  // (m) an intro beat runs for ten to thirteen seconds and holds the wave director while it does. (That it stages
+  //     nobody is checked in (m3b) below, which covers the vignettes with it.)
+  //
+  //     The length is bounded above as well as below on purpose: `outrunAt` stands a beat down the moment the party
+  //     reaches the section's last authored wave, so a script written much longer than the walk is a script whose
+  //     ending nobody ever sees.
   {
     const bad = [];
     for (const st of STAGES) {
       const ev = (st.sections[0].events || []).find((e) => e.beat);
       if (!ev) continue;
       const n = eventLength(ev);
-      if (n < 360 || n > 600) bad.push(`${st.id}: ${n} frames`);
+      if (n < 600 || n > 780) bad.push(`${st.id}: ${n} frames`);
       if (!ev.holdWaves) bad.push(`${st.id}: does not hold the wave director`);
     }
-    ok(bad.length === 0, `every intro beat runs 6-10s and holds its waves${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
+    ok(bad.length === 0, `every intro beat runs 10-13s and holds its waves${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
   }
 
   // (m2) CONTENT: every caption a beat writes fits the banner it is drawn in. This is measured rather than counted
@@ -630,8 +669,39 @@ function suiteBeats() {
     ok(bad.length === 0, `every sound a beat names is registered${bad.length ? ' (unknown: ' + bad.join(', ') + ')' : ''}`);
   }
 
+  // (m3b) CONTENT: NO SCENE IN THE GAME STAGES A BODY — not an opening beat, not a between-section vignette.
+  //
+  //       This is the general form of the rule the openings got first, and the vignettes are why it has to be
+  //       general rather than per-location. Every def an `actor` can name is a fighter's rig, so a staged body
+  //       reads as a unit: in an opening the player walks up and swings at it, and in a vignette they are HELD
+  //       while it appears for a second and a half and is deleted, which is worse — the only thing they can do
+  //       about it is wonder what it was. Either way a figure shows up, refuses to be part of the game, and
+  //       vanishes.
+  //
+  //       What a scene has instead is the level: signage, weather, machinery, and the sound of the thing it is
+  //       telling you about. A heavy load landing under a descending lift needs no picture of the load.
+  //
+  //       The Actor machinery (game/actors.js) is deliberately NOT deleted — it is the only way to stage one, it
+  //       is the thing this rule is about, and removing it is a bigger change than the rule needs. This check is
+  //       the policy; (m4) below still validates any body a future scene stages, so breaking the rule on purpose
+  //       stays a one-line decision rather than a rewrite.
+  {
+    const staged = [];
+    for (const st of STAGES) {
+      for (const sec of st.sections) {
+        for (const ev of sec.events || []) {
+          for (const a of ev.actions || []) if (a.actor || a.walk) staged.push(`${st.id}/${ev.id || sec.id}`);
+        }
+        const v = sec.transition && sec.transition.vignette;
+        if (v) for (const c of v.cues || []) if (c.actor || c.walk) staged.push(`${st.id}/${sec.id} vignette`);
+      }
+    }
+    ok(staged.length === 0, `no scene in the game stages a body${staged.length ? ' (' + staged.join(', ') + ')' : ''}`);
+  }
+
   // (m4) CONTENT: every body a beat stages resolves to a real def, and every animation it names exists on it. A bad
-  //      slug or anim is the same class of silent failure: the actor is simply never seen.
+  //      slug or anim is the same class of silent failure: the actor is simply never seen. Vacuous while (m3b)
+  //      holds, and kept for the moment it stops holding.
   {
     const bad = [];
     for (const st of STAGES) {

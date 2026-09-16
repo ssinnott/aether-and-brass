@@ -127,44 +127,59 @@ export const stage4 = {
       /** Issue #25 stinger: the tailings' own line, under the section name plate. */
       stinger: 'EVERY PIECE OF THIS WAS SOMEBODY ELSE\'S',
       /**
-       * UP THE SPOIL HEAP (issue #25). The party climbs the tailings while a salvage bladder goes up in front of
-       * them with a load under it, and the board's name is stencilled on a bale at the top of the climb. The last
-       * board opens on its own thesis: everything you broke on the first three boards is being carried away, and
-       * the carrying is happening whether or not you are here.
+       * UP THE SPOIL HEAP (issue #25). The party climbs the tailings past the guild's own lot markings, and the
+       * board's name is stencilled on a bale at the top of the climb. The last board opens on its own thesis:
+       * everything you broke on the first three boards is being carried away, and the carrying is happening whether
+       * or not you are here.
+       *
+       * The opening used to stage a picker working the slope and a salvage bladder going up with a load under it.
+       * See the note on board 1: an opening stages nobody now, because a Gleaning rig walking the heap is one the
+       * player attacks, cannot touch, and then sees deleted. The stencils carry the same argument and stay put.
        *
        * See the `holdWaves` note on board 1.
        */
       events: [
         { id: 'intro4', atX: 40, once: true, beat: true, holdWaves: true, actions: [
           { sign: { text: 'THE TAILINGS', sub: 'GLEANING - LOT 41', x: 340, z: 8, style: 'bale', life: 900, color: '#efe4c6' } },
-          // a picker working the heap, and the bladder going up in front of you with what it has found
-          { actor: { id: 'picker', def: 'gleaning', variant: 'picker', x: 620, z: 30, facing: -1, vx: -0.35, frames: 420, anim: 'walk' } },
           // The stage banner (gameplay.js) holds the screen for its first 120 frames, and `showBanner` is one slot:
           // a caption raised before then would delete the board's own title. The scenery goes up straight away; the
           // words wait their turn.
           { wait: 130 },
-          { caption: 'EVERYTHING YOU BROKE', sub: 'IS BEING CARRIED AWAY', life: 170 },
-          { wait: 130 },
+          { caption: 'EVERYTHING YOU BROKE', sub: 'IS BEING CARRIED AWAY', life: 190 },
+          { wait: 100 },
+          // the party's own two exchanges, placed clear of each other's cooldown -- see the note on board 1
+          { say: { trigger: 'boardOpen', row: 3 } },
+          { wait: 80 },
           { sfx: 'hydraulic' },
-          { actor: { id: 'lift', def: 'gleaning', variant: 'winnow', x: 760, z: 10, facing: -1, vx: -0.4, vz: -0.06, frames: 230, anim: 'idle' } },
-          { wait: 90 },
-          { caption: 'A BLADDER GOES UP AHEAD OF YOU', sub: 'SOMETHING IS UNDER IT', life: 150 },
-          { wait: 160 },
+          // the second stencil, further up the climb -- see the note on board 1
+          { sign: { text: 'LOT 41 - SORTED AND BALED', sub: 'GLEANING GUILD - WEIGH BEFORE LIFT', x: 880, z: 10, style: 'bale', life: 900, color: '#efe4c6' } },
+          { caption: 'THE HEAP IS A LIVING UP HERE', sub: 'THE GUILD WEIGHS IT BEFORE IT COOLS', life: 180 },
+          { wait: 180 },
+          { sfx: 'gear_slip' },
+          { caption: 'THE GLEANING GOT HERE FIRST', sub: 'IT ALWAYS DOES', life: 190 },
+          { wait: 70 },
+          { say: { trigger: 'boardWalk', row: 3 } },
+          { wait: 140 },
         ] },
       ],
       /** The guild's own cargo hoist takes the party UP off the field (`up: true`: the shaft runs the other way). */
       transition: { kind: 'lift', atX: 1740, gateX: 1800, up: true,
         /**
-         * Issue #25 vignette: the Gleaning stripping a fallen Iron Warden on the way up. The guild does not fight
-         * the Brassguard for the field -- it waits for the field to stop moving and then works it, and the ride up
-         * is the one place the party can watch that happen without being able to reach it.
+         * Issue #25 vignette: the Gleaning stripping a fallen Iron Warden while the party rides up off the field.
+         * The guild does not fight the Brassguard for it -- it waits for the field to stop moving and then works
+         * it, and a hoist going the other way is the only place that can be put in front of the party at all.
+         *
+         * It used to be a tableau of three staged bodies. See the note on board 1's lift: a scene stages nobody,
+         * and this one loses least by it, because the moment was never about watching them work -- it is about
+         * being carried away from something you cannot reach. `brass_death` under the second caption is the Warden
+         * going, and hearing that from a rising hoist is worse than watching it.
          */
         vignette: { cues: [
-          { at: 70, caption: 'THEY ARE STRIPPING A WARDEN', sub: 'IT WAS STANDING THIS MORNING', life: 120 },
-          { at: 110, actor: { id: 'carcass', def: 'brassbound', variant: 'warden', dx: 430, z: 22, facing: 1, anim: 'idle' } },
-          { at: 130, actor: { id: 'gleaner1', def: 'gleaning', variant: 'picker', dx: 390, z: 30, facing: 1, anim: 'idle' } },
-          { at: 140, actor: { id: 'gleaner2', def: 'gleaning', variant: 'riggerman', dx: 490, z: 16, facing: -1, anim: 'idle' } },
+          // 80 frames each — see the note on board 1's lift. `brass_death` lands at 200, under the second caption
+          // rather than after it, so the sound and the line saying what it was are the same moment.
+          { at: 70, caption: 'THE FIELD GOES QUIET BELOW YOU', sub: 'AND THE GUILD GOES TO WORK ON IT', life: 80 },
           { at: 150, sfx: 'gear_slip' },
+          { at: 150, caption: 'SOMETHING IS BEING STRIPPED', sub: 'IT WAS STANDING THIS MORNING', life: 80 },
           { at: 200, sfx: 'brass_death' },
         ] } },
     },
@@ -329,10 +344,11 @@ export const stage4 = {
       events: [],
       /** Past the press the loft hatch comes down against the float and the party goes in. */
       transition: { kind: 'board', atX: 3540, gateX: 3600,
-        /** Issue #25 vignette: the loft, and the bladders lifting the day's take up past you into the dark. */
+        /** Issue #25 vignette: the loft, and the day's take already lifted out of it into the dark. */
         vignette: { cues: [
-          { at: 10, caption: 'THE DAY IS GOING UP AHEAD OF YOU', sub: '', life: 100 },
-          { at: 20, actor: { id: 'haul', def: 'gleaning', variant: 'winnow', dx: 300, z: 6, facing: 1, vz: -0.05, frames: 90, anim: 'idle' } },
+          // the bladder that used to carry it across the view went with the rest -- see g1's hoist. The hydraulic
+          // is a lift-bag filling off screen, which is the same fact with no rig attached to it
+          { at: 10, caption: 'THE TAKE IS ALREADY IN THE AIR', sub: 'IT GOES UP BEFORE THE FIGHTING STOPS', life: 100 },
           { at: 28, sfx: 'hydraulic' },
         ] } },
     },
