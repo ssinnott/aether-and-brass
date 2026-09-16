@@ -693,10 +693,24 @@ stronger gate than making the actions no-ops, and it has to be: a beat also carr
 director for as long as its script runs, so a bot that stepped a beat and staged nothing would still wait six seconds
 for its first wave and every `npm run winrate` number would move with it.
 
-`holdWaves` is what buys an intro beat its six to ten seconds. Every board triggers its first wave about two seconds'
-walk from the spawn point, and rather than re-cut four levels to make room, the wave director waits while the script
-runs. Nothing else waits: the player walks under their own control the whole time, and hazards, platforms and weather
-all keep running.
+`holdWaves` is what buys an intro beat its ten to thirteen seconds. Every board triggers its first wave about two
+seconds' walk from the spawn point, and rather than re-cut four levels to make room, the wave director waits while
+the script runs. Nothing else waits: the player walks under their own control the whole time, and hazards, platforms
+and weather all keep running.
+
+Because the controls stay live, an opening needs to say on screen that it is an opening — otherwise "the scene is
+still running" and "the scene ended and this stretch of board is simply empty" look identical. That is the
+**letterbox** (`StageRunner.drawCinema`): two bars that slide in when a `beat: true` event arms and slide back out
+when it ends, however it ends — script exhausted, outrun valve, section change. Its depth is derived from
+`FLOOR_TOP + Z_MAX`, so the bottom bar is exactly the strip below the last row a body can stand on and never covers a
+pair of feet; the top bar slides out from under the HUD strip, which already owns rows 0..39. A mid-board combat
+script gets no bars: it is a thing happening in the middle of a fight, not a scene.
+
+An opening also stages **no bodies**. `actor` still exists and vignettes still use it, but every def in the roster is
+an enemy's or a hero's rig, and a body on the floor during an opening — where the player has the controls — is one
+they walk up to, swing at, cannot hit (`Actor.takeHit` returns false by design), and then watch deleted when the
+script ends. What the four openings carry instead is the level: their own signage, weather and machinery. The rule is
+enforced in `tools/simtest.js` (suite `beats`) so a future opening cannot quietly re-acquire a cast.
 
 It holds the SECTION as well as the wave, and it has to: with no waves to stop them a player who runs rather than
 walks covers about 1900px in the eight seconds of board 1's opening, and section 1 ends at 1800 — they would cross
@@ -1086,12 +1100,14 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      the other rather than together, and an unknown id is inert rather than a crash. Action sequencing itself is in
      `tools/simtest.js`.
   3i2. `beats` (`tools/scenarios/beats.js`, issue #25): the browser half of the story beats — board 1's intro beat
-     arms on the first frames of the run, letters the board's name on a sign in the world and stages its two dockers;
-     for the six to ten seconds it runs the party keeps control and walks under its own power with NO enemy on
-     screen at any point; the cast is struck when the script ends and the wave it was holding arrives immediately
-     after. The second half is the gate: under `?bot=1` the beat does not arm, nothing is staged, and the bot reaches
-     its first fight on the frame it always did — which is what keeps `npm run winrate` comparable across the change.
-     The dialogue rules and the completeness of the writing are in `tools/simtest.js`.
+     arms on the first frames of the run and letters the board's name on two signs in the world while staging NO
+     bodies at all; for the ten to thirteen seconds it runs the party keeps control and walks under its own power
+     with no enemy on screen at any point; the letterbox is fully in throughout and retracts whether the beat ends
+     on its own or is cut short by the outrun valve; the lettering is struck when the script ends and the wave it was
+     holding arrives immediately after. The second half is the gate: under `?bot=1` the beat does not arm, nothing is
+     staged, no bars come in, and the bot reaches its first fight on the frame it always did — which is what keeps
+     `npm run winrate` comparable across the change. The dialogue rules and the completeness of the writing are in
+     `tools/simtest.js`.
   3j. `cargo` (`tools/scenarios/cargo.js`, issue #34): against the real authored containers — a quay crate tips its
      cargo out on break and the unit climbs out at the crate into a punishable recovery; the foundry chute is quiet
      (no threat box), rattles (threat box live), lets one out at a time, stops its clock while it is stood on and

@@ -100,28 +100,34 @@ export const stage3 = {
       /** Issue #25 stinger: the board's whole thesis, in the doc's own words (docs/STAGE3.md section 2). */
       stinger: 'EVERYTHING HERE KEEPS THE THING THAT KILLS YOU STANDING UP',
       /**
-       * THE FOOT OF THE LIME ROAD (issue #25). The party comes up past the wagon train waiting to go down, and the
-       * board's name is chalked on the company's own tally board. The cart that passes them is loaded, and what is
-       * on it is the war -- which is the board's argument made before a single Chandler has been met.
+       * THE FOOT OF THE LIME ROAD (issue #25). The party comes up the road past the company's own weighbridge, and
+       * the board's name is chalked on the Chandlery's tally board. What the boards say is the board's argument,
+       * made before a single Chandler has been met: the traffic is heavy in both directions and only one of them is
+       * being paid for.
+       *
+       * The opening used to walk a drayman and a tallyman down past the party. See the note on board 1: an opening
+       * stages nobody, because a body in an enemy's rig that cannot be hit is a fight the player is offered and then
+       * denied. The lettering does the work here instead.
        *
        * See the `holdWaves` note on board 1.
        */
       events: [
         { id: 'intro3', atX: 40, once: true, beat: true, holdWaves: true, actions: [
           { sign: { text: 'THE LIME ROAD', sub: 'CHANDLERY OF CALDERWICK - WEIGHBRIDGE', x: 350, z: 6, style: 'tally', life: 900, color: '#cfe0a8' } },
-          // the wagon train: a drayman at the head of it and a tallyman walking the load, both going down as you come up
-          { actor: { id: 'dray', def: 'chandler', variant: 'drayman', x: 700, z: 20, facing: -1, vx: -0.5, frames: 420, anim: 'walk' } },
-          { actor: { id: 'tally', def: 'chandler', variant: 'tallyman', x: 762, z: 34, facing: -1, vx: -0.45, frames: 420, anim: 'walk' } },
           // The stage banner (gameplay.js) holds the screen for its first 120 frames, and `showBanner` is one slot:
           // a caption raised before then would delete the board's own title. The scenery goes up straight away; the
           // words wait their turn.
           { wait: 130 },
-          { caption: 'THE WAR IS OVER', sub: 'THE COMPANY IS STILL BILLING FOR IT', life: 170 },
-          { wait: 150 },
+          { caption: 'THE WAR IS OVER', sub: 'THE COMPANY IS STILL BILLING FOR IT', life: 190 },
+          { wait: 180 },
           { sfx: 'crate_drop' },
-          { wait: 60 },
-          { caption: 'BUSY IN BOTH DIRECTIONS', sub: 'ONLY ONE OF THEM IS PAID FOR', life: 150 },
-          { wait: 170 },
+          // the second tally board, up the road at the turn -- see the note on board 1
+          { sign: { text: 'LOADS DOWN - EMPTIES UP', sub: 'WEIGHED BOTH WAYS - NO EXCEPTIONS', x: 880, z: 8, style: 'tally', life: 900, color: '#cfe0a8' } },
+          { caption: 'BUSY IN BOTH DIRECTIONS', sub: 'ONLY ONE OF THEM IS PAID FOR', life: 180 },
+          { wait: 180 },
+          { sfx: 'gear_slip' },
+          { caption: 'THE ROAD GOES UP TO THE WORKS', sub: 'SO DO WE', life: 190 },
+          { wait: 210 },
         ] },
       ],
       /** The works' cargo lift takes the road party down into the yard — onto the cart lane. */

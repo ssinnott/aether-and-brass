@@ -91,9 +91,12 @@ export const stage2 = {
       stinger: 'NOTHING UP HERE IS BOLTED TO THE GROUND',
       /**
        * OFF THE MOORING LADDER (issue #25). The party steps off the ladder onto the spine as the storm front comes
-       * over, and the board's name is on the nameplate bolted to the rail rather than on a title card. A Stormcrow
-       * deckhand walks the spine ahead of them and turns for the rail before the first wave -- the board saying,
-       * before it ever fights you, that people go off this thing.
+       * over, and the board's name is on the nameplate bolted to the rail rather than on a title card.
+       *
+       * The opening used to walk a Stormcrow deckhand up the spine ahead of the party. See the note on board 1: a
+       * staged body wearing an enemy's rig reads as the first fight, refuses every hit, and then disappears, so the
+       * openings stage nobody at all. The weather carries this one -- the gale, the crack of the front, and the
+       * spine's own signage going past.
        *
        * See the `holdWaves` note on board 1: the wave director waits for the script rather than the level being
        * re-cut to make room for it.
@@ -101,24 +104,22 @@ export const stage2 = {
       events: [
         { id: 'intro2', atX: 40, once: true, beat: true, holdWaves: true, actions: [
           { sign: { text: 'THE MOORING SPINE', sub: 'NINTH WING - NO BOARDING', x: 340, z: 4, style: 'nameplate', life: 900, color: '#f4e8c8' } },
-          // the deckhand starts INSIDE the opening view (the camera spans 0..640) and walks away up the spine, so
-          // the party watches him go rather than never seeing him at all
-          { actor: { id: 'hand', def: 'stormcrow', variant: 'deckhand', x: 430, z: 26, facing: 1, vx: 0.5, frames: 260, anim: 'walk' } },
           // The stage banner (gameplay.js) holds the screen for its first 120 frames, and `showBanner` is one slot:
           // a caption raised before then would delete the board's own title. The scenery goes up straight away; the
           // words wait their turn.
           { wait: 130 },
-          { caption: 'THE SKY IS OPEN', sub: 'THE NINTH WING HAS DECIDED TO CLOSE IT AGAIN', life: 170 },
-          { wait: 140 },
+          { caption: 'THE SKY IS OPEN', sub: 'THE NINTH WING HAS DECIDED TO CLOSE IT AGAIN', life: 190 },
+          { wait: 180 },
           { sfx: 'gale' },
           { camera: { shake: 3, frames: 40 } },
-          { wait: 60 },
-          // the deckhand turns for the rail as the front hits
-          { walk: { id: 'hand', vz: -0.5, frames: 60, anim: 'walk', face: 1 } },
-          { caption: 'THE FRONT IS COMING OVER', sub: '', life: 140 },
-          { wait: 80 },
+          // the second plate is further along the walk, where the handrail stops -- see the note on board 1
+          { sign: { text: 'CLIP ON PAST THIS POINT', sub: 'NINTH WING - NO HANDRAIL', x: 880, z: 6, style: 'nameplate', life: 900, color: '#f4e8c8' } },
+          { caption: 'THE FRONT IS COMING OVER', sub: 'AND THE SPINE HAS ALREADY STARTED TO MOVE', life: 180 },
+          { wait: 180 },
           { sfx: 'thunder_strike' },
-          { wait: 140 },
+          { camera: { shake: 5, frames: 30 } },
+          { caption: 'NINE HUNDRED FEET OF WEATHER', sub: 'ON BOTH SIDES OF THE WALK', life: 190 },
+          { wait: 210 },
         ] },
       ],
       /** The freighter warps in against the spine and the cargo gate comes down: the players board. */

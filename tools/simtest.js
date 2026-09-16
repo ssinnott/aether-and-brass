@@ -577,17 +577,30 @@ function suiteBeats() {
     ok(missing.length === 0, `every board opens on a beat and every transition carries a vignette${missing.length ? ' (' + missing.join('; ') + ')' : ''}`);
   }
 
-  // (m) an intro beat runs for the six to ten seconds issue #25 asks for, and holds the wave director while it does
+  // (m) an intro beat runs for ten to thirteen seconds, holds the wave director while it does, and STAGES NOBODY.
+  //
+  //     The cast rule is the load-bearing one. Every body an `actor` action can put on a board wears an enemy's rig,
+  //     and an opening is played with the controls live: the player walks up to the docker, swings at it, finds it
+  //     refuses every hit (`Actor.takeHit` returns false by design), and then watches it deleted when the script
+  //     ends. That is three separate lies told in the first ten seconds of a board. A beat elsewhere may still stage
+  //     one -- a between-section vignette plays with the party held, where a body reads as scenery going past -- but
+  //     an OPENING has nothing on screen except the level and the party.
+  //
+  //     The length is bounded above as well as below on purpose: `outrunAt` stands a beat down the moment the party
+  //     reaches the section's last authored wave, so a script written much longer than the walk is a script whose
+  //     ending nobody ever sees.
   {
     const bad = [];
     for (const st of STAGES) {
       const ev = (st.sections[0].events || []).find((e) => e.beat);
       if (!ev) continue;
       const n = eventLength(ev);
-      if (n < 360 || n > 600) bad.push(`${st.id}: ${n} frames`);
+      if (n < 600 || n > 780) bad.push(`${st.id}: ${n} frames`);
       if (!ev.holdWaves) bad.push(`${st.id}: does not hold the wave director`);
+      const cast = (ev.actions || []).filter((a) => a.actor || a.walk).length;
+      if (cast) bad.push(`${st.id}: stages ${cast} body/bodies in its opening`);
     }
-    ok(bad.length === 0, `every intro beat runs 6-10s and holds its waves${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
+    ok(bad.length === 0, `every intro beat runs 10-13s, holds its waves and stages nobody${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
   }
 
   // (m2) CONTENT: every caption a beat writes fits the banner it is drawn in. This is measured rather than counted

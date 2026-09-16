@@ -127,29 +127,34 @@ export const stage4 = {
       /** Issue #25 stinger: the tailings' own line, under the section name plate. */
       stinger: 'EVERY PIECE OF THIS WAS SOMEBODY ELSE\'S',
       /**
-       * UP THE SPOIL HEAP (issue #25). The party climbs the tailings while a salvage bladder goes up in front of
-       * them with a load under it, and the board's name is stencilled on a bale at the top of the climb. The last
-       * board opens on its own thesis: everything you broke on the first three boards is being carried away, and
-       * the carrying is happening whether or not you are here.
+       * UP THE SPOIL HEAP (issue #25). The party climbs the tailings past the guild's own lot markings, and the
+       * board's name is stencilled on a bale at the top of the climb. The last board opens on its own thesis:
+       * everything you broke on the first three boards is being carried away, and the carrying is happening whether
+       * or not you are here.
+       *
+       * The opening used to stage a picker working the slope and a salvage bladder going up with a load under it.
+       * See the note on board 1: an opening stages nobody now, because a Gleaning rig walking the heap is one the
+       * player attacks, cannot touch, and then sees deleted. The stencils carry the same argument and stay put.
        *
        * See the `holdWaves` note on board 1.
        */
       events: [
         { id: 'intro4', atX: 40, once: true, beat: true, holdWaves: true, actions: [
           { sign: { text: 'THE TAILINGS', sub: 'GLEANING - LOT 41', x: 340, z: 8, style: 'bale', life: 900, color: '#efe4c6' } },
-          // a picker working the heap, and the bladder going up in front of you with what it has found
-          { actor: { id: 'picker', def: 'gleaning', variant: 'picker', x: 620, z: 30, facing: -1, vx: -0.35, frames: 420, anim: 'walk' } },
           // The stage banner (gameplay.js) holds the screen for its first 120 frames, and `showBanner` is one slot:
           // a caption raised before then would delete the board's own title. The scenery goes up straight away; the
           // words wait their turn.
           { wait: 130 },
-          { caption: 'EVERYTHING YOU BROKE', sub: 'IS BEING CARRIED AWAY', life: 170 },
-          { wait: 130 },
+          { caption: 'EVERYTHING YOU BROKE', sub: 'IS BEING CARRIED AWAY', life: 190 },
+          { wait: 180 },
           { sfx: 'hydraulic' },
-          { actor: { id: 'lift', def: 'gleaning', variant: 'winnow', x: 760, z: 10, facing: -1, vx: -0.4, vz: -0.06, frames: 230, anim: 'idle' } },
-          { wait: 90 },
-          { caption: 'A BLADDER GOES UP AHEAD OF YOU', sub: 'SOMETHING IS UNDER IT', life: 150 },
-          { wait: 160 },
+          // the second stencil, further up the climb -- see the note on board 1
+          { sign: { text: 'LOT 41 - SORTED AND BALED', sub: 'GLEANING GUILD - WEIGH BEFORE LIFT', x: 880, z: 10, style: 'bale', life: 900, color: '#efe4c6' } },
+          { caption: 'THE HEAP IS A LIVING UP HERE', sub: 'THE GUILD WEIGHS IT BEFORE IT COOLS', life: 180 },
+          { wait: 180 },
+          { sfx: 'gear_slip' },
+          { caption: 'THE GLEANING GOT HERE FIRST', sub: 'IT ALWAYS DOES', life: 190 },
+          { wait: 210 },
         ] },
       ],
       /** The guild's own cargo hoist takes the party UP off the field (`up: true`: the shaft runs the other way). */

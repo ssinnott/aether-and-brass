@@ -66,30 +66,39 @@ export const stage1 = {
       stinger: 'EVERYTHING LEAVING THIS CITY GOES THROUGH HERE',
       /**
        * THE SOOTFOOT GANGWAY (issue #25). The board opens on a walk rather than a title card: the party comes down
-       * the gangway in the rain, two dockers go the other way with their shift finished, and the board's name is on
-       * the hoarding at the head of the quay instead of on a plate in the middle of the screen.
+       * the gangway in the rain, and the board's name is on the hoarding at the head of the quay instead of on a
+       * plate in the middle of the screen.
        *
-       * `holdWaves` is what buys the six seconds. The first wave triggers at x 400 and the party spawns at 100, so
-       * the walk the quay already had is about two seconds; rather than re-cut the level, the wave director waits
+       * NOBODY IS STAGED IN IT. The opening used to walk two dockers past the party, and every body a beat puts on
+       * the quay is a body wearing an enemy's rig: the player squares up to it, finds it cannot be hit, and then
+       * watches it vanish when the script ends. A scene the player spends swinging at scenery is a scene they were
+       * not watching. What the beat has instead is the quay itself -- the hoardings, the rain, the hook and the
+       * pallet -- so everything on screen during an opening is either the level or the party.
+       *
+       * `holdWaves` is what buys the eleven seconds. The first wave triggers at x 400 and the party spawns at 100,
+       * so the walk the quay already had is about two seconds; rather than re-cut the level, the wave director waits
        * while the script runs. Nothing else waits — the player walks the whole time, and the rain, the hook and the
-       * pallet all keep running.
+       * pallet all keep running. The letterbox (game/stage.js drawCinema) is up for exactly this stretch.
        */
       events: [
         { id: 'intro1', atX: 40, once: true, beat: true, holdWaves: true, actions: [
           { sign: { text: 'SOOTFOOT DOCKS', sub: 'CALDERWICK, LOWER', x: 330, z: 6, style: 'hoarding', life: 900 } },
-          // two dockers walking off the quay past the party, on the far lane so they never crowd the walk
-          { actor: { id: 'docker1', def: 'sootborn', variant: 'cutthroat', x: 700, z: 18, facing: -1, vx: -0.55, frames: 420, anim: 'walk' } },
-          { actor: { id: 'docker2', def: 'sootborn', variant: 'cutthroat', x: 764, z: 32, facing: -1, vx: -0.5, frames: 420, anim: 'walk' } },
           // The stage banner (gameplay.js) holds the screen for its first 120 frames, and `showBanner` is one slot:
           // a caption raised before then would delete the board's own title. The scenery goes up straight away; the
           // words wait their turn.
           { wait: 130 },
-          { caption: 'CALDERWICK', sub: 'CITY OF THE HEART-ENGINE - AND THE CHANCELLOR HAS SEALED THE SKY', life: 170 },
-          { wait: 150 },
+          { caption: 'CALDERWICK', sub: 'CITY OF THE HEART-ENGINE - AND THE CHANCELLOR HAS SEALED THE SKY', life: 190 },
+          { wait: 180 },
           { sfx: 'hydraulic' },
-          { wait: 60 },
-          { caption: 'FOUR UNLIKELY DELIVERIES', sub: 'ARE ABOUT TO BE MADE, UPWARD', life: 150 },
-          { wait: 170 },
+          // A SECOND hoarding, up the quay where the walk has got to by now. It is what the removed dockers were
+          // really for: something to arrive at in the middle of the beat, so the stretch between the first caption
+          // and the last is a walk toward something rather than a walk past nothing.
+          { sign: { text: 'NO CARGO LEAVES BY AIR', sub: 'BY ORDER OF THE CHANCELLOR', x: 880, z: 8, style: 'hoarding', life: 900 } },
+          { caption: 'THE QUAY IS STILL WORKING', sub: 'NOTHING ON IT IS GOING ANYWHERE', life: 180 },
+          { wait: 180 },
+          { sfx: 'gear_slip' },
+          { caption: 'FOUR UNLIKELY DELIVERIES', sub: 'ARE ABOUT TO BE MADE, UPWARD', life: 190 },
+          { wait: 210 },
         ] },
       ],
       /** The dock gate rotates open; a 180f freight-lift ride down with one Meat Pie, and the Chandlery goes past. */
