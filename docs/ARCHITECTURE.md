@@ -715,11 +715,18 @@ per-slot offset with it, because two players in one online room must watch the s
 checks that every table carries one row per board and that each opening asks for its own — an off-by-one there is
 not silence, it is the quay's conversation played on the spoil heap.
 
-An opening also stages **no bodies**. `actor` still exists and vignettes still use it, but every def in the roster is
-an enemy's or a hero's rig, and a body on the floor during an opening — where the player has the controls — is one
-they walk up to, swing at, cannot hit (`Actor.takeHit` returns false by design), and then watch deleted when the
-script ends. What the four openings carry instead is the level: their own signage, weather and machinery. The rule is
-enforced in `tools/simtest.js` (suite `beats`) so a future opening cannot quietly re-acquire a cast.
+**No scene in the game stages a body** — not an opening beat, not a between-section vignette. Every def an `actor`
+can name is a fighter's rig, so a staged body reads as a unit. In an opening, where the player has the controls, it
+is one they walk up to, swing at, cannot hit (`Actor.takeHit` returns false by design) and then watch deleted when
+the script ends. In a vignette it is worse, not better: the party is HELD, so a figure that appears for a second and
+a half and vanishes is one the player can do nothing about except wonder what it was. What a scene carries instead
+is the level — its own signage, weather and machinery, and the SOUND of the thing it is describing. A heavy load
+landing under a descending lift needs no picture of the load.
+
+The `Actor` machinery below is deliberately kept rather than deleted: it is the only thing that can stage one, and
+removing it is a larger change than the rule requires. The rule itself is enforced in `tools/simtest.js` (suite
+`beats`), which walks every event and every vignette cue in every board, so breaking it is a deliberate one-line
+decision rather than something that creeps back in.
 
 It holds the SECTION as well as the wave, and it has to: with no waves to stop them a player who runs rather than
 walks covers about 1900px in the eight seconds of board 1's opening, and section 1 ends at 1800 — they would cross
@@ -741,10 +748,12 @@ Between-section **vignettes** ride a `transition`'s own timeline instead of the 
 `StageRunner.update()` returns above `events.update()` for the whole of a transition — a script armed there would not
 advance a frame until the party already had control back. A section's `transition` may carry
 `vignette: { cues: [{ at, ... }] }`, where `at` is counted from the first frame of the transition across all its
-phases, and a cue takes the same keys a beat action does. Actor positions there are written as `dx` (from the left
-edge of the view) rather than `x`, since a transition parks the camera wherever it began and the same lift is a
-different place on every board. One caveat for authors: a boss `descent` runs under `world.cutscene`, which
-early-returns the whole world update, so captions and camera work there but an actor will not walk.
+phases, and a cue takes the same keys a beat action does. Actor positions there would be written as `dx` (from the
+left edge of the view) rather than `x`, since a transition parks the camera wherever it began and the same lift is a
+different place on every board — but see the no-bodies rule above: the shipped vignettes are captions, sound and
+camera work, and every one of them used to stage a cast that is now gone. One caveat for authors: a boss `descent`
+runs under `world.cutscene`, which early-returns the whole world update, so captions and camera work there but an
+actor would not walk.
 
 **Companion dialogue** (`game/dialogue.js`) is drawn as a plate over a fighter's head from `StageRunner.draw` — the
 one pass above every entity, particle and weather effect and still below all HUD. It never blocks input, never

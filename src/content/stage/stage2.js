@@ -131,12 +131,17 @@ export const stage2 = {
       transition: { kind: 'board', atX: 1840, gateX: 1900,
         /**
          * Issue #25 vignette: the cargo gate is 50 frames, so the moment has to be one image rather than a scene.
-         * A wing peels off overhead -- the Ninth Wing noticing the party, which is what the next section is about.
+         * What it says is that the Ninth Wing has noticed the party, which is what the next section is about.
+         *
+         * It used to say that by flying a corsair across the top of the view at 5px a frame. See the note on board
+         * 1's lift: a scene stages no bodies, and this is the case that needed it most -- a figure crossing the
+         * screen in two seconds while the party is held is exactly the "what was that?" the openings were emptied
+         * to stop. The call overhead carries it, and being noticed is a better line than being shown the thing
+         * that noticed you.
          */
         vignette: { cues: [
-          { at: 12, caption: 'A WING PEELS OFF OVERHEAD', sub: '', life: 100 },
+          { at: 12, caption: 'THEY HAVE SEEN YOU FROM THE WING', sub: '', life: 100 },
           { at: 18, sfx: 'crow_call' },
-          { at: 30, actor: { id: 'wing', def: 'stormcrow', variant: 'corsair', dx: 600, z: 2, facing: -1, vx: -5, frames: 120, anim: 'walk' } },
         ] } },
     },
     // ---------------------------------------------------------------- Section 2: The Gas-Halls (interior, soft light)
@@ -188,10 +193,11 @@ export const stage2 = {
       events: [],
       /** Past the winch bay the hull is open to the weather: a boarding ramp across to the flagship. */
       transition: { kind: 'board', atX: 3540, gateX: 3600,
-        /** Issue #25 vignette: the Cold Sovereign's boarding gate, and the marine standing watch on it. */
+        /** Issue #25 vignette: the Cold Sovereign's boarding gate, with nobody standing watch on it. */
         vignette: { cues: [
+          // the marine who used to stand and watch went with the rest -- see m1. The line is better without him
+          // in it: "nobody stops you" is a stronger image than one person visibly not stopping you.
           { at: 10, caption: 'SHE TAKES YOU ABOARD', sub: 'NOBODY ON THIS SHIP STOPS YOU', life: 100 },
-          { at: 20, actor: { id: 'watch', def: 'stormcrow', variant: 'marine', dx: 520, z: 12, facing: -1, anim: 'idle' } },
           { at: 30, sfx: 'crow_call' },
         ] } },
     },

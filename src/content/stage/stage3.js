@@ -138,14 +138,17 @@ export const stage3 = {
       /** The works' cargo lift takes the road party down into the yard — onto the cart lane. */
       transition: { kind: 'lift', atX: 1740, gateX: 1800,
         /**
-         * Issue #25 vignette: the Chandlery's handcarts going past on the lift ride. What is being carried down is
-         * a chained Brassbound, tipped out of the cart at the bottom -- the company's supply of things that can be
-         * put back on their feet, arriving for work.
+         * Issue #25 vignette: what the Chandlery sends down this lift ahead of the party. It is a chained
+         * Brassbound -- the company's supply of things that can be put back on their feet, arriving for work --
+         * and it is now HEARD rather than shown: see the note on board 1's lift, a scene stages no bodies.
+         *
+         * The `brass_hit` and the shake are the whole of it, and they are enough. A heavy thing landing below you
+         * on a lift you are riding down needs no picture, and the second caption says what it was.
          */
         vignette: { cues: [
-          { at: 70, caption: 'THE HANDCARTS GO DOWN LOADED', sub: '', life: 110 },
-          { at: 110, actor: { id: 'cart', def: 'chandler', variant: 'drayman', dx: 640, z: 18, facing: -1, vx: -2.2, frames: 150, anim: 'walk' } },
-          { at: 150, actor: { id: 'stock', def: 'brassbound', variant: 'footman', dx: 560, z: 34, facing: -1, anim: 'idle' } },
+          // 80 frames each — see the note on board 1's lift
+          { at: 70, caption: 'SOMETHING HEAVY GOES DOWN FIRST', sub: 'THE COMPANY LOADS BEFORE IT UNLOADS', life: 80 },
+          { at: 150, caption: 'AND IT DOES NOT GET BACK UP', sub: '', life: 80 },
           { at: 156, sfx: 'brass_hit' },
           { at: 160, camera: { shake: 4, frames: 14 } },
         ] } },
@@ -204,10 +207,10 @@ export const stage3 = {
       events: [],
       /** The belt stops at the yard gate; the counting-house's yard door is shown open and you go through it. */
       transition: { kind: 'dock', banner: 'THE YARD GATE', look: 'door', pies: 1,
-        /** Issue #25 vignette: 40 frames at the gate, and what is standing in it is a rite already under way. */
+        /** Issue #25 vignette: 40 frames at the gate, and what is waiting past it is a rite already under way. */
         vignette: { cues: [
           { at: 8, caption: 'THE YARD GATE', sub: 'THE LAMPS ARE LIT - THE RITE STARTED WITHOUT YOU', life: 90 },
-          { at: 14, actor: { id: 'rite', def: 'chandler', variant: 'limeburner', dx: 470, z: 24, facing: -1, anim: 'idle' } },
+          // the limeburner tending it went with the rest -- see w1. The lit lamps and the burn ARE the rite
           { at: 20, sfx: 'burn' },
         ] } },
     },
@@ -282,10 +285,10 @@ export const stage3 = {
       events: [],
       /** Past the kiln head the counting-house doors come up and you go in. */
       transition: { kind: 'board', atX: 3540, gateX: 3600,
-        /** Issue #25 vignette: the counting-house doors, and a purser going in ahead of you with the day book. */
+        /** Issue #25 vignette: the counting-house doors, and a delivery signed for on the other side of them. */
         vignette: { cues: [
-          { at: 10, caption: 'THE LEDGER HOUSE TAKES DELIVERY', sub: '', life: 100 },
-          { at: 20, actor: { id: 'purser', def: 'chandler', variant: 'purser', dx: 420, z: 20, facing: 1, vx: 1.4, frames: 80, anim: 'walk' } },
+          // the purser who used to sign for it went with the rest -- see w1; the crate landing is the delivery
+          { at: 10, caption: 'THE LEDGER HOUSE TAKES DELIVERY', sub: 'EVERY CRATE SIGNED FOR BEFORE IT IS OPENED', life: 100 },
           { at: 34, sfx: 'crate_drop' },
         ] } },
     },

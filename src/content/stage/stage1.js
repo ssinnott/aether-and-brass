@@ -122,13 +122,20 @@ export const stage1 = {
       transition: { kind: 'lift', atX: 1740, gateX: 1800,
         /**
          * Issue #25 vignette: the freight lift's 180-frame ride is the first time the party stands still, so it is
-         * the first time they can be shown something. What goes past is a Brassbound being taken DOWN while they go
-         * down with it — the board's own cargo, on the company's own lift.
+         * the first time they can be shown something.
+         *
+         * NOBODY RIDES DOWN WITH THEM. This used to put a Brassbound on the lift as cargo, and a vignette body is
+         * the same mistake an opening's was, made where it is harder to notice: a figure in an enemy's rig appears
+         * for a second and a half and is deleted, and the party is held for the whole of it, so the one thing the
+         * player can do about it is wonder what it was. Held or not, a scene in this game stages nobody -- what it
+         * shows is the machinery, and what it says it says in words.
          */
         vignette: { cues: [
-          { at: 70, caption: 'THE FREIGHT LIFT', sub: 'IT ONLY RUNS DOWN', life: 110 },
-          // `dx` is from the left edge of the view: the lift parks the camera wherever the gate was.
-          { at: 120, actor: { id: 'cargo', def: 'brassbound', variant: 'footman', dx: 470, z: 14, facing: -1, anim: 'idle' } },
+          { at: 20, sfx: 'hydraulic' },
+          // 80 frames each: the ride is 50..230 (transitions.js PHASES), so two captions fill it exactly and
+          // neither is cut mid-read by the other. The lift clunks as the second one lands.
+          { at: 70, caption: 'THE FREIGHT LIFT', sub: 'IT ONLY RUNS DOWN', life: 80 },
+          { at: 150, caption: 'AND EVERYTHING ON THE QUAY WITH IT', sub: 'NOTHING HAS LEFT CALDERWICK BY AIR IN A MONTH', life: 80 },
           { at: 150, sfx: 'gear_slip' },
         ] } },
     },
@@ -178,11 +185,12 @@ export const stage1 = {
       events: [],
       /** The cargo gate rises; the players board the Aether Funicular tram car. */
       transition: { kind: 'board', atX: 3740, gateX: 3800,
-        /** Issue #25 vignette: the funicular car waiting, and the queue that will not be getting on it. */
+        /** Issue #25 vignette: the funicular car waiting, with nobody queueing for it. The docker who used to
+         *  stand here went with every other staged body -- see the note on s1's lift -- and the line carries it
+         *  alone, which it can: a car going up half empty is a shift with nobody left on it. */
         vignette: { cues: [
-          { at: 10, caption: 'THE CAR GOES UP HALF EMPTY', sub: '', life: 100 },
+          { at: 10, caption: 'THE CAR GOES UP HALF EMPTY', sub: 'THERE IS NOBODY LEFT ON THIS SHIFT TO FILL IT', life: 100 },
           { at: 16, sfx: 'chime' },
-          { at: 26, actor: { id: 'queue', def: 'sootborn', variant: 'cutthroat', dx: 120, z: 22, facing: 1, anim: 'idle' } },
         ] } },
     },
     // ---------------------------------------------------------------- Section 3: The Brass Funicular (one locked screen, timed waves)

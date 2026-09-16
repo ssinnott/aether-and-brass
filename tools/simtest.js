@@ -611,14 +611,8 @@ function suiteBeats() {
     ok(missing.length === 0, `every board opens on a beat and every transition carries a vignette${missing.length ? ' (' + missing.join('; ') + ')' : ''}`);
   }
 
-  // (m) an intro beat runs for ten to thirteen seconds, holds the wave director while it does, and STAGES NOBODY.
-  //
-  //     The cast rule is the load-bearing one. Every body an `actor` action can put on a board wears an enemy's rig,
-  //     and an opening is played with the controls live: the player walks up to the docker, swings at it, finds it
-  //     refuses every hit (`Actor.takeHit` returns false by design), and then watches it deleted when the script
-  //     ends. That is three separate lies told in the first ten seconds of a board. A beat elsewhere may still stage
-  //     one -- a between-section vignette plays with the party held, where a body reads as scenery going past -- but
-  //     an OPENING has nothing on screen except the level and the party.
+  // (m) an intro beat runs for ten to thirteen seconds and holds the wave director while it does. (That it stages
+  //     nobody is checked in (m3b) below, which covers the vignettes with it.)
   //
   //     The length is bounded above as well as below on purpose: `outrunAt` stands a beat down the moment the party
   //     reaches the section's last authored wave, so a script written much longer than the walk is a script whose
@@ -631,10 +625,8 @@ function suiteBeats() {
       const n = eventLength(ev);
       if (n < 600 || n > 780) bad.push(`${st.id}: ${n} frames`);
       if (!ev.holdWaves) bad.push(`${st.id}: does not hold the wave director`);
-      const cast = (ev.actions || []).filter((a) => a.actor || a.walk).length;
-      if (cast) bad.push(`${st.id}: stages ${cast} body/bodies in its opening`);
     }
-    ok(bad.length === 0, `every intro beat runs 10-13s, holds its waves and stages nobody${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
+    ok(bad.length === 0, `every intro beat runs 10-13s and holds its waves${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
   }
 
   // (m2) CONTENT: every caption a beat writes fits the banner it is drawn in. This is measured rather than counted
@@ -677,8 +669,39 @@ function suiteBeats() {
     ok(bad.length === 0, `every sound a beat names is registered${bad.length ? ' (unknown: ' + bad.join(', ') + ')' : ''}`);
   }
 
+  // (m3b) CONTENT: NO SCENE IN THE GAME STAGES A BODY — not an opening beat, not a between-section vignette.
+  //
+  //       This is the general form of the rule the openings got first, and the vignettes are why it has to be
+  //       general rather than per-location. Every def an `actor` can name is a fighter's rig, so a staged body
+  //       reads as a unit: in an opening the player walks up and swings at it, and in a vignette they are HELD
+  //       while it appears for a second and a half and is deleted, which is worse — the only thing they can do
+  //       about it is wonder what it was. Either way a figure shows up, refuses to be part of the game, and
+  //       vanishes.
+  //
+  //       What a scene has instead is the level: signage, weather, machinery, and the sound of the thing it is
+  //       telling you about. A heavy load landing under a descending lift needs no picture of the load.
+  //
+  //       The Actor machinery (game/actors.js) is deliberately NOT deleted — it is the only way to stage one, it
+  //       is the thing this rule is about, and removing it is a bigger change than the rule needs. This check is
+  //       the policy; (m4) below still validates any body a future scene stages, so breaking the rule on purpose
+  //       stays a one-line decision rather than a rewrite.
+  {
+    const staged = [];
+    for (const st of STAGES) {
+      for (const sec of st.sections) {
+        for (const ev of sec.events || []) {
+          for (const a of ev.actions || []) if (a.actor || a.walk) staged.push(`${st.id}/${ev.id || sec.id}`);
+        }
+        const v = sec.transition && sec.transition.vignette;
+        if (v) for (const c of v.cues || []) if (c.actor || c.walk) staged.push(`${st.id}/${sec.id} vignette`);
+      }
+    }
+    ok(staged.length === 0, `no scene in the game stages a body${staged.length ? ' (' + staged.join(', ') + ')' : ''}`);
+  }
+
   // (m4) CONTENT: every body a beat stages resolves to a real def, and every animation it names exists on it. A bad
-  //      slug or anim is the same class of silent failure: the actor is simply never seen.
+  //      slug or anim is the same class of silent failure: the actor is simply never seen. Vacuous while (m3b)
+  //      holds, and kept for the moment it stops holding.
   {
     const bad = [];
     for (const st of STAGES) {

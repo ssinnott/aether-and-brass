@@ -165,16 +165,21 @@ export const stage4 = {
       /** The guild's own cargo hoist takes the party UP off the field (`up: true`: the shaft runs the other way). */
       transition: { kind: 'lift', atX: 1740, gateX: 1800, up: true,
         /**
-         * Issue #25 vignette: the Gleaning stripping a fallen Iron Warden on the way up. The guild does not fight
-         * the Brassguard for the field -- it waits for the field to stop moving and then works it, and the ride up
-         * is the one place the party can watch that happen without being able to reach it.
+         * Issue #25 vignette: the Gleaning stripping a fallen Iron Warden while the party rides up off the field.
+         * The guild does not fight the Brassguard for it -- it waits for the field to stop moving and then works
+         * it, and a hoist going the other way is the only place that can be put in front of the party at all.
+         *
+         * It used to be a tableau of three staged bodies. See the note on board 1's lift: a scene stages nobody,
+         * and this one loses least by it, because the moment was never about watching them work -- it is about
+         * being carried away from something you cannot reach. `brass_death` under the second caption is the Warden
+         * going, and hearing that from a rising hoist is worse than watching it.
          */
         vignette: { cues: [
-          { at: 70, caption: 'THEY ARE STRIPPING A WARDEN', sub: 'IT WAS STANDING THIS MORNING', life: 120 },
-          { at: 110, actor: { id: 'carcass', def: 'brassbound', variant: 'warden', dx: 430, z: 22, facing: 1, anim: 'idle' } },
-          { at: 130, actor: { id: 'gleaner1', def: 'gleaning', variant: 'picker', dx: 390, z: 30, facing: 1, anim: 'idle' } },
-          { at: 140, actor: { id: 'gleaner2', def: 'gleaning', variant: 'riggerman', dx: 490, z: 16, facing: -1, anim: 'idle' } },
+          // 80 frames each — see the note on board 1's lift. `brass_death` lands at 200, under the second caption
+          // rather than after it, so the sound and the line saying what it was are the same moment.
+          { at: 70, caption: 'THE FIELD GOES QUIET BELOW YOU', sub: 'AND THE GUILD GOES TO WORK ON IT', life: 80 },
           { at: 150, sfx: 'gear_slip' },
+          { at: 150, caption: 'SOMETHING IS BEING STRIPPED', sub: 'IT WAS STANDING THIS MORNING', life: 80 },
           { at: 200, sfx: 'brass_death' },
         ] } },
     },
@@ -339,10 +344,11 @@ export const stage4 = {
       events: [],
       /** Past the press the loft hatch comes down against the float and the party goes in. */
       transition: { kind: 'board', atX: 3540, gateX: 3600,
-        /** Issue #25 vignette: the loft, and the bladders lifting the day's take up past you into the dark. */
+        /** Issue #25 vignette: the loft, and the day's take already lifted out of it into the dark. */
         vignette: { cues: [
-          { at: 10, caption: 'THE DAY IS GOING UP AHEAD OF YOU', sub: '', life: 100 },
-          { at: 20, actor: { id: 'haul', def: 'gleaning', variant: 'winnow', dx: 300, z: 6, facing: 1, vz: -0.05, frames: 90, anim: 'idle' } },
+          // the bladder that used to carry it across the view went with the rest -- see g1's hoist. The hydraulic
+          // is a lift-bag filling off screen, which is the same fact with no rig attached to it
+          { at: 10, caption: 'THE TAKE IS ALREADY IN THE AIR', sub: 'IT GOES UP BEFORE THE FIGHTING STOPS', life: 100 },
           { at: 28, sfx: 'hydraulic' },
         ] } },
     },
