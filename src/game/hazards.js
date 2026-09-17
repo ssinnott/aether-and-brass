@@ -1117,6 +1117,15 @@ export class Zone extends Entity {
     const g = (world.frame + this.offset) % this.period, prev = this.phase;
     const tellAt = this.period - this.activeFrames - this.tell, activeAt = this.period - this.activeFrames;
     this.phase = g >= activeAt ? 'active' : g >= tellAt ? 'tell' : 'idle';
+    // ...but only while the party is in the section this gust belongs to. Every section's zones are in the world
+    // from StageRunner.start and a gust spans exactly its section, so the runner's own test for which section this
+    // is -- the camera centre -- is the test for whether this is my wind. Without it a boss arena narrower than a
+    // screen leaks the next deck's gale into this room: Camera.lock widens the Gas-Halls winch bay to a full
+    // screen, so the Cold Sovereign's span was on camera for the whole Skree fight and the deck's banner was spent
+    // a section early. Forced to idle rather than returned, so drawWeather goes quiet with it; recomputed from
+    // world.frame every step, so nothing is stored and lockstep peers stay identical.
+    const mid = world.camera.x + VIEW_W / 2;
+    if (mid < this.x0 || mid > this.x1) this.phase = 'idle';
     this.phaseT = this.phase === 'active' ? g - activeAt : this.phase === 'tell' ? g - tellAt : g;
     if (this.phase !== 'idle' && prev === 'idle') this.gustDir = this.dir || ((Math.floor((world.frame + this.offset) / this.period) & 1) ? -1 : 1);
     const heard = this.onScreen(world.camera);

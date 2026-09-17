@@ -297,5 +297,5 @@ export const stage1 = {
   /** Foreman Grubbik & the Hoister: cargo bay at the end of Foundry Row (conveyor + molten back edge, see section 2 zones). */
   midboss: { atX: 3600, def: 'midboss', arena: { x0: 3280, x1: 3920 }, intro: { name: 'FOREMAN GRUBBIK', sub: '& THE HOISTER' } },
   /** Chancellor Vane: the dais at the summit (RECONCILIATION: arena 5560..6000). Vane descends a spiral stair (2s) first. */
-  boss: { atX: 5900, def: 'boss', arena: { x0: 5560, x1: 6000 }, camera: { x0: 5360, x1: 6000 }, intro: { name: 'CHANCELLOR AURELIUS VANE', sub: 'THE AETHERWRIGHT' } },
+  boss: { atX: 5900, def: 'boss', descent: true, arena: { x0: 5560, x1: 6000 }, camera: { x0: 5360, x1: 6000 }, intro: { name: 'CHANCELLOR AURELIUS VANE', sub: 'THE AETHERWRIGHT' } },
 };

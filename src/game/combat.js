@@ -63,6 +63,9 @@ export function resolveHits(world) {
         if (hb.extinguish && t.kind === 'projectile' && !t.removeMe && (t.motion === 'puddle' || t.extinguishable) && Math.abs(t.z - a.z) <= box.z + t.r
           && box.x0 < t.x + t.r && box.x1 > t.x - t.r) { t.removeMe = true; world.addFx('steam', t.x, 6, t.z, { count: 6 }); continue; }
         if (!isTarget(a, hb, t) || t.grabbedBy === a) continue;
+        // Same test resolveProjectile applies below: types/content.d.ts has Hitbox extend Hit, so a melee box
+        // may carry groundedOnly (Brunhild's Piston Quake does) and the core has to honour it on both paths.
+        if (hb.groundedOnly && t.y > 8) continue;
         const rec = a.hitTargets.get(t.id);
         if (hb.once !== false) { if (rec && rec.key === key) continue; }
         else if (rec && world.frame - rec.frame < (hb.rehit || 6)) continue;

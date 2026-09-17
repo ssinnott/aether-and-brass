@@ -179,6 +179,15 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     }
     net.mux = createSignalMux(net.signal, net.pid);
     net.mux.onAnnounce(onAnnounce);
+    // A rendezvous the broker drops is otherwise invisible: publishing into a closed socket throws nothing,
+    // so the screen keeps saying CONNECTING for a room nobody can reach. Only fatal while NOTHING is
+    // connected -- once a link is open the room runs on the mesh, and a broker drop must not end a working
+    // lobby or a live match.
+    net.signal.onDown = (why) => {
+      if (net.state === 'playing' || net.state === 'ended' || members().length > 1) return;
+      for (const l of net.links.values()) if (l.open) return;
+      net.end(why || 'rendezvous disconnected');
+    };
     if (isHost) {
       // The host seats themselves before anyone else can arrive, so slot 0 is never in doubt.
       net.lobby.members = [{ pid: net.pid, slot: 0, char: 0, ready: false, id: progress.playerId(), local: true, seq: 0, rtt: 0 }];

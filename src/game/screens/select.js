@@ -121,7 +121,10 @@ export class SelectScreen extends Screen {
       const h = joinHint(inp);
       // Free slot 1 has its own keyboard half; the composite hint's short form for it is swapped
       // for #19's long "PRESS X/Y/Z OR W" list, which is worth the extra width on this screen alone.
-      this.hint = !inp.joined(1) ? h.replace(inp.joinHint(1), inp.joinKeysHint(1)) : h;
+      // Match the stem both phrasings share: party.js rewrites the tail (' TO JOIN' -> ' OR ANY PAD BUTTON')
+      // when a spare pad is connected, and matching the whole string then finds nothing and silently drops
+      // the long key list.
+      this.hint = !inp.joined(1) ? h.replace(inp.joinHint(1).replace(' TO JOIN', ''), inp.joinKeysHint(1).replace(' TO JOIN', '')) : h;
     }
   }
   /** Rebuild the per-card cursor matrix, the joined-slot status line and the same-hero flag.

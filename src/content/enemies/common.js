@@ -176,7 +176,9 @@ export function drawCollar(ctx, rig) {
 /** One telegraphed enemy attack: tell (wind-up, `tell:true` frames light the lens red) -> active -> recovery -> return. */
 export function enemyAttack(o, carry = {}) {
   const st = STYLES[o.style] || STYLES.swing;
-  const hit = { damage: o.dmg != null ? o.dmg : 6, type: o.type || 'light', kbX: o.kbX != null ? o.kbX : 3, kbY: o.kbY || 0, hitstun: o.hitstun || 16, once: o.once !== false, rehit: o.rehit };
+  // `sfx` here is the IMPACT sound: combat.js playHitSfx reads hit.sfx and falls back to hit_<type>. It is not
+  // the frame's `sfx`, which is the swing. This used to be written to the frame as `hitSfx`, which nothing reads.
+  const hit = { damage: o.dmg != null ? o.dmg : 6, type: o.type || 'light', kbX: o.kbX != null ? o.kbX : 3, kbY: o.kbY || 0, hitstun: o.hitstun || 16, once: o.once !== false, rehit: o.rehit, sfx: o.hitSfx };
   const hb = o.hitboxes ? null : (o.hitbox || (o.area ? areaBox(o.area, hit) : frontBox(o.reach || 40, hit, { low: o.low, high: o.high, behind: o.behind })));
   const frames = [];
   const tellFrames = o.tell || 20;
@@ -185,7 +187,6 @@ export function enemyAttack(o, carry = {}) {
   frames.push({ dur: Math.max(1, tellFrames - w.dur), pose: P({ ...st.w, root: [(st.w.root ? st.w.root.x : 0) - 2, st.w.root ? st.w.root.y : 0] }), tell: true, armor: o.armor || undefined, interp: true });
   const h = { dur: o.active || 8, pose: st.h, sfx: o.sfx, fx: o.fx, move: o.move, armor: o.armor || undefined, invuln: o.invuln || undefined, event: o.event, projectile: o.projectile, summon: o.summon, radius: o.radius, hit: o.hit, shake: o.shake, offset: o.offset };
   if (o.hitboxes) h.hitboxes = o.hitboxes; else if (!o.noHitbox) h.hitbox = hb;
-  if (o.hitSfx) h.hitSfx = o.hitSfx;
   frames.push(h);
   if (o.extraActive) for (const ex of o.extraActive) frames.push({ dur: ex.dur || 4, pose: ex.pose || st.h, hitbox: ex.hitbox, hitboxes: ex.hitboxes, event: ex.event, projectile: ex.projectile, move: ex.move, fx: ex.fx, sfx: ex.sfx, radius: ex.radius, hit: ex.hit, summon: ex.summon });
   frames.push({ dur: o.recovery || 20, pose: st.r, punish: true });

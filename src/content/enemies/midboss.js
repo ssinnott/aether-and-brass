@@ -322,7 +322,7 @@ const HD = (t, y) => ({ kind: 'dust', x: t, y: y || 0, count: 2 });
 /** Chassis walk key: heavy contact / down / pass / up, dust on the two down keys. */
 const hw8 = (lr, ll, aR, aL, ty, sq) => ({ ...HC, legR: lr, legL: ll, armR: aR, armL: aL, torso: 5, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
 
-const CLAW_BOX = frontBox(100, hitOf(22, 'knockdown', 6, 4, 16));
+const CLAW_BOX = { ...frontBox(100, hitOf(22, 'knockdown', 6, 4, 16)), sfx: 'hit_heavy' };
 const POUND_HIT = { damage: 18, type: 'knockdown', kbX: 5, kbY: 5, hitstun: 16, once: true };
 const CRATE_SPEC = { fromSky: true, aimAt: true, style: 'crate', height: 230, gravity: 0.55, life: 200, damage: 24, type: 'knockdown', kbX: 4, kbY: 5, radius: 60, color: '#9a7040', r: 12, muzzle: false, draw: drawCrate };
 const HOOK_SPEC = { style: 'claw', chained: true, speed: 6, maxDist: 320, damage: 30, type: 'knockdown', kbX: -4, kbY: 4, hitstun: 24, offsetX: 40, offsetY: 50, color: STEEL, r: 9, life: 70, muzzle: false, draw: drawHookShot };
@@ -366,8 +366,8 @@ const hoisterAnims = {
     FK(14, { ...HC, armR: [-58, -22], armL: [-56, 16], torso: -10, head: -6, root: [-3, 0], legR: [11, 6], legL: [-15, 8], face: 'angry' }, { tell: true, sfx: 'hydraulic', ease: 'in' }),
     FK(10, { ...HC, armR: [-80, -22], armL: [-62, 14], torso: -16, head: -9, root: [-6, 0], squash: 0.97, stretch: 1.03, legR: [9, 6], legL: [-17, 10], face: 'angry' }, { tell: true, ease: 'out' }),
     FK(3, { ...HC, armR: [92, 8], armL: [-24, 26], torso: 24, head: 7, root: [5, 2], squash: 1.05, stretch: 0.95, legR: [32, 12], legL: [-26, 22], face: 'shout' },
-      { hitbox: CLAW_BOX, smear: { from: -150, to: 12, a: 0.55, r: 78 }, sfx: 'hammer_swing', hitSfx: 'hit_heavy', fx: [{ kind: 'slash', x: 60, y: 50, radius: 60, angle: 10 }], ease: 'overshoot' }),
-    FK(7, { ...HC, armR: [100, 12], armL: [-26, 26], torso: 27, head: 7, root: [6, 3], legR: [34, 12], legL: [-28, 24], face: 'shout' }, { hitbox: CLAW_BOX, hitSfx: 'hit_heavy', ease: 'out' }),
+      { hitbox: CLAW_BOX, smear: { from: -150, to: 12, a: 0.55, r: 78 }, sfx: 'hammer_swing', fx: [{ kind: 'slash', x: 60, y: 50, radius: 60, angle: 10 }], ease: 'overshoot' }),
+    FK(7, { ...HC, armR: [100, 12], armL: [-26, 26], torso: 27, head: 7, root: [6, 3], legR: [34, 12], legL: [-28, 24], face: 'shout' }, { hitbox: CLAW_BOX, ease: 'out' }),
     FK(30, { ...HC, armR: [42, 4], armL: [-34, 24], torso: 22, head: 4, root: [5, 3], legR: [30, 12], legL: [-24, 22], face: 'grit' }, { punish: true, ease: 'inout', fx: [HD(52)] }),
     FK(6, { ...HC, torso: 6 }, { ease: 'out' }),
   ] },
