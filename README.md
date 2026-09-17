@@ -42,6 +42,16 @@ launch after the one that fetched it. Touch controls appear the first time you t
 floating stick under your left thumb, and the buttons under your right — so no keyboard is needed.
 Turn the phone sideways; upright is too short a window to play in.
 
+**Online co-op works from an installed copy, both ways.** Hosting hands you a room code to read out,
+and a tap on the invite link under it opens your phone's share sheet (or copies it, on a desktop) —
+there is no address bar to lift it out of once the game is on your home screen. Joining a room has
+an on-screen picker for the code, so a thumb or a gamepad can type one without a keyboard. If two
+players' copies have drifted apart — an installed copy runs the build it cached until the next
+launch swaps in a newer one — the room says so and refuses rather than desyncing: close the game and
+open it again on both ends. One caveat is the phone's, not the game's: leaving the app (a call, the
+home button) stops it for as long as you are away, and the rest of the room drops you after eight
+seconds of it.
+
 ## Controls
 
 **One set of nine keys, and they never move.** Your whole hand sits on one 3×3 square of the keyboard:

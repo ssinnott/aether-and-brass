@@ -50,6 +50,13 @@ export function manifestJson() {
     orientation: 'landscape',
     background_color: '#000000',
     theme_color: '#0b0710',
+    // An invite link (?room=CODE) is a link into this scope, so an installed copy should be the
+    // thing that opens it rather than a browser tab beside it, and it should reuse the window that
+    // is already open instead of stacking a second one on top. Both are honoured where they are
+    // supported (Android) and ignored where they are not (iOS opens the browser regardless); the
+    // room code and the lobby's picker are what carry a guest in either way.
+    launch_handler: { client_mode: 'navigate-existing' },
+    handle_links: 'preferred',
     categories: ['games', 'entertainment'],
     icons: ICONS.map((i) => ({
       src: i.path,

@@ -25,10 +25,10 @@ operate.
 | Signalling | `src/net/signal.js` | Room codes over MQTT/WSS, split into a channel per pairing by `createSignalMux`; BroadcastChannel for the e2e test |
 | MQTT subset | `src/net/mqtt-codec.js` | Streaming parser: a WebSocket frame does not align with an MQTT packet |
 | Session | `src/net/session.js` | Roster, mesh, relay, signalling → lobby → match → lobby again, and the per-frame pump |
-| UI | `src/game/screens/lobby.js` | Host/join by room code, a cursor and a status column per seat, host's board pick, ready; `?room=CODE` invite links |
+| UI | `src/game/screens/lobby.js` | Host/join by room code, a cursor and a status column per seat, host's board pick, ready; `?room=CODE` invite links; an on-screen code picker and a tap-to-share link for a copy with no keyboard or address bar |
 | Hero cards | `src/game/screens/charcards.js` | The 140x200 cards, shared by the lobby and the local CHOOSE YOUR FIGHTER |
 | Board plaques | `src/game/screens/boardcards.js` | The plaque art and vignettes, shared by BOARD SELECT and the lobby's compact row |
-| Tests | `tools/nettest.js`, `tools/playtest.js` | Pure-Node suites plus two-page and four-page end-to-end matches, and a room that plays two boards in a row |
+| Tests | `tools/nettest.js`, `tools/playtest.js` | Pure-Node suites plus two-page and four-page end-to-end matches, a room that plays two boards in a row, and `tools/scenarios/roomcode.js` joining and inviting without a keyboard |
 
 ### Topology: a mesh, with the host as the fallback courier
 
@@ -235,6 +235,48 @@ party the lobby seated regardless of how many slots were joined locally beforeha
 off, `pollRaw(player)` reads the pad bound to that slot plus every unbound pad, so a pad drives the
 local player whether it was pressed before or after the keyboard, and a pad pressed mid-match can
 never claim somebody else's slot.
+
+### A copy installed on a home screen
+
+The game installs on a phone (`tools/pwa.js`, README "On a phone"), and an installed copy has no
+address bar, no keyboard and no reload button. None of that touches the netcode — the rendezvous is
+a `wss://` socket and the mesh is WebRTC, neither of which the service worker can see, and it
+declines anything it does not itself hold anyway — but three things in the lobby were written as if
+a browser tab were always there:
+
+**Joining needed a keyboard.** The room code is read raw off `keydown`, because every letter of the
+code alphabet is also a game key (C X Z are P1's dodge, jump and attack), and the phase's `update()`
+returned before sampling any action so that typing a C could not also back you out. On a
+touchscreen that left JOIN A GAME reachable and unusable: nothing to type with, and — since BACK is
+an action, not a key — no way off the screen either. The fix keeps the two halves apart rather than
+merging them: `input.offKeyPressed()` reports the same edges from the devices that have no letters
+on them (pad, touch, the test virtual), and the on-screen picker is driven by those alone. A
+keyboard player never sees the cursor move; a thumb never types a letter into anything but the code.
+
+**Inviting needed an address bar.** The host still writes a guest-facing `?room=CODE` link into the
+URL with `replaceState`, which is where a tab's address bar picks it up — but an installed copy
+shows no URL at all. The drawn address is therefore a tap target (`engine/links.js` share zones):
+one tap hands it to the platform's share sheet, or to the clipboard where there is no sheet. It has
+to be a rect and not a menu row because both APIs demand a real user gesture, and the game's menu
+presses happen in a rAF callback, which is refused — the same constraint the title's SOURCE CODE row
+lives with. The label under the code is drawn in the 5x7 font's capitals and is a label, not a
+transcript: the address itself is lowercase, and the screen says so for anyone copying it by hand.
+Where the platform honours it (`launch_handler` / `handle_links` in the manifest), an invite link
+opens the installed copy rather than a tab beside it; iOS opens the browser regardless, which works
+and is simply a second copy of the same page.
+
+**Versions drift differently.** The worker is cache-first with no revalidation, so an installed copy
+runs the build it cached until a launch swaps a newer one in — it is likelier than a tab to be a
+build behind, which is exactly what `PROTOCOL_VERSION` in `HELLO` exists to catch. The refusal
+therefore says *reopen the game* rather than *reload the page*: there is no reload in a fullscreen
+installed copy, and closing and opening it is both the instruction that works there and a reload
+everywhere else.
+
+One thing is deliberately left alone: the disconnect watchdog is a 250ms `setInterval` against
+`STALL_TIMEOUT_MS`, and a backgrounded phone has its timers throttled and its rAF stopped, so
+leaving the app for more than eight seconds drops that player. That is true of a mobile browser too,
+and every alternative — a longer timeout, pausing the room on `visibilitychange` — makes the room
+wait on somebody who may never come back. The room drops them and the bot takes the seat.
 
 ### The match boundary
 

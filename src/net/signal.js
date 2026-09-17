@@ -15,8 +15,13 @@
 
 import { createParser, encodeConnect, encodeSubscribe, encodePublish, encodePingReq, PKT } from './mqtt-codec.js';
 
-/** Room codes: no vowels (so no accidental words) and no 0/O/1/I/L ambiguity when read aloud. */
-const ALPHABET = '23456789BCDFGHJKMNPQRSTVWXYZ';
+/**
+ * Room codes: no vowels (so no accidental words) and no 0/O/1/I/L ambiguity when read aloud. Every
+ * code in the game is drawn from this set, so it is also the set the lobby's on-screen picker offers
+ * a player with no keyboard (screens/lobby.js).
+ */
+export const ROOM_ALPHABET = '23456789BCDFGHJKMNPQRSTVWXYZ';
+const ALPHABET = ROOM_ALPHABET;
 
 /** A short, unambiguous, unguessable room code. */
 export function makeRoomCode(len = 6) {

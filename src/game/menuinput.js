@@ -40,6 +40,21 @@ export function confirmPressed(inp, player) { return inp.pressed(player, 'attack
 export function cancelPressed(inp, player) { return inp.pressed(player, 'jump') || inp.pressed(player, 'dodge'); }
 
 /**
+ * CONFIRM and BACK from a pad or the on-screen touch buttons only, never from the keyboard.
+ *
+ * One screen needs this: the lobby typing a room code reads the keyboard raw, so the letters must
+ * not also fire menu actions (file header of screens/lobby.js) - but a phone or a pad has no
+ * letters to type with and needs its picker driven all the same.
+ * @param {Input} inp
+ * @param {number} player
+ * @returns {boolean}
+ */
+export function confirmPressedOffKeys(inp, player) { return inp.offKeyPressed(player, 'attack') || inp.offKeyPressed(player, 'start'); }
+
+/** BACK from a pad or the on-screen buttons only. @param {Input} inp @param {number} player @returns {boolean} */
+export function cancelPressedOffKeys(inp, player) { return inp.offKeyPressed(player, 'jump') || inp.offKeyPressed(player, 'dodge'); }
+
+/**
  * The global half of BACK: the Escape edge, or `false` for an overlay that must not diverge between
  * netplay peers (see the file header).
  * @param {Input} inp

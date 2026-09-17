@@ -705,7 +705,10 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     if (!m) return;
     switch (m.type) {
       case MSG.HELLO: {
-        if (m.v !== PROTOCOL_VERSION) { net.versionMismatch = true; net.end('different game version - both reload the page'); break; }
+        // "Reopen", not "reload": a copy installed on a home screen has no reload button, and its
+        // worker only swaps the cached build in on a fresh launch (tools/pwa.js), so closing the app
+        // and opening it again is both the instruction that works there and a reload in a tab.
+        if (m.v !== PROTOCOL_VERSION) { net.versionMismatch = true; net.end('different game version - both reopen the game'); break; }
         if (!isHost) break;
         // The host seats an arrival here rather than on the open: this is the first moment their
         // version is known good and their player id (which names the group's progress) is in hand.

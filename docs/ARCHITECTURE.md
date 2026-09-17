@@ -88,7 +88,7 @@ src/
     text.js                # drawText(ctx, str, x, y, opts) using a built-in procedural pixel font (see 9)
     particles.js           # pooled particle system (sparks, dust, smoke, steam, debris, floating text)
     audio.js               # WebAudio synth: sfx.play(name, opts), music.play(track), master mute
-    links.js               # the one module that navigates: opens the repo in a tab, owns the canvas's clickable rect
+    links.js               # the one module that navigates: opens the repo in a tab, shares the lobby invite link, owns the canvas's clickable rects
     math.js                # clamp, lerp, approach, sign, rectsOverlap, easing helpers
     timer.js               # simple cooldown/tween helpers (optional)
   art/
@@ -205,6 +205,7 @@ export const input = {
   update(),                           // call once per fixed step; polls gamepads; ages buffers
   held(player, action) -> bool,
   pressed(player, action) -> bool,    // true only on the step the key went down
+  offKeyPressed(player, action) -> bool,  // the same edge from a pad / touch / virtual only, never the keyboard
   buffered(player, action, frames=8) -> bool,  // pressed within the last N steps; consume() clears it
   consume(player, action),
   axis(player) -> { x: -1|0|1, y: -1|0|1 },
@@ -234,6 +235,7 @@ export const input = {
 }
 ```
 Players are `0..3` (`MAX_PLAYERS`), but couch play fills only the first `LOCAL_PLAYERS = 2`: slots 0/1 own a nine-key keyboard block each and a pad claims one of those two, never beyond. Slots 2/3 are an online room's seats (`NET_PLAYERS = 4`, handed out by the lobby) or a test virtual — `joinPressed()`, `freeSlots()`, `nextPadSlot()` and `claimPads()` all stop at the cap, so no local press and no hint can reach them. Gamepads are not index-bound: an unbound pad's first BUTTON edge (axes ignored) claims the lowest COUCH slot with no pad whose keyboard block is unused (`kbSeen`) and that isn't a netplay virtual slot — that press counts as the slot's join and is then SPENT: `update()` clears that slot's `pressedNow`/`bufAge` for the step, so the claiming button fires no action (`cur` is untouched, so a held button is still held). Without it the same press is that slot's `attack`, i.e. a CONFIRM: it launches a run from the title and locks a hero on character select for whoever already holds the seat — which is how a re-claim of an orphaned seat used to choose somebody else's fighter. Claims (and `kbSeen`) reset on title entry (`resetClaims()`). Netplay turns claiming off (`setPadClaiming(false)`, `lobby.js`/`session.js`); while off, `pollRaw(player)` reads the pad bound to that slot plus every unbound pad, so a pad drives the local player whether pressed before or after the keyboard and can never claim the peer's slot mid-match. Use the standard gamepad mapping (d-pad + left stick, buttons per GDD).
+`offKeyPressed()` is the same edge machine fed only by the devices with no letters on them (pad, touch, a test virtual): pad and touch land in an `offKey` map first and are OR-ed into `cur` after, so `pressed()` still sees every device at once. One screen needs the split — the lobby typing a room code reads the keyboard raw, since C X Z are both code characters and P1's dodge/jump/attack, so its on-screen picker is driven off the keyboard-free edges and the two never collide (`docs/MULTIPLAYER.md`, "A copy installed on a home screen").
 The three binding layouts are `p1`, `p2` (one nine-key block each) and `pad` (shared gamepad map) —
 one per player, because one player has one set of keys; `engine/bindings.js` owns `DEFAULT_BINDINGS`,
 `BINDINGS_LAYOUT`, `LAYOUTS` and the pure `cloneBindings` / `sanitiseBindings` / `rebindKey` /
@@ -318,16 +320,23 @@ canvas, which is why `engine/links.js` is mouse-only.
 
 ### `engine/links.js`
 The only module in the build that leaves the canvas: the title's SOURCE CODE row and the repository
-address drawn under it (`constants.js` `REPO_URL` / `REPO_LABEL`).
+address drawn under it (`constants.js` `REPO_URL` / `REPO_LABEL`), and the lobby's invite link.
 ```js
 export const links = {
-  init(view),                    // main.js, beside touch.init: mouse listeners on the display canvas
+  init(view),                    // main.js, beside touch.init: mouse listeners on the display canvas (plus pointerdown for share zones)
   open(url) -> bool,             // new tab; false when the browser refused it (popup blocker)
-  setZone({ x, y, w, h, url, onOpen }),  // the clickable rect, in internal 640x360 px
+  share(url, title, done),       // share sheet, else clipboard; done('shared'|'copied'|'') once known
+  setZone({ x, y, w, h, url, onOpen }),          // an OPEN zone: the clickable rect, in internal 640x360 px
+  setZone({ x, y, w, h, url, share: true, title, onShare }),  // a SHARE zone: clickable AND tappable
   clearZone(),                   // screens release it in exit()
   hot,                           // true while a mouse rests on the zone, so the screen can light it
 };
 ```
+An OPEN zone is mouse-only (see `engine/touch.js`: a tap never produces a synthetic click). A SHARE
+zone also takes `pointerdown` from a finger, because there is no menu row that could stand in for it:
+the share sheet and the clipboard both demand a real user gesture, which a rAF-driven menu press is
+not. That is what lets a copy installed on a home screen — no address bar to copy a link out of —
+send its room invite at all (`docs/MULTIPLAYER.md`).
 One zone at a time, claimed by the screen on top of the stack. Two ways to follow one link because
 neither alone covers every player: a **menu row** calls `open()` from the fixed step (keyboard, pad and
 the on-screen touch buttons), which a popup blocker may refuse — hence the boolean, and the address
@@ -928,7 +937,12 @@ Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAI
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
 (`boardcards.js`, compact) on one screen, with the room's other two to three players driving the
 P2-P4 cursors, a status column per seat, and no two players allowed on one hero
-(docs/MULTIPLAYER.md). Intro: stage card 2.5s
+(docs/MULTIPLAYER.md). Its JOIN half reads the room code raw off `keydown` (every code character is
+also a game key) and offers the same code on an on-screen picker driven by `input.offKeyPressed` — a
+phone or a pad has nothing to type with, and before the picker existed that screen could be entered
+and not left. Hosting draws the guest-facing `?room=` link as a SHARE zone (`engine/links.js`): a tap
+or click hands it to the share sheet or the clipboard, which is the only way an installed copy with
+no address bar can pass it on. Intro: stage card 2.5s
 (skip on attack). Results: score, max combo, grade, time, "PRESS START".
 Training (issue #22): `title → select(next:'training') → training ⇄ trainpause → moves | trials`.
 `TrainingScreen` (`screens/training.js`) extends `GameplayScreen` and runs stage 1's THE BRASS FUNICULAR

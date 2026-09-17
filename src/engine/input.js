@@ -48,6 +48,10 @@ function makeActionMap(v = false) {
 }
 function makePlayer() {
   return { cur: makeActionMap(), prev: makeActionMap(), pressedNow: makeActionMap(), bufAge: makeActionMap(NEVER), virtual: null, device: 'none',
+    // The same state again for the devices that CANNOT type: pad, touch and the test virtual. A
+    // screen that reads the keyboard raw (the lobby's room code) drives its cursor off these, so
+    // typing a C is not also a dodge. See offKeyPressed() below.
+    offKey: makeActionMap(), offKeyPrev: makeActionMap(), offKeyPressed: makeActionMap(),
     joined: false, joinNow: false, run: false, gpAny: false, gpAnyPrev: false, pad: -1, kbSeen: false, idleFrames: 0 };
 }
 const players = Array.from({ length: MAX_PLAYERS }, makePlayer);
@@ -219,12 +223,14 @@ export const input = {
     for (let p = 0; p < players.length; p++) {
       const pl = players[p];
       const map = bindings.keyboard[p];
-      for (const a of ACTIONS) pl.prev[a] = pl.cur[a];
+      for (const a of ACTIONS) { pl.prev[a] = pl.cur[a]; pl.offKeyPrev[a] = pl.offKey[a]; pl.offKey[a] = false; }
       pl.run = false;
       pl.gpAnyPrev = pl.gpAny;
       pl.joinNow = claimed.has(p);
       if (pl.virtual) {
-        for (const a of ACTIONS) pl.cur[a] = !!pl.virtual[a];
+        // A virtual slot is netplay's injected mask or a test hook -- never this machine's keyboard,
+        // so it counts as off-keyboard too and the harness can drive a picker with setInput().
+        for (const a of ACTIONS) pl.cur[a] = pl.offKey[a] = !!pl.virtual[a];
         pl.run = !!pl.virtual.run;
         pl.device = 'virtual';
         pl.gpAny = false;
@@ -236,12 +242,15 @@ export const input = {
           if (v) kb = true;
         }
         if (p === 0 && kb) pl.kbSeen = true;
-        pl.gpAny = pl.pad >= 0 ? readGamepad(pl.pad, pl.cur, pl) : (p === 0 && !claiming ? readUnboundPads(pl.cur, pl) : false);
+        // Pad and touch land in `offKey` first and are OR-ed into `cur` after, so both reads stay
+        // available: `cur` is every device at once, `offKey` only the ones with no letters on them.
+        pl.gpAny = pl.pad >= 0 ? readGamepad(pl.pad, pl.offKey, pl) : (p === 0 && !claiming ? readUnboundPads(pl.offKey, pl) : false);
         let touched = false;
         if (p === 0 && touchActions) {
-          for (const a of ACTIONS) if (touchActions[a]) { pl.cur[a] = true; touched = true; }
+          for (const a of ACTIONS) if (touchActions[a]) { pl.offKey[a] = true; touched = true; }
           if (touchActions.run) pl.run = true;
         }
+        for (const a of ACTIONS) if (pl.offKey[a]) pl.cur[a] = true;
         pl.device = touched ? 'touch' : pl.gpAny ? 'gamepad' : kb ? 'keyboard' : pl.device;
         // "this player pressed one of their OWN keys" (used for P2+ drop-in): an edge on any key of
         // this player's own block (the blocks are disjoint, invariant (c) in bindings.js, so there
@@ -253,6 +262,7 @@ export const input = {
       for (const a of ACTIONS) {
         const pressed = pl.cur[a] && !pl.prev[a];
         pl.pressedNow[a] = pressed;
+        pl.offKeyPressed[a] = pl.offKey[a] && !pl.offKeyPrev[a];
         pl.bufAge[a] = pressed ? 0 : Math.min(NEVER, pl.bufAge[a] + 1);
       }
       // The press that CLAIMS a pad to a slot is spent on the claim and produces no action edge for
@@ -263,7 +273,7 @@ export const input = {
       // button is genuinely held), so only the edge is spent: releasing and pressing again acts
       // normally. screens/title.js guards the same hazard for a slot that JOINS this step with its
       // own `joinedNow` mask; a re-claim of a slot that was already joined never reached that mask.
-      if (claimed.has(p)) for (const a of ACTIONS) { pl.pressedNow[a] = false; pl.bufAge[a] = NEVER; }
+      if (claimed.has(p)) for (const a of ACTIONS) { pl.pressedNow[a] = false; pl.offKeyPressed[a] = false; pl.bufAge[a] = NEVER; }
       // Frames of total silence from this seat. HELD counts, not just edges: somebody walking right
       // for ten seconds presses nothing new the whole time, and `bufAge` (per action, edge-only)
       // would call them idle. Reset by any held action or the pad's run trigger.
@@ -278,6 +288,15 @@ export const input = {
   held(player, action) { return !!players[player].cur[action]; },
   /** True only on the step the action went down. */
   pressed(player, action) { return !!players[player].pressedNow[action]; },
+  /**
+   * The same edge, but only from a device with no letters on it: a gamepad, the on-screen touch
+   * buttons, or a test virtual. The keyboard is excluded on purpose.
+   *
+   * For the one screen that reads the keyboard RAW - the lobby typing a room code, where C X Z are
+   * also P1's dodge, jump and attack - this is how its on-screen picker can still be driven by a
+   * thumb or a pad while every keypress goes to the code being typed and nowhere else.
+   */
+  offKeyPressed(player, action) { return !!players[player].offKeyPressed[action]; },
   /** Pressed within the last `frames` steps (inclusive of this step). Use consume() to clear it. */
   buffered(player, action, frames = INPUT_BUFFER) { return players[player].bufAge[action] < frames; },
   /** Clear the buffer for an action (after acting on it). */
@@ -294,7 +313,7 @@ export const input = {
    */
   clearBuffers(player = -1) {
     const list = player < 0 ? players : [players[player]];
-    for (const pl of list) for (const a of ACTIONS) { pl.bufAge[a] = NEVER; pl.pressedNow[a] = false; }
+    for (const pl of list) for (const a of ACTIONS) { pl.bufAge[a] = NEVER; pl.pressedNow[a] = false; pl.offKeyPressed[a] = false; }
   },
   /** Movement axis as {x, y} in -1|0|1. */
   axis(player) {

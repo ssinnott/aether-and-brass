@@ -73,6 +73,10 @@ else {
       if (size.w !== w || size.h !== h) fail(`${icon.src} is ${size.w}x${size.h} but the manifest says ${icon.sizes}`);
     }
     if (!(manifest.icons || []).some((i) => i.purpose === 'maskable')) fail(`${MANIFEST_PATH} has no maskable icon; Android will letterbox the emblem`);
+    // An invite link (?room=CODE) is a link into the app's own scope. Without these an installed
+    // copy is not the thing that opens one, and a launch lands beside the room already on screen.
+    if (!manifest.handle_links) fail(`${MANIFEST_PATH} has no handle_links; an installed copy would not open its own invite links`);
+    if (!manifest.launch_handler) fail(`${MANIFEST_PATH} has no launch_handler; an invite link would open a second window over the running game`);
   }
 }
 

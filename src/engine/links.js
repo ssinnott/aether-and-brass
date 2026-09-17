@@ -1,8 +1,21 @@
-// Outward links: the one module in the build that navigates anywhere. Everything else the game does
-// happens on the canvas, so this exists solely for the title's SOURCE CODE row and the repository
-// address drawn under it (constants.js REPO_URL / REPO_LABEL).
+// Outward links: the one module in the build that navigates anywhere, or hands an address to the
+// platform. Everything else the game does happens on the canvas, so this exists for the title's
+// SOURCE CODE row and the repository address drawn under it (constants.js REPO_URL / REPO_LABEL),
+// and for the lobby's invite link.
 //
-// One link, two ways to follow it, because neither alone reaches every player:
+// Two kinds of zone, because the two addresses want different things:
+//
+//  - an OPEN zone follows the address in a new tab (the title's repository row), and
+//  - a SHARE zone hands it to the phone's share sheet, or failing that the clipboard (the host's
+//    invite link). A copy of the game on a home screen has no address bar to copy a link out of,
+//    which is the only reason this exists: in a browser tab you would just use the address bar.
+//
+// Both the share sheet and the clipboard demand a real user gesture, so a SHARE zone is reachable
+// by a tap as well as a click - the game's own fixed-step menu press is a rAF callback and would be
+// refused. `share()` reports what actually happened, asynchronously, because neither API answers
+// straight away (and a share sheet the player dismisses must not read as sent).
+//
+// The repository link has two ways to follow it, because neither alone reaches every player:
 //
 //  - A menu row calls `open()` from the fixed step, which serves keyboard, gamepad and the on-screen
 //    touch buttons alike. That is a rAF callback rather than an event handler, so a browser that
@@ -12,16 +25,20 @@
 //    always opens. The screen that draws the address claims the rect in `enter()` and releases it in
 //    `exit()`; the zone is in internal 640x360 space like everything else on screen.
 //
-// Mouse only: engine/touch.js preventDefaults `touchstart`, so a tap never produces a synthetic
-// click here, and a touch player follows the menu row instead.
+// An OPEN zone is mouse only: engine/touch.js preventDefaults `touchstart`, so a tap never produces
+// a synthetic click here, and a touch player follows the menu row instead. A SHARE zone also takes
+// `pointerdown` from a finger, since a menu row cannot do its job for it.
 /**
  * @typedef {object} LinkZone
  * @property {number} x left edge in internal px
  * @property {number} y top edge in internal px
  * @property {number} w width in internal px
  * @property {number} h height in internal px
- * @property {string} url the address a click on the rect opens
- * @property {(opened: boolean) => void} [onOpen] told whether the tab actually opened
+ * @property {string} url the address a click on the rect opens (or shares)
+ * @property {boolean} [share] hand the address to the share sheet / clipboard instead of opening it
+ * @property {string} [title] what the share sheet calls it
+ * @property {(opened: boolean) => void} [onOpen] an open zone: told whether the tab actually opened
+ * @property {(how: 'shared'|'copied'|'') => void} [onShare] a share zone: told how it went ('' = not at all)
  */
 
 /** @type {{displayCanvas: HTMLCanvasElement, toInternal(x: number, y: number): {x: number, y: number}}|null} */
@@ -42,6 +59,26 @@ function setHot(next) {
   hot = next;
   const el = view && view.displayCanvas;
   if (el && el.style) el.style.cursor = next ? 'pointer' : '';
+}
+
+/** Act on a zone a gesture landed in: share it, or open it. @param {LinkZone} z */
+function hit(z) {
+  if (z.share) { links.share(z.url, z.title, z.onShare); return; }
+  const opened = links.open(z.url);
+  if (z.onOpen) z.onOpen(opened);
+}
+
+/**
+ * Put `url` on the clipboard. The last resort of share(), and refused outside a secure context or a
+ * gesture - which is reported rather than assumed.
+ * @param {string} url
+ * @param {(how: 'copied'|'') => void} tell
+ */
+function copyToClipboard(url, tell) {
+  const clip = typeof navigator !== 'undefined' && navigator.clipboard;
+  if (!clip || !clip.writeText) { tell(''); return; }
+  try { clip.writeText(url).then(() => tell('copied'), () => tell('')); }
+  catch { tell(''); }
 }
 
 export const links = {
@@ -66,9 +103,15 @@ export const links = {
     el.addEventListener('click', (e) => {
       if (!zone || e.button !== 0) return;
       if (!inZone(v.toInternal(e.clientX, e.clientY))) return;
-      const z = zone;
-      const opened = links.open(z.url);
-      if (z.onOpen) z.onOpen(opened);
+      hit(zone);
+    });
+    // A finger, for a share zone only. touch.js has its own pointerdown listener on this element and
+    // preventDefaults there; that stops the browser panning, not this listener, and does not spend
+    // the gesture the share sheet and the clipboard both need.
+    el.addEventListener('pointerdown', (e) => {
+      if (!zone || !zone.share || e.pointerType === 'mouse') return;
+      if (!inZone(v.toInternal(e.clientX, e.clientY))) return;
+      hit(zone);
     });
   },
 
@@ -86,6 +129,33 @@ export const links = {
 
   /** Release the claimed rect (screens call this from `exit()`). */
   clearZone() { links.setZone(null); },
+
+  /**
+   * Hand `url` to the platform: the share sheet where there is one (every phone), the clipboard
+   * otherwise (every desktop). MUST be called inside a real gesture - the listeners above are, the
+   * fixed step is not.
+   *
+   * A dismissed share sheet is not a failure to fall back from: the player saw the sheet and closed
+   * it, so it reports '' and nothing is copied behind their back.
+   * @param {string} url
+   * @param {string} [title] what the sheet calls it
+   * @param {(how: 'shared'|'copied'|'') => void} [done] how it went, once it is known
+   */
+  share(url, title, done) {
+    const tell = (how) => { if (done) done(how); };
+    if (!url) { tell(''); return; }
+    try {
+      const nav = typeof navigator !== 'undefined' ? navigator : null;
+      if (nav && nav.share) {
+        nav.share(title ? { title, url } : { url }).then(
+          () => tell('shared'),
+          (e) => { if (e && e.name === 'AbortError') tell(''); else copyToClipboard(url, tell); },
+        );
+        return;
+      }
+      copyToClipboard(url, tell);
+    } catch { tell(''); }
+  },
 
   /**
    * Open `url` in a new tab.
