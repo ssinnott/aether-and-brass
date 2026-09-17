@@ -193,15 +193,18 @@ function bagBody(ctx, rig, cx, cy, rx, ry, gas) {
   const t = tones(rig, GLEAN.silk);
   ctx.save();
   pathEllipse(ctx, cx, cy, rx, ry); ctx.clip();
-  ctx.fillStyle = t.deep; ctx.fillRect(R(cx - rx * 0.2), R(cy - ry * 0.9), 1, R(ry * 1.8));    // gore seam: form, no ink
   if (gas > 0.02) {
+    // the belly glow: the gas the envelope is FULL of, and it is the wide soft half of the light
     const gy = R(cy + ry * 0.22), a0 = ctx.globalAlpha;
-    ctx.globalAlpha = a0 * (0.16 + gas * 0.66);
+    ctx.globalAlpha = a0 * (0.14 + gas * 0.5);
     ctx.fillStyle = rig.col(GLEAN.rose);
     pathEllipse(ctx, cx, gy, Math.max(3, R(rx * 0.72)), Math.max(2.5, R(ry * 0.52))); ctx.fill();
+    bagBurner(ctx, rig, cx, cy, rx, ry, gas, a0);
     ctx.globalAlpha = a0;
-    if (gas > 0.6) { ctx.fillStyle = rig.col(GLEAN.hot); ctx.fillRect(R(cx) - 1, gy - 1, 2, 3); }
   }
+  // the gores go on LAST, so the panel seams cross the lit gas instead of being drowned by it: an envelope with light
+  // inside it, rather than a disc with a pink blob on it (which is what one 1px seam under the glow measured as).
+  bagGores(ctx, rig, cx, cy, rx, ry, t);
   ctx.restore();
   // ONE 1px rim on the lit edge of a big shape (ART_STYLE 0.4 / 3), which is the light mark a bag this size is
   // allowed and the celPath cap alone was not giving it: the cap lands inside the silhouette, the rim lands on it.
@@ -210,6 +213,57 @@ function bagBody(ctx, rig, cx, cy, rx, ry, gas) {
   // salvage rather than as a balloon. Kept small and low on the shadowed side — at 0.62 rx it was a bar across the
   // widest part of the bag and broke the silhouette it is supposed to decorate.
   if (rx >= 12) band(ctx, rig, R(cx - rx * 0.68), R(cy + ry * 0.24), R(rx * 0.45), 4, GLEAN.sack, 2);
+}
+/**
+ * THE GORES: the envelope's panel seams, and the single mark that turns an oval into a balloon. Meridians of the bag's
+ * own ellipsoid — they converge on the crown and on the throat and bow out at the belly, which is exactly what a sewn
+ * panel does and exactly what one 1px seam under the glow could not say. `t.deep` at 1px, so this is FORM and not ink
+ * (ART_STYLE 0.2: the silhouette carries the ink, a tone within it carries the surface).
+ *
+ * They run VERTICALLY on every bag, including the wide ones. The first cut ran them along each bag's long axis, which
+ * gave the wide bags an airship's horizontal hull banding — and the canopy read as a flying saucer and the Chaff's
+ * slack bag as a hamburger, because neither of them is a rigid hull: every bag in this faction is a GATHERED SACK
+ * lashed at a throat, and a gathered sack's panels run crown-to-throat. One rule, and it is the rule the rope band
+ * under the belly and the yoke at the throat were already telling the player.
+ */
+function bagGores(ctx, rig, cx, cy, rx, ry, t) {
+  if (rig.override) return;
+  const n = rx >= 13 ? 2 : 1;   // a narrow bag gets one gore a side: five 1px lines on a 20px bag is hatching, not panels
+  ctx.strokeStyle = t.deep; ctx.lineWidth = 1; ctx.lineCap = 'butt';
+  for (let i = -n; i <= n; i++) {
+    // i 0 is the seam facing the player, which projects to a straight line; the rest bow by sin(longitude). The
+    // outermost pair stops short of the half-width so it never lands on the limb, where the outline already is.
+    const w = Math.max(0.5, Math.abs(i / (n + 0.25)) * rx);
+    ctx.beginPath();
+    if (i === 0) { ctx.moveTo(cx, cy - ry); ctx.lineTo(cx, cy + ry); }
+    else ctx.ellipse(cx, cy, w, ry, 0, i > 0 ? -Math.PI / 2 : Math.PI / 2, i > 0 ? Math.PI / 2 : Math.PI * 1.5);
+    ctx.stroke();
+  }
+}
+/**
+ * THE BURNER: the gas comes in at the THROAT, where the lines gather it, and stands up inside the envelope. The glow
+ * used to be an ellipse in the middle of the bag — light with no source, which reads as a lamp rather than as a bag
+ * being filled. A flame with a base and a tip gives the tell a direction, and it is the same two channels the faction
+ * already promises (rig.gas / rig.swell): the flame simply grows up the envelope as the gas comes up.
+ * Clipped by the caller's bag path, so the base is cut off at the mouth exactly where the rope band lands.
+ */
+function bagBurner(ctx, rig, cx, cy, rx, ry, gas, a0) {
+  const by = cy + ry * 0.92, tip = by - ry * (0.5 + gas * 0.8), w = Math.max(2, rx * 0.22);
+  ctx.globalAlpha = a0 * (0.3 + gas * 0.6);
+  ctx.fillStyle = rig.col(GLEAN.rose);
+  ctx.beginPath();
+  ctx.moveTo(cx - w, by);
+  ctx.quadraticCurveTo(cx - w, tip + (by - tip) * 0.34, cx, tip);
+  ctx.quadraticCurveTo(cx + w, tip + (by - tip) * 0.34, cx + w, by);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = a0;
+  // the mandated 1-2px hot core, now at the BURNER instead of floating in the belly. Gated at 0.5 so a bag at rest
+  // (gas 0.25) carries no hot pixel and the tell still lights one: the two-channel read is unchanged.
+  if (gas > 0.5) {
+    const hh = Math.max(2, R(ry * (0.1 + gas * 0.22)));
+    ctx.fillStyle = rig.col(GLEAN.hot);
+    ctx.fillRect(R(cx) - 1, R(by) - hh, 2, hh);
+  }
 }
 /** Chalk crop-cross guild mark, stretched by the swell so the mark distorts as a second read. */
 function cropMark(ctx, rig, cx, cy, k, col, tally) {
@@ -226,15 +280,41 @@ function cropMark(ctx, rig, cx, cy, k, col, tally) {
  * arms). The spars now leave the body at the SHOULDERS and land on the bag's own shoulders, so a pair of lines
  * passes either side of the hood: the old yoke started at x +-2.5, directly behind the neck, where the head covered
  * both spars and the bag read as a balloon parked above a man rather than as the thing he is hanging from. This is
- * the single mark that answers "blob on a stick", and it is two strokes.
+ * the mark that answers "blob on a stick", and the curtain below it is the rest of the answer.
  */
-function bagYoke(ctx, rig, cy, spars, rx) {
-  const p = rig.p, top = -p.torsoH + 2, sx = R(p.torsoW * 0.5 - 1);
+function bagYoke(ctx, rig, cx, cy, rx, ry, spars) {
+  const p = rig.p, top = -p.torsoH + 2, sx = R(p.torsoW * 0.5 - 1), land = cy + ry * 0.5;
   ctx.strokeStyle = rig.col(GLEAN.rope); ctx.lineWidth = 2; ctx.lineCap = 'round';
   ctx.beginPath();
   for (let i = 0; i < spars; i++) {
     const f = spars > 1 ? (i - (spars - 1) / 2) / ((spars - 1) / 2) : 0;
-    ctx.moveTo(R(f * sx), top); ctx.lineTo(R(f * rx * 0.72), R(cy));
+    // +cx: the spars land on the BAG, which on the Chaff's slack bag is 8px off the centreline. They used to land on
+    // x = f*rx*0.72 about the body's own axis, so the one asymmetric bag in the faction hung off nothing on one side.
+    ctx.moveTo(R(f * sx), top); ctx.lineTo(R(cx + f * rx * 0.72), R(land));
+  }
+  ctx.stroke();
+  if (rig.override) return;
+  // THE SUSPENSION CURTAIN: the rigging an envelope's load actually hangs on — a fan off the bag's lower flank,
+  // gathered onto the same two shoulder anchors the spars use. The spars are the mark that answers "blob on a stick"
+  // (see above) and this is the rest of that sentence: it is the difference between a bag tied to a man and a man
+  // slung under a balloon. 1px against the spars' 2 so the load lines still read as the load lines, and ROPE — at
+  // sleeve value and 3px this is a second pair of arms, which is the mistake the yoke itself already made once.
+  //
+  // It gathers just OUTSIDE the shoulder point the spars use (sx + 1), because on the narrow bags every one of these
+  // lines runs inside the head's own width and at +-sx the hood swallowed the lot of them. THREE LINES A SIDE ONLY
+  // ON THE WIDE BAGS, and this is a measured budget rather than a taste call. `stage-values
+  // --faction=gleaning` costs the curtain about 0.6 of `edge` and of `lost%` on all four board-4 sections: it is
+  // hemp (L* 51.5) laid over a board whose own ground is cool and mid, so every line of it closes the actor/backdrop
+  // gap the palette pass opened. On the narrow bags (`tall` at rx 10, `taut` at 15) the third line lands inside the
+  // hood's own width and is not visible for the price, so it does not get drawn.
+  const fs = rx >= 16 ? [0.4, 0.72, 0.97] : [0.55, 0.97], anchor = sx + 1;
+  ctx.lineWidth = 1; ctx.beginPath();
+  for (let s = -1; s <= 1; s += 2) {
+    for (const f of fs) {
+      // the attach point rides the ellipse's own lower limb, so the fan always lands ON the silk it is carrying
+      ctx.moveTo(R(cx + s * rx * f), R(cy + ry * Math.sqrt(1 - f * f) * 0.94));
+      ctx.lineTo(R(s * anchor), top);
+    }
   }
   ctx.stroke();
 }
@@ -287,7 +367,7 @@ export function drawBladder(ctx, rig, pose) {
   const ch = bagChain(rig), pivot = R(-p.torsoH + 2);
   ctx.save();
   ctx.translate(0, pivot); ctx.rotate(rad(ch.ang[0] * 0.8)); ctx.translate(0, -pivot);   // the load swings on its lines
-  bagYoke(ctx, rig, cy + ry * 0.5, b.bagShape === 'canopy' ? 4 : 2, rx);
+  bagYoke(ctx, rig, cx, cy, rx, ry, b.bagShape === 'canopy' ? 4 : 2);
   if (b.bagShape === 'twin') {
     // lobes pushed out to tangent so a real notch opens at the top: at 0.48/0.56 the pair was one wide circle at squint
     const lr = R(rx * 0.6), lx = R(rx * 0.58);
