@@ -5,7 +5,7 @@
 import { strike } from '../art/animLib.js';
 import { drawCorsairCutlass } from '../art/weapons.js';
 import { drawHalberd, drawRapier } from '../content/enemies/brassbound.js';
-import { drawShovel } from '../content/enemies/chandler.js';
+import { drawShovel } from '../content/enemies/chandlerKit.js';
 import { VIEW_W } from '../constants.js';
 
 /**
