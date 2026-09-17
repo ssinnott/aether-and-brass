@@ -13,7 +13,7 @@ import { clamp } from '../engine/math.js';
 import { floatText, drawWind, windDrag, WIND_COLOR, WIND_BANNER } from '../art/fx.js';
 import { rrect, circle, poly, pathPoly } from '../art/shapes.js';
 import { tones } from '../art/props.js';
-import { OL, ROSE, AIR_STATES } from './hazards.js';  // the board ink, tailings rose and air-state set both halves paint with
+import { OL, ROSE, AIR_STATES, TELL_RED } from './hazards.js';  // the board ink, tailings rose and air-state set both halves paint with
 
 const MOLTEN_Z = 20, RAIL = 12, DAIS_EVERY = 30, DAIS_DMG = 4, CONVEYOR_EVERY = 240;
 /** How far past the lip a scalded player is thrown, and the forward drift that carries them there. */

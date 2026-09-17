@@ -76,7 +76,9 @@ export const AIR_STATES = new Set([ST.KNOCKDOWN, ST.THROWN, ST.HURT_AIR]);
 /** Board energy colours (docs/ART_STYLE 4): storm violet / gas green (board 2), rite lime / quicklime / tallow (board 3), tailings rose (board 4). */
 const STORM = '#9B7BFF', GAS = '#7FD66B', LIME = '#D8FF6E', QUICKLIME = '#E6ECDC', TALLOW = '#C29B4A';
 export const ROSE = '#FF57B0';
-const HOT_CORE = '#FFD27A', TELL_RED = '#ff5c5c';
+const HOT_CORE = '#FFD27A';
+/** The tell flash both halves paint: hazards use it for wind-ups, ZoneFlash as its default colour. */
+export const TELL_RED = '#ff5c5c';
 const BURN = { frames: 60, every: 20, damage: 2 };
 /**
  * Frames a body is immune to the hazard that just caught it (per-type `grace` overrides this).
