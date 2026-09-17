@@ -137,7 +137,7 @@ const BASE_BUILD = {
 const CANOPY_BUILD = { ...BASE_BUILD, scale: 1.45, bagShape: 'canopy',
   accessories: [{ attach: 'back', draw: drawSpreaderBar }, { attach: 'back', draw: drawBladder }] };
 /** Phase 2: the spars are gone and what is left stands on end behind him, holed. A narrow column. */
-const STOOP_BUILD = { ...BASE_BUILD, scale: 1.3, bagShape: 'tall',
+const STOOP_BUILD = { ...BASE_BUILD, scale: 1.3, bagShape: 'hull',
   accessories: [{ attach: 'back', draw: drawBladder }] };
 /**
  * Phase 3: no bag, no spars, no crown — the hood is down and the sack on his belt is the whole of him.

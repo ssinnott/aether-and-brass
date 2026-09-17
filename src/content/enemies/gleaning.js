@@ -212,7 +212,7 @@ const winnowHooks = {
 };
 const winnow = def({
   variant: 'winnow', name: 'WINNOW', role: 'ranged', hp: 42, damage: 1, speed: 1, score: 250, drops: 'none',
-  build: { ...BASE.build, scale: 1, bagShape: 'tall', hood: 'peak', chalk: CHALK.winnow, hipGear: 'drum', bags: 6, accessories: [BAG_ACC, HIP_ACC] },
+  build: { ...BASE.build, scale: 1, bagShape: 'hull', hood: 'peak', chalk: CHALK.winnow, hipGear: 'drum', bags: 6, accessories: [BAG_ACC, HIP_ACC] },
   anims: winnowAnims,
   traits: { weight: 0.9 },
   hurtParts: [{ name: 'body', y: [0, 40] }, { name: 'bag', y: [40, 74], damageMult: 1.6 }],
@@ -672,7 +672,7 @@ const riggermanHooks = {
 const riggerman = def({
   variant: 'riggerman', name: 'RIGGERMAN', role: 'grabber', hp: 130, damage: 1, speed: 0.9, score: 600, drops: 'meter',
   elite: false, grabbable: false, grabbableByGrappler: true, lyingFrames: 50, grabOffset: 24,
-  build: { ...BASE.build, scale: 1.15, bagShape: 'tall', hood: 'rigger', chalk: CHALK.riggerman, tool: 'gaff', hipGear: 'netcoil',
+  build: { ...BASE.build, scale: 1.15, bagShape: 'pair', hood: 'rigger', chalk: CHALK.riggerman, tool: 'gaff', hipGear: 'netcoil',
     accessories: [BAG_ACC, WRIST_ACC, HIP_ACC, { attach: 'torso', draw: drawHarness }] },
   anims: riggermanAnims,
   traits: { flinchEvery: 2, weight: 1.4 },
