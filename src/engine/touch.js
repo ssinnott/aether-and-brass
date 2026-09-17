@@ -13,9 +13,14 @@ const RUN_AT = 0.72;
 /** Everything left of this x starts the movement stick; everything right of it hits buttons. */
 const STICK_ZONE_X = 300;
 
-/** Action buttons in internal 640x360 space, ordered back-to-front for drawing. */
+/**
+ * Action buttons in internal 640x360 space, ordered back-to-front for drawing. The five fight
+ * buttons sit in a diamond under the right thumb; the two that are not a fight move (start and
+ * taunt) are the small pair up the right-hand margin, out of the way of a panicked thumb.
+ */
 const BUTTONS = [
   { action: 'start', x: 616, y: 62, r: 15, label: 'II', color: '#9aa6b2' },
+  { action: 'taunt', x: 616, y: 104, r: 15, label: 'TAU', color: '#9aa6b2' },
   { action: 'super', x: 592, y: 168, r: 24, label: 'SUP', color: '#e8c23a' },
   { action: 'special', x: 506, y: 212, r: 24, label: 'SPC', color: '#c86ad6' },
   { action: 'dodge', x: 590, y: 238, r: 26, label: 'DDG', color: '#59c85a' },

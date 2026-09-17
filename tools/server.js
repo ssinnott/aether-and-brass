@@ -4,6 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pwaAssets, MANIFEST_PATH, SW_PATH, ICONS } from './pwa.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.argv[2] || process.env.PORT || 8080);
@@ -17,7 +18,24 @@ const TYPES = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.md': 'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
 };
+
+// The installable-app files have no copy on disk (they are generated, and two of them are images
+// in a repository that holds none). Render them once, on the first request, so `npm run dev` can
+// be installed to a phone exactly like the deployed site — with the dev worker, which never caches.
+const PWA_PATHS = new Set([MANIFEST_PATH, SW_PATH, ...ICONS.map((i) => i.path)]);
+/** @type {Map<string, Buffer>|null} */
+let pwa = null;
+/** @returns {Buffer|null} bytes for a generated path, or null if this is not one. */
+function generated(pathname) {
+  const rel = pathname.replace(/^\/+/, '');
+  if (!PWA_PATHS.has(rel)) return null;
+  // A throw in here would take the server down from inside a request callback, and a dev server
+  // that cannot render an icon should still serve the game.
+  try { if (!pwa) pwa = pwaAssets(fs.readFileSync(path.join(ROOT, 'index.html')), { dev: true }); } catch { return null; }
+  return pwa.get(rel) || null;
+}
 
 export function createServer() {
   return http.createServer((req, res) => {
@@ -26,8 +44,9 @@ export function createServer() {
     if (pathname.endsWith('/')) pathname += 'index.html';
     const file = path.normalize(path.join(ROOT, pathname));
     if (!file.startsWith(ROOT)) { res.writeHead(403); res.end('forbidden'); return; }
-    fs.readFile(file, (err, data) => {
-      if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found: ' + pathname); return; }
+    fs.readFile(file, (err, onDisk) => {
+      const data = err ? generated(pathname) : onDisk;
+      if (!data) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found: ' + pathname); return; }
       res.writeHead(200, {
         'Content-Type': TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream',
         'Cache-Control': 'no-store',

@@ -20,7 +20,10 @@ import { WEAPONS } from './weapons.js';
 import { drawWeaponIcon, drawDurabilityPips, WPN_ICON_W, PIP_PITCH } from '../art/weapons.js';
 import { joinHint } from './party.js';
 
-const STRIP_H = 40, BAR_W = 120, BAR_H = 8, METER_H = 5, PORTRAIT = 24;
+/** Rows the top strip owns (0..STRIP_H-1). Exported because the story-beat letterbox (game/stage.js) slides its top
+ *  bar out from UNDER the strip rather than from row 0 -- see drawCinema(). */
+export const STRIP_H = 40;
+const BAR_W = 120, BAR_H = 8, METER_H = 5, PORTRAIT = 24;
 const GHOST_DELAY = 20, GHOST_SPEED = 0.8;
 const COMBO_COLORS = ['#c8c8c8', '#ffe45a', '#ff9a30', '#4DF0E0', '#ffffff'];
 const BOSS_BAR_W = 400, BOSS_BAR_Y = 349, BOSS_BAR_H = 10;

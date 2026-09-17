@@ -60,7 +60,8 @@ for stage 2 (its faction, bosses, sections and audio).
 ## 1. Repository layout
 
 ```
-index.html                 # loads src/main.js as a module; contains only the canvas + minimal CSS
+index.html                 # loads src/main.js as a module; the canvas, minimal CSS, and the head tags
+                           #   that make the deployed page installable (section 13, "Home-screen app")
 package.json               # scripts: dev, build, test, typecheck (see section 13)
 tsconfig.json              # type-check config (noEmit; nothing is compiled)
 types/globals.d.ts         # ambient declarations for window.__game and prefixed WebAudio
@@ -68,6 +69,9 @@ types/content.d.ts         # Frame / Hit / Hitbox / Anim / AnimSet / Hooks — t
 tools/server.js            # zero-dependency static server (node), used by dev + tests
 tools/playtest.js          # Playwright headless playthrough harness (see section 13)
 tools/build.js             # esbuild single-file bundle -> dist/index.html
+tools/pwa.js               # manifest + service worker + icon set: the installable-app files, generated
+tools/icon.js              # the app icon, drawn in code and encoded as PNG (no image files, section 0)
+tools/pwa-check.js         # gate: everything the page links and the worker precaches is really there
 tools/scenarios/           # playtest scenario modules merged into tools/playtest.js
 docs/GDD.md                # game design document (authoritative for design)
 docs/ARCHITECTURE.md       # this file
@@ -290,6 +294,27 @@ export const audio = {
 }
 ```
 Test mode (`?autotest=1`) must never create an AudioContext (all calls no-op).
+
+### `engine/touch.js`
+On-screen controls for a phone, folded into player 1's input before `input.update()` each fixed step.
+```js
+export const touch = {
+  init(view, force),             // main.js; pointer listeners on the display canvas (?touch=1 forces on)
+  update(),                      // once per fixed step, BEFORE input.update(): calls input.setTouch(actions)
+  draw(ctx),                     // over the finished frame (main.js, after the screen stack)
+  enabled,                       // true once a touch has arrived (or ?touch=1)
+  stick,                         // the live stick pointer, or null — for drawing
+};
+```
+Hidden until a non-mouse pointer actually presses the canvas, so a desktop with a touchscreen stays a
+keyboard game. Everything is in internal 640x360 px: left of `STICK_ZONE_X` (300) a press raises a
+floating movement stick wherever the thumb landed — snapped to eight directions, `run` past 72 % tilt,
+so a touchscreen never needs the double-tap — and right of it the buttons, hit-tested back-to-front with
+a 1.3x generous radius. Five fight buttons (attack, jump, dodge, special, super) sit in a diamond under
+the right thumb; the two that are not a fight move, `start` and `taunt`, are the small pair up the
+right-hand margin, clear of a panicked thumb. A button pressed and released between two steps is
+`latched` so the tap still registers for one step. `touchstart` / `touchmove` are preventDefaulted on the
+canvas, which is why `engine/links.js` is mouse-only.
 
 ### `engine/links.js`
 The only module in the build that leaves the canvas: the title's SOURCE CODE row and the repository
@@ -668,10 +693,40 @@ stronger gate than making the actions no-ops, and it has to be: a beat also carr
 director for as long as its script runs, so a bot that stepped a beat and staged nothing would still wait six seconds
 for its first wave and every `npm run winrate` number would move with it.
 
-`holdWaves` is what buys an intro beat its six to ten seconds. Every board triggers its first wave about two seconds'
-walk from the spawn point, and rather than re-cut four levels to make room, the wave director waits while the script
-runs. Nothing else waits: the player walks under their own control the whole time, and hazards, platforms and weather
-all keep running.
+`holdWaves` is what buys an intro beat its ten to thirteen seconds. Every board triggers its first wave about two
+seconds' walk from the spawn point, and rather than re-cut four levels to make room, the wave director waits while
+the script runs. Nothing else waits: the player walks under their own control the whole time, and hazards, platforms
+and weather all keep running.
+
+Because the controls stay live, an opening needs to say on screen that it is an opening — otherwise "the scene is
+still running" and "the scene ended and this stretch of board is simply empty" look identical. That is the
+**letterbox** (`StageRunner.drawCinema`): two bars that slide in when a `beat: true` event arms and slide back out
+when it ends, however it ends — script exhausted, outrun valve, section change. Its depth is derived from
+`FLOOR_TOP + Z_MAX`, so the bottom bar is exactly the strip below the last row a body can stand on and never covers a
+pair of feet; the top bar slides out from under the HUD strip, which already owns rows 0..39. A mid-board combat
+script gets no bars: it is a thing happening in the middle of a fight, not a scene.
+
+An opening also **talks**. On top of the `sectionStart` exchange every section schedules, each opening raises
+`boardOpen` and `boardWalk` by hand (`{ say: { trigger, row } }`) at frames picked against the dialogue cooldown
+rather than against the captions — a plate that loses the rank tie is DROPPED, not delayed, so 230 and 560 are
+chosen to clear `sectionStart`'s floor and then each other's. These two triggers are the only ones written
+per-board, so `say` takes a `row`: it names the row instead of letting `world.frame` index it, and it drops the
+per-slot offset with it, because two players in one online room must watch the same conversation. `tools/simtest.js`
+checks that every table carries one row per board and that each opening asks for its own — an off-by-one there is
+not silence, it is the quay's conversation played on the spoil heap.
+
+**No scene in the game stages a body** — not an opening beat, not a between-section vignette. Every def an `actor`
+can name is a fighter's rig, so a staged body reads as a unit. In an opening, where the player has the controls, it
+is one they walk up to, swing at, cannot hit (`Actor.takeHit` returns false by design) and then watch deleted when
+the script ends. In a vignette it is worse, not better: the party is HELD, so a figure that appears for a second and
+a half and vanishes is one the player can do nothing about except wonder what it was. What a scene carries instead
+is the level — its own signage, weather and machinery, and the SOUND of the thing it is describing. A heavy load
+landing under a descending lift needs no picture of the load.
+
+The `Actor` machinery below is deliberately kept rather than deleted: it is the only thing that can stage one, and
+removing it is a larger change than the rule requires. The rule itself is enforced in `tools/simtest.js` (suite
+`beats`), which walks every event and every vignette cue in every board, so breaking it is a deliberate one-line
+decision rather than something that creeps back in.
 
 It holds the SECTION as well as the wave, and it has to: with no waves to stop them a player who runs rather than
 walks covers about 1900px in the eight seconds of board 1's opening, and section 1 ends at 1800 — they would cross
@@ -693,10 +748,12 @@ Between-section **vignettes** ride a `transition`'s own timeline instead of the 
 `StageRunner.update()` returns above `events.update()` for the whole of a transition — a script armed there would not
 advance a frame until the party already had control back. A section's `transition` may carry
 `vignette: { cues: [{ at, ... }] }`, where `at` is counted from the first frame of the transition across all its
-phases, and a cue takes the same keys a beat action does. Actor positions there are written as `dx` (from the left
-edge of the view) rather than `x`, since a transition parks the camera wherever it began and the same lift is a
-different place on every board. One caveat for authors: a boss `descent` runs under `world.cutscene`, which
-early-returns the whole world update, so captions and camera work there but an actor will not walk.
+phases, and a cue takes the same keys a beat action does. Actor positions there would be written as `dx` (from the
+left edge of the view) rather than `x`, since a transition parks the camera wherever it began and the same lift is a
+different place on every board — but see the no-bodies rule above: the shipped vignettes are captions, sound and
+camera work, and every one of them used to stage a cast that is now gone. One caveat for authors: a boss `descent`
+runs under `world.cutscene`, which early-returns the whole world update, so captions and camera work there but an
+actor would not walk.
 
 **Companion dialogue** (`game/dialogue.js`) is drawn as a plate over a fighter's head from `StageRunner.draw` — the
 one pass above every entity, particle and weather effect and still below all HUD. It never blocks input, never
@@ -987,7 +1044,13 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   and emits nothing. Runs in CI before the build. `npm run lint` is `node --check src/main.js`
   followed by this.
 - `npm run build` → `node tools/build.js` → esbuild bundles `src/main.js` (IIFE, minified
-  off) and inlines it + CSS into `dist/index.html` (single file, no external refs).
+  off) and inlines it + CSS into `dist/index.html` (single file, no external refs), plus
+  `dist/artifact.html` (the same page as body content only, for a host that supplies the document)
+  and the installable-app files below.
+- `npm run pwa-check` → `node tools/pwa-check.js [dir]` (default `dist`): the gate on that app layer.
+  Nothing in the game imports any of it, so without this a broken manifest, an icon whose real size
+  disagrees with the one it is advertised at, or a worker precaching a file that no longer exists would
+  reach production as a phone that quietly refuses to install. CI runs it over the assembled `_site`.
 - `npm test` → `node tools/simtest.js && node tools/playtest.js`. The first is a PURE-NODE suite (issue #33, the
   same shape as `tools/nettest.js`: no browser, no canvas, no audio context) covering the sim modules whose
   correctness is ORDERING rather than rendering — event action sequencing, entrance frame budgets, platform
@@ -1055,12 +1118,14 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
      the other rather than together, and an unknown id is inert rather than a crash. Action sequencing itself is in
      `tools/simtest.js`.
   3i2. `beats` (`tools/scenarios/beats.js`, issue #25): the browser half of the story beats — board 1's intro beat
-     arms on the first frames of the run, letters the board's name on a sign in the world and stages its two dockers;
-     for the six to ten seconds it runs the party keeps control and walks under its own power with NO enemy on
-     screen at any point; the cast is struck when the script ends and the wave it was holding arrives immediately
-     after. The second half is the gate: under `?bot=1` the beat does not arm, nothing is staged, and the bot reaches
-     its first fight on the frame it always did — which is what keeps `npm run winrate` comparable across the change.
-     The dialogue rules and the completeness of the writing are in `tools/simtest.js`.
+     arms on the first frames of the run and letters the board's name on two signs in the world while staging NO
+     bodies at all; for the ten to thirteen seconds it runs the party keeps control and walks under its own power
+     with no enemy on screen at any point; the letterbox is fully in throughout and retracts whether the beat ends
+     on its own or is cut short by the outrun valve; the lettering is struck when the script ends and the wave it was
+     holding arrives immediately after. The second half is the gate: under `?bot=1` the beat does not arm, nothing is
+     staged, no bars come in, and the bot reaches its first fight on the frame it always did — which is what keeps
+     `npm run winrate` comparable across the change. The dialogue rules and the completeness of the writing are in
+     `tools/simtest.js`.
   3j. `cargo` (`tools/scenarios/cargo.js`, issue #34): against the real authored containers — a quay crate tips its
      cargo out on break and the unit climbs out at the crate into a punishable recovery; the foundry chute is quiet
      (no threat box), rattles (threat box live), lets one out at a time, stops its clock while it is stood on and
@@ -1127,6 +1192,32 @@ and reports how often the engine wins, sweeping `--stages`, `--difficulty`, `--c
 the suite can prove the game works but never that it is fair; this answers the second question.
 Runs that never reach the results plaque are reported as unfinished — a soft-lock, not a loss.
 
+**Home-screen app (`tools/pwa.js`, `tools/icon.js`).** The deployed site is installable: a manifest, a
+service worker and five icons, generated — never committed, since two of them are images and section 0
+allows no binary assets. `tools/build.js` writes them beside `dist/index.html`; `tools/server.js` renders
+the same files from memory so `npm run dev` installs exactly like the deployed site, except that dev gets
+`DEV_SW`, a worker that registers but caches nothing (one that cached would hand you yesterday's bundle on
+the next reload). The icon is a field function sampled with 4x4 supersampling and encoded as a PNG through
+`node:zlib` — deterministic, which is what lets the worker's cache name be a hash of the files it caches.
+
+The worker is cache-first over one precache list and revalidates nothing: the page IS the game, so an
+installed copy needs nothing else and runs with no network at all, and refreshing it in the background
+would re-download two megabytes on every launch to arrive at bytes we already had. Updates ride the worker
+script instead. A new build changes `VERSION`, so installing fills a fresh cache and drops every older one,
+and the next launch is on the new build. The page asks for that check itself (`reg.update()` after
+`register`, two kilobytes) rather than trusting the browser's own, which is best-effort and throttled —
+measured in the headless harness, an installed copy went on serving the previous build across relaunches
+until the check was made by hand.
+
+Three constraints are easy to break and each has a check in `tools/pwa-check.js`: every URL in the manifest
+is **relative** (the site is published under a project path, `/aether-and-brass/`, so an absolute `/` would
+scope the app to the domain root); the registration script and the manifest link live in the **head**, which
+is what keeps them out of the body-only `dist/artifact.html` — a page embedded in someone else's document
+must not claim an app scope; and nothing in that head may spell a style or body tag, even inside a comment,
+because `tools/build.js` finds those by regex. `?autotest=1` skips registration outright, so the playtest
+harness is never racing a worker. `index.html` also asks for a landscape lock when it is running installed;
+where that is refused (iOS has no lock) the portrait notice in its CSS stays the fallback.
+
 ## 14. Code conventions
 - ES2022, `const`/`let`, named exports, one class per file where sensible, JSDoc on
   public functions. 2-space indent, semicolons, single quotes.
@@ -1187,6 +1278,9 @@ ids, independent of which screen is on top. `__game.moveAnims` is `MOVE_ANIMS.sl
 
 ## 16. Input bindings
 The authoritative binding table lives in `docs/RECONCILIATION.md` (one nine-key block per keyboard player plus the two digits above it: P1 = W A S D + Q E Z X C + 1 2, with the arrows as a permanent second movement set and Enter as start; P2 = the same block three columns right, T F G H + R Y V B N + 4 5. P1's block is the same alone, in co-op and online — there is no second P1 layout to swap to. Gamepads are not index-bound — an unbound pad's first button press claims the lowest free slot; P3/P4 have no keyboard block). Actions: `left right up down attack jump dodge special super taunt start`. Global keys: Escape pause, M mute, F1 debug. `preventDefault()` on every bound key.
+On a touchscreen the same actions come from `engine/touch.js` (section 3) instead, folded into player 1
+before `input.update()`: a floating stick for the four directions and `run`, five fight buttons, and the
+`start` / `taunt` pair up the right-hand margin. Every action in the table above is reachable by thumb.
 `engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). Drop-in for any slot 1-3: poll `input.joinPressed(slot)` and call `input.setJoined(slot, true)`; the title screen resets every claim (`input.resetClaims()`).
 The table above is only the shipped default: `game/options.js` persists any remapping under
 `aetherAndBrass.options.v1` (same guarded-`localStorage` pattern as `game/progress.js`, via

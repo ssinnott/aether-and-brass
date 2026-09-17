@@ -28,9 +28,12 @@
 # 2. Playable Characters (4)
 
 **Companion dialogue (issue #25).** The four talk to each other while they fight: short two-line exchanges on a plate
-over the head, at seven moments — a section opening, a mid-boss or boss arriving, a partner going out, a partner
-spending a continue, a combo crossing 20, and the results plaque. All six pairings are written at all seven, and a
-hero playing alone mutters the same beats to themselves, so the system is not co-op only. The voices are the ones
+over the head, at nine moments — a section opening, a mid-boss or boss arriving, a partner going out, a partner
+spending a continue, a combo crossing 20, the results plaque, and **twice during a board's opening walk**. All six
+pairings are written at all nine, and a hero playing alone mutters the same beats to themselves, so the system is not
+co-op only. The two opening triggers (`boardOpen`, `boardWalk`) are the only ones written per-BOARD rather than for
+any room in the game: the party remarks on the quay, the gantry, the road or the heap they are actually standing on,
+which is what an eleven-second walk with nothing to fight is for. The voices are the ones
 this section gives them: **Brunhild blunt** (diagnosis, then instruction, then nothing — she judges a place by its
 workmanship), **Sael quick** (exits, distances and times, read the moment she walks in), **Rook dry** (everything
 priced, nothing ordered, the flat fact instead of the feeling) and **Pip cheerful** (about load ratings; she talks
@@ -213,12 +216,14 @@ Shared body scale: 48px standing, head 12px circle, torso 14×18; all four rigs 
 
 ## Section 1, Sootfoot Docks (x 0–1800; rain, night)
 - **The opening beat (issue #25):** the board does not open on a static text card. The party comes down the Sootfoot
-  gangway in the rain for six seconds with nothing to fight, two dockers going the other way with their shift
-  finished, and the board's name pasted on the **hoarding at the head of the quay** rather than shown on a plate in
-  the middle of the screen. The two lines of framing that used to be the card are captions read while walking. The
-  player keeps control throughout — only the wave director waits. The stinger under the section plate is *everything
-  leaving this city goes through here*. The intro screen still plays before it: the beat follows the card rather than
-  replacing the READY moment, and what it takes off the card is the SUBTITLE, which is now a thing in the world.
+  gangway in the rain for eleven seconds with nothing to fight and **nobody staged in it**, past two hoardings — the
+  board's name at the head of the quay, the Chancellor's order on the one further up — rather than a plate in the
+  middle of the screen. The three lines of framing that used to be the card are captions read while walking. The
+  player keeps control throughout — only the wave director waits — and the **letterbox** is in for exactly as long as
+  the beat runs, so the end of the opening is something the screen shows rather than something you notice afterwards.
+  The stinger under the section plate is *everything leaving this city goes through here*. The intro screen still
+  plays before it: the beat follows the card rather than replacing the READY moment, and what it takes off the card
+  is the SUBTITLE, which is now a thing in the world.
 - **Setting:** airship moorings, chain-lashed gantries, light rain.
 - **Parallax:** *Far* (0.2×): night gradient `#0E1424 → #1F2A44`, stepped terrace silhouettes `#141A2C` with window dots, a cyan summit glow, two airship silhouettes (ellipse + gondola rect). *Mid* (0.5×): dock cranes (rects + braces), gaslamps every 180px (post + halo); rain as 60 1×8px lines alpha 0.3 falling 6px/f. *Near* (1.2×): bollards, rope coils.
 - **Floor:** wet planks `#3A2E24` / `#443629`, 12px rows; puddle ellipses alpha 0.15.

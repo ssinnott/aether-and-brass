@@ -100,41 +100,55 @@ export const stage3 = {
       /** Issue #25 stinger: the board's whole thesis, in the doc's own words (docs/STAGE3.md section 2). */
       stinger: 'EVERYTHING HERE KEEPS THE THING THAT KILLS YOU STANDING UP',
       /**
-       * THE FOOT OF THE LIME ROAD (issue #25). The party comes up past the wagon train waiting to go down, and the
-       * board's name is chalked on the company's own tally board. The cart that passes them is loaded, and what is
-       * on it is the war -- which is the board's argument made before a single Chandler has been met.
+       * THE FOOT OF THE LIME ROAD (issue #25). The party comes up the road past the company's own weighbridge, and
+       * the board's name is chalked on the Chandlery's tally board. What the boards say is the board's argument,
+       * made before a single Chandler has been met: the traffic is heavy in both directions and only one of them is
+       * being paid for.
+       *
+       * The opening used to walk a drayman and a tallyman down past the party. See the note on board 1: an opening
+       * stages nobody, because a body in an enemy's rig that cannot be hit is a fight the player is offered and then
+       * denied. The lettering does the work here instead.
        *
        * See the `holdWaves` note on board 1.
        */
       events: [
         { id: 'intro3', atX: 40, once: true, beat: true, holdWaves: true, actions: [
           { sign: { text: 'THE LIME ROAD', sub: 'CHANDLERY OF CALDERWICK - WEIGHBRIDGE', x: 350, z: 6, style: 'tally', life: 900, color: '#cfe0a8' } },
-          // the wagon train: a drayman at the head of it and a tallyman walking the load, both going down as you come up
-          { actor: { id: 'dray', def: 'chandler', variant: 'drayman', x: 700, z: 20, facing: -1, vx: -0.5, frames: 420, anim: 'walk' } },
-          { actor: { id: 'tally', def: 'chandler', variant: 'tallyman', x: 762, z: 34, facing: -1, vx: -0.45, frames: 420, anim: 'walk' } },
           // The stage banner (gameplay.js) holds the screen for its first 120 frames, and `showBanner` is one slot:
           // a caption raised before then would delete the board's own title. The scenery goes up straight away; the
           // words wait their turn.
           { wait: 130 },
-          { caption: 'THE WAR IS OVER', sub: 'THE COMPANY IS STILL BILLING FOR IT', life: 170 },
-          { wait: 150 },
+          { caption: 'THE WAR IS OVER', sub: 'THE COMPANY IS STILL BILLING FOR IT', life: 190 },
+          { wait: 100 },
+          // the party's own two exchanges, placed clear of each other's cooldown -- see the note on board 1
+          { say: { trigger: 'boardOpen', row: 2 } },
+          { wait: 80 },
           { sfx: 'crate_drop' },
-          { wait: 60 },
-          { caption: 'BUSY IN BOTH DIRECTIONS', sub: 'ONLY ONE OF THEM IS PAID FOR', life: 150 },
-          { wait: 170 },
+          // the second tally board, up the road at the turn -- see the note on board 1
+          { sign: { text: 'LOADS DOWN - EMPTIES UP', sub: 'WEIGHED BOTH WAYS - NO EXCEPTIONS', x: 880, z: 8, style: 'tally', life: 900, color: '#cfe0a8' } },
+          { caption: 'BUSY IN BOTH DIRECTIONS', sub: 'ONLY ONE OF THEM IS PAID FOR', life: 180 },
+          { wait: 180 },
+          { sfx: 'gear_slip' },
+          { caption: 'THE ROAD GOES UP TO THE WORKS', sub: 'SO DO WE', life: 190 },
+          { wait: 70 },
+          { say: { trigger: 'boardWalk', row: 2 } },
+          { wait: 140 },
         ] },
       ],
       /** The works' cargo lift takes the road party down into the yard — onto the cart lane. */
       transition: { kind: 'lift', atX: 1740, gateX: 1800,
         /**
-         * Issue #25 vignette: the Chandlery's handcarts going past on the lift ride. What is being carried down is
-         * a chained Brassbound, tipped out of the cart at the bottom -- the company's supply of things that can be
-         * put back on their feet, arriving for work.
+         * Issue #25 vignette: what the Chandlery sends down this lift ahead of the party. It is a chained
+         * Brassbound -- the company's supply of things that can be put back on their feet, arriving for work --
+         * and it is now HEARD rather than shown: see the note on board 1's lift, a scene stages no bodies.
+         *
+         * The `brass_hit` and the shake are the whole of it, and they are enough. A heavy thing landing below you
+         * on a lift you are riding down needs no picture, and the second caption says what it was.
          */
         vignette: { cues: [
-          { at: 70, caption: 'THE HANDCARTS GO DOWN LOADED', sub: '', life: 110 },
-          { at: 110, actor: { id: 'cart', def: 'chandler', variant: 'drayman', dx: 640, z: 18, facing: -1, vx: -2.2, frames: 150, anim: 'walk' } },
-          { at: 150, actor: { id: 'stock', def: 'brassbound', variant: 'footman', dx: 560, z: 34, facing: -1, anim: 'idle' } },
+          // 80 frames each — see the note on board 1's lift
+          { at: 70, caption: 'SOMETHING HEAVY GOES DOWN FIRST', sub: 'THE COMPANY LOADS BEFORE IT UNLOADS', life: 80 },
+          { at: 150, caption: 'AND IT DOES NOT GET BACK UP', sub: '', life: 80 },
           { at: 156, sfx: 'brass_hit' },
           { at: 160, camera: { shake: 4, frames: 14 } },
         ] } },
@@ -193,10 +207,10 @@ export const stage3 = {
       events: [],
       /** The belt stops at the yard gate; the counting-house's yard door is shown open and you go through it. */
       transition: { kind: 'dock', banner: 'THE YARD GATE', look: 'door', pies: 1,
-        /** Issue #25 vignette: 40 frames at the gate, and what is standing in it is a rite already under way. */
+        /** Issue #25 vignette: 40 frames at the gate, and what is waiting past it is a rite already under way. */
         vignette: { cues: [
           { at: 8, caption: 'THE YARD GATE', sub: 'THE LAMPS ARE LIT - THE RITE STARTED WITHOUT YOU', life: 90 },
-          { at: 14, actor: { id: 'rite', def: 'chandler', variant: 'limeburner', dx: 470, z: 24, facing: -1, anim: 'idle' } },
+          // the limeburner tending it went with the rest -- see w1. The lit lamps and the burn ARE the rite
           { at: 20, sfx: 'burn' },
         ] } },
     },
@@ -271,10 +285,10 @@ export const stage3 = {
       events: [],
       /** Past the kiln head the counting-house doors come up and you go in. */
       transition: { kind: 'board', atX: 3540, gateX: 3600,
-        /** Issue #25 vignette: the counting-house doors, and a purser going in ahead of you with the day book. */
+        /** Issue #25 vignette: the counting-house doors, and a delivery signed for on the other side of them. */
         vignette: { cues: [
-          { at: 10, caption: 'THE LEDGER HOUSE TAKES DELIVERY', sub: '', life: 100 },
-          { at: 20, actor: { id: 'purser', def: 'chandler', variant: 'purser', dx: 420, z: 20, facing: 1, vx: 1.4, frames: 80, anim: 'walk' } },
+          // the purser who used to sign for it went with the rest -- see w1; the crate landing is the delivery
+          { at: 10, caption: 'THE LEDGER HOUSE TAKES DELIVERY', sub: 'EVERY CRATE SIGNED FOR BEFORE IT IS OPENED', life: 100 },
           { at: 34, sfx: 'crate_drop' },
         ] } },
     },
