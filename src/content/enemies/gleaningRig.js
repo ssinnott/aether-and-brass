@@ -168,14 +168,57 @@ export const GLEAN_PROPS = {
 /** Per-variant bag geometry: [rx, ry, dx, dy]. The bag never leaves the top of the silhouette — only its SHAPE changes. */
 const BAG = {
   slack: [17, 10, -8, -5],  // Chaff: half-filled, flopping off one shoulder — the only asymmetric bag
-  tall: [10, 20, 0, -5],    // Winnow: standing on end like a zeppelin upended
+  hull: [22, 11, 0, -4],    // Winnow / the Harvestlord's holed canopy: a tapered airship envelope, gored along its length
+  pair: [18, 12, 0, -3],    // Riggerman: two balloons in tandem, lashed nose to tail — no net, that is the Thresher's
   twin: [19, 13, 0, 0],     // Thresher: two over-pressured bags in a rope net
   taut: [15, 15, 0, -5],    // Sickle: a small taut SPHERE, with the dark grapnel crooked over it
   canopy: [20, 14, 0, -7],  // Harvestman: a canopy held clear on a four-spar yoke
 };
+// NOTHING IN THIS FACTION STANDS ON END ANY MORE. `tall` was [10, 20] — a bag half as wide as it was high, which the
+// gore pass made worse rather than better: crown-to-throat panelling on a vertical ellipse reads as a pill or a
+// bullet, not as anything that flies. Every bag is now WIDE or DOUBLE, which is the shape language of the two things
+// the fiction is actually pointing at (a hot-air balloon's envelope, an airship's hull), and the two shapes that
+// replace it split the two rigs that shared `tall`: the Winnow gets the hull, the Riggerman the tandem pair.
+/**
+ * Two-lobe bags. `r` / `x` are fractions of the overall rx (lobe radius, lobe offset), `ry` scales the shared height,
+ * `dy` drops each lobe so the pair reads as two bodies rather than one wide one, and `net` is the Thresher's alone —
+ * the rope net stays the only cross-hatched shape on any Gleaner.
+ */
+const LOBES = {
+  twin: { r: 0.6, x: 0.58, ry: 1, dy: [1, -1], net: true },
+  pair: { r: 0.54, x: 0.62, ry: 0.92, dy: [4, -4], net: false },
+};
 // dy is the notch: every bag centre must clear the skull (head centre ~ -(torsoH + neck + headR)) or the hood and the
 // bag fuse into one mushroom in the black-fill silhouette — the §0.8 squint pass, not the coloured render, is the check.
 
+/**
+ * THE HULL: the one bag in the faction that is not a tied-off sack, and the only bag path that is not an ellipse.
+ * Blunt nose forward (it always points the way the rig faces — the whole bag is drawn in mirrored rig space), tail
+ * drawn out aft. This is the mark an ellipse cannot make: at 22x11 a plain ellipse with banding on it reads as a lens
+ * or a flying saucer, because a hull is not an oval, it is an oval that has been PULLED. It is also the one change
+ * here that survives the §0.8 squint pass, since it is the silhouette rather than the surface.
+ */
+function pathHull(ctx, cx, cy, rx, ry) {
+  const nose = cx + rx, tail = cx - rx;
+  ctx.beginPath();
+  ctx.moveTo(tail, cy);
+  ctx.bezierCurveTo(cx - rx * 0.5, cy - ry, cx + rx * 0.3, cy - ry, nose - ry * 0.3, cy - ry * 0.66);
+  ctx.quadraticCurveTo(nose, cy - ry * 0.34, nose, cy);
+  ctx.quadraticCurveTo(nose, cy + ry * 0.34, nose - ry * 0.3, cy + ry * 0.66);
+  ctx.bezierCurveTo(cx + rx * 0.3, cy + ry, cx - rx * 0.5, cy + ry, tail, cy);
+  ctx.closePath();
+}
+/**
+ * Tail fins, and they are SACKCLOTH rather than silk: a fin is a stiffened panel laced onto the envelope, and at silk
+ * value on silk it would have been a 1px outline drawing in mid-air. Two of them (dorsal and ventral) so the tail
+ * reads as a tail from either side of the lane, and both are small enough that the envelope stays the shape.
+ */
+function hullFins(ctx, rig, cx, cy, rx, ry) {
+  const tail = cx - rx;
+  for (const s of [-1, 1]) {
+    celPoly(ctx, rig, [tail + rx * 0.04, cy + s * ry * 0.08, tail - rx * 0.02, cy + s * ry * 0.56, tail + rx * 0.22, cy + s * ry * 0.34], GLEAN.sack, 0.34, 0.2);
+  }
+}
 /**
  * One gas bladder: rubberised silk with a patched seam, the gas inside it, and the hot core.
  * The gas is CLIPPED INSIDE the bag path (ART_STYLE 0.2's material-change branch: the silhouette carries the ink, the
@@ -183,33 +226,97 @@ const BAG = {
  * pink kite stuck on a grey disc rather than as light inside a bag — and on the swelled tell keys it could and did
  * cross the silk's own outline.
  */
-function bagBody(ctx, rig, cx, cy, rx, ry, gas) {
-  pathEllipse(ctx, cx, cy, rx, ry);
+function bagBody(ctx, rig, cx, cy, rx, ry, gas, hull) {
+  const trace = () => (hull ? pathHull(ctx, cx, cy, rx, ry) : pathEllipse(ctx, cx, cy, rx, ry));
+  if (hull) hullFins(ctx, rig, cx, cy, rx, ry);   // aft of the envelope and drawn under it, so the tail overlaps them
+  trace();
   // sh 0.30 / hi 0.26, down from 0.34 / 0.30: on a shape this big the two bands met as one hard diagonal across the
   // middle and the bladder read as a cut gem. A narrower shadow and a thinner cap leave a wide lit belly, which is
   // what a taut bag looks like.
-  celPath(ctx, rig, GLEAN.silk, cx, cy, Math.max(rx, ry), 0.3, 0.26);
+  celPath(ctx, rig, GLEAN.silk, cx, cy, Math.max(rx, ry), hull ? 0.22 : 0.3, hull ? 0.18 : 0.26);
   if (rig.override) return;
   const t = tones(rig, GLEAN.silk);
   ctx.save();
-  pathEllipse(ctx, cx, cy, rx, ry); ctx.clip();
-  ctx.fillStyle = t.deep; ctx.fillRect(R(cx - rx * 0.2), R(cy - ry * 0.9), 1, R(ry * 1.8));    // gore seam: form, no ink
+  trace(); ctx.clip();
   if (gas > 0.02) {
+    // the belly glow: the gas the envelope is FULL of, and it is the wide soft half of the light
     const gy = R(cy + ry * 0.22), a0 = ctx.globalAlpha;
-    ctx.globalAlpha = a0 * (0.16 + gas * 0.66);
+    ctx.globalAlpha = a0 * (0.14 + gas * 0.5);
     ctx.fillStyle = rig.col(GLEAN.rose);
     pathEllipse(ctx, cx, gy, Math.max(3, R(rx * 0.72)), Math.max(2.5, R(ry * 0.52))); ctx.fill();
+    bagBurner(ctx, rig, cx, cy, rx, ry, gas, a0);
     ctx.globalAlpha = a0;
-    if (gas > 0.6) { ctx.fillStyle = rig.col(GLEAN.hot); ctx.fillRect(R(cx) - 1, gy - 1, 2, 3); }
   }
+  // the gores go on LAST, so the panel seams cross the lit gas instead of being drowned by it: an envelope with light
+  // inside it, rather than a disc with a pink blob on it (which is what one 1px seam under the glow measured as).
+  bagGores(ctx, rig, cx, cy, rx, ry, t, hull);
   ctx.restore();
   // ONE 1px rim on the lit edge of a big shape (ART_STYLE 0.4 / 3), which is the light mark a bag this size is
   // allowed and the celPath cap alone was not giving it: the cap lands inside the silhouette, the rim lands on it.
-  rimTop(ctx, rig, R(cx - rx * 0.62), R(cy - ry * 0.82), R(cx + rx * 0.1), R(cy - ry * 0.99), GLEAN.silk);
+  rimTop(ctx, rig, R(cx - rx * (hull ? 0.3 : 0.62)), R(cy - ry * (hull ? 0.9 : 0.82)), R(cx + rx * (hull ? 0.3 : 0.1)), R(cy - ry * 0.99), GLEAN.silk);
   // the sackcloth patch: a real MATERIAL on the silk, so it takes ink (0.2), and it is the reason a bag reads as
   // salvage rather than as a balloon. Kept small and low on the shadowed side — at 0.62 rx it was a bar across the
   // widest part of the bag and broke the silhouette it is supposed to decorate.
   if (rx >= 12) band(ctx, rig, R(cx - rx * 0.68), R(cy + ry * 0.24), R(rx * 0.45), 4, GLEAN.sack, 2);
+}
+/**
+ * THE GORES: the envelope's panel seams, and the single mark that turns an oval into a balloon. Meridians of the bag's
+ * own ellipsoid — they converge on the crown and on the throat and bow out at the belly, which is exactly what a sewn
+ * panel does and exactly what one 1px seam under the glow could not say. `t.deep` at 1px, so this is FORM and not ink
+ * (ART_STYLE 0.2: the silhouette carries the ink, a tone within it carries the surface).
+ *
+ * THE AXIS IS THE MATERIAL, and it is one bit per shape rather than a measurement of the ellipse. A GATHERED SACK is
+ * panelled crown-to-throat, so `slack`, `taut`, `canopy` and both lobed bags take vertical gores — the rope band under
+ * the belly and the yoke at the throat were already telling the player that is what they are. The `hull` is the one
+ * bag in the faction that is a rigid envelope rather than a tied-off sack, so its panels run its LENGTH, which is the
+ * airship read and the reason it can be long and low without looking like a dropped cushion.
+ * (Deriving the axis from rx vs ry instead was the first cut, and it put hull banding on the canopy — a flying saucer
+ * — and on the Chaff's slack bag, a hamburger. The bag's proportions are not the same fact as what it is made of.)
+ */
+function bagGores(ctx, rig, cx, cy, rx, ry, t, horiz) {
+  if (rig.override) return;
+  const across = horiz ? ry : rx;   // `horiz` is the hull, and only the hull
+  const n = across >= 13 ? 2 : 1;   // a narrow bag gets one gore a side: five 1px lines on a 20px bag is hatching, not panels
+  ctx.strokeStyle = t.deep; ctx.lineWidth = 1; ctx.lineCap = 'butt';
+  for (let i = -n; i <= n; i++) {
+    // i 0 is the seam facing the player, which projects to a straight line; the rest bow by sin(longitude). The
+    // outermost pair stops short of the half-width so it never lands on the limb, where the outline already is.
+    const w = Math.max(0.5, Math.abs(i / (n + 0.25)) * across);
+    ctx.beginPath();
+    if (i === 0) {
+      if (horiz) { ctx.moveTo(cx - rx, cy); ctx.lineTo(cx + rx, cy); } else { ctx.moveTo(cx, cy - ry); ctx.lineTo(cx, cy + ry); }
+    } else if (horiz) {
+      ctx.ellipse(cx, cy, rx, w, 0, i > 0 ? 0 : Math.PI, i > 0 ? Math.PI : Math.PI * 2);
+    } else {
+      ctx.ellipse(cx, cy, w, ry, 0, i > 0 ? -Math.PI / 2 : Math.PI / 2, i > 0 ? Math.PI / 2 : Math.PI * 1.5);
+    }
+    ctx.stroke();
+  }
+}
+/**
+ * THE BURNER: the gas comes in at the THROAT, where the lines gather it, and stands up inside the envelope. The glow
+ * used to be an ellipse in the middle of the bag — light with no source, which reads as a lamp rather than as a bag
+ * being filled. A flame with a base and a tip gives the tell a direction, and it is the same two channels the faction
+ * already promises (rig.gas / rig.swell): the flame simply grows up the envelope as the gas comes up.
+ * Clipped by the caller's bag path, so the base is cut off at the mouth exactly where the rope band lands.
+ */
+function bagBurner(ctx, rig, cx, cy, rx, ry, gas, a0) {
+  const by = cy + ry * 0.92, tip = by - ry * (0.5 + gas * 0.8), w = Math.max(2, rx * 0.22);
+  ctx.globalAlpha = a0 * (0.3 + gas * 0.6);
+  ctx.fillStyle = rig.col(GLEAN.rose);
+  ctx.beginPath();
+  ctx.moveTo(cx - w, by);
+  ctx.quadraticCurveTo(cx - w, tip + (by - tip) * 0.34, cx, tip);
+  ctx.quadraticCurveTo(cx + w, tip + (by - tip) * 0.34, cx + w, by);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = a0;
+  // the mandated 1-2px hot core, now at the BURNER instead of floating in the belly. Gated at 0.5 so a bag at rest
+  // (gas 0.25) carries no hot pixel and the tell still lights one: the two-channel read is unchanged.
+  if (gas > 0.5) {
+    const hh = Math.max(2, R(ry * (0.1 + gas * 0.22)));
+    ctx.fillStyle = rig.col(GLEAN.hot);
+    ctx.fillRect(R(cx) - 1, R(by) - hh, 2, hh);
+  }
 }
 /** Chalk crop-cross guild mark, stretched by the swell so the mark distorts as a second read. */
 function cropMark(ctx, rig, cx, cy, k, col, tally) {
@@ -226,15 +333,41 @@ function cropMark(ctx, rig, cx, cy, k, col, tally) {
  * arms). The spars now leave the body at the SHOULDERS and land on the bag's own shoulders, so a pair of lines
  * passes either side of the hood: the old yoke started at x +-2.5, directly behind the neck, where the head covered
  * both spars and the bag read as a balloon parked above a man rather than as the thing he is hanging from. This is
- * the single mark that answers "blob on a stick", and it is two strokes.
+ * the mark that answers "blob on a stick", and the curtain below it is the rest of the answer.
  */
-function bagYoke(ctx, rig, cy, spars, rx) {
-  const p = rig.p, top = -p.torsoH + 2, sx = R(p.torsoW * 0.5 - 1);
+function bagYoke(ctx, rig, cx, cy, rx, ry, spars) {
+  const p = rig.p, top = -p.torsoH + 2, sx = R(p.torsoW * 0.5 - 1), land = cy + ry * 0.5;
   ctx.strokeStyle = rig.col(GLEAN.rope); ctx.lineWidth = 2; ctx.lineCap = 'round';
   ctx.beginPath();
   for (let i = 0; i < spars; i++) {
     const f = spars > 1 ? (i - (spars - 1) / 2) / ((spars - 1) / 2) : 0;
-    ctx.moveTo(R(f * sx), top); ctx.lineTo(R(f * rx * 0.72), R(cy));
+    // +cx: the spars land on the BAG, which on the Chaff's slack bag is 8px off the centreline. They used to land on
+    // x = f*rx*0.72 about the body's own axis, so the one asymmetric bag in the faction hung off nothing on one side.
+    ctx.moveTo(R(f * sx), top); ctx.lineTo(R(cx + f * rx * 0.72), R(land));
+  }
+  ctx.stroke();
+  if (rig.override) return;
+  // THE SUSPENSION CURTAIN: the rigging an envelope's load actually hangs on — a fan off the bag's lower flank,
+  // gathered onto the same two shoulder anchors the spars use. The spars are the mark that answers "blob on a stick"
+  // (see above) and this is the rest of that sentence: it is the difference between a bag tied to a man and a man
+  // slung under a balloon. 1px against the spars' 2 so the load lines still read as the load lines, and ROPE — at
+  // sleeve value and 3px this is a second pair of arms, which is the mistake the yoke itself already made once.
+  //
+  // It gathers just OUTSIDE the shoulder point the spars use (sx + 1), because on the narrow bags every one of these
+  // lines runs inside the head's own width and at +-sx the hood swallowed the lot of them. THREE LINES A SIDE ONLY
+  // ON THE WIDE BAGS, and this is a measured budget rather than a taste call. `stage-values
+  // --faction=gleaning` costs the curtain about 0.6 of `edge` and of `lost%` on all four board-4 sections: it is
+  // hemp (L* 51.5) laid over a board whose own ground is cool and mid, so every line of it closes the actor/backdrop
+  // gap the palette pass opened. On the narrow bags (`tall` at rx 10, `taut` at 15) the third line lands inside the
+  // hood's own width and is not visible for the price, so it does not get drawn.
+  const fs = rx >= 16 ? [0.4, 0.72, 0.97] : [0.55, 0.97], anchor = sx + 1;
+  ctx.lineWidth = 1; ctx.beginPath();
+  for (let s = -1; s <= 1; s += 2) {
+    for (const f of fs) {
+      // the attach point rides the ellipse's own lower limb, so the fan always lands ON the silk it is carrying
+      ctx.moveTo(R(cx + s * rx * f), R(cy + ry * Math.sqrt(1 - f * f) * 0.94));
+      ctx.lineTo(R(s * anchor), top);
+    }
   }
   ctx.stroke();
 }
@@ -287,13 +420,14 @@ export function drawBladder(ctx, rig, pose) {
   const ch = bagChain(rig), pivot = R(-p.torsoH + 2);
   ctx.save();
   ctx.translate(0, pivot); ctx.rotate(rad(ch.ang[0] * 0.8)); ctx.translate(0, -pivot);   // the load swings on its lines
-  bagYoke(ctx, rig, cy + ry * 0.5, b.bagShape === 'canopy' ? 4 : 2, rx);
-  if (b.bagShape === 'twin') {
+  bagYoke(ctx, rig, cx, cy, rx, ry, b.bagShape === 'canopy' ? 4 : 2);
+  const lob = LOBES[b.bagShape];
+  if (lob) {
     // lobes pushed out to tangent so a real notch opens at the top: at 0.48/0.56 the pair was one wide circle at squint
-    const lr = R(rx * 0.6), lx = R(rx * 0.58);
-    bagBody(ctx, rig, cx - lx, cy + 1, lr, ry, gas);
-    bagBody(ctx, rig, cx + lx, cy - 1, lr, ry, gas);
-    if (!rig.override) {  // the rope net: the only cross-hatched shape on any Gleaner. Nothing crosses the notch.
+    const lr = R(rx * lob.r), lx = R(rx * lob.x), lry = R(ry * lob.ry);
+    bagBody(ctx, rig, cx - lx, cy + lob.dy[0], lr, lry, gas, false);
+    bagBody(ctx, rig, cx + lx, cy + lob.dy[1], lr, lry, gas, false);
+    if (!rig.override && lob.net) {  // the rope net: the only cross-hatched shape on any Gleaner. Nothing crosses the notch.
       ctx.strokeStyle = rig.col(GLEAN.rope); ctx.lineWidth = 2; ctx.beginPath();
       for (let i = -1; i <= 1; i++) {
         const hy = R(cy + i * 7), hw = R(rx * (i ? 0.9 : 1.16));
@@ -301,18 +435,27 @@ export function drawBladder(ctx, rig, pose) {
         if (i) { const vh = R(ry * 0.8); ctx.moveTo(cx + i * lx, cy - vh); ctx.lineTo(cx + i * lx, cy + vh); }
       }
       ctx.stroke();
+    } else if (!rig.override) {
+      // a netless pair is LASHED nose to tail instead: two short rope ties across the gap, which is what stops the two
+      // balloons reading as one balloon and its own shadow. Nothing crosses the notch here either.
+      ctx.strokeStyle = rig.col(GLEAN.rope); ctx.lineCap = 'round'; ctx.lineWidth = 1.5; ctx.beginPath();
+      for (const f of [-0.34, 0.26]) {
+        ctx.moveTo(R(cx - lx * 0.34), R(cy + lob.dy[0] + lry * f));
+        ctx.lineTo(R(cx + lx * 0.34), R(cy + lob.dy[1] + lry * f));
+      }
+      ctx.stroke();
     }
-  } else bagBody(ctx, rig, cx, cy, rx, ry, gas);
+  } else bagBody(ctx, rig, cx, cy, rx, ry, gas, b.bagShape === 'hull');
   // the throat: the bag is GATHERED and lashed where the spars meet it. Two rope bands under the belly, which is what
   // makes the silk read as a tied sack rather than as a sphere hovering over a man's shoulders.
-  if (!rig.override && b.bagShape !== 'twin') {
+  if (!rig.override && !lob) {
     band(ctx, rig, R(cx - rx * 0.26), R(cy + ry * 0.78), R(rx * 0.52), 4, GLEAN.rope, 2);
   }
   if (b.bagShape === 'taut') grapnelCoil(ctx, rig, cx, cy - ry, rx);
   if (b.bags != null || rig.bags != null) bandolier(ctx, rig, cy + ry);
-  // the mark has to sit INSIDE silk: on `twin` the centreline is the notch between the two lobes, so ride the near lobe
-  const mx = b.bagShape === 'twin' ? cx - R(rx * 0.48) : cx + R(rx * (b.bagShape === 'taut' ? 0.34 : 0.15));
-  const my = b.bagShape === 'twin' ? cy + R(ry * 0.1) : cy - R(ry * (b.bagShape === 'taut' ? 0.15 : 0.5));
+  // the mark has to sit INSIDE silk: on a lobed bag the centreline is the notch between the two, so ride the near lobe
+  const mx = lob ? cx - R(rx * lob.x * 0.82) : cx + R(rx * (b.bagShape === 'taut' ? 0.34 : 0.15));
+  const my = lob ? cy + lob.dy[0] + R(ry * 0.1) : cy - R(ry * (b.bagShape === 'taut' ? 0.15 : 0.5));
   cropMark(ctx, rig, mx, my, k, b.chalk || CHALK.chaff, rig.tally || (b.bagShape === 'canopy' ? 4 : 0));
   ctx.restore();
 }
