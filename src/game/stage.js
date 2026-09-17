@@ -5,7 +5,8 @@
 import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MAX, ST, UI, WAVE_EXTRA_BY_PARTY, PARTY_EXTRA_DELAY } from '../constants.js';
 import { createBackdrop, backdropsReady } from '../art/backgrounds/index.js';
 import { Prop } from './items.js';
-import { Hazard, Zone, ZoneFlash } from './hazards.js';
+import { Hazard } from './hazards.js';
+import { Zone, ZoneFlash } from './zones.js';
 import { Transition, drawSpotlight, VictorySpectacle } from './transitions.js';
 import { entranceFor, entranceLanding, EntranceTell, teleportShove } from './entrances.js';
 import { createPlatform } from './platforms.js';
