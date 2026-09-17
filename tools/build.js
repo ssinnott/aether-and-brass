@@ -1,4 +1,4 @@
-// Bundle src/main.js into self-contained pages (no external references).
+// Bundle src/main.ts into self-contained pages (no external references).
 //   dist/index.html    a complete standalone HTML file (open from disk or serve anywhere)
 //   dist/artifact.html the same page as body-content only (no doctype/html/head/body wrapper),
 //                      for hosts that supply their own document skeleton
@@ -17,7 +17,7 @@ const OUT_DIR = path.join(ROOT, 'dist');
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 const result = await build({
-  entryPoints: [path.join(ROOT, 'src', 'main.js')],
+  entryPoints: [path.join(ROOT, 'src', 'main.ts')],
   bundle: true,
   format: 'iife',
   target: ['es2020'],
@@ -35,8 +35,8 @@ html = html.replace(/<link[^>]+rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][
   return fs.existsSync(file) ? `<style>\n${fs.readFileSync(file, 'utf8')}\n</style>` : m;
 });
 // Replace the module entry with the bundled script.
-const tagRe = /<script[^>]*type=["']module["'][^>]*src=["'][^"']*main\.js["'][^>]*>\s*<\/script>/i;
-if (!tagRe.test(html)) throw new Error('index.html: could not find <script type="module" src="src/main.js"> to inline');
+const tagRe = /<script[^>]*type=["']module["'][^>]*src=["'][^"']*main\.ts["'][^>]*>\s*<\/script>/i;
+if (!tagRe.test(html)) throw new Error('index.html: could not find <script type="module" src="src/main.ts"> to inline');
 html = html.replace(tagRe, () => `<script>\n${js}\n</script>`);
 if (/src=["'](\.\/)?src\//.test(html)) throw new Error('dist/index.html still references src/');
 

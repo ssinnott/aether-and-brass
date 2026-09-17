@@ -8,14 +8,14 @@
 // rule is quiet on the clean subject and loud on the mutated one. Nothing here touches disk or src/.
 //
 // Adding a rule? Add a case here in the same commit. The rule is not finished until it has one.
-import { buildRig } from '../../src/art/rig.js';
+import { buildRig } from '../../src/lib/art/rig.ts';
 import { collectSubjects } from './subjects.js';
 import * as helpers from './helpers.js';
 import * as palette from './rules/palette.js';
 import * as animation from './rules/animation.js';
 import * as geometry from './rules/geometry.js';
-import { tones, celCapsule } from '../../src/art/shading.js';
-import { getChain } from '../../src/art/secondary.js';
+import { tones, celCapsule } from '../../src/lib/art/shading.ts';
+import { getChain } from '../../src/lib/art/secondary.ts';
 
 const RULES = new Map();
 for (const m of [palette, animation, geometry]) for (const r of m.RULES) RULES.set(r.id, r);

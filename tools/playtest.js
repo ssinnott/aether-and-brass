@@ -647,7 +647,7 @@ const scenarios = {
     try {
       await page.goto(`http://localhost:${server.port}/index.html?debug=1&seed=1`, { waitUntil: 'load' });
       await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 15000 });
-      const report = await page.evaluate(() => import('/src/engine/audio.js').then((m) => m.audio.selfTest()));
+      const report = await page.evaluate(() => import('/src/engine/audio.ts').then((m) => m.audio.selfTest()));
       assert(report && Array.isArray(report.sfx), 'audio.selfTest() returns {sfx:[...], music:[...]}');
       const silent = (report.sfx || []).filter((r) => !(r.rms > 0.0005));
       const failed = (report.sfx || []).filter((r) => r.error);
@@ -714,7 +714,7 @@ const scenarios = {
     }
   },
 
-  // 8. Every autopilot archetype (src/game/bot.js BOT_STYLES) plays, and two of them play co-op in one run.
+  // 8. Every autopilot archetype (src/game/bot.ts BOT_STYLES) plays, and two of them play co-op in one run.
   // tools/winrate.js sweeps these for balance; this only proves each one fights and none of them wedges.
   async botstyles(server) {
     for (const style of ['balanced', 'aggressive', 'defensive', 'masher']) {

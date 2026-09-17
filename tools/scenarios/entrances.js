@@ -13,7 +13,7 @@
 // against the landing rather than being burned by the flight.
 const PARAMS = 'seed=1&skipTo=gameplay&chars=0&nowaves=1&godmode=1';
 
-/** Every entrance's authored budget, mirroring ENTRANCES in src/game/entrances.js. */
+/** Every entrance's authored budget, mirroring ENTRANCES in src/game/entrances.ts. */
 const KINDS = [
   { kind: 'teleport', type: 'brassbound', variant: 'warden', tell: 40, arrive: 12, air: false },
   { kind: 'flyIn', type: 'stormcrow', variant: 'corsair', tell: 30, arrive: 20, air: true },

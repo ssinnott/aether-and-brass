@@ -9,16 +9,16 @@
 //   node tools/golden.js              print the current fingerprint as JSON
 //   node tools/golden.js --check       compare against tools/golden-baseline.json, exit 1 on any drift
 //   node tools/golden.js --write       refresh the baseline (only when a change is intended and reviewed)
-import { buildRig, drawRig, computeJoints, DEFAULT_PROPORTIONS } from '../src/art/rig.js';
-import { AnimPlayer } from '../src/game/animation.js';
-import { makePose } from '../src/art/poses.js';
-import { CHARACTERS } from '../src/content/characters/index.js';
-import { ENEMY_GALLERY } from '../src/content/enemies/index.js';
-import * as math from '../src/engine/math.js';
-import * as trig from '../src/engine/trig.js';
-import { makeRng } from '../src/engine/rng.js';
-import * as pal from '../src/art/palettes.js';
-import { makeTones } from '../src/art/shading.js';
+import { buildRig, drawRig, computeJoints, DEFAULT_PROPORTIONS } from '../src/lib/art/rig.ts';
+import { AnimPlayer } from '../src/lib/art/animation.ts';
+import { makePose } from '../src/lib/art/poses.ts';
+import { CHARACTERS } from '../src/content/characters/index.ts';
+import { ENEMY_GALLERY } from '../src/content/enemies/index.ts';
+import * as math from '../src/lib/engine/math.ts';
+import * as trig from '../src/lib/engine/trig.ts';
+import { makeRng } from '../src/lib/engine/rng.ts';
+import * as pal from '../src/art/palettes.ts';
+import { makeTones } from '../src/lib/art/shading.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

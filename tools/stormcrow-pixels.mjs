@@ -15,8 +15,8 @@ function loadPlaywright() {
   throw new Error('Playwright not found (set NODE_PATH to the global node_modules)');
 }
 const { chromium } = loadPlaywright();
-const { CROW } = await import('../src/content/enemies/stormcrowRig.js');
-const { getEnemyDef } = await import('../src/content/enemies/index.js');
+const { CROW } = await import('../src/content/enemies/stormcrowRig.ts');
+const { getEnemyDef } = await import('../src/content/enemies/index.ts');
 // RATE ORDER, not alphabetical and not the registry's: bandana -> slouch hat -> bald head with a loupe -> sealed
 // keel visor -> sealed iron muzzle (stormcrowKit.js header). The ladder is only monotone in this order.
 const wanted = (process.argv[2] || 'crimper,corsair,bosun,galewright,marine').split(',');
@@ -33,9 +33,9 @@ const rows = [];
 console.log('variant           actorPx    ink%   rankPx   rank%   rank hex');
 for (const v of wanted) {
   const r = await page.evaluate(async ({ variant, outline, clan }) => {
-    const { buildRig, drawRig } = await import('/src/art/rig.js');
-    const { makePose } = await import('/src/art/poses.js');
-    const { getEnemyDef } = await import('/src/content/enemies/index.js');
+    const { buildRig, drawRig } = await import('/src/lib/art/rig.ts');
+    const { makePose } = await import('/src/lib/art/poses.ts');
+    const { getEnemyDef } = await import('/src/content/enemies/index.ts');
     const def = getEnemyDef('stormcrow', variant);
     const rig = buildRig(def.build || {});
     const W = 200, H = 220;

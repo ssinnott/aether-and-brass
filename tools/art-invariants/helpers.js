@@ -1,12 +1,12 @@
 // Shared pure helpers for the art-invariant rule modules (see README.md for the harness contract).
 // Everything here is DOM-free: colour maths, pose/animation walking, subject classification, the recording
 // mock 2D context and the part-hook wrapper. Rule modules must not redefine any of it.
-import { hexToRgb } from '../../src/art/palettes.js';
-import { makeTones, RAMP } from '../../src/art/shading.js';
-import { DEFAULT_POSE, FACE, EASE, makePose, faceIndex } from '../../src/art/poses.js';
-import { drawRig, computeJoints } from '../../src/art/rig.js';
-import * as rigParts from '../../src/art/rigParts.js';
-import { rad } from '../../src/engine/math.js';
+import { hexToRgb } from '../../src/art/palettes.ts';
+import { makeTones, RAMP } from '../../src/lib/art/shading.ts';
+import { DEFAULT_POSE, FACE, EASE, makePose, faceIndex } from '../../src/lib/art/poses.ts';
+import { drawRig, computeJoints } from '../../src/lib/art/rig.ts';
+import * as rigParts from '../../src/lib/art/rigParts.ts';
+import { rad } from '../../src/lib/engine/math.ts';
 
 export { FACE, EASE, makePose, faceIndex, DEFAULT_POSE, makeTones, RAMP, computeJoints, rigParts };
 

@@ -14,7 +14,7 @@
 //   --stages 1,2,3,4          boards to play
 //   --chars 0,1,2,3           hero indices; in party=2 each is paired with the next hero
 //   --party 1,2,3,4           party size (2 = a couch, 3-4 = an online room; every slot on autopilot)
-//   --styles balanced,...     autopilot archetypes (see BOT_STYLES in src/game/bot.js), or `all`
+//   --styles balanced,...     autopilot archetypes (see BOT_STYLES in src/game/bot.ts), or `all`
 //   --difficulty easy,normal,hard
 //   --seeds N                 runs per cell (default 5)
 //   --conc N                  parallel pages (default 6)
@@ -24,8 +24,8 @@
 import fs from 'node:fs';
 import { createServer } from './server.js';
 import { loadPlaywright } from './browser.js';
-import { BOT_STYLES } from '../src/game/bot.js';
-import { MAX_PLAYERS } from '../src/constants.js';
+import { BOT_STYLES } from '../src/game/bot.ts';
+import { MAX_PLAYERS } from '../src/constants.ts';
 
 const { chromium } = loadPlaywright();
 

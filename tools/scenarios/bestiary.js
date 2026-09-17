@@ -11,7 +11,7 @@ const ARENA = 'seed=1&skipTo=gameplay&chars=0&stage=1&godmode=1&nowaves=1';
 // Board 2's first section is the Mooring Spine: an `open: true` rails zone with the back edge at z 12, which is
 // where an enemy can actually be put over the side (tools/scenarios/thrown.js block B uses the same geometry).
 const SPINE = 'seed=1&skipTo=gameplay&chars=0&stage=2&godmode=1&nowaves=1';
-/** Mirrors BESTIARY_FLUSH_EVERY in src/game/screens/gameplay.js: how long a run can go before the book is written. */
+/** Mirrors BESTIARY_FLUSH_EVERY in src/game/screens/gameplay.ts: how long a run can go before the book is written. */
 const BESTIARY_FLUSH_EVERY = 300;
 
 /**

@@ -1,7 +1,7 @@
 // SOURCE CODE scenario for tools/playtest.js. Receives the harness helpers so the two files share one
 // browser, one assert and one results list (same pattern as tools/playtest-options.js).
 //
-// Covers the title's link back to the repository (src/engine/links.js + screens/title.js): the row sits
+// Covers the title's link back to the repository (src/engine/links.ts + screens/title.js): the row sits
 // second from last so OPTIONS keeps the bottom of the menu, following it opens the repository URL in a
 // new tab without leaving the title, a refused popup says so instead of pretending, the address is drawn
 // inside the view, and a real mouse click on that address opens the same URL.

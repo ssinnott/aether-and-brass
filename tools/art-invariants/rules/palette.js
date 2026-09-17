@@ -11,13 +11,13 @@
 // helpers.js when the runner supplies it and falls back to the identical local implementations below; each borrowed
 // helper is probed against a known vector first, so a helper with different semantics can never silently re-calibrate
 // a threshold.
-import { buildRig } from '../../../src/art/rig.js';
-import { makeTones } from '../../../src/art/shading.js';
-import { farShade } from '../../../src/art/palettes.js';
-import { FACE } from '../../../src/art/poses.js';
-import { CHARACTERS } from '../../../src/content/characters/index.js';
-import { BRASSBOUND, SOOTBORN, STORMCROWS } from '../../../src/content/enemies/index.js';
-import { BRASS, SOOT, GOB, BRASS_PAL } from '../../../src/content/enemies/common.js';
+import { buildRig } from '../../../src/lib/art/rig.ts';
+import { makeTones } from '../../../src/lib/art/shading.ts';
+import { farShade } from '../../../src/art/palettes.ts';
+import { FACE } from '../../../src/lib/art/poses.ts';
+import { CHARACTERS } from '../../../src/content/characters/index.ts';
+import { BRASSBOUND, SOOTBORN, STORMCROWS } from '../../../src/content/enemies/index.ts';
+import { BRASS, SOOT, GOB, BRASS_PAL } from '../../../src/content/enemies/common.ts';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -75,7 +75,7 @@ const DOC_BUGS = [
   'A literal "outline contrasts >= 4.0 with palette.primary" fails 6 reference rigs (brunhild 1.54, rook 1.47, warden 1.49, wrangler 1.69, grubbik#2 1.69, vane#2 1.07) - the contrast half is asserted against the rig\'s lightest palette colour instead.',
 ];
 
-/** The 18 part hooks rig.js dispatches on (drawHead / drawTorso / drawArm / drawLeg / drawAccessories in src/art/rig.js). */
+/** The 18 part hooks rig.js dispatches on (drawHead / drawTorso / drawArm / drawLeg / drawAccessories in src/lib/art/rig.ts). */
 const PART_HOOKS = new Set(['head', 'face', 'beard', 'hair', 'hat', 'neck', 'torso', 'hips', 'back', 'shoulder',
   'armUpper', 'armLower', 'hand', 'legUpper', 'legLower', 'foot', 'weapon', 'smear']);
 /** The 7 accessory attach points drawAccessories() understands; anything else falls through to the bare root branch. */
@@ -359,7 +359,7 @@ export const RULES = [
         // section 4's faction base constants, as an exact regression guard
         const want = { steel: '#7F8C99', darkSteel: '#4A5563', brass: '#C89B3C', lens: '#4DF0E0' };
         for (const k of Object.keys(want)) {
-          if (hx(BRASS[k]) !== hx(want[k])) out.push(finding(`BRASS.${k} is ${BRASS[k]}, not the documented ${want[k]}`, 'src/content/enemies/common.js holds the Brassbound base colours (ART_STYLE 4)', `common.js BRASS.${k}`));
+          if (hx(BRASS[k]) !== hx(want[k])) out.push(finding(`BRASS.${k} is ${BRASS[k]}, not the documented ${want[k]}`, 'src/content/enemies/common.ts holds the Brassbound base colours (ART_STYLE 4)', `common.js BRASS.${k}`));
         }
         // ... and the same contract on the palette that is actually PAINTED. BRASS.brass has no live Brassbound call
         // site (the legacy brassHead / brassTorso / brassFoot are dead), so the guard above can stay green while every
@@ -381,8 +381,8 @@ export const RULES = [
         }
         const want = { skin: '#6BA84F', shade: '#3F6B2E', rags: '#5A4A3A' };
         for (const k of Object.keys(want)) {
-          if (hx(SOOT[k]) !== hx(want[k])) out.push(finding(`SOOT.${k} is ${SOOT[k]}, not the documented ${want[k]}`, 'src/content/enemies/common.js holds the Sootborn base colours (ART_STYLE 4)', `common.js SOOT.${k}`));
-          if (hx(GOB[k]) !== hx(want[k])) out.push(finding(`GOB.${k} is ${GOB[k]}, not the documented ${want[k]}`, 'src/content/enemies/common.js holds the goblin rig palette (ART_STYLE 4)', `common.js GOB.${k}`));
+          if (hx(SOOT[k]) !== hx(want[k])) out.push(finding(`SOOT.${k} is ${SOOT[k]}, not the documented ${want[k]}`, 'src/content/enemies/common.ts holds the Sootborn base colours (ART_STYLE 4)', `common.js SOOT.${k}`));
+          if (hx(GOB[k]) !== hx(want[k])) out.push(finding(`GOB.${k} is ${GOB[k]}, not the documented ${want[k]}`, 'src/content/enemies/common.ts holds the goblin rig palette (ART_STYLE 4)', `common.js GOB.${k}`));
         }
       } else if (type === 'stormcrow') {
         // the Stormcrows reuse `clan` for their watch colour; distinctness is reported, not asserted, for this faction
@@ -421,8 +421,8 @@ export const RULES = [
       if (isAnchor(subject)) {
         // Concordat machinery is not only ever a rig: stage1's Engine over-fire paints the dais zone in the
         // Concordat's own cyan while the machine runs away with itself, which is the colour doing exactly its job.
-        const ALLOWED = ['src/content/enemies/common.js', 'src/content/enemies/brassbound.js', 'src/content/enemies/midboss.js', 'src/content/enemies/boss.js',
-          'src/content/stage/stage1.js'];
+        const ALLOWED = ['src/content/enemies/common.ts', 'src/content/enemies/brassbound.ts', 'src/content/enemies/midboss.ts', 'src/content/enemies/boss.ts',
+          'src/content/stage/stage1.ts'];
         const hits = grepContent(/#4DF0E0/i);
         const bad = hits.filter((h) => !ALLOWED.includes(h.path));
         const where = hits.map((h) => `${h.path}:${h.line}`).join(', ');

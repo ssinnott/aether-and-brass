@@ -500,7 +500,7 @@ async function savePng(dataUrl, file) {
 await page.goto(`http://localhost:${port}/index.html?autotest=1&seed=1&skipTo=gameplay&nowaves=1`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 20000 });
 const STAGE_LIST = await page.evaluate(async () => {
-  const m = await import('/src/content/stage/index.js');
+  const m = await import('/src/content/stage/index.ts');
   return m.STAGES.map((s, i) => ({
     number: i + 1, id: s.id, name: s.name,
     sections: s.sections.map((sec, j) => ({ index: j, id: sec.id, name: sec.name, backdrop: sec.backdrop, floor: sec.floor })),

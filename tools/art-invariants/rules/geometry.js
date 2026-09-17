@@ -12,9 +12,9 @@
 // WeakMap and shared by all eleven rules. ~2 s for the whole cast.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { rad } from '../../../src/engine/math.js';
-import { LIGHT_X, LIGHT_Y, RAMP, HI_MIN } from '../../../src/art/shading.js';
-import { stepChain, resetChain } from '../../../src/art/secondary.js';
+import { rad } from '../../../src/lib/engine/math.ts';
+import { LIGHT_X, LIGHT_Y, RAMP, HI_MIN } from '../../../src/lib/art/shading.ts';
+import { stepChain, resetChain } from '../../../src/lib/art/secondary.ts';
 import * as H from '../helpers.js';
 
 export const TIER = 'geometry';
@@ -789,8 +789,8 @@ export const RULES = [
       if (subject.id === ANCHOR_SUBJECT) {
         // The one place the suite asserts engine constants: if the light or the ramp moves, every threshold here
         // and in rules/palette.js was calibrated against the old values.
-        if (LIGHT_X !== -0.7071 || LIGHT_Y !== -0.7071) out.push({ message: 'src/art/shading.js LIGHT_X / LIGHT_Y moved off the documented top-left (-0.7071, -0.7071)', detail: `now (${LIGHT_X}, ${LIGHT_Y}) — §3, and every calibrated threshold in this suite, assumes the old value.` });
-        if (RAMP.hi !== 1.22 || RAMP.sh !== 0.66 || RAMP.rim !== 1.55) out.push({ message: 'src/art/shading.js RAMP moved off the documented { hi: 1.22, sh: 0.66, rim: 1.55 }', detail: `now ${JSON.stringify(RAMP)} — content silently re-shades.` });
+        if (LIGHT_X !== -0.7071 || LIGHT_Y !== -0.7071) out.push({ message: 'src/lib/art/shading.ts LIGHT_X / LIGHT_Y moved off the documented top-left (-0.7071, -0.7071)', detail: `now (${LIGHT_X}, ${LIGHT_Y}) — §3, and every calibrated threshold in this suite, assumes the old value.` });
+        if (RAMP.hi !== 1.22 || RAMP.sh !== 0.66 || RAMP.rim !== 1.55) out.push({ message: 'src/lib/art/shading.ts RAMP moved off the documented { hi: 1.22, sh: 0.66, rim: 1.55 }', detail: `now ${JSON.stringify(RAMP)} — content silently re-shades.` });
         const scan = sourceScan();
         if (scan.lightWrites.length) out.push({ message: `${scan.lightWrites.length} content file(s) assign rig.light directly`, detail: ['Only setLight() / enter() / leave() may move the light.', ...scan.lightWrites] });
       }

@@ -19,11 +19,11 @@
 //     heap. That is invisible to a unit test of the runner and has to be read off a real run;
 //   - the wave director is only HELD, never broken: the first wave arrives normally once the beat is over;
 //   - `?bot=1` skips the whole thing, which is what keeps tools/winrate.js seeing the run it saw before.
-import { SOLO } from '../../src/content/characters/lines.js';
+import { SOLO } from '../../src/content/characters/lines.ts';
 
 const BOARD1 = 'seed=1&skipTo=gameplay&chars=0&stage=1&godmode=1';
 const BOARD1_BOT = 'seed=1&skipTo=gameplay&chars=0&stage=1&godmode=1&bot=1';
-/** Board 1's first wave triggers at x 400 (src/content/stage/stage1.js); the beat holds it until the script ends. */
+/** Board 1's first wave triggers at x 400 (src/content/stage/stage1.ts); the beat holds it until the script ends. */
 const FIRST_WAVE_X = 400;
 /** Frames into the beat the sign screenshot is taken — early enough that the hoarding is still on camera, and past
  *  the letterbox's own 18-frame slide (game/stage.js CINEMA_SLIDE) so the bars are fully in by then. */

@@ -9,7 +9,7 @@
 // and sounded its tell, and then nothing came down the road.
 //
 // The hazards are the real authored ones rather than test fixtures, so these assertions also prove the content is
-// placed sanely: the Lime Road wagon as authored in src/content/stage/stage3.js.
+// placed sanely: the Lime Road wagon as authored in src/content/stage/stage3.ts.
 const LIME_ROAD = 'seed=1&skipTo=gameplay&chars=0&stage=3&section=0&godmode=1';
 /** Camera x with the wagon's chocks (x 1780) on screen, and the 130px of ground the party gives up after the tell. */
 const ON_CHOCKS = 1100, GAVE_GROUND = 970;

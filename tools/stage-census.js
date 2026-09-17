@@ -8,12 +8,12 @@
 //
 // "Variant" counts a spawn modifier as its own entry (footman+holdout is not a footman), as #28 asks, and every
 // table counts reinforcements and timed waves as enemies and waves respectively.
-import { STAGES } from '../src/content/stage/index.js';
-import { getEnemyDef } from '../src/content/enemies/index.js';
-import { VIEW_W } from '../src/constants.js';
+import { STAGES } from '../src/content/stage/index.ts';
+import { getEnemyDef } from '../src/content/enemies/index.ts';
+import { VIEW_W } from '../src/constants.ts';
 
 // the spawn-modifier table (game/traits.js SPAWN_MODS); tolerated as absent so the census runs on any revision
-const SPAWN_MODS = (await import('../src/game/traits.js')).SPAWN_MODS || {};
+const SPAWN_MODS = (await import('../src/game/traits.ts')).SPAWN_MODS || {};
 
 const argv = process.argv.slice(2);
 const JSON_OUT = argv.includes('--json'), STRICT = argv.includes('--strict');
