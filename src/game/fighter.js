@@ -677,7 +677,13 @@ export class Fighter extends Entity {
     if (dmg > 0) this.damageText(dmg, opts.fire ? '#ff9a30' : '#ffd050', 2);
     if (this.hp <= 0 && !this.dead) {
       this.die();
-      if (!this.grabbedBy && this.state !== ST.KNOCKDOWN && this.state !== ST.THROWN) this.knockDown(KNOCKDOWN_POP_VY, -this.facing * 2);
+      // A body that dies IN a hold must still fall. ST.DEAD is only ever entered from onLand() out of an
+      // air-fall state, so a corpse left standing never finishes dying: world.onDeath never fires, so no
+      // drop, no score, no kill credit and it is never removed -- and for a player, no respawn and no
+      // `out`, which leaves a solo run unable to either continue or reach game over. knockDown() lets the
+      // holder go for us. grabs.js, items.js ringOut and boss.js each patched their own path by hand;
+      // this is the one that hits from outside them (a burn tick, the dais vents, the molten channel).
+      if (this.state !== ST.KNOCKDOWN && this.state !== ST.THROWN) this.knockDown(KNOCKDOWN_POP_VY, -this.facing * 2);
     }
   }
   /** Floating damage number; consecutive numbers are staggered so multi-hits stay legible. */
