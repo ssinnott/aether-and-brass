@@ -378,7 +378,11 @@ export class Prop extends Entity {
     if (attacker && attacker.kind !== 'projectile') attacker.hitstop = Math.max(attacker.hitstop || 0, HITSTOP.light);
     const striker = attacker && attacker.kind === 'projectile' ? attacker.owner : attacker;
     if (this.hp <= 0) { this.break(striker); return true; }
-    if (this.info.roll && striker) this.startRoll(striker);
+    // A barricade is a gate before it is a prop: rolling it 40px off the striker puts it through the wall
+    // it holds up, and the wave lock reads the ZONE, not the prop, so the gate stays shut with nothing
+    // reachable holding it. A human can still jump the gap and hit it from the far side; the autopilot
+    // never jumps a breakable solid, so for a bot run it is a dead stop.
+    if (this.info.roll && striker && !this.barricade) this.startRoll(striker);
     else audio.play('hit_light');
     return true;
   }

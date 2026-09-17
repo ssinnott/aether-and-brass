@@ -162,8 +162,8 @@ export const stage1 = {
       // the back 20px is the molten channel (10 + burn and a bounce; enemies knocked in die, +200); the cargo bay's front
       // 40px is a conveyor that drifts everything left at 1px/f and carries a crate every 4s while the Hoister is up
       zones: [
-        { type: 'molten', x0: 1800, x1: 3920 },
-        { type: 'conveyor', x0: 3280, x1: 3920, z0: 100 },
+        { type: 'molten', x0: 1800, x1: 3800 },
+        { type: 'conveyor', x0: 3280, x1: 3800, z0: 100 },
       ],
       waves: [
         { triggerX: 2100, lock: true, spawns: [{ type: S, variant: 'firebrand', side: 'right', z: 40, delay: 0 }, { type: S, variant: 'firebrand', side: 'left', z: 100, delay: 30 }, ...cut(3, { z0: 60, delay0: 20 })] },
@@ -297,5 +297,5 @@ export const stage1 = {
   /** Foreman Grubbik & the Hoister: cargo bay at the end of Foundry Row (conveyor + molten back edge, see section 2 zones). */
   midboss: { atX: 3600, def: 'midboss', arena: { x0: 3280, x1: 3920 }, intro: { name: 'FOREMAN GRUBBIK', sub: '& THE HOISTER' } },
   /** Chancellor Vane: the dais at the summit (RECONCILIATION: arena 5560..6000). Vane descends a spiral stair (2s) first. */
-  boss: { atX: 5900, def: 'boss', arena: { x0: 5560, x1: 6000 }, camera: { x0: 5360, x1: 6000 }, intro: { name: 'CHANCELLOR AURELIUS VANE', sub: 'THE AETHERWRIGHT' } },
+  boss: { atX: 5900, def: 'boss', descent: true, arena: { x0: 5560, x1: 6000 }, camera: { x0: 5360, x1: 6000 }, intro: { name: 'CHANCELLOR AURELIUS VANE', sub: 'THE AETHERWRIGHT' } },
 };

@@ -23,8 +23,8 @@
 // Readability knobs (all optional, defaults tuned for the 2x display): farShade (0.62) + farDesat (0.25) build
 // rig.paletteFar (far limbs ~40 % darker and greyer); contactShadow (true = alpha 0.3, or a number, or false) draws a
 // 1 px translucent dark capsule under every limb (near limbs over the torso, far limbs over the back layer) so a limb
-// separates from what it crosses; thinR (4) is the radius below which cel parts get two tones instead of three,
-// hiMin (6) the smallest clipped shape that still gets a highlight cap, flatR (2.5) the flat-tone floor, tones: 2
+// separates from what it crosses; thinR (6.5) is the radius below which cel parts get two tones instead of three,
+// hiMin (10) the smallest clipped shape that still gets a highlight cap, flatR (5) the flat-tone floor, tones: 2
 // drops highlight caps altogether (rimRect / rimTop then carry the light); palette.sleeve colours the upper arms + cuffs
 // separately from palette.primary (torso) so arms read against the body. Pose key `weaponBack` (stepped 0/1) draws the
 // weapon in the back layer (rested on the shoulder, slung) — the near arm then draws no weapon in front.

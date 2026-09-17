@@ -137,7 +137,7 @@ const CULM_STANCE = { stance: { torso: -4, head: 8, legR: [17, 4], legL: [-19, 6
 const BC = { armR: [20, 30], weapon: -70, armL: [-24, -8] };
 const CC = { armR: [24, 26], weapon: -60, armL: [-28, -12] };
 const RAM_BOX = frontBox(64, hit(19, 'knockdown', 6, 3, 24));
-const SWEEP_BOX = { ...frontBox(56, hit(15, 'knockdown', 4, 4, 20)), ...LOW };
+const SWEEP_BOX = frontBox(56, hit(15, 'knockdown', 4, 4, 20), LOW);
 const PRESS_BOX = areaBox(56, hit(20, 'knockdown', 5, 5, 24));
 const common = {
   // intro: she sets the hook in the spoil, the press draws, and she prices the four of you without hurrying
@@ -161,7 +161,7 @@ const balerAnims = Object.assign(makeGleanBase(BC, BALER_STANCE), common, {
   phaseChange: { loop: false, frames: [
     FK(16, { ...BC, torso: -20, head: -18, armR: [-36, 26], armL: [-62, -26], root: [-4, 0], legR: [16, 10], legL: [-18, 14], face: 'hurt' }, { sfx: 'prop_break', ease: 'out' }),
     FK(14, { ...BC, torso: 24, head: 8, root: [2, 3], legR: [36, 44], legL: [-26, 44], squash: 1.12, stretch: 0.9, face: 'grit' },
-      { ease: 'in', fx: [{ kind: 'debris', x: -14, y: 46, count: 9 }, { kind: 'steam', x: -10, y: 34, count: 6 }, { kind: 'dust', x: 0, y: 0, count: 8 }] }),
+      { ease: 'in', fx: [{ kind: 'steam', x: -10, y: 34, count: 6 }, { kind: 'dust', x: 0, y: 0, count: 8 }] }),
     FK(14, { ...BC, torso: -4, head: 4, root: [0, 0], legR: [15, 6], legL: [-17, 8], face: 'angry' }, { ease: 'out' }),
   ] },
   // ram: the cylinder fires and the whole machine goes forward behind it. The board's heaviest ground hit.

@@ -190,7 +190,7 @@ const canopyAnims = Object.assign(makeGleanBase(HC, CANOPY_STANCE), common, {
   phaseChange: { loop: false, frames: [
     FK(16, { ...HC, torso: -22, head: -16, armR: [-38, 24], armL: [-60, -24], root: [-4, -2], legR: [14, 12], legL: [-16, 14], face: 'hurt' }, { sfx: 'prop_break', ease: 'out' }),
     FK(14, { ...HC, torso: 22, head: 8, root: [2, 3], legR: [36, 44], legL: [-26, 44], squash: 1.14, stretch: 0.88, face: 'grit' },
-      { ease: 'in', fx: [{ kind: 'debris', x: -12, y: 52, count: 10 }, { kind: 'steam', x: -8, y: 40, count: 7 }, { kind: 'dust', x: 0, y: 0, count: 8 }] }),
+      { ease: 'in', fx: [{ kind: 'steam', x: -8, y: 40, count: 7 }, { kind: 'dust', x: 0, y: 0, count: 8 }] }),
     FK(14, { ...SC, torso: 6, head: 2, root: [0, 0], legR: [20, 10], legL: [-20, 12], face: 'angry' }, { ease: 'out' }),
   ] },
   // sweep: the pole gaff goes round the whole arena at chest height. 76px of reach — duck it or be somewhere else.

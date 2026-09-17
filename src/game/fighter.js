@@ -59,7 +59,7 @@
 //  explodeOnDeath { delay, radius, damage, friendly } | onSpawn/onUpdate/onDeath (legacy aliases of the hooks)
 //  moves { throwFwd / throwBack: { damage, vx, vy, releaseAt, shockwave: { r, damage }, selfVy, bounce: true|vy }, grabHit: { damage, hits } }
 import { ST, TEAM, GRAVITY, FLOOR_TOP, Z_MIN, Z_MAX, HITSTOP, FIGHTER_DEFAULTS, LAUNCH_VY, JUGGLE_VY, KNOCKDOWN_POP_VY, JUMP_VY, UI, VIEW_W } from '../constants.js';
-import { Entity } from './entity.js';
+import { Entity, worldHitbox } from './entity.js';
 import { AnimPlayer } from './animation.js';
 import { buildRig, drawRig } from '../art/rig.js';
 import { burstHit, burstDust, floatText } from '../art/fx.js';
@@ -382,12 +382,34 @@ export class Fighter extends Entity {
     if (s === ST.HURT) { this.setState(ST.IDLE, 'idle'); }
   }
 
+  /**
+   * Put this body back in a clean, fightable state: full HP and a full shield, no death flags, every
+   * combat counter at zero and every reference to another fighter dropped. WHERE the body wakes -- its
+   * position, facing, state, lives -- is the caller's business; this is only the "nothing is still
+   * holding it" half. Every revive path needs that half, and each used to spell it out by hand, which
+   * is how GameplayScreen.continueRun came to miss the shield and `deathHooked`: a continued hero
+   * returned with the broken shield they died holding, and with the death hook already spent so their
+   * NEXT death skipped it (fighter.js onDeath early-returns on deathHooked).
+   * Boss.nextPhase deliberately does NOT route through here -- a phase change is not a revive, and
+   * applyPhase owns that rig's HP.
+   */
+  resetBody() {
+    this.hp = this.maxHp; this.meter = 0;
+    initShield(this);
+    this.dead = false; this.deathHooked = false; this.alive = true; this.removeMe = false;
+    this.combo = 0; this.comboTimer = 0; this.juggleCount = 0; this.juggleGravity = 0;
+    this.juggleImmune = false; this.chainHits = 0;
+    this.grabTarget = null; this.grabbedBy = null; this.heldBody = null; this.heldProp = null;
+    this.hitstop = 0; this.flashTimer = 0; this.status = {};
+    this.clearWeapon();
+  }
+
   processEvents(world) {
     const ev = this.anim.events;
     for (let i = 0; i < ev.length; i++) {
       const e = ev[i];
       if (e.type === 'sfx') audio.play(e.name);
-      else if (e.type === 'fx') world.addFx(e.value.kind, this.x + (e.value.x || 0) * this.facing, -(e.value.y || 0), this.z, { facing: this.facing, ...e.value });
+      else if (e.type === 'fx') world.addFx(e.value.kind, this.x + (e.value.x || 0) * this.facing, e.value.y || 0, this.z, { facing: this.facing, ...e.value });
       else if (e.type === 'event') { const fr = this.anim.def ? this.anim.def.frames[e.frameIndex] : null; if (this.callHook('onAnimEvent', e.name, fr, world) !== true) this.onAnimEvent(e.name, fr, world); }
     }
     ev.length = 0;
@@ -655,7 +677,13 @@ export class Fighter extends Entity {
     if (dmg > 0) this.damageText(dmg, opts.fire ? '#ff9a30' : '#ffd050', 2);
     if (this.hp <= 0 && !this.dead) {
       this.die();
-      if (!this.grabbedBy && this.state !== ST.KNOCKDOWN && this.state !== ST.THROWN) this.knockDown(KNOCKDOWN_POP_VY, -this.facing * 2);
+      // A body that dies IN a hold must still fall. ST.DEAD is only ever entered from onLand() out of an
+      // air-fall state, so a corpse left standing never finishes dying: world.onDeath never fires, so no
+      // drop, no score, no kill credit and it is never removed -- and for a player, no respawn and no
+      // `out`, which leaves a solo run unable to either continue or reach game over. knockDown() lets the
+      // holder go for us. grabs.js, items.js ringOut and boss.js each patched their own path by hand;
+      // this is the one that hits from outside them (a burn tick, the dais vents, the molten channel).
+      if (this.state !== ST.KNOCKDOWN && this.state !== ST.THROWN) this.knockDown(KNOCKDOWN_POP_VY, -this.facing * 2);
     }
   }
   /** Floating damage number; consecutive numbers are staggered so multi-hits stay legible. */
@@ -748,10 +776,3 @@ export class Fighter extends Entity {
 }
 
 Object.assign(Fighter.prototype, grabMethods);
-
-/** Convert a local hitbox (feet origin, y negative up, +x toward facing) to a world AABB. */
-export function worldHitbox(owner, hb) {
-  const f = owner.facing;
-  const lx0 = f > 0 ? hb.x : -(hb.x + hb.w);
-  return { x0: owner.x + lx0, x1: owner.x + lx0 + hb.w, y0: owner.y - (hb.y + hb.h), y1: owner.y - hb.y, z: hb.z != null ? hb.z : 24 };
-}

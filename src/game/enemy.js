@@ -49,7 +49,7 @@ import { startArrival, stepArrival, finishArrival, isHanging } from './entrances
 
 /** Defaults for `def.ai` (content overrides per type / variant). */
 export const AI_DEFAULTS = Object.freeze({
-  attackRange: 40, zTolerance: 12, retreatChance: 0.25, attackCooldown: [40, 90], aggression: 0.5, attacks: [], ranged: null,
+  attackRange: 40, zTolerance: 12, retreatChance: 0.25, attackCooldown: [40, 90], attacks: [], ranged: null,
   staggerEvery: 0, staggerFrames: 30, firstAttackDelay: 45, flank: false, hoverCircle: false, fleeLast: false, fleeHp: 0, fleeDistance: 100,
   retreatBudget: 90, evadeChance: 0, evadeCooldown: 90, riposteChance: 0, riposteCooldown: 150, riposteAnim: 'riposte', panicRange: 0, panicFrames: 30,
   ignoresTokens: false, shield: false, launchStun: 0, stallEvery: 0, stallFrames: 70, stallDamageMult: 3, stallGrabbable: true, grabHoldHits: 3, grabHitEvery: 18,
@@ -169,6 +169,11 @@ export class Enemy extends Fighter {
     this.updateTellSpeed(world, f);
     if (this.state === ST.ATTACK || this.state === ST.WALK || this.state === ST.RUN) this.rig.keyAngle += 0.2;
     if (this.staggerTimer > 0) this.staggerTimer--;
+    // A stagger/stall is a window in FRAMES -- enterStagger arms staggerTimer just above with the same count --
+    // so it ticks here beside it. Knocking the unit down or grabbing it mid-stall is the punish the GDD asks
+    // for, and that must not freeze the window under the hitstun early-return below. The STAGGER branch still
+    // ends the state on the first frame the body can act again.
+    if (this.aiState === 'STAGGER' && this.aiTimer > 0) this.aiTimer--;
     if (this.attackCooldown > 0) this.attackCooldown--;
     if (this.rangedCooldown > 0) this.rangedCooldown--;
     if (this.panicCooldown > 0) this.panicCooldown--;
@@ -196,7 +201,7 @@ export class Enemy extends Fighter {
     if (this.state === ST.DODGE) { if (this.stateTimer <= 12) this.x -= this.facing * (this.backstepDist || 42) / 12; return; }
     if (this.state === ST.ATTACK || this.state === ST.SPECIAL || this.state === ST.JUMP || this.airborne) return;
     this.pickTarget(world);
-    if (this.aiState === 'STAGGER') { if (--this.aiTimer <= 0) this.endStagger(); return; }
+    if (this.aiState === 'STAGGER') { if (this.aiTimer <= 0) this.endStagger(); return; }
     if (this.aiState === 'FLEE') { this.thinkFlee(world); return; }
     if (this.passiveDummy) { this.thinkDummy(world); return; }
     // an enemy that has not walked inside the lock yet always keeps entering (a hit while entering must not park it outside the arena)

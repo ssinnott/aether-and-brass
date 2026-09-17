@@ -247,7 +247,10 @@ export class LobbyScreen extends Screen {
     const k = (e.key || '').toUpperCase();
     if (k === 'BACKSPACE') { this.typed = this.typed.slice(0, -1); e.preventDefault(); }
     else if (k === 'ENTER') { if (this.typed.length >= 4) this.begin(); e.preventDefault(); }
-    else if (k === 'ESCAPE') { this.phase = 'role'; this.game.audio.play('menu_back'); e.preventDefault(); }
+    // Escape is the one key here that LEAVES the 'code' phase, so update()'s `phase === 'code'` guard no
+    // longer covers its edge: unswallowed, the same press reads as BACK on the role rows that same step and
+    // drops the player out of the lobby entirely (screens/controls.js swallows for the same reason).
+    else if (k === 'ESCAPE') { this.phase = 'role'; this.game.input.swallowKey(e.code || 'Escape'); this.game.audio.play('menu_back'); e.preventDefault(); }
     else if (CODE_CHARS.test(k) && this.typed.length < 8) { this.typed += k; e.preventDefault(); }
   }
 

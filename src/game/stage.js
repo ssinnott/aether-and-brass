@@ -5,7 +5,8 @@
 import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MAX, ST, UI, WAVE_EXTRA_BY_PARTY, PARTY_EXTRA_DELAY } from '../constants.js';
 import { createBackdrop, backdropsReady } from '../art/backgrounds/index.js';
 import { Prop } from './items.js';
-import { Hazard, Zone, ZoneFlash } from './hazards.js';
+import { Hazard } from './hazards.js';
+import { Zone, ZoneFlash } from './zones.js';
 import { Transition, drawSpotlight, VictorySpectacle } from './transitions.js';
 import { entranceFor, entranceLanding, EntranceTell, teleportShove } from './entrances.js';
 import { createPlatform } from './platforms.js';
@@ -836,11 +837,16 @@ export class StageRunner {
     this.bossEntity = e;
     if (kind === 'boss') {
       this.bossState = 'active';
-      // Vane descends the spiral stair (2s cutscene) while the Regent Engine's intro plays; silence, then the plate + music
-      this.game.audio.music.stop(); this.music = '';
-      this.transition = new Transition(this, 'descent', { boss: e, stairX: ax1 - 40 });
-      if (typeof world.cutscene === 'function') world.cutscene(DESCENT_FRAMES, null); // the world freezes; the runner draws the descent
-      this.holdPlayers();
+      // The descent is BOARD 1's arrival and nobody else's: transitions.js builds the figure on the stair from the
+      // `boss` def, so it is Vane whatever board it plays on. Opt-in per board, because Kestrel, Hasp and Oke are
+      // already standing in their arenas when the camera locks.
+      if (spec.descent) {
+        // Vane descends the spiral stair (2s cutscene) while the Regent Engine's intro plays; silence, then the plate + music
+        this.game.audio.music.stop(); this.music = '';
+        this.transition = new Transition(this, 'descent', { boss: e, stairX: ax1 - 40 });
+        if (typeof world.cutscene === 'function') world.cutscene(DESCENT_FRAMES, null); // the world freezes; the runner draws the descent
+        this.holdPlayers();
+      }
       this.bossPhase = -1;
       this.trackBossBand();
     } else { this.midbossState = 'active'; this.spotlightT = 0; }

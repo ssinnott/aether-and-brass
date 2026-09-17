@@ -590,7 +590,8 @@ function suiteBeats() {
     const bad = [];
     for (const [id, lines] of Object.entries(BOSS_LINES)) {
       if (!lines.defeat) bad.push(`${id}: no defeat line`);
-      if (!lines.phase.length) bad.push(`${id}: no phase lines`);
+      const n = (getEnemyDef(id).phases || []).length || 1;
+      if (lines.phase.length !== n) bad.push(`${id}: ${lines.phase.length} phase lines for ${n} phases`);
     }
     ok(bad.length === 0, `all ${Object.keys(BOSS_LINES).length} boss units have phase and defeat lines${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
   }
@@ -753,7 +754,12 @@ function suiteBeats() {
 
 const SUITES = { events: suiteEvents, entrances: suiteEntrances, platforms: suitePlatforms, audio: suiteAudio,
   bestiary: suiteBestiary, beats: suiteBeats, bindings: suiteBindings };
-const pick = process.argv.slice(2).filter((a) => SUITES[a]);
-for (const name of (pick.length ? pick : Object.keys(SUITES))) SUITES[name]();
+const pick = process.argv.slice(2).filter((a) => !a.startsWith('-'));
+for (const name of (pick.length ? pick : Object.keys(SUITES))) {
+  // Object.hasOwn, not truthiness: `simtest constructor` used to pass the filter, run nothing and still
+  // print "all sim tests passed". A named suite that does not exist is a failure, not a silent no-op.
+  if (!Object.hasOwn(SUITES, name)) { console.log(`unknown suite ${name} (have: ${Object.keys(SUITES).join(' ')})`); failures++; continue; }
+  SUITES[name]();
+}
 console.log(`\n${failures ? failures + ' failure(s)' : 'all sim tests passed'}`);
 process.exit(failures ? 1 : 0);

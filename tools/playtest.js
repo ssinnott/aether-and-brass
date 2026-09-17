@@ -691,7 +691,11 @@ const scenarios = {
       assert(Array.isArray(chars) && chars.length === 4, `4 playable characters registered (got ${chars && chars.length})`);
     });
     // Each enemy variant fights the player: spawns, approaches, attacks, can be killed.
-    const list = await new Promise((resolve) => withPage(server, 'seed=1&skipTo=gallery', async (g) => resolve(await g.enemyList())));
+    // withPage() REPORTS a crashed page and returns rather than throwing, so await it directly: a promise
+    // that only resolves from inside fn never settles at all when the page fails to boot, and one wedged
+    // scenario hangs the whole run instead of failing it.
+    let list = [];
+    await withPage(server, 'seed=1&skipTo=gallery', async (g) => { list = await g.enemyList(); });
     for (const e of list) {
       await withPage(server, `seed=2&skipTo=gameplay&chars=2&nowaves=1&godmode=1`, async (g) => {
         await g.step(10);

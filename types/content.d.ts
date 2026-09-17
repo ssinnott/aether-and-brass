@@ -107,7 +107,6 @@ interface Frame {
   teleport?: { toNearestEnemy?: boolean; behind?: boolean; range?: number; offset?: number; unique?: boolean };
   fx?: Array<{ kind: string; x?: number; y?: number; [k: string]: any }>;
   sfx?: string;
-  hitSfx?: string;
   cancel?: 'attack' | 'any' | null;
   /** Fires Fighter.onAnimEvent(name) before the built-in handlers. */
   event?: string;

@@ -213,7 +213,7 @@ const winchAnims = Object.assign(makeCrowBase(WC, WINCH_STANCE), {
   // phase change: the harness blows its pins, the drum drops off her back and she steps out of it
   phaseChange: { loop: false, frames: [
     FK(16, { ...WC, torso: -18, head: -20, armR: [-40, 30], armL: [-70, -30], root: [-4, 0], face: 'hurt' }, { sfx: 'prop_break', ease: 'out' }),
-    FK(14, { ...WC, torso: 24, head: 6, root: [2, 4], legR: [36, 44], legL: [-26, 44], squash: 1.12, stretch: 0.9, face: 'grit' }, { ease: 'in', fx: [{ kind: 'debris', x: -10, y: 40, count: 8 }, { kind: 'dust', x: 0, y: 0, count: 8 }] }),
+    FK(14, { ...WC, torso: 24, head: 6, root: [2, 4], legR: [36, 44], legL: [-26, 44], squash: 1.12, stretch: 0.9, face: 'grit' }, { ease: 'in', fx: [{ kind: 'dust', x: 0, y: 0, count: 8 }] }),
     FK(14, { ...WC, torso: 6, head: -6, root: [0, 1], face: 'angry' }, { ease: 'out' }),
   ] },
   // defeat: the axe goes, she folds over the rail and the wing-pack fizzles out

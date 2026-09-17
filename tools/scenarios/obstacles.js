@@ -129,7 +129,7 @@ export async function obstacles(server, { withPage, assert }) {
     // every board rather than the two sections this scenario walks, and a height a board picks up from a default
     // rather than from its own spec is measured as the game will actually build it.
     const walls = await g.eval(async () => {
-      const [{ createZones }, { STAGES }] = await Promise.all([import('/src/game/hazards.js'), import('/src/content/stage/index.js')]);
+      const [{ createZones }, { STAGES }] = await Promise.all([import('/src/game/zones.js'), import('/src/content/stage/index.js')]);
       const out = [];
       for (const st of STAGES) for (const sec of st.sections || []) {
         for (const z of createZones((sec.zones || []).filter((q) => q.type === 'solid'))) {

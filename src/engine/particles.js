@@ -79,7 +79,7 @@ export const particles = {
       if (!p.active) continue;
       if (++p.life >= p.max) { p.active = false; continue; }
       liveCount++;
-      p.vy -= p.gravity;
+      p.vy -= p.screen ? -p.gravity : p.gravity; // screen y grows downward, so a screen particle falls the other way
       p.vx *= p.drag; p.vy *= p.drag; p.vz *= p.drag;
       p.x += p.vx; p.y += p.vy; p.z += p.vz; p.rot += p.vrot;
       if (!p.screen && p.y < 0 && p.gravity > 0) {

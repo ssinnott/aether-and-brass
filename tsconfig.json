@@ -10,7 +10,10 @@
   //   content/  the largest layer, and the one where a bad key is quietest: a misspelled frame
   //             or hook field does not throw, it silently does nothing. types/content.d.ts
   //             declares the shapes it conforms to by convention.
-  // Still out: game/ and art/.
+  //   art/      6k lines of canvas drawing, where the quiet failure is arithmetic on a value the
+  //             checker can only see as `string | number` -- a mixed array literal destructured
+  //             into coordinates. Joining cost two JSDoc tuple annotations and no runtime change.
+  // Still out: game/.
   "compilerOptions": {
     "allowJs": true,
     "checkJs": true,
@@ -36,6 +39,7 @@
     "types/**/*.d.ts",
     "src/engine/**/*.js",
     "src/net/**/*.js",
-    "src/content/**/*.js"
+    "src/content/**/*.js",
+    "src/art/**/*.js"
   ]
 }

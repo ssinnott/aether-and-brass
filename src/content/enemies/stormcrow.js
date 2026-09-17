@@ -108,7 +108,7 @@ const BASE = {
   },
   sfx: { hurt: 'crow_hurt', death: 'crow_death' },
   ai: {
-    attackRange: 42, zTolerance: 13, retreatChance: 0.3, attackCooldown: [40, 85], aggression: 0.6, firstAttackDelay: 42,
+    attackRange: 42, zTolerance: 13, retreatChance: 0.3, attackCooldown: [40, 85], firstAttackDelay: 42,
     flank: true, tokenGroup: 'stormcrow', maxAttackers: 2,
     backstepAfterWhiffs: { whiffs: 2, dist: 46, iframes: 8, cooldown: 70, range: 110 },
   },

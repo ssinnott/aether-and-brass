@@ -81,7 +81,9 @@ export class GameplayScreen extends Screen {
     const nowaves = params.nowaves != null ? !!params.nowaves : !!opt.nowaves;
     const section = params.section != null ? params.section | 0 : (opt.section || 0);
     // ?event=<id> (issue #33): the runner resolves the id to its section and arms it once the party is in place
-    const event = params.event != null ? params.event : (opt.event || '');
+    // Dropped under netplay (main.js parseOptions, ARCHITECTURE 12): the START packet does not carry the id,
+    // so a peer without the flag would arm a different section -- the same reason ?enemythrow is forced off.
+    const event = this.netRun ? '' : (params.event != null ? params.event : (opt.event || ''));
     this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves, startSection: section, startEvent: event });
     this.runner.start();
     for (const s of opt.spawn || []) this.spawnEnemy(s.type, s.variant, s.dx, s.dz);
@@ -110,7 +112,9 @@ export class GameplayScreen extends Screen {
       ctx.fillStyle = 'rgba(10,6,20,0.55)'; ctx.fillRect(0, VIEW_H / 2 - 22, VIEW_W, 44);
       drawTextOutlined(ctx, who, VIEW_W / 2, VIEW_H / 2 - 14, { size: 2, color: '#4DF0E0', outline: '#0a3a38', align: 'center' });
       drawTextOutlined(ctx, '.'.repeat(1 + ((f >> 4) % 3)), VIEW_W / 2, VIEW_H / 2 + 6, { size: 2, color: '#4DF0E0', outline: '#0a3a38', align: 'center' });
-    } else if (net.state === 'ended' && net.endReason && this.frame - (this.netEndedAt || (this.netEndedAt = this.frame)) < 240) {
+    // netRun, not the live state: an ended session is never cleared off game.net, so without it this banner
+    // re-arms on the first frame of every later offline run.
+    } else if (this.netRun && net.state === 'ended' && net.endReason && this.frame - (this.netEndedAt || (this.netEndedAt = this.frame)) < 240) {
       const bots = (this.players || []).map((p, i) => (p && i !== net.localSlot ? i + 1 : 0)).filter(Boolean);
       ctx.fillStyle = 'rgba(10,6,20,0.6)'; ctx.fillRect(0, 40, VIEW_W, 30);
       drawTextOutlined(ctx, String(net.endReason).toUpperCase(), VIEW_W / 2, 44, { size: 1, color: UI.red, outline: '#2a0808', align: 'center' });
@@ -227,10 +231,9 @@ export class GameplayScreen extends Screen {
     const cam = this.world.camera;
     this.players.forEach((p, i) => {
       if (!p) return;
-      p.out = false; p.dead = false; p.alive = true; p.removeMe = false; p.lives = 3; p.continuesUsed++;
-      p.hp = p.maxHp; p.meter = 0; p.state = ST.IDLE; p.stateTimer = 0; p.hitstop = 0; p.grabbedBy = null; p.grabTarget = null; p.heldBody = null; p.heldProp = null;
-      p.hurtTimer = 0; p.juggleCount = 0; p.juggleGravity = 0; p.juggleImmune = false; p.chainHits = 0; p.combo = 0; p.comboTimer = 0; p.running = false; p.comboStep = 0; p.busy = 0;
-      p.clearWeapon();
+      p.resetBody();
+      p.out = false; p.lives = 3; p.continuesUsed++;
+      p.state = ST.IDLE; p.stateTimer = 0; p.hurtTimer = 0; p.running = false; p.comboStep = 0; p.busy = 0;
       p.x = clamp(cam.x + VIEW_W / 2 - 40 + i * 60, cam.left + 20, cam.right - 20); p.z = PLAYER_START_Z + i * PLAYER_Z_PITCH; p.y = 0; p.vy = 0; p.vx = 0;
       p.invuln = 120; p.play('idle');
       if (!this.world.entities.includes(p)) this.world.add(p);
@@ -310,6 +313,10 @@ export class GameplayScreen extends Screen {
       if (this.toResults && typeof net.matchOver === 'function') net.matchOver();
       else net.end('left the match');
     }
+    // A session that died DURING the match never reaches the branch above -- it is already inactive
+    // by the time we get here -- and end() leaves the local slot virtual-injected on purpose so the
+    // survivor keeps their own hand for the rest of the run. The run ends here, so hand it back.
+    if (net && typeof net.release === 'function') net.release();
     this.game.players = [];
     if (this.runner) this.runner.dispose();
   }

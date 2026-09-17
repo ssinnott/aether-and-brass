@@ -1,6 +1,7 @@
 // Art-invariant runner: collects subjects, loads the rule modules, runs every tier and returns a structured report.
 // See README.md for the harness contract every rule module must match. CLI entry: tools/art-check.js.
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import * as helpers from './helpers.js';
@@ -49,8 +50,12 @@ export async function loadRuleModules(specs = RULE_MODULES) {
     try {
       mod = await import(url);
     } catch (e) {
-      const missing = e && (e.code === 'ERR_MODULE_NOT_FOUND' || /Cannot find module/.test(String(e.message)));
-      skipped.push({ what: spec, reason: missing ? 'rule module not present yet (its owner is still building it)' : `rule module failed to import: ${e && e.message}` });
+      // A module nobody has written yet is a skip, so the suite stays usable while one is in flight. A module
+      // that IS on disk and threw is a broken gate: it belongs in problems, which fail the run. Test the FILE,
+      // not the message -- a rules module whose own import went missing throws ERR_MODULE_NOT_FOUND too, and
+      // reading that as "not written yet" is how a whole tier disappears behind a green exit code.
+      if (!existsSync(fileURLToPath(url))) skipped.push({ what: spec, reason: 'rule module not present yet (its owner is still building it)' });
+      else problems.push(`${spec} failed to import: ${e && e.message}`);
       continue;
     }
     const tier = mod.TIER;

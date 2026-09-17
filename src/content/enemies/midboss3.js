@@ -166,7 +166,7 @@ const kilnAnims = Object.assign(makeChandlerBase(KC, { stoop: 22, head: 4, weapo
   phaseChange: { loop: false, frames: [
     FK(16, { ...KC, torso: -16, head: -20, armR: [-38, 28], armL: [-66, -28], root: [-4, 0], legR: [16, 8], legL: [-18, 12], face: 'hurt' }, { sfx: 'prop_break', ease: 'out' }),
     FK(14, { ...KC, torso: 26, head: 8, root: [2, 4], legR: [36, 44], legL: [-26, 44], squash: 1.12, stretch: 0.9, face: 'grit' },
-      { ease: 'in', fx: [{ kind: 'debris', x: -14, y: 44, count: 9 }, { kind: 'steam', x: -10, y: 30, count: 6 }, { kind: 'dust', x: 0, y: 0, count: 8 }] }),
+      { ease: 'in', fx: [{ kind: 'steam', x: -10, y: 30, count: 6 }, { kind: 'dust', x: 0, y: 0, count: 8 }] }),
     FK(14, { ...KC, torso: 8, head: -4, root: [0, 1], legR: [12, 8], legL: [-12, 8], face: 'angry' }, { ease: 'out' }),
   ] },
   // slam: the shovel goes up over the kiln collar and comes down on the floor line in front of her

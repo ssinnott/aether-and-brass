@@ -50,9 +50,10 @@ the renderer (`src/art/rig.js`, `shading.js`, `rigParts.js`) so every rig gets i
 3. **Far limbs darker and greyer.** `rig.paletteFar = farPalette(palette, farShade, farDesat)` — `build.farShade` 0.62
    (38 % darker), `build.farDesat` 0.25 (pulled toward grey, slightly cool). Far-side hooks must colour from `info.pal`
    (`farTone()` for module constants), never from the module palette, and never darken twice.
-4. **Simplified shading.** Parts narrower than 8 px (`r < build.thinR`, default 4) get **two tones** (base + shadow);
+4. **Simplified shading.** Parts narrower than ~13 px (`r < build.thinR`, default 6.5) get **two tones** (base + shadow);
    clipped shapes (`celPath` / `celRect` / `celPoly`) get a highlight cap only when their half-extent is ≥ `build.hiMin`
-   (default 6: torso, head, weapon head); below `build.flatR` (2.5) a part is one flat tone. `build.tones: 2` drops
+   (default 10 — every torso clears it; a skull only at `headR` ≥ 10, which most rigs are under); below `build.flatR`
+   (5) a part is one flat tone. `build.tones: 2` drops
    every highlight cap on a rig — the only light marks are then explicit 1 px rims (`rimRect` on axis-aligned metal,
    `rimTop` along a shoulder line / boot top) and only on big shapes. Never stack highlights.
 5. **Bigger, simpler face features.** `drawFace` scales with the head: `headR >= 9.5` (or `opts.big`) gets 5×4 / 4×4
@@ -155,8 +156,8 @@ the joint, shins and forearms narrow — and `neckR` for thick or thin necks.
   change — skin = light warm, cloth = mid, metal = distinctly light or dark. Upper arms and cuffs take `palette.sleeve`
   (defaults to `primary`): give it a light shirt colour so the arms read against the torso. Trousers, boots and the
   floor must not share a value (a mid leather boot with a light steel toe, not iron on iron).
-* **Two-tone rule (shading budget):** cel parts narrower than ~8 px (`r < build.thinR`, default 4) get base + shadow
-  only; clipped shapes get a highlight cap only at half-extent ≥ `build.hiMin` (6); below `build.flatR` (2.5) flat.
+* **Two-tone rule (shading budget):** cel parts narrower than ~13 px (`r < build.thinR`, default 6.5) get base + shadow
+  only; clipped shapes get a highlight cap only at half-extent ≥ `build.hiMin` (10); below `build.flatR` (5) flat.
   `build.tones: 2` = no highlight caps at all, light marks via `rimRect` / `rimTop` on big shapes only (§0.4).
 * **Contact shadow:** the renderer draws a 1 px translucent dark capsule under every arm and leg segment
   (`build.contactShadow`, alpha 0.3) so a near limb separates from the torso and a far limb from the back piece it
