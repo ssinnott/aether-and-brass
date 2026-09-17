@@ -291,6 +291,17 @@ export class Hazard extends Entity {
   get swingX() { return dsin((this.t / this.period) * Math.PI * 2) * (this.info.swing || 0); }
   get tellStart() { return this.period - this.activeFrames - this.tellFrames; }
   get activeStart() { return this.period - this.activeFrames; }
+  /**
+   * How many frames INTO the active window we are. `t` is the natural cycle, so a scripted `force: 'active'`
+   * (stage.hazardSet) can hold a hazard active anywhere in it -- hazardSet writes only `forcePhase`, never
+   * `period` or `offset`, so `t` keeps running. `t - activeStart` is then tens of windows out, and everything
+   * derived from it goes too: the cannon's ball, barrel and muzzle flash land thousands of px off the deck, and
+   * the vent plume's height goes NEGATIVE, drawing the plume down through the floor. Wrapping it makes a
+   * held-open hazard simply re-run its window, which is what `force: 'active'` already means everywhere else
+   * (a held vent keeps venting on its `every` clock).
+   * Unforced this is exactly `t - activeStart`, already 0..activeFrames-1, so the natural cycle is untouched.
+   */
+  get activeT() { const n = this.activeFrames || 1; return ((this.t - this.activeStart) % n + n) % n; }
   /** Which way the wagon rolls (x -> x1). */
   get wagonDir() { return Math.sign(this.x1 - this.x) || 1; }
   /** World x of the part that matters for the camera's visibility gate (the moving bit, where there is one). */
@@ -393,7 +404,7 @@ export class Hazard extends Entity {
   }
   /** Cannon: the ball crosses the lane in `active` frames; each frame's hit covers the stretch it just flew. */
   updateCannon(world) {
-    const k0 = (this.t - this.activeStart) / this.activeFrames, k1 = (this.t - this.activeStart + 1) / this.activeFrames;
+    const k0 = this.activeT / this.activeFrames, k1 = (this.activeT + 1) / this.activeFrames;
     const xa = this.x + this.dir * this.reach * k0, xb = this.x + this.dir * this.reach * k1;
     this.ballX = xb;
     const mid = (xa + xb) / 2, half = Math.abs(xb - xa) / 2 + this.r;
@@ -615,7 +626,7 @@ export class Hazard extends Entity {
   }
   /** The vent eruption column (shared by the vents and the lime pit): a translucent outer jet with a hot white core. */
   drawPlume(ctx, sx, sy, f, color, core) {
-    const k = Math.min(1, (this.t - this.activeStart) / 6), h = (58 + Math.sin(f * 0.5) * 8) * k;
+    const k = Math.min(1, this.activeT / 6), h = (58 + Math.sin(f * 0.5) * 8) * k;
     ctx.globalAlpha = 0.6; ctx.fillStyle = color;
     pathPoly(ctx, [sx - 12, sy - 2, sx + 12, sy - 2, sx + 20, sy - h, sx - 20, sy - h]); ctx.fill();
     ctx.globalAlpha = 0.9; ctx.fillStyle = core; pathPoly(ctx, [sx - 5, sy - 2, sx + 5, sy - 2, sx + 7, sy - h * 0.7, sx - 7, sy - h * 0.7]); ctx.fill();
@@ -640,7 +651,7 @@ export class Hazard extends Entity {
     }
     // barrel length: parked 18, runs out to 40 over the tell, recoils to 26 on firing and creeps home over the idle
     let len = 18;
-    if (ph === 'tell') len = 18 + 22 * k; else if (ph === 'active') len = 26 + 14 * Math.max(0, 1 - (this.t - this.activeStart) / 4); else if (this.t < 40) len = 26 - 8 * (this.t / 40);
+    if (ph === 'tell') len = 18 + 22 * k; else if (ph === 'active') len = 26 + 14 * Math.max(0, 1 - this.activeT / 4); else if (this.t < 40) len = 26 - 8 * (this.t / 40);
     len = Math.round(len);
     const wood = tones('#5a3a22'), iron = tones(this.info.color), brass = tones('#C9963A');
     // carriage: a wooden block on two iron wheels, facing downrange
@@ -653,7 +664,7 @@ export class Hazard extends Entity {
     ctx.fillStyle = brass.base; ctx.fillRect(len - 6, -27, 3, 10); ctx.fillStyle = brass.hi; ctx.fillRect(len - 6, -27, 3, 1);
     circle(ctx, -10, -22, 4, iron.sh, OL, 1);                                       // breech knob
     if (ph === 'tell' && (f & 4)) { ctx.fillStyle = TELL_RED; ctx.fillRect(-4, -31, 8, 3); }   // slow match glows on the touch-hole
-    if (ph === 'active') { const m = this.t - this.activeStart; if (m < 4) { ctx.globalAlpha = 0.9 - m * 0.2; circle(ctx, len + 6, -22, 8 - m, '#ffffff', null, 0); circle(ctx, len + 6, -22, 12 - m * 2, STORM, null, 0); ctx.globalAlpha = 1; } }
+    if (ph === 'active') { const m = this.activeT; if (m < 4) { ctx.globalAlpha = 0.9 - m * 0.2; circle(ctx, len + 6, -22, 8 - m, '#ffffff', null, 0); circle(ctx, len + 6, -22, 12 - m * 2, STORM, null, 0); ctx.globalAlpha = 1; } }
     ctx.restore();
     if (ph === 'active') {
       // the ball and its smear along the lane (a 2-frame trail at 64 px/f is a streak, not a dot)
