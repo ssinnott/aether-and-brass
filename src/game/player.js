@@ -55,7 +55,7 @@ export class Player extends Fighter {
     /** Last dodge attempt was through an attack's active frames (fighter.js onDodged), else a clean roll (training readout). */
     this.dodgeThrough = false;
     this.lastTarget = null; this.heldBody = null; this.heldProj = null; this.victory = false;
-    this.crowdInst = -1; this.crowdHits = 0; this.crowdClearUntil = -1; this.tauntAcc = 0;
+    this.crowdInst = -1; this.crowdHits = 0; this.crowdSeen = new Set(); this.crowdClearUntil = -1; this.tauntAcc = 0;
     this.intent = { x: 0, y: 0, attack: false, jump: false, special: false, super: false, dodge: false, taunt: false, run: false, start: false };
     const taunt = def.anims && def.anims.taunt;
     this.tauntHasEvent = !!(taunt && taunt.frames && taunt.frames.some((f) => f.event === 'meterGain' || f.meter));
@@ -393,9 +393,14 @@ export class Player extends Fighter {
     this.comboTimer = FIGHTER_DEFAULTS.comboTimer;
     this.comboScale = 1.3;
     if (this.combo > this.maxCombo) this.maxCombo = this.combo;
-    // crowd clear (GDD 7): 3+ enemies in one hit -> kills from it score x2
-    if (this.crowdInst !== this.anim.instance) { this.crowdInst = this.anim.instance; this.crowdHits = 0; }
-    if (++this.crowdHits === CROWD_CLEAR_HITS && this.world) { this.crowdClearUntil = this.world.frame + CROWD_CLEAR_FRAMES; floatText(this.x, this.y + this.h + 24, this.z, 'CROWD CLEAR!', UI.brassLight, 2); }
+    // crowd clear (GDD 7): 3+ enemies in one hit -> kills from it score x2. Counted per DISTINCT body: a
+    // multi-hit move confirms several hits inside ONE attack instance, and one enemy hit six times by
+    // Sael's Tempest Waltz is not a crowd.
+    if (this.crowdInst !== this.anim.instance) { this.crowdInst = this.anim.instance; this.crowdHits = 0; this.crowdSeen.clear(); }
+    if (!this.crowdSeen.has(target.id)) {
+      this.crowdSeen.add(target.id);
+      if (++this.crowdHits === CROWD_CLEAR_HITS && this.world) { this.crowdClearUntil = this.world.frame + CROWD_CLEAR_FRAMES; floatText(this.x, this.y + this.h + 24, this.z, 'CROWD CLEAR!', UI.brassLight, 2); }
+    }
     super.onHitConfirmed(target, hit);
   }
   onDodged(attacker) { this.addMeter(DODGE_METER); this.dodgeThrough = true; floatText(this.x, this.y + this.h + 10, this.z, 'DODGE', UI.meter, 1); if (this.world) this.world.logEvent('dodge', this, attacker, {}); }

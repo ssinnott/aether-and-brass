@@ -1013,7 +1013,9 @@ export class Zone extends Entity {
       else if (ringOut(world, f, 'rail', 0)) { f.vy = 2.5; f.vx = 0; f.vz = 0; }
     }
     for (const e of world.entities) {
-      if (e.removeMe || !this.inBox(e.x, e.z)) continue;
+      // e.y > 0 for the same reason the fighter loop above skips airborne bodies: a gap is a hole in the deck,
+      // not open air above it, so cargo still in flight crosses it. What LANDS in it is gone.
+      if (e.removeMe || e.y > 0 || !this.inBox(e.x, e.z)) continue;
       const cargo = (e.kind === 'projectile' && (e.thrownWeapon || e.thrownProp)) || (e.kind === 'item' && e.weaponId);
       if (cargo) loseOverEdge(world, e);
     }
