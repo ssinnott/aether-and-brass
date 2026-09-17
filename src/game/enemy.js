@@ -49,7 +49,7 @@ import { startArrival, stepArrival, finishArrival, isHanging } from './entrances
 
 /** Defaults for `def.ai` (content overrides per type / variant). */
 export const AI_DEFAULTS = Object.freeze({
-  attackRange: 40, zTolerance: 12, retreatChance: 0.25, attackCooldown: [40, 90], aggression: 0.5, attacks: [], ranged: null,
+  attackRange: 40, zTolerance: 12, retreatChance: 0.25, attackCooldown: [40, 90], attacks: [], ranged: null,
   staggerEvery: 0, staggerFrames: 30, firstAttackDelay: 45, flank: false, hoverCircle: false, fleeLast: false, fleeHp: 0, fleeDistance: 100,
   retreatBudget: 90, evadeChance: 0, evadeCooldown: 90, riposteChance: 0, riposteCooldown: 150, riposteAnim: 'riposte', panicRange: 0, panicFrames: 30,
   ignoresTokens: false, shield: false, launchStun: 0, stallEvery: 0, stallFrames: 70, stallDamageMult: 3, stallGrabbable: true, grabHoldHits: 3, grabHitEvery: 18,

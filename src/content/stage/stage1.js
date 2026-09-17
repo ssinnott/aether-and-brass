@@ -129,8 +129,8 @@ export const stage1 = {
       // the back 20px is the molten channel (10 + burn and a bounce; enemies knocked in die, +200); the cargo bay's front
       // 40px is a conveyor that drifts everything left at 1px/f and carries a crate every 4s while the Hoister is up
       zones: [
-        { type: 'molten', x0: 1800, x1: 3920 },
-        { type: 'conveyor', x0: 3280, x1: 3920, z0: 100 },
+        { type: 'molten', x0: 1800, x1: 3800 },
+        { type: 'conveyor', x0: 3280, x1: 3800, z0: 100 },
       ],
       waves: [
         { triggerX: 2100, lock: true, spawns: [{ type: S, variant: 'firebrand', side: 'right', z: 40, delay: 0 }, { type: S, variant: 'firebrand', side: 'left', z: 100, delay: 30 }, ...cut(3, { z0: 60, delay0: 20 })] },

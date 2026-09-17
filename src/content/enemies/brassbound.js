@@ -199,7 +199,7 @@ const BASE = {
   type: 'brassbound', faction: 'brassbound', walkSpeed: 1.5, throwDamageMult: 1.5,
   build: mkBuild({ stripe: '#2A5C8A' }),
   sfx: { hurt: 'brass_hit', death: 'brass_death', tell: 'brass_tell' },
-  ai: { attackRange: 40, zTolerance: 12, retreatChance: 0.15, attackCooldown: [45, 90], aggression: 0.6, staggerEvery: 4, staggerFrames: 30, firstAttackDelay: 50, flank: false },
+  ai: { attackRange: 40, zTolerance: 12, retreatChance: 0.15, attackCooldown: [45, 90], staggerEvery: 4, staggerFrames: 30, firstAttackDelay: 50, flank: false },
 };
 /** makeEnemyDef + the hook / trait / projectile tables the core reads (fighter.js header). */
 function variant(v) {

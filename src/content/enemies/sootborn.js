@@ -309,7 +309,7 @@ const BASE = {
   type: 'sootborn', faction: 'sootborn', walkSpeed: 1.7,
   build: { scale: 0.85, palette: GOB_PAL, outline: GOB.outline, outlineWidth: 1, proportions: GOB_PROPS, parts: GOB_PARTS, smearColor: '#D8D0B8', clan: CLAN.cutthroat, gob: { tunic: 'rags' } },
   sfx: { hurt: 'soot_hurt', death: 'soot_death' },
-  ai: { attackRange: 34, zTolerance: 12, retreatChance: 0.35, attackCooldown: [35, 80], aggression: 0.7, firstAttackDelay: 40, flank: true, fleeLast: true, tokenGroup: 'sootborn', maxAttackers: 2 },
+  ai: { attackRange: 34, zTolerance: 12, retreatChance: 0.35, attackCooldown: [35, 80], firstAttackDelay: 40, flank: true, fleeLast: true, tokenGroup: 'sootborn', maxAttackers: 2 },
 };
 /**
  * Fleeing goblins use the arms-up `flee` cycle; a panicking Slinger the `panic` hop (both while the core keeps its

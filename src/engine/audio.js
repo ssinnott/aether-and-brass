@@ -12,6 +12,9 @@ const JITTER = 0.04;        // +/- pitch variation on hit-type SFX
 const DUCK_WINDOW = 0.08;   // simultaneous-SFX window for volume ducking
 
 const S = { ctx: null, master: null, comp: null, sfxGain: null, musicGain: null, unlocked: false, muted: false, volume: 0.8, musicVolume: 0.5, sfxVolume: 1, recent: [] };
+// `transpose` is a constant 0: the per-track modulation it was added for was never written, and its setter
+// was never called, so only each channel's own `ch.transpose` shifts anything. `intensity` gates every
+// track's `combat: true` harmony lead and is likewise never set -- see audio.js's note above setVolume.
 const M = { name: '', voices: [], timer: 0, intensity: 0, transpose: 0 };
 let gestureInstalled = false;
 const warned = new Set();
@@ -182,18 +185,6 @@ export const audio = {
       for (const v of M.voices) { v.combat.gain.cancelScheduledValues(now); v.combat.gain.setValueAtTime(v.combat.gain.value, now); v.combat.gain.linearRampToValueAtTime(M.intensity, now + 0.3); }
     },
     get intensity() { return M.intensity; },
-    /** Transpose all newly scheduled notes by N semitones (section 3 modulates up at each pylon crossbar). */
-    setTranspose(semis) { M.transpose = Math.round(semis) || 0; },
-    get transpose() { return M.transpose; },
-    /** Dip the music to silence for `seconds` (e.g. 2s when Vane appears), then swell back. */
-    silence(seconds = 2) {
-      if (!S.musicGain || !S.ctx) return;
-      const g = S.musicGain.gain, now = S.ctx.currentTime;
-      g.cancelScheduledValues(now); g.setValueAtTime(Math.max(0.0001, g.value), now);
-      g.exponentialRampToValueAtTime(0.0001, now + 0.08);
-      g.setValueAtTime(0.0001, now + seconds);
-      g.exponentialRampToValueAtTime(Math.max(0.0001, S.musicVolume), now + seconds + 0.4);
-    },
     /** Convenience for the final boss: phase 1 waltz, 2 doubled-kick 4/4, 3 half-time, 4 the D-major last 20%. */
     bossPhase(n) { audio.music.play(['boss', 'boss', 'boss2', 'boss3', 'boss_final'][Math.max(1, Math.min(4, n | 0))]); },
   },
