@@ -21,7 +21,7 @@ import { Screen } from '../game.js';
 import { drawText } from '../../engine/text.js';
 import { rivetLine, gear } from '../../art/shapes.js';
 import { input, bindings } from '../../engine/input.js';
-import { options } from '../options.js';
+import { options, VOLUME_STEPS } from '../options.js';
 import { drawPlate, consumeMenuBuffers } from './pause.js';
 import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.js';
 import { drawVolumeRow } from './options.js';
@@ -109,8 +109,8 @@ export class HelpScreen extends Screen {
       const dir = (inp.pressed(i, 'right') ? 1 : 0) - (inp.pressed(i, 'left') ? 1 : 0);
       if (dir) this.change(dir);
       // MUTE is the only row a confirm can act on; a confirm on a slider would be a silent no-op, so it
-      // nudges the slider up instead of doing nothing.
-      if (confirmPressed(inp, i)) this.change(1);
+      // steps the slider instead -- reversing at the ceiling so a full slider (SFX's default) still moves.
+      if (confirmPressed(inp, i)) this.change(this.cursor !== R_MUTE && options.get(this.cursor === R_MUSIC ? 'music' : 'sfx') >= VOLUME_STEPS ? -1 : 1);
     }
     if (back) { audio.play('menu_back'); consumeMenuBuffers(inp); this.game.pop(); }
   }

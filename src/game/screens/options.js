@@ -93,6 +93,12 @@ export class OptionsScreen extends Screen {
   activate(i) {
     const audio = this.game.audio;
     if (i === R_DIFF) { if (!this.lockDifficulty) { options.cycle('difficulty', 1); this.game.options.difficulty = options.difficulty(); audio.play('menu_move'); } }
+    // CONFIRM on a slider would otherwise be a silent no-op. It steps the slider, reversing at the ceiling so
+    // a row already at VOLUME_STEPS -- which is SFX's default -- answers the key instead of staying dead.
+    else if (i === R_MUSIC || i === R_SFX) {
+      const key = i === R_MUSIC ? 'music' : 'sfx';
+      if (options.adjust(key, options.get(key) >= VOLUME_STEPS ? -1 : 1)) audio.play('menu_move');
+    }
     else if (i === R_SHAKE) { options.cycle('shake', 1); audio.play('menu_move'); }
     else if (i === R_MUTE) { audio.setMuted(!audio.muted); audio.play('menu_move'); }
     else if (i === R_CONTROLS) { this.panel = 'controls'; this.controls.open(); audio.play('menu_confirm'); }

@@ -929,14 +929,15 @@ export const BASE_HOOKS = {
  * longhand. Every pose is still authored per attack — only the timing skeleton and the frame flags are shared,
  * exactly as stormcrowRig's crowStrike and chandlerRig's chandStrike do for the Stage 2 and Stage 3 bosses.
  *
- * TWO THINGS ARE THE GLEANING'S OWN. `gas` holds the bladder's two tell channels (rig.gas / rig.swell) across keys
- * that enemy.js has already cleared rig.tell on, which is the whole reason every airborne variant in gleaning.js
- * carries a hook: a Gleaner's dangerous window does not end when its wind-up does, it ends when it lands. And the
+ * TWO THINGS ARE THE GLEANING'S OWN. The bladder's two tell channels (rig.gas / rig.swell) have to be held across
+ * keys enemy.js has already cleared rig.tell on -- this builder does not do it, which is exactly why every airborne
+ * variant in gleaning.js carries its own hook keyed on frameIndex: a Gleaner's dangerous window does not end when
+ * its wind-up does, it ends when it lands. And the
  * recovery key is `punish: true` with ai.punishGrabbable behind it, because on this faction the landing IS the
  * opening — grabs.js refuses an airborne target, so you collect a Gleaner on the deck or not at all.
  * @param {object} o { tell, active, recovery, holdDur, carry, stance, tellSfx, sfx, hitbox|hitboxes, fx, move,
- *   smear, armor, invuln, event, aimEvent, projectile, summon, recoverFx, gas, w1, w2, h, hold, r } — poses are
- *   pose specs; `gas` is the swell factor held over the hit and hold keys (1.12 by default when asked for).
+ *   smear, armor, invuln, event, aimEvent, projectile, summon, recoverFx, w1, w2, h, hold, r } — poses are
+ *   pose specs.
  */
 const STANCE = Object.freeze({ legR: [14, 6], legL: [-16, 8], footR: -18, footL: -15 });
 export function gleanStrike(o) {

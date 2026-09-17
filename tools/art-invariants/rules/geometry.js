@@ -13,7 +13,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { rad } from '../../../src/engine/math.js';
-import { LIGHT_X, LIGHT_Y, RAMP } from '../../../src/art/shading.js';
+import { LIGHT_X, LIGHT_Y, RAMP, HI_MIN } from '../../../src/art/shading.js';
 import { stepChain, resetChain } from '../../../src/art/secondary.js';
 import * as H from '../helpers.js';
 
@@ -548,7 +548,9 @@ function scanFrame(A, rig, ops, ctx3, where) {
         // bicep object stacked on a forearm object. It stays narrow deliberately: the clip must contain the fill,
         // and the clipped path must have been inked, so an unoutlined fill in open space still fails.
         const local = e.bbox.half / (e.scale || 1);
-        const hiMin = rig.hiMin != null ? rig.hiMin : 6;
+        // Same default the renderer uses (art/shading.js HI_MIN). Hardcoding it here meant the gate judged
+        // highlight caps against a threshold the renderer had moved away from.
+        const hiMin = rig.hiMin != null ? rig.hiMin : HI_MIN;
         // half-extent is half the LONGER side, which is the right measure for a path fill but not for a rect: a
         // 17x2 binding band on a weapon haft has a half-extent of 8.5 px while being a thin detail line, not a
         // region that could fake a boundary. So a rect must also be substantial on its SHORT side. (Widening the
