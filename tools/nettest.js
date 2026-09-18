@@ -6,17 +6,17 @@
 // These cover the parts that must be provably correct before anything is on the wire: deterministic
 // trig, the MQTT signalling codec, the input/message wire format, and the lockstep frame scheduler
 // under packet loss. Exit code 1 on any failure.
-import { dsin, dcos, dhypot } from '../src/engine/trig.js';
-import { ACTIONS, input } from '../src/engine/input.js';
-import * as M from '../src/net/mqtt-codec.js';
-import * as P from '../src/net/protocol.js';
-import * as S from '../src/net/signal.js';
-import { worldChecksum } from '../src/net/checksum.js';
-import { createLockstep } from '../src/net/lockstep.js';
-import { createNetSession } from '../src/net/session.js';
+import { dsin, dcos, dhypot } from '../src/lib/engine/trig.ts';
+import { ACTIONS, input } from '../src/engine/input.ts';
+import * as M from '../src/lib/net/mqtt-codec.ts';
+import * as P from '../src/net/protocol.ts';
+import * as S from '../src/net/signal.ts';
+import { worldChecksum } from '../src/net/checksum.ts';
+import { createLockstep } from '../src/lib/net/lockstep.ts';
+import { createNetSession } from '../src/net/session.ts';
 // The live module, as session.js sees it: the `progress` suite below works on throwaway copies,
 // but which scope a SESSION leaves active is a property of the one instance it imports.
-import { progress as liveProgress } from '../src/game/progress.js';
+import { progress as liveProgress } from '../src/game/progress.ts';
 
 let failures = 0;
 const ok = (cond, msg) => { console.log((cond ? '  ok:   ' : '  FAIL: ') + msg); if (!cond) failures++; };
@@ -42,7 +42,7 @@ function fakeStorage(seed = {}) {
 
 let progressModule = 0;
 /** A fresh copy of progress.js, so each case starts with an unread save. */
-const freshProgress = () => import(`../src/game/progress.js?t=${++progressModule}`);
+const freshProgress = () => import(`../src/game/progress.ts?t=${++progressModule}`);
 
 const suites = {
   // ---- engine/trig.js: must match Math.* closely enough to be invisible, using only exact ops ----

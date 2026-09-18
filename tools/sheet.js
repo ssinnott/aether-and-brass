@@ -10,14 +10,14 @@
 //   &zoom=3 &cols=9 &cw=100 &ch=124 &bg=docks|#hex &facing=-1 (mirror test)
 // Every cell is rendered at 1x through drawRig (chains, snapping and smears behave exactly as in game), then
 // pixel-zoomed. window.__sheet = { ready, error, bench(n), audit() } for headless capture (tools/sheet-capture.js).
-import { CHARACTERS, getCharacter } from '../src/content/characters/index.js';
-import { buildRig, drawRig, computeJoints } from '../src/art/rig.js';
-import { makePose } from '../src/art/poses.js';
-import { rad } from '../src/engine/math.js';
-import { AnimPlayer } from '../src/game/animation.js';
-import { drawShadowScreen } from '../src/art/fx.js';
-import { PALETTES } from '../src/art/palettes.js';
-import { makeBaseAnims } from '../src/art/animLib.js';
+import { CHARACTERS, getCharacter } from '../src/content/characters/index.ts';
+import { buildRig, drawRig, computeJoints } from '../src/lib/art/rig.ts';
+import { makePose } from '../src/lib/art/poses.ts';
+import { rad } from '../src/lib/engine/math.ts';
+import { AnimPlayer } from '../src/lib/art/animation.ts';
+import { drawShadowScreen } from '../src/art/fx.ts';
+import { PALETTES } from '../src/art/palettes.ts';
+import { makeBaseAnims } from '../src/art/animLib.ts';
 
 /** Plain generic rig used when an enemy is not in the registry (default parts, base anims). */
 function makeDummyDef(type, variant) {
@@ -44,7 +44,7 @@ const out = sheet.getContext('2d');
 async function resolveEnemy(spec) {
   const [type, variant] = spec.split(':');
   try {
-    const m = await import('../src/content/enemies/index.js');
+    const m = await import('../src/content/enemies/index.ts');
     const fn = m.getEnemyDef || m.getEnemy || m.enemyDef || (typeof m.default === 'function' ? m.default : null);
     if (fn) { const d = fn(type, variant); if (d && d.build) return d; }
     for (const k of Object.keys(m)) {
@@ -57,7 +57,7 @@ async function resolveEnemy(spec) {
 /** Every registered enemy rig (ENEMY_GALLERY, else any exported def array) for cast mode, or [] when the registry is missing. */
 async function allEnemies() {
   try {
-    const m = await import('../src/content/enemies/index.js');
+    const m = await import('../src/content/enemies/index.ts');
     if (Array.isArray(m.ENEMY_GALLERY)) return m.ENEMY_GALLERY.filter((e) => e && e.build);
     const all = [];
     for (const k of Object.keys(m)) { const v = m[k]; if (Array.isArray(v) && v.length && v[0] && v[0].build) all.push(...v); }

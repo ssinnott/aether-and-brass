@@ -1,9 +1,9 @@
 // Dev preview for the per-section backdrops (tools/preview-backdrops.html).
 // Shows one section at a time; 1-4 select, arrows scroll the camera, Space toggles animation.
 // Draws a few rig-sized boxes at different z so scale and floor depth read.
-import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MAX } from '../src/constants.js';
-import { Camera } from '../src/engine/camera.js';
-import { createBackdrop, backdropsReady } from '../src/art/backgrounds/index.js';
+import { VIEW_W, VIEW_H, FLOOR_TOP, Z_MAX } from '../src/constants.ts';
+import { Camera } from '../src/engine/camera.ts';
+import { createBackdrop, backdropsReady } from '../src/art/backgrounds/index.ts';
 
 const SECTIONS = [
   { id: 's1', backdrop: 'section1', x0: 0, x1: 1800, name: 'Sootfoot Docks' },

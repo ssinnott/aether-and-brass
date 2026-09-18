@@ -8,27 +8,27 @@
 // These cover the parts whose CORRECTNESS IS ORDERING rather than rendering: which action of a script runs on which
 // frame, how long an arrival takes, where a platform is at a given frame, which audio nodes are still in the graph
 // after a sound has finished, and the keyboard layout's own invariants. Exit code 1 on any failure.
-import { EventRunner, eventLength, EVENT_ACTIONS } from '../src/game/events.js';
-import { ENTRANCES, entranceFor, entranceLength, entranceLanding } from '../src/game/entrances.js';
-import { PLATFORMS } from '../src/game/platforms.js';
-import { SFX_DEFS, CANONICAL_SFX } from '../src/engine/audio/sfx.js';
-import { getEnemyDef } from '../src/content/enemies/index.js';
-import { getCharacter } from '../src/content/characters/index.js';
-import { TRACKS, compileTrack, scheduleSteps } from '../src/engine/audio/music.js';
-import { bestiary, sanitiseRecords, ENTRIES, entriesOf, FACTIONS } from '../src/game/bestiary.js';
-import { CODEX, CODEX_MAX_CHARS } from '../src/content/enemies/codex.js';
+import { EventRunner, eventLength, EVENT_ACTIONS } from '../src/game/events.ts';
+import { ENTRANCES, entranceFor, entranceLength, entranceLanding } from '../src/game/entrances.ts';
+import { PLATFORMS } from '../src/game/platforms.ts';
+import { SFX_DEFS, CANONICAL_SFX } from '../src/engine/audio/sfx.ts';
+import { getEnemyDef } from '../src/content/enemies/index.ts';
+import { getCharacter } from '../src/content/characters/index.ts';
+import { TRACKS, compileTrack, scheduleSteps } from '../src/engine/audio/music.ts';
+import { bestiary, sanitiseRecords, ENTRIES, entriesOf, FACTIONS } from '../src/game/bestiary.ts';
+import { CODEX, CODEX_MAX_CHARS } from '../src/content/enemies/codex.ts';
 import { readFileSync } from 'node:fs';
-import { progress, SOLO_SCOPE } from '../src/game/progress.js';
+import { progress, SOLO_SCOPE } from '../src/game/progress.ts';
 import {
   DEFAULT_BINDINGS, BINDINGS_LAYOUT, LAYOUTS, joinCodesFor, joinLabels, legendFor,
   moveLabelFor, rebindKey, cloneBindings, sanitiseBindings,
-} from '../src/engine/bindings.js';
-import { Dialogue, pairKey, TRIGGERS, PLATE_LIFE, PLATE_COOLDOWN, REPLY_DELAY } from '../src/game/dialogue.js';
-import { measureText } from '../src/engine/text.js';
-import { VIEW_W } from '../src/constants.js';
-import { BANTER, SOLO, BOSS_LINES } from '../src/content/characters/lines.js';
-import { CHARACTERS } from '../src/content/characters/index.js';
-import { STAGES } from '../src/content/stage/index.js';
+} from '../src/engine/bindings.ts';
+import { Dialogue, pairKey, TRIGGERS, PLATE_LIFE, PLATE_COOLDOWN, REPLY_DELAY } from '../src/game/dialogue.ts';
+import { measureText } from '../src/engine/text.ts';
+import { VIEW_W } from '../src/constants.ts';
+import { BANTER, SOLO, BOSS_LINES } from '../src/content/characters/lines.ts';
+import { CHARACTERS } from '../src/content/characters/index.ts';
+import { STAGES } from '../src/content/stage/index.ts';
 
 let failures = 0;
 const ok = (cond, msg) => { console.log((cond ? '  ok:   ' : '  FAIL: ') + msg); if (!cond) failures++; };
@@ -480,7 +480,7 @@ function suiteBeats() {
     ok(same, 'two peers on the same frame pick the same line');
     // The strong form of the same claim: the module cannot draw from the shared stream because it never imports it.
     // A single `rng.pick` behind a peer-local cooldown would desync a match, so this is the line worth guarding.
-    const src = readFileSync(new URL('../src/game/dialogue.js', import.meta.url), 'utf8');
+    const src = readFileSync(new URL('../src/game/dialogue.ts', import.meta.url), 'utf8');
     ok(!/^\s*import[^;]*\brng\b/m.test(src), 'game/dialogue.js never imports the rng');
   }
 

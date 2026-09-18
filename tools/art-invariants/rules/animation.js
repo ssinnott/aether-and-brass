@@ -11,7 +11,7 @@
 // control subjects (stormcrow:*, midboss2:*, boss2:*); the measured range sits in the comment next to each number.
 // Where the guide states a rule literally but measurement shows the literal form condemns reference art, the corrected
 // form ships and the mismatch is recorded in DOC_BUGS — never loosened silently, never tuned so the control passes.
-import { EASE, FACE } from '../../../src/art/poses.js';
+import { EASE, FACE } from '../../../src/lib/art/poses.ts';
 
 export const TIER = 'data';
 

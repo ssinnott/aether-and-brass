@@ -99,14 +99,14 @@ export const RULES = [
  * dynamic imports of the served repo - nothing crosses from node except plain JSON specs.
  */
 const BOOTSTRAP = `async () => {
-  const rigM = await import('/src/art/rig.js');
-  const chars = await import('/src/content/characters/index.js');
-  const enemies = await import('/src/content/enemies/index.js');
-  const anim = await import('/src/game/animation.js');
+  const rigM = await import('/src/lib/art/rig.ts');
+  const chars = await import('/src/content/characters/index.ts');
+  const enemies = await import('/src/content/enemies/index.ts');
+  const anim = await import('/src/lib/art/animation.ts');
   // spawn modifiers live in the game layer and are applied at spawn, so a modded subject's rig only exists once
   // applyMods has run. Without this the page rebuilt every 'enemy-mod' subject from its BASE def and all four pixel
   // rules silently measured the unmodded rig — two subjects with byte-identical readings and nothing to show for it.
-  const traits = await import('/src/game/traits.js');
+  const traits = await import('/src/game/traits.ts');
 
   // One canvas, big enough for the tallest rig (boss:vane, 203 device px) plus its weapon and accessories.
   const W = 256, H = 288, FX = 128, FY = 256;
@@ -506,7 +506,7 @@ async function sheetsAndPlaytestGreen(subjects, page, findings, helpers) {
       message: 'the cast sheet did not render clean', detail: cast.detail });
   }
 
-  // (b) node --check over every source and tool file (npm run lint only checks src/main.js).
+  // (b) node --check over every source and tool file (npm run lint only checks src/main.ts).
   const files = jsFiles(repo, ['src', 'tools']);
   const bad = [];
   for (const f of files) {

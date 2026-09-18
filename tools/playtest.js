@@ -9,7 +9,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './server.js';
-import { loadPlaywright } from './browser.js';
+import { loadPlaywright, launch } from './browser.js';
 import { options as optionsScenario } from './playtest-options.js';
 import { sourceLink as sourceLinkScenario } from './playtest-link.js';
 import { weaponScenarios } from './scenarios/weapons.js';
@@ -46,7 +46,7 @@ function assert(cond, msg) {
 }
 
 async function withPage(server, params, fn, { viewport = { width: 1280, height: 720 } } = {}) {
-  const browser = await chromium.launch();
+  const browser = await launch();
   const page = await browser.newPage({ viewport });
   const consoleErrors = [];
   page.on('pageerror', (e) => consoleErrors.push('pageerror: ' + e.message));
@@ -80,7 +80,7 @@ async function withPage(server, params, fn, { viewport = { width: 1280, height: 
  * @param {(pages: object[], apis: object[]) => Promise<void>} fn
  */
 async function withPeers(server, paramsList, fn, { viewport = { width: 1280, height: 720 } } = {}) {
-  const browser = await chromium.launch();
+  const browser = await launch();
   const ctx = await browser.newContext({ viewport });
   const errs = [];
   const pages = [];
@@ -640,14 +640,14 @@ const scenarios = {
 
   // 7. Audio: every canonical SFX and music track renders non-silently through an OfflineAudioContext.
   async audio(server) {
-    const browser = await chromium.launch();
+    const browser = await launch();
     const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
     const errs = [];
     page.on('pageerror', (e) => errs.push(e.message));
     try {
       await page.goto(`http://localhost:${server.port}/index.html?debug=1&seed=1`, { waitUntil: 'load' });
       await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 15000 });
-      const report = await page.evaluate(() => import('/src/engine/audio.js').then((m) => m.audio.selfTest()));
+      const report = await page.evaluate(() => import('/src/engine/audio.ts').then((m) => m.audio.selfTest()));
       assert(report && Array.isArray(report.sfx), 'audio.selfTest() returns {sfx:[...], music:[...]}');
       const silent = (report.sfx || []).filter((r) => !(r.rms > 0.0005));
       const failed = (report.sfx || []).filter((r) => r.error);
@@ -714,7 +714,7 @@ const scenarios = {
     }
   },
 
-  // 8. Every autopilot archetype (src/game/bot.js BOT_STYLES) plays, and two of them play co-op in one run.
+  // 8. Every autopilot archetype (src/game/bot.ts BOT_STYLES) plays, and two of them play co-op in one run.
   // tools/winrate.js sweeps these for balance; this only proves each one fights and none of them wedges.
   async botstyles(server) {
     for (const style of ['balanced', 'aggressive', 'defensive', 'masher']) {

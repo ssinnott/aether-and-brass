@@ -3,7 +3,7 @@
 // tools/stage-values.js -- it is the fast iteration proxy, ignoring occlusion.
 import { collectSubjects } from './art-invariants/subjects.js';
 import * as H from './art-invariants/helpers.js';
-import { farShade } from '../src/art/palettes.js';
+import { farShade } from '../src/art/palettes.ts';
 
 function hsv(hex) {
   const h = hex.replace('#', '');

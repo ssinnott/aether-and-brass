@@ -8,9 +8,9 @@
 //   squint  the flash silhouette, which is the §0.8 black-fill read
 // The hooks that drive rig.gas / rig.swell live on the fighter, so nothing in a sheet or a menu ever lights a bag:
 // this page sets those two fields by hand, which is the only way to look at the tell without running a fight.
-import { getEnemyDef } from '../src/content/enemies/index.js';
-import { buildRig, drawRig } from '../src/art/rig.js';
-import { AnimPlayer } from '../src/game/animation.js';
+import { getEnemyDef } from '../src/content/enemies/index.ts';
+import { buildRig, drawRig } from '../src/lib/art/rig.ts';
+import { AnimPlayer } from '../src/lib/art/animation.ts';
 
 const q = new URLSearchParams(location.search);
 const ZOOM = Number(q.get('zoom') || 4);

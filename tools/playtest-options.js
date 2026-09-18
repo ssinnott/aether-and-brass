@@ -57,7 +57,7 @@ export async function options(server, { withPage, assert }) {
     await dn(); await dn(); await lt();
     s = await g.summary();
     assert(s.shake === 'low', 'left on SCREEN SHAKE cycles full -> low');
-    const shakeScale = await g.eval(() => import('/src/engine/camera.js').then((m) => m.Camera.shakeScale));
+    const shakeScale = await g.eval(() => import('/src/engine/camera.ts').then((m) => m.Camera.shakeScale));
     assert(shakeScale === 0.5, `SCREEN SHAKE low applies Camera.shakeScale = 0.5 (got ${shakeScale})`);
     await g.shot('90-options');
 

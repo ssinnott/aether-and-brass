@@ -67,6 +67,21 @@ interface Hit {
   extinguish?: boolean;
   /** A held pickup weapon's swing: connecting spends one point of its durability (game/player.js). */
   weapon?: boolean;
+  /**
+   * A thrown body / weapon / prop's own hit (game/throwables.js). `throwDamageTakenMult` applies to it and it sets
+   * `f.lastHitWasThrow`, which is what earns the x1.5 throw-kill score bonus (GDD 3/7). Listed in the FRAME FIELDS
+   * block at the top of game/fighter.ts but not in ARCHITECTURE.md section 4: the core wins.
+   */
+  body?: boolean;
+  /** Legacy alias of `element: 'fire'`: fighter.ts takes either (`hit.element === 'fire' || hit.fire`). */
+  fire?: boolean;
+  /** A super's killing blow: HITSTOP.superFinisher instead of the type's own (fighter.ts takeHit). */
+  finisher?: boolean;
+  /** Set by game/projectile.js on a ranged hit, so parries and ripostes can ignore it. */
+  projectile?: boolean;
+  ranged?: boolean;
+  /** Never parried, whatever the window (fighter.ts takeHit). */
+  unparryable?: boolean;
 }
 
 interface Hitbox extends Hit {
@@ -75,6 +90,14 @@ interface Hitbox extends Hit {
   w: number;
   h: number;
   z?: number;
+  /** Identity of this box across frames: game/combat.js keys `once` / `rehit` off it (else frame index + slot). */
+  id?: string;
+  /** `pierce: N` = the first target plus N more; `maxTargets` wins when both are set (game/combat.js). */
+  pierce?: number;
+  /** z offset of the box from the attacker, along facing (game/combat.js). */
+  zOff?: number;
+  /** Internal: the mirrored copy `hitsBehind` builds, cached on the box so it is built once (fighter.ts hitboxes). */
+  _behind?: Hitbox;
 }
 
 /** Root motion for a frame, px/frame along facing. */
@@ -102,12 +125,23 @@ interface Frame {
   /** Spawn a projectile on frame entry; a name resolves against def.projectiles. */
   spawn?: { projectile: string | any; x?: number; y?: number; z?: number; count?: number; aimAt?: any };
   /** Area hit on frame entry. */
-  area?: { radius: number; x?: number; y?: number; teams?: any; color?: string } & Hit;
-  /** Aether Step / Sael blink on frame entry. */
-  teleport?: { toNearestEnemy?: boolean; behind?: boolean; range?: number; offset?: number; unique?: boolean };
+  area?: { radius: number; x?: number; y?: number; offset?: number; teams?: any; color?: string; shake?: number; silent?: boolean } & Hit;
+  /** Aether Step / Sael blink on frame entry. `sfx: false` silences it; both are read by fighter.ts teleportTo. */
+  teleport?: { toNearestEnemy?: boolean; behind?: boolean; range?: number; offset?: number; unique?: boolean; color?: string; sfx?: string | false };
+  /** Turn + step toward the nearest enemy on frame entry (Tempest Waltz). In the FRAME FIELDS block, not in the doc. */
+  lockOn?: { range?: number; snap?: number; gap?: number };
+  /** Meter gain on frame entry (taunts): `{ amount }` or a bare number. Likewise core-only. */
+  meter?: { amount?: number } | number;
+  /** Meter gain for a `meterGain` event, which reads it off the frame itself (fighter.ts onAnimEvent). */
+  amount?: number;
   fx?: Array<{ kind: string; x?: number; y?: number; [k: string]: any }>;
   sfx?: string;
-  cancel?: 'attack' | 'any' | null;
+  /**
+   * Which buttons may cancel this frame. The core honours `jump` as well as the two ARCHITECTURE.md section 4
+   * lists — game/player.ts thinkAttack tests for it beside `any` — though no content authors it today; where the
+   * doc and the core differ the core wins.
+   */
+  cancel?: 'attack' | 'any' | 'jump' | null;
   /** Fires Fighter.onAnimEvent(name) before the built-in handlers. */
   event?: string;
   /** Wind-up: `tell: true` frames light the lens red (section 8). */
@@ -123,9 +157,27 @@ interface Frame {
   projectile?: any;
   summon?: any;
   radius?: number;
+  /**
+   * Read off the frame by the `wreckThrow` event (Pip's Wrecking Ball, game/player.ts releaseHeld): the hurl's
+   * damage, its speed along facing, and how far the rubble ball flies before it stops.
+   */
+  damage?: number;
+  vx?: number;
+  maxDist?: number;
+  /** The vertical velocity the `dive` event takes (game/player.ts); default -3. */
+  vy?: number;
+  /** `wreckGrab` (game/player.ts): false = swing nothing when there is no enemy in reach to grab. Default true. */
+  rubble?: boolean;
   hit?: Hit;
   shake?: number;
-  offset?: { x?: number; y?: number };
+  /**
+   * The area's x offset along facing, px. `radius` / `hit` / `shake` / `offset` are the AREA SPEC written straight
+   * onto the frame: the `shockwave` / `area` event falls back to the frame itself when it carries no `area` block
+   * (game/fighter.ts onAnimEvent -> areaFromFrame, which reads `a.offset` as a number and defaults it to `a.x`), so
+   * this is the same field `area.offset` above already declares as a number. It was `{ x?, y? }` here, which no
+   * caller writes and no reader would understand; the core wins, as the header of this file says it does.
+   */
+  offset?: number;
 }
 
 /** One named animation. */
@@ -145,6 +197,13 @@ type AnimSet = Record<string, Anim>;
  * Content hooks (`def.hooks.*`), all optional. Signatures mirror the reference block at the top
  * of game/fighter.js, which is what actually calls them. Annotate a faction's BASE_HOOKS with
  * this so a variant forwarding `(f, world)` is checked against the real contract.
+ *
+ * `f`, `world`, `target`, `attacker` and `source` are `any` throughout, and that is the whole file's constraint
+ * rather than a choice per hook: as the header says, these declarations are global and this file has no top-level
+ * import or export — that is what lets `src/**` name them bare. It therefore cannot name `Fighter` or
+ * `FighterWorld`, which are exports of game/fighter.ts. What each hook IS given is written in its own line above.
+ * Arity and the return type are checked, which is what catches the mistakes this file is here for: a hook that
+ * forgets to return `true` to consume an event, or that is spelled wrong and so never fires at all.
  */
 interface Hooks {
   onSpawn?(f: any, world?: any): void;
@@ -168,6 +227,19 @@ interface Hooks {
   onThrow?(f: any, target?: any, dir?: number): void;
   onParry?(f: any, attacker?: any, hit?: Hit): void;
   onStatus?(f: any, name?: string, status?: any, phase?: 'apply' | 'tick' | 'end'): void;
+  /**
+   * The shielded brute's plate has been stripped for good by a launcher during its stagger (game/enemy.ts, which
+   * sets rig.shieldStripped just before it calls this). In the CONTENT HOOK REFERENCE and called by the core, so it
+   * belongs here: the Iron Warden and the Ironwing Marine both drop their plate from it.
+   */
+  onShieldStripped?(f: any, world?: any): void;
+  /** A boss has entered phase `i` (game/boss.ts mergePhase); `phase[0]` goes up with the name plate. */
+  onPhase?(f: any, i?: number, world?: any): void;
+  /** A boss's stun window has opened for `frames` frames (game/boss.ts stun). */
+  onStunned?(f: any, frames?: number, source?: any): void;
+  /** A boss's vent has opened / closed (game/boss.ts). Neither takes an argument beyond the body. */
+  onVentOpen?(f: any): void;
+  onVentClose?(f: any): void;
   drawBefore?(ctx: CanvasRenderingContext2D, f: any, sx: number, sy: number, cam?: any): void;
   drawAfter?(ctx: CanvasRenderingContext2D, f: any, sx: number, sy: number, cam?: any): void;
 }

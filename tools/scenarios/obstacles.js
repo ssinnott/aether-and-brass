@@ -10,7 +10,7 @@
 // no godmode here: a gap costs health through takeHit, which godmode would swallow
 const FUNICULAR = 'seed=1&skipTo=gameplay&chars=0&stage=1&section=2&nowaves=1';
 const GASHALLS = 'seed=1&skipTo=gameplay&chars=0&stage=2&section=1&nowaves=1&godmode=1';
-/** The board 1 roof gap, as authored in src/content/stage/stage1.js. */
+/** The board 1 roof gap, as authored in src/content/stage/stage1.ts. */
 const GAP = { x0: 4340, x1: 4372, z0: 20, z1: 62 };
 
 /**
@@ -129,7 +129,7 @@ export async function obstacles(server, { withPage, assert }) {
     // every board rather than the two sections this scenario walks, and a height a board picks up from a default
     // rather than from its own spec is measured as the game will actually build it.
     const walls = await g.eval(async () => {
-      const [{ createZones }, { STAGES }] = await Promise.all([import('/src/game/zones.js'), import('/src/content/stage/index.js')]);
+      const [{ createZones }, { STAGES }] = await Promise.all([import('/src/game/zones.ts'), import('/src/content/stage/index.ts')]);
       const out = [];
       for (const st of STAGES) for (const sec of st.sections || []) {
         for (const z of createZones((sec.zones || []).filter((q) => q.type === 'solid'))) {

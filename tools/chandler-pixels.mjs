@@ -13,7 +13,7 @@ function loadPlaywright() {
   throw new Error('Playwright not found (set NODE_PATH to the global node_modules)');
 }
 const { chromium } = loadPlaywright();
-const { CH, CLAN } = await import('../src/content/enemies/chandlerRig.js');
+const { CH, CLAN } = await import('../src/content/enemies/chandlerRig.ts');
 const wanted = (process.argv[2] || 'wickboy,tallyman,limeburner,purser,resurrectionist').split(',');
 
 const server = createServer();
@@ -28,9 +28,9 @@ const rows = [];
 console.log('variant           actorPx    ink%   clanPx   clan%   clan hex');
 for (const v of wanted) {
   const r = await page.evaluate(async ({ variant, outline, clan }) => {
-    const { buildRig, drawRig } = await import('/src/art/rig.js');
-    const { makePose } = await import('/src/art/poses.js');
-    const { getEnemyDef } = await import('/src/content/enemies/index.js');
+    const { buildRig, drawRig } = await import('/src/lib/art/rig.ts');
+    const { makePose } = await import('/src/lib/art/poses.ts');
+    const { getEnemyDef } = await import('/src/content/enemies/index.ts');
     const def = getEnemyDef('chandler', variant);
     const rig = buildRig(def.build || {});
     const W = 200, H = 220;
