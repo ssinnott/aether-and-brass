@@ -8,21 +8,41 @@ for stage 2 (its faction, bosses, sections and audio).
 
 ## 0. Stack & non-negotiables
 
-- **Runtime:** browser, HTML5 Canvas 2D, vanilla JavaScript **ES modules**. No
-  framework, no TypeScript *sources*, no bundler required to *play* (open `index.html` via any
-  static server). `npm run build` produces a single-file `dist/index.html` (esbuild) for
-  sharing, but `src/` must always run un-bundled.
-- **Types are checked, never compiled.** `npm run typecheck` runs `tsc --noEmit` over the
-  JSDoc already in the source (`tsconfig.json`). It emits nothing: no transpile step stands
-  between editing a file and reloading the page, and `src/` stays the plain ES modules above.
-  The only `.ts` in the repo is the `types/` directory — `globals.d.ts` (`window.__game`, Safari's
-  prefixed audio constructors) and `content.d.ts` (`Frame`, `Hit`, `Hitbox`, `Anim`, `AnimSet`,
-  `Hooks`). Both are declaration-only: never imported, never shipped, and global, so JSDoc in
-  `src/**.js` names them directly (`/** @type {Frame[]} */`). `include` covers `engine/`, `net/`
-  and `content/`, and widens one directory at a time — each joins only once it is clean.
-  `strict` is off by design: this is untyped JS with sparse JSDoc, and the noise would bury the
-  findings. `Frame` deliberately has **no index signature**, so a misspelled frame key is an
-  error rather than a field that silently does nothing — which is the failure mode `content/` has.
+- **Runtime:** browser, HTML5 Canvas 2D, **TypeScript ES modules**. No framework, and nothing is
+  compiled to disk during development. `npm run build` produces a single-file `dist/index.html`
+  (esbuild) for sharing, and that file is still the whole game with no external references.
+- **A transform, but no build step.** `src/` is TypeScript, which a browser cannot parse, so
+  `npm run dev` transforms each module through esbuild ON REQUEST and serves it as JavaScript.
+  There is no watcher and no output directory: edit a file, reload the page. The transform leaves
+  import specifiers alone, so the JS handed back still says `from './world.ts'`, the browser asks
+  for that, and it is transformed too — the served graph closes on itself.
+  What this costs, stated plainly: `src/` no longer runs from an arbitrary static server, and
+  `index.html` no longer opens from disk. `dist/index.html` still does both. The rule this replaces
+  ("no bundler required to play") held from the first commit until the TypeScript migration; it was
+  given up deliberately, in exchange for `game/` — 15k lines, the most logic and the most churn —
+  finally being typechecked at all.
+- **Import specifiers name the real `.ts` file** (`from './entity.ts'`), which is the reverse of the
+  usual TypeScript convention. Node 22 resolves specifiers literally and does no extension
+  remapping, so a `.js` specifier pointing at a `.ts` file fails; writing `.ts` is what lets every
+  tool in `tools/` import `src/` directly with no `tsx`, no `ts-node` and no precompile.
+- **Types are checked, never compiled.** `npm run typecheck` runs `tsc --noEmit`; esbuild does all
+  emitting. `allowImportingTsExtensions` is legal only under `noEmit`, so the two are one decision:
+  if this config ever starts emitting, the flag goes and every specifier in the repo changes with it.
+  `include` covers all of `src/` — there is no directory left to opt out, which was the point.
+  `strict` is still off: the migration declared 828 class fields to get to zero errors, and raising
+  strictness is a separate, measured step (see the game-engine repo's `docs/TS_MIGRATION.md`).
+  `types/content.d.ts` remains global and declaration-only. `Frame` deliberately has **no index
+  signature**, so a misspelled frame key is an error rather than a field that silently does nothing
+  — which is the failure mode `content/` has.
+- **Class fields are declared with `declare`.** `target: es2022` implies `useDefineForClassFields`,
+  so a bare `x: T` is not a type annotation: it emits a define that sets the property to `undefined`
+  after `super()`, which in this repo's `Entity -> Fighter -> Enemy -> Boss` hierarchy would silently
+  clobber a base constructor's assignment. `npm run class-fields` fails on any instance field that is
+  neither `declare` nor initialised.
+- **The shared half lives in `src/lib/`**, vendored from the `game-engine` repository with
+  `git subtree`. Do not edit it here: fix it there and `git subtree pull`. `art/palettes.ts` and
+  `engine/text.ts` are deliberate local shims — each re-exports the library and adds this game's own
+  art direction (the palette tables, the ink).
 - **`game/fighter.js` is the authority on what content may contain.** Its two reference blocks —
   CONTENT HOOK REFERENCE and FRAME FIELDS honoured by the core — are what actually call into
   `content/`, and `types/content.d.ts` is derived from them. Section 4 below covers the same
