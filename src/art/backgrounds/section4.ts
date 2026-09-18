@@ -51,7 +51,7 @@ function paintFar(g, w, h, rnd) {
   g.fillStyle = 'rgba(0,0,0,0.22)';
   for (let y = -BLEED; y < 216; y += 32) for (let x = (y / 32 & 1) ? 48 : 0; x < w; x += 96) { g.fillRect(x, y, 95, 1); g.fillRect(x, y, 1, 31); }
   // overhead pipe runs
-  for (const [y, col] of /** @type {[number, string][]} */ ([[14, '#3A3F4B'], [30, '#B86A3A']])) { g.fillStyle = INK; g.fillRect(0, y - 2, w, 10); g.fillStyle = col; g.fillRect(0, y, w, 6); g.fillStyle = 'rgba(255,255,255,0.2)'; g.fillRect(0, y + 1, w, 1); }
+  for (const [y, col] of ([[14, '#3A3F4B'], [30, '#B86A3A']] as [y: number, col: string][])) { g.fillStyle = INK; g.fillRect(0, y - 2, w, 10); g.fillStyle = col; g.fillRect(0, y, w, 6); g.fillStyle = 'rgba(255,255,255,0.2)'; g.fillRect(0, y + 1, w, 1); }
   // the core housing and glow: the heart of the Engine (the disk itself pulses per frame)
   radialGlow(g, CORE.x, CORE.y, 150, 'rgba(77,240,224,0.22)');
   boxOutlined(g, CORE.x - 110, CORE.y - 92, 220, 292, '#2A2E3E', INK);

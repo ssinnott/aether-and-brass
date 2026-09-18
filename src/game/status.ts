@@ -28,8 +28,45 @@ export const STATUS_DEFAULTS = Object.freeze({
 /** Radius of the fire a burning body registers with the world each tick (hazards.js gas seeps / cells ignite off it). */
 const BURN_FIRE_R = 16;
 
+/**
+ * What `applyStatus` takes: any field of the built-in defaults above, plus the four a CUSTOM status carries. The
+ * result is a `StatusRecord` (game/fighter.ts) — these are the overrides that go into one, not the record itself,
+ * which is why `name`, `source`, `timer`, `age` and `mash` are absent: applyStatus fills all five.
+ *
+ * The index signature is how a content author's own status keeps its own fields (chandler.ts's LIMECRUST carries
+ * `hits0`), and it is the same one `StatusRecord` ends up with. Declared here rather than imported from
+ * game/fighter.ts because that file imports THIS one, so the dependency must not run back the other way — the
+ * rule game/entity.ts sets out for `EntityWorld`.
+ */
+export interface StatusOpts {
+  /** How long it lasts. Falls back to the built-in default for this name, then to 60. */
+  frames?: number;
+  /** burn: frames between damage ticks, and the damage each one does. */
+  every?: number;
+  damage?: number;
+  /** netted: attack presses needed to break out. */
+  mashOut?: number;
+  /** Ember / mote colour, and the whole-body tint this status paints while it is up. */
+  color?: string;
+  tint?: string;
+  tintAlpha?: number;
+  /**
+   * A custom status's own behaviour, called with the record it was built into.
+   *
+   * `f` is a Fighter, `s` a StatusRecord and `world` a FighterWorld — all three are game/fighter.ts's, and that file
+   * imports THIS one, so naming them here would run the dependency back the way the note above forbids. The typed
+   * copy of these three signatures is on `StatusRecord` in game/fighter.ts, which can name them; this is the
+   * overrides-side mirror and stays open.
+   */
+  onTick?(f: any, s: any, world?: any): void;
+  onEnd?(f: any, s: any, world?: any): void;
+  draw?(ctx: CanvasRenderingContext2D, f: any, sx: number, sy: number, s: any): void;
+  /** A custom status carries whatever fields its content author gave it. */
+  [k: string]: any;
+}
+
 /** Apply (or refresh) a status. Returns the status record. */
-export function applyStatus(f, name, opts = {}, source = null) {
+export function applyStatus(f, name, opts: StatusOpts = {}, source = null) {
   const d = STATUS_DEFAULTS[name] || {};
   const prev = f.status[name];
   const s = { ...d, ...opts, name, source, timer: opts.frames != null ? opts.frames : (d.frames || 60), age: 0, mash: 0 };

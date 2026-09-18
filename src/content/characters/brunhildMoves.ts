@@ -1,8 +1,7 @@
 // Brunhild Coalheart — move list + trials (issue #22). Numbers mirror the header comment in brunhild.js / GDD 2.1.
 import { step, comboTrial, jumpGrabTrial, dodgeCancelTrial, throwBodyTrial } from './common.ts';
 
-/** @type {MoveEntry[]} */
-export const moveList = [
+export const moveList: MoveEntry[] = [
   { id: 'combo', name: 'HAMMER COMBO', input: 'ATTACK x4', desc: 'SWIPE 10 > BACKHAND 10 (HITS BEHIND) > SLAM 15 KNOCKDOWN > UPPERCUT 20 LAUNCH', anims: ['attack1', 'attack2', 'attack3', 'attack4'] },
   { id: 'jump', name: 'DOWNWARD SLAM', input: 'JUMP, ATTACK', desc: '14 DMG. LANDING SHOCKWAVE 10 KNOCKDOWN, R40', anims: ['jumpAttack', 'landAttack'] },
   { id: 'dash', name: 'SHOULDER CHARGE', input: 'RUN + ATTACK', desc: '18 DMG, 120PX KNOCKBACK, 3-HIT ARMOR', anim: 'dashAttack' },
@@ -15,8 +14,7 @@ export const moveList = [
   { id: 'taunt', name: 'TAUNT', input: 'TAUNT', desc: '+25 METER OVER THE ANIMATION. INTERRUPTIBLE', anim: 'taunt' },
 ];
 
-/** @type {Trial[]} */
-export const trials = [
+export const trials: Trial[] = [
   comboTrial(4),
   { id: 'landing', name: 'SLAM AND SHOCKWAVE', hint: 'JUMP ATTACK SO THE LANDING SHOCKWAVE ALSO CONNECTS', window: 40, steps: [step('DOWNWARD SLAM', 'hit', 'jumpAttack'), step('SHOCKWAVE', 'projectile', 'landAttack')] },
   jumpGrabTrial(),

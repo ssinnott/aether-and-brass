@@ -21,7 +21,8 @@ import { crust } from './chandler.ts';
 import { particles } from '../../engine/particles.ts';
 
 const R = Math.round;
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
+const hit = (damage: number, type: HitType, kbX: number, kbY: number, hitstun: number, extra?: Partial<Hitbox>): Partial<Hitbox> =>
+  ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
 const LOW = { low: true };
 // The kiln is COLD IRON on a greened-pewter faction: the drum has to read as a machine bolted to a contractor, not as
 // another pewter tool, and it is the biggest single shape on the rig. KILN is the Limeburner's own hip-kiln iron

@@ -29,7 +29,8 @@ import { clamp } from '../../lib/engine/math.ts';
 import { particles } from '../../engine/particles.ts';
 
 const R = Math.round;
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
+const hit = (damage: number, type: HitType, kbX: number, kbY: number, hitstun: number, extra?: Partial<Hitbox>): Partial<Hitbox> =>
+  ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
 const LOW = { low: true };
 /** The press is COLD IRON on a rag-and-silk faction: the one mass on the rig that was made in a factory. */
 const PRESS = '#3A3F49';

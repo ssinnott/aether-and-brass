@@ -14,16 +14,84 @@ import { shieldLabel } from '../shield.ts';
 import { joinHint } from '../party.ts';
 import { input } from '../../engine/input.ts';
 import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.ts';
+// Type-only: this screen reaches down for the shapes it works in rather than adding a module edge, the same
+// arrangement (and for the same reason) as the block at the top of game/screens/gameplay.ts. `import type` is
+// erased by tsc, esbuild and node alike.
+import type { Game, ScreenParams, RegistryEntry } from '../game.ts';
 
 const READY_FRAMES = 24;
 const SLOT_GAP = 18;
+
+/**
+ * One player slot's state on this screen. Held here rather than read back off `input` every frame because the
+ * cursor and the lock are this screen's own, and because a slot can be seated in the input layer while this
+ * screen refuses it a seat: the TRAINING route (`single`) and the input-less ghosts enter() retires at the door.
+ */
+export interface SelectSlot {
+  joined: boolean;
+  /** Index into `chars` / `slots`. */
+  cursor: number;
+  /** Locked on the hero under the cursor. Every joined slot confirmed is what opens the READY gate. */
+  confirmed: boolean;
+}
+
+/**
+ * One cell of the `cursors` matrix screens/charcards.ts's `drawCharCard` takes: null when that slot's cursor is
+ * not on this card. The lobby passes a `label` beside it; this screen keeps the default 'P1'..'P4' numbering, so
+ * `confirmed` is the whole of what it writes.
+ */
+export interface CardCursor {
+  confirmed: boolean;
+}
+
+/**
+ * One name on the joined-slot status line under the cards. Measured and placed once by rebuild() -- which runs
+ * only on a join / move / confirm -- so draw() allocates nothing per frame.
+ */
+export interface SlotLabel {
+  text: string;
+  color: string;
+  /** Measured width of `text` at size 1. */
+  w: number;
+  /** Centre x. Filled in by rebuild()'s second pass, once the whole row's width is known. */
+  x?: number;
+}
 
 /** Character select screen. Left/right moves a cursor; CONFIRM (ENTER or attack) locks a hero and BACK
  *  (Escape, jump or dodge) unlocks it -- or, from an unlocked slot, leaves: the screen for P1, the party
  *  for anybody else (game/menuinput.js). */
 export class SelectScreen extends Screen {
-  constructor(game) { super(game, 'select'); }
-  enter(params) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are assignments
+  // and nothing else: a plain field declaration would emit a class field per name (es2022 defines them before the
+  // constructor body runs), which is a runtime change. Same reasoning, and the same wording, as game/entity.ts.
+  /** The playable character registry (game.characters). */
+  declare chars: RegistryEntry[];
+  /** One card per registered character. `ReturnType` rather than a shape of its own: screens/charcards.ts owns
+   *  what a slot is, and this tightens by itself the day that file declares it. */
+  declare slots: ReturnType<typeof buildCharSlots>;
+  /** The TRAINING route (issue #22): one player, and no drop-ins at all. */
+  declare single: boolean;
+  /** Slot state by SLOT, so `p[2]` is always P3 whether or not P2 ever joined. */
+  declare p: SelectSlot[];
+  /** Cursors by CARD and then by slot, rebuilt by rebuild(); null where that slot is not on that card. */
+  declare cardCursors: Array<Array<CardCursor | null>>;
+  /** Something the drawn rows are built from changed this frame; rebuild() consumes and clears it. */
+  declare dirty: boolean;
+  /** The `joinState()` mask `hint` was built for; -1 until the first build. */
+  declare joinKey: number;
+  /** The drop-in hint for the still-free slots (#19's long key list for slot 1). */
+  declare hint: string;
+  declare slotLine: SlotLabel[];
+  /** Two or more slots are holding the same hero, which is allowed -- later copies wear a tint. */
+  declare sameHero: boolean;
+  /** The screen has handed off (READY, or BACK) and stops reading input. */
+  declare starting: boolean;
+  /** Frames since the party readied up; -1 until they have. */
+  declare readyTimer: number;
+  declare keysHint: string;
+
+  constructor(game: Game) { super(game, 'select'); }
+  override enter(params: ScreenParams): void {
     super.enter(params);
     this.chars = this.game.characters;
     this.slots = buildCharSlots(this.chars);
@@ -40,7 +108,7 @@ export class SelectScreen extends Screen {
     // otherwise hold the READY gate shut with no input in existence that could confirm it or back it
     // out, since BACK is read from that slot's own keys. Retired at the door rather than papered over,
     // so its cursor and "same hero" bookkeeping never appear either (the same reason `single` does).
-    const canAct = (i) => this.game.input.hasKeyboard(i) || this.game.input.padOf(i) >= 0;
+    const canAct = (i: number) => this.game.input.hasKeyboard(i) || this.game.input.padOf(i) >= 0;
     for (let i = 1; i < MAX_PLAYERS; i++) if (this.game.input.joined(i) && !canAct(i)) this.game.input.setJoined(i, false);
     this.p = Array.from({ length: MAX_PLAYERS }, (_, i) => ({
       joined: i === 0 || (!this.single && this.game.input.joined(i)),
@@ -54,7 +122,7 @@ export class SelectScreen extends Screen {
     this.game.audio.music.play('title');
     if (this.slots[0]) this.slots[0].anim.play('taunt', { restart: true, fallback: 'idle' });
   }
-  update() {
+  override update(): void {
     super.update();
     const inp = this.game.input, audio = this.game.audio, n = this.chars.length;
     tickCharSlots(this.slots);
@@ -129,13 +197,13 @@ export class SelectScreen extends Screen {
   }
   /** Rebuild the per-card cursor matrix, the joined-slot status line and the same-hero flag.
    *  Called only when `this.dirty` (a join / move / confirm / unconfirm happened this frame). */
-  rebuild() {
+  rebuild(): void {
     const n = this.slots.length;
     for (let c = 0; c < n; c++) {
       const col = this.cardCursors[c];
       for (let s = 0; s < MAX_PLAYERS; s++) col[s] = this.p[s].joined && this.p[s].cursor === c ? { confirmed: this.p[s].confirmed } : null;
     }
-    const parts = [];
+    const parts: SlotLabel[] = [];
     for (let s = 1; s < MAX_PLAYERS; s++) {
       const ps = this.p[s];
       if (!ps.joined) continue;
@@ -156,7 +224,7 @@ export class SelectScreen extends Screen {
     }
     this.sameHero = sameHero;
   }
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     const f = this.frame;
     ctx.fillStyle = '#1c1420'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.globalAlpha = 0.22; gear(ctx, 60, 320, 90, 14, '#3a2a48', null, 0, f * 0.004, 30); gear(ctx, 600, 30, 70, 12, '#3a2a48', null, 0, -f * 0.005, 24); ctx.globalAlpha = 1;

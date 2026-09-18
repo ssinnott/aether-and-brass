@@ -23,10 +23,30 @@ function anchor(rig, pose) {
 }
 
 /**
- * Head-and-shoulders portrait clipped to a `size` square (HUD 24px, intro 48px, cut-in 64px).
- * @param {{ facing?: number, bg?: string|null, flash?: boolean, tint?: string|null, tintAlpha?: number, fill?: number, cy?: number }} [o]
+ * What `drawHeadPortrait` takes beyond the geometry. These are the fields of the `@param {{...}}` block that used
+ * to carry them, which a .ts file no longer reads -- named here so the HUD, the intro card and the cut-in share
+ * one shape.
  */
-export function drawHeadPortrait(ctx, rig, pose, x, y, size, o = {}) {
+export interface HeadPortraitOpts {
+  /** 1 = facing right (default), -1 = facing left. */
+  facing?: number;
+  /** Plate behind the head. `null` draws none; absent uses the default ink. */
+  bg?: string | null;
+  /** Hit flash: the whole rig in white. */
+  flash?: boolean;
+  tint?: string | null;
+  tintAlpha?: number;
+  /** Head height as a fraction of the square (default 0.6). */
+  fill?: number;
+  /** Head centre down the square, 0..1 (default 0.47). */
+  cy?: number;
+}
+
+/**
+ * Head-and-shoulders portrait clipped to a `size` square (HUD 24px, intro 48px, cut-in 64px).
+ * @param o see HeadPortraitOpts
+ */
+export function drawHeadPortrait(ctx, rig, pose, x, y, size, o: HeadPortraitOpts = {}) {
   const facing = o.facing || 1, a = anchor(rig, pose);
   const sc = (size * (o.fill || 0.6)) / (a.headR * 2 * rig.scale);
   const fs = facing * sc * rig.scale, ss = sc * rig.scale;
@@ -38,11 +58,27 @@ export function drawHeadPortrait(ctx, rig, pose, x, y, size, o = {}) {
 }
 
 /**
+ * What `drawBust` takes beyond the geometry, from the `@param {{...}}` block that used to carry them.
+ */
+export interface BustOpts {
+  /** 1 = facing right (default), -1 = facing left. */
+  facing?: number;
+  /** Gap from the top of the card to the crown of the head, px (default 12). */
+  margin?: number;
+  tint?: string | null;
+  tintAlpha?: number;
+  /** true skips the secondary-motion step. */
+  still?: boolean;
+  /** Hit flash: the whole rig in white. */
+  flash?: boolean;
+}
+
+/**
  * Bust for the character-select card: the rig at `scale` (2.5 for the 140x200 cards) clipped to (x, y, w, h) with the head
  * near the top. `anchorPose` (default: the drawn pose) fixes the feet so an animated pose does not bob the framing.
- * @param {{ facing?: number, margin?: number, tint?: string|null, tintAlpha?: number, still?: boolean, flash?: boolean }} [o]
+ * @param o see BustOpts
  */
-export function drawBust(ctx, rig, pose, anchorPose, x, y, w, h, scale, o = {}) {
+export function drawBust(ctx, rig, pose, anchorPose, x, y, w, h, scale, o: BustOpts = {}) {
   const facing = o.facing || 1, a = anchor(rig, anchorPose || pose), ss = scale * rig.scale;
   const margin = o.margin != null ? o.margin : 12;
   const feetY = y + margin - a.top * ss;
@@ -51,8 +87,12 @@ export function drawBust(ctx, rig, pose, anchorPose, x, y, w, h, scale, o = {}) 
   ctx.restore();
 }
 
-/** Brass portrait frame (dark inset, brass rim, optional rivets). */
-export function drawPortraitFrame(ctx, x, y, w, h, color = UI.brass, rivets = 0) {
+/**
+ * Brass portrait frame (dark inset, brass rim, optional rivets).
+ * `color` is annotated because the default narrows it: `UI` is frozen, so `UI.brass` alone would
+ * type the parameter as the literal '#e2b34a' and turn a player-coloured frame into an error.
+ */
+export function drawPortraitFrame(ctx, x, y, w, h, color: string = UI.brass, rivets = 0) {
   rrect(ctx, x - 2, y - 2, w + 4, h + 4, 3, '#1a1420', color, 2);
   ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x - 1, y - 1, w + 2, 1);
   if (rivets > 0) { rivetLine(ctx, x + 3, y - 2, x + w - 3, y - 2, rivets, 1.2, UI.brassLight); rivetLine(ctx, x + 3, y + h + 2, x + w - 3, y + h + 2, rivets, 1.2, UI.brassLight); }

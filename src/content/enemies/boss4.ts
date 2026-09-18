@@ -37,7 +37,8 @@ import { particles } from '../../engine/particles.ts';
 import { audio } from '../../engine/audio.ts';
 
 const R = Math.round;
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
+const hit = (damage: number, type: HitType, kbX: number, kbY: number, hitstun: number, extra?: Partial<Hitbox>): Partial<Hitbox> =>
+  ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
 /** The guild-master's chalk: the Harvestman's crop-green, which is the top of the guild's own ladder. */
 const RANK = CHALK.harvestman;
 const SPAR = '#4A4E56';

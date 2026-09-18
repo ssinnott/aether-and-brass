@@ -9,6 +9,8 @@ import { links } from './engine/links.ts';
 import { audio } from './engine/audio.ts';
 import { particles } from './engine/particles.ts';
 import { Game } from './game/game.ts';
+import type { Screen } from './game/game.ts';
+import type { World } from './game/world.ts';
 import { TitleScreen } from './game/screens/title.ts';
 import { BoardSelectScreen } from './game/screens/boardselect.ts';
 import { SelectScreen } from './game/screens/select.ts';
@@ -27,6 +29,7 @@ import { LobbyScreen } from './game/screens/lobby.ts';
 import { ResultsScreen } from './game/screens/results.ts';
 import { BestiaryScreen } from './game/screens/bestiary.ts';
 import { createNetSession } from './net/session.ts';
+import type { NetSessionRequest } from './net/session.ts';
 import { progress } from './game/progress.ts';
 import { bestiary, ENTRIES as BESTIARY_ENTRIES } from './game/bestiary.ts';
 import { trialProgress, TRIALS_KEY } from './game/trials.ts';
@@ -35,6 +38,12 @@ import { CHARACTERS } from './content/characters/index.ts';
 import { MOVE_ANIMS } from './content/characters/common.ts';
 import { ENEMY_LIST, ENEMY_GALLERY } from './content/enemies/index.ts';
 import { weaponGalleryEntries } from './game/weapons.ts';
+
+/**
+ * The top screen as the `world` hook below has to read it. `Screen` declares no world - only the gameplay
+ * and training screens own one - so the field is optional here rather than on the base class.
+ */
+type ScreenWithWorld = Screen & { world?: World };
 
 /** Parse URL params into game options. */
 export function parseOptions(search = window.location.search) {
@@ -157,7 +166,7 @@ function boot() {
 
   /** The live online co-op session, or null in single player. Screens reach it as `game.net`. */
   let net = null;
-  game.createNet = (o) => {
+  game.createNet = (o: NetSessionRequest) => {
     net = createNetSession({ game, input, ...o });
     game.net = net;
     return net;
@@ -288,7 +297,7 @@ function boot() {
   });
   Object.defineProperties(hooks, {
     /** Live World of the current gameplay screen (null when none). */
-    world: { get() { const s = game.screen; return s && s.world ? s.world : null; }, enumerable: true, configurable: true },
+    world: { get() { const s: ScreenWithWorld = game.screen; return s && s.world ? s.world : null; }, enumerable: true, configurable: true },
     /** Whether the debug overlay is on (F1). */
     debug: { get() { return showDebug; }, enumerable: true, configurable: true },
   });

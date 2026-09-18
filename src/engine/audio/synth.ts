@@ -3,13 +3,129 @@
 // at absolute time `when` (seconds, in `ctx.currentTime` units) and returns the end time.
 // Nothing here touches global state, so the same code renders in selfTest and in-game.
 
-const NOISE = new WeakMap();
-const SILENT = new WeakMap();
+/** A pitch ramp's shape: exponential (the default -- how pitch is heard) or linear. */
+export type RampCurve = 'exp' | 'lin';
+
+/** Vibrato: a sine LFO on the voice's `detune`. `depth` is in cents, `rate` in Hz. */
+export interface Vibrato {
+  rate: number;
+  depth: number;
+}
+
+/**
+ * The attack / hold / decay fields `env` reads. Every voice's options extend this, because each of
+ * them hands its WHOLE opts object to env() -- so anything here is accepted by osc/noise/ring/am.
+ */
+export interface EnvOpts {
+  vol?: number;
+  attack?: number;
+  hold?: number;
+  dur?: number;
+  /** Gated: decay to this fraction of the peak, hold, then release. Needs `release` too. */
+  sustain?: number;
+  release?: number;
+}
+
+/** `osc` options: one oscillator, optionally swept, vibratoed and filtered. */
+export interface OscOpts extends EnvOpts {
+  type?: OscillatorType;
+  f0?: number;
+  /** Pitch ramp target; defaults to f0, which is no ramp at all. */
+  f1?: number;
+  /** Ramp time in seconds; defaults to `dur`. */
+  glide?: number;
+  curve?: RampCurve;
+  /** Cents. */
+  detune?: number;
+  vib?: Vibrato | null;
+  /** Lowpass / highpass corner in Hz. 0 (the default) adds no filter at all. */
+  lp?: number;
+  hp?: number;
+  /** Q of the `lp` filter. */
+  q?: number;
+}
+
+/** `noise` options: the cached noise buffer through one biquad. */
+export interface NoiseOpts extends EnvOpts {
+  /** The biquad's type -- 'lowpass' / 'highpass' / 'bandpass' are the ones the library uses. */
+  type?: BiquadFilterType;
+  f0?: number;
+  f1?: number;
+  glide?: number;
+  q?: number;
+  curve?: RampCurve;
+}
+
+/** `ring` options: a carrier multiplied by a modulator. */
+export interface RingOpts extends EnvOpts {
+  type?: OscillatorType;
+  f0?: number;
+  f1?: number;
+  glide?: number;
+  curve?: RampCurve;
+  /** Modulator frequency and its own ramp target / waveform. */
+  modF?: number;
+  modF1?: number;
+  modType?: OscillatorType;
+  lp?: number;
+}
+
+/** `am` options: a carrier whose amplitude is swept by an LFO. */
+export interface AmOpts extends EnvOpts {
+  type?: OscillatorType;
+  f0?: number;
+  f1?: number;
+  glide?: number;
+  curve?: RampCurve;
+  /** LFO rate in Hz, and the rate it ramps to over `dur`. */
+  rate?: number;
+  rate1?: number;
+  /** 0..1 modulation depth. */
+  depth?: number;
+  lp?: number;
+}
+
+/** `echo` options. `when` / `life` are the window the caller feeds it, for `releaseAt`. */
+export interface EchoOpts {
+  taps?: number;
+  /** First tap's delay in seconds; each later tap is `spread` times the one before. */
+  time?: number;
+  spread?: number;
+  /** Per-tap attenuation, from `wet`. */
+  decay?: number;
+  wet?: number;
+  lowpass?: number;
+  when?: number;
+  life?: number;
+}
+
+/** `bus` options: a fixed gain with optional filters, grouping several voices. */
+export interface BusOpts {
+  gain?: number;
+  lp?: number;
+  hp?: number;
+  q?: number;
+}
+
+/** `glass` options: the detuned sine chord. */
+export interface GlassOpts {
+  freqs?: number[];
+  /** Cents each pair is spread by. */
+  detune?: number;
+  dur?: number;
+  vol?: number;
+  /** Tremolo rate in Hz. */
+  trem?: number;
+  attack?: number;
+}
+
+const NOISE = new WeakMap<BaseAudioContext, AudioBuffer>();
+const SILENT = new WeakMap<BaseAudioContext, AudioBuffer>();
 const FLOOR = 0.0001; // exponential ramps cannot reach zero
 let noiseCursor = 0.137; // rotating start offset so back-to-back bursts differ
 
 /** 1.5s deterministic white-noise buffer, cached per context. */
-export function noiseBuffer(ctx) {
+export function noiseBuffer(ctx: BaseAudioContext): AudioBuffer {
   let b = NOISE.get(ctx);
   if (!b) {
     const sr = ctx.sampleRate, len = Math.floor(sr * 1.5);
@@ -22,18 +138,18 @@ export function noiseBuffer(ctx) {
   return b;
 }
 
-export const clampF = (f) => Math.min(20000, Math.max(20, f));
+export const clampF = (f: number): number => Math.min(20000, Math.max(20, f));
 
 /**
  * Tear a voice down once its source ends: stop() alone leaves the gain/filter chain attached to `dest`
  * until GC notices; disconnecting explicitly keeps long sessions from accumulating dangling nodes.
  */
-export function autoDisconnect(src, nodes) {
+export function autoDisconnect(src: AudioScheduledSourceNode, nodes: AudioNode[]) {
   src.onended = () => { for (const n of nodes) { try { n.disconnect(); } catch { /* already gone */ } } src.onended = null; };
 }
 
 /** One silent sample, cached per context: the clock source behind `releaseAt`. */
-function silentBuffer(ctx) {
+function silentBuffer(ctx: BaseAudioContext): AudioBuffer {
   let b = SILENT.get(ctx);
   if (!b) { b = ctx.createBuffer(1, 1, ctx.sampleRate); SILENT.set(ctx, b); }
   return b;
@@ -46,7 +162,7 @@ function silentBuffer(ctx) {
  * one-sample source, looped, whose only job is to end. Using the context rather than setTimeout means this behaves
  * identically on an OfflineAudioContext, and `nodes[0]` is the head of the group (what the clock feeds silence into).
  */
-export function releaseAt(ctx, nodes, when, life) {
+export function releaseAt(ctx: BaseAudioContext, nodes: AudioNode[], when: number, life: number) {
   const s = ctx.createBufferSource();
   s.buffer = silentBuffer(ctx); s.loop = true;
   s.connect(nodes[0]);
@@ -55,7 +171,7 @@ export function releaseAt(ctx, nodes, when, life) {
 }
 
 /** Attack / hold / exponential decay envelope on an AudioParam. Returns the end time. */
-export function env(param, when, { vol = 0.3, attack = 0.003, hold = 0, dur = 0.1, sustain = 0, release = 0 }) {
+export function env(param: AudioParam, when: number, { vol = 0.3, attack = 0.003, hold = 0, dur = 0.1, sustain = 0, release = 0 }: EnvOpts): number {
   const peak = Math.max(FLOOR, vol);
   param.value = FLOOR; // the default (1) would leak the first sample: Chromium starts sources a sample before `when`
   param.setValueAtTime(FLOOR, when);
@@ -73,7 +189,7 @@ export function env(param, when, { vol = 0.3, attack = 0.003, hold = 0, dur = 0.
   return when + dur;
 }
 
-function rampFreq(param, when, f0, f1, dur, curve) {
+function rampFreq(param: AudioParam, when: number, f0: number, f1: number, dur: number, curve: RampCurve) {
   param.setValueAtTime(clampF(f0), when);
   if (f1 !== f0) {
     if (curve === 'lin') param.linearRampToValueAtTime(clampF(f1), when + dur);
@@ -85,14 +201,14 @@ function rampFreq(param, when, f0, f1, dur, curve) {
  * Oscillator voice. opts: type, f0, f1 (pitch ramp target), glide (ramp time, default dur), dur, vol,
  * attack, hold, sustain/release, curve ('exp'|'lin'), detune (cents), vib {rate, depth(cents)}, lp (lowpass Hz), hp.
  */
-export function osc(ctx, dest, when, o = {}) {
+export function osc(ctx: BaseAudioContext, dest: AudioNode, when: number, o: OscOpts = {}): number {
   const { type = 'square', f0 = 440, f1 = f0, dur = 0.1, curve = 'exp', detune = 0, vib = null, lp = 0, hp = 0, q = 1 } = o;
   const glide = o.glide || dur;
   const s = ctx.createOscillator();
   s.type = type;
   rampFreq(s.frequency, when, f0, f1, glide, curve);
   if (detune) s.detune.setValueAtTime(detune, when);
-  let lfoNodes = null;
+  let lfoNodes: AudioNode[] | null = null;
   if (vib) {
     const l = ctx.createOscillator(); l.type = 'sine'; l.frequency.value = vib.rate;
     const lg = ctx.createGain(); lg.gain.value = vib.depth;
@@ -101,8 +217,8 @@ export function osc(ctx, dest, when, o = {}) {
   }
   const g = ctx.createGain();
   env(g.gain, when, o);
-  let head = s;
-  const chain = [s, g];
+  let head: AudioNode = s;
+  const chain: AudioNode[] = [s, g];
   if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = clampF(lp); f.Q.value = q; head.connect(f); head = f; chain.push(f); }
   if (hp) { const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = clampF(hp); head.connect(f); head = f; chain.push(f); }
   head.connect(g).connect(dest);
@@ -113,7 +229,7 @@ export function osc(ctx, dest, when, o = {}) {
 }
 
 /** Filtered noise burst. opts: dur, vol, type (biquad type), f0, f1, q, attack, hold, sustain/release, curve. */
-export function noise(ctx, dest, when, o = {}) {
+export function noise(ctx: BaseAudioContext, dest: AudioNode, when: number, o: NoiseOpts = {}): number {
   const { dur = 0.1, type = 'lowpass', f0 = 2000, f1 = f0, q = 1, curve = 'exp' } = o;
   const src = ctx.createBufferSource(); src.buffer = noiseBuffer(ctx); src.loop = true;
   const flt = ctx.createBiquadFilter(); flt.type = type; flt.Q.value = q;
@@ -128,15 +244,15 @@ export function noise(ctx, dest, when, o = {}) {
 }
 
 /** Ring modulation (carrier * modulator via a gain whose gain param is driven by the modulator). */
-export function ring(ctx, dest, when, o = {}) {
+export function ring(ctx: BaseAudioContext, dest: AudioNode, when: number, o: RingOpts = {}): number {
   const { type = 'square', f0 = 180, f1 = f0, modF = 1300, modF1 = modF, modType = 'sine', dur = 0.12, curve = 'exp', lp = 0 } = o;
   const car = ctx.createOscillator(); car.type = type; rampFreq(car.frequency, when, f0, f1, o.glide || dur, curve);
   const mod = ctx.createOscillator(); mod.type = modType; rampFreq(mod.frequency, when, modF, modF1, o.glide || dur, curve);
   const rm = ctx.createGain(); rm.gain.value = 0; // output = carrier * modulator
   mod.connect(rm.gain);
   const g = ctx.createGain(); env(g.gain, when, o);
-  let head = rm;
-  const chain = [car, mod, rm, g];
+  let head: AudioNode = rm;
+  const chain: AudioNode[] = [car, mod, rm, g];
   if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = clampF(lp); head.connect(f); head = f; chain.push(f); }
   car.connect(rm); head.connect(g).connect(dest);
   autoDisconnect(car, chain);
@@ -145,7 +261,7 @@ export function ring(ctx, dest, when, o = {}) {
 }
 
 /** Amplitude modulation: carrier * (1 - depth/2 + depth/2 * lfo). */
-export function am(ctx, dest, when, o = {}) {
+export function am(ctx: BaseAudioContext, dest: AudioNode, when: number, o: AmOpts = {}): number {
   const { type = 'sawtooth', f0 = 2000, f1 = f0, rate = 60, rate1 = rate, depth = 1, dur = 0.07, curve = 'exp', lp = 0 } = o;
   const car = ctx.createOscillator(); car.type = type; rampFreq(car.frequency, when, f0, f1, o.glide || dur, curve);
   const lfo = ctx.createOscillator(); lfo.type = 'sine'; rampFreq(lfo.frequency, when, rate, rate1, dur, 'lin');
@@ -153,8 +269,8 @@ export function am(ctx, dest, when, o = {}) {
   const lg = ctx.createGain(); lg.gain.value = depth / 2;
   lfo.connect(lg).connect(vca.gain);
   const g = ctx.createGain(); env(g.gain, when, o);
-  let head = vca;
-  const chain = [car, lfo, vca, lg, g];
+  let head: AudioNode = vca;
+  const chain: AudioNode[] = [car, lfo, vca, lg, g];
   if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = clampF(lp); head.connect(f); head = f; chain.push(f); }
   car.connect(vca); head.connect(g).connect(dest);
   autoDisconnect(car, chain);
@@ -167,10 +283,10 @@ export function am(ctx, dest, when, o = {}) {
  * taps are delayed, low-passed and attenuated. Pass `when` (the time the caller starts feeding it) and `life` (how
  * long it does); the taps are then released with `releaseAt` instead of living for the rest of the context.
  */
-export function echo(ctx, dest, { taps = 3, time = 0.07, decay = 0.5, wet = 0.35, lowpass = 3500, spread = 1.37, when = ctx.currentTime, life = 2 } = {}) {
+export function echo(ctx: BaseAudioContext, dest: AudioNode, { taps = 3, time = 0.07, decay = 0.5, wet = 0.35, lowpass = 3500, spread = 1.37, when = ctx.currentTime, life = 2 }: EchoOpts = {}): GainNode {
   const input = ctx.createGain(); input.gain.value = 1;
   input.connect(dest);
-  const nodes = [input];
+  const nodes: AudioNode[] = [input];
   let t = time, a = wet, longest = 0;
   for (let i = 0; i < taps; i++) {
     const d = ctx.createDelay(2); d.delayTime.value = Math.min(1.99, t);
@@ -188,9 +304,9 @@ export function echo(ctx, dest, { taps = 3, time = 0.07, decay = 0.5, wet = 0.35
 }
 
 /** Sub-bus with an optional lowpass/highpass and fixed gain: groups several voices under one filter. */
-export function bus(ctx, dest, { gain = 1, lp = 0, hp = 0, q = 1 } = {}) {
+export function bus(ctx: BaseAudioContext, dest: AudioNode, { gain = 1, lp = 0, hp = 0, q = 1 }: BusOpts = {}): GainNode {
   const g = ctx.createGain(); g.gain.value = gain;
-  let head = g;
+  let head: AudioNode = g;
   if (lp) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = clampF(lp); f.Q.value = q; head.connect(f); head = f; }
   if (hp) { const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = clampF(hp); head.connect(f); head = f; }
   head.connect(dest);
@@ -198,7 +314,7 @@ export function bus(ctx, dest, { gain = 1, lp = 0, hp = 0, q = 1 } = {}) {
 }
 
 /** Glassy "aether" chord: detuned sine pairs with slow tremolo and a long release. */
-export function glass(ctx, dest, when, { freqs = [1320, 1980], detune = 6, dur = 0.5, vol = 0.12, trem = 5, attack = 0.01 } = {}) {
+export function glass(ctx: BaseAudioContext, dest: AudioNode, when: number, { freqs = [1320, 1980], detune = 6, dur = 0.5, vol = 0.12, trem = 5, attack = 0.01 }: GlassOpts = {}): number {
   const vca = ctx.createGain(); vca.gain.value = 0.8;
   const lfo = ctx.createOscillator(); lfo.frequency.value = trem;
   const lg = ctx.createGain(); lg.gain.value = 0.2; lfo.connect(lg).connect(vca.gain);

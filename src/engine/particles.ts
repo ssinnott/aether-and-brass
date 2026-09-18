@@ -4,9 +4,111 @@ import { drawText } from './text.ts';
 import { makeRng } from '../lib/engine/rng.ts';
 import { gear as drawGear } from '../lib/art/shapes.ts';
 
+/** The nine kinds. Each has a row in DEFAULTS and a case in drawOne(). */
+export type ParticleKind = 'spark' | 'dust' | 'smoke' | 'steam' | 'ember' | 'debris' | 'gear' | 'text' | 'ring';
+
+/**
+ * One pooled particle. Every slot carries every field for every kind — the pool is allocated once
+ * and slots are reused across kinds, so the record is flat rather than a union: `alloc()` hands back
+ * whatever slot is free and `spawn` overwrites all of it.
+ */
+export interface Particle {
+  active: boolean;
+  /** '' on a never-yet-used pool slot. */
+  kind: ParticleKind | '';
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  /** Frames lived so far, and the lifetime it dies at. */
+  life: number;
+  max: number;
+  size: number;
+  /** 'ring': the radius it grows to by the end of its life. */
+  size1: number;
+  color: string;
+  /** The late-life colour ('spark', 'ember'); defaults to `color`. */
+  color2: string;
+  gravity: number;
+  drag: number;
+  /** 'text': the string drawn. */
+  text: string;
+  alpha: number;
+  rot: number;
+  vrot: number;
+  /** x/y are screen px rather than world coords. */
+  screen: boolean;
+  /** 'ring': stroke width. */
+  width: number;
+  bounce: number;
+  /** 'ring': draw a floor ellipse rather than a circle. */
+  flat: boolean;
+}
+
+/** One row of DEFAULTS: the per-kind fallbacks `spawn` uses for whatever `opts` leaves out. */
+export interface ParticleDefaults {
+  /** Lifetime in frames. */
+  max: number;
+  size: number;
+  color: string;
+  color2?: string;
+  gravity: number;
+  drag: number;
+  size1?: number;
+  bounce?: number;
+  width?: number;
+}
+
+/** What `spawn` accepts. Anything omitted falls back to the kind's row in DEFAULTS. */
+export interface ParticleOpts {
+  vx?: number;
+  vy?: number;
+  vz?: number;
+  /** Lifetime in frames (becomes `p.max`). */
+  life?: number;
+  size?: number;
+  /** 'ring' end radius. */
+  size1?: number;
+  color?: string;
+  color2?: string;
+  gravity?: number;
+  drag?: number;
+  /** 'text' only. */
+  text?: string;
+  alpha?: number;
+  rot?: number;
+  vrot?: number;
+  /** x/y are screen px rather than world coords (and gravity pulls the other way). */
+  screen?: boolean;
+  width?: number;
+  bounce?: number;
+  flat?: boolean;
+}
+
+/** `burst` adds the randomisation knobs on top of one particle's options. */
+export interface BurstOpts extends ParticleOpts {
+  /** Max speed of the randomised velocity (default 3). */
+  speed?: number;
+  /** vy bias added to every particle (default 1.5). */
+  up?: number;
+  /** z spread multiplier (default 1). */
+  spread?: number;
+  /** Random +/- this, added to each particle's size. */
+  sizeJitter?: number;
+}
+
+/** The part of engine/camera.ts's `Camera` that projection needs; null draws in screen space. */
+export interface ParticleCamera {
+  x: number;
+  shakeX?: number;
+  shakeY?: number;
+}
+
 const MAX = 600;
 const prng = makeRng(0xbeef); // visual only: independent of gameplay rng
-const pool = [];
+const pool: Particle[] = [];
 for (let i = 0; i < MAX; i++) {
   pool.push({ active: false, kind: '', x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, max: 30, size: 2, size1: 0,
     color: '#fff', color2: '', gravity: 0, drag: 1, text: '', alpha: 1, rot: 0, vrot: 0, screen: false, width: 2, bounce: 0, flat: false });
@@ -14,7 +116,7 @@ for (let i = 0; i < MAX; i++) {
 let cursor = 0;
 let liveCount = 0;
 
-const DEFAULTS = {
+const DEFAULTS: Record<ParticleKind, ParticleDefaults> = {
   spark: { max: 14, size: 2, color: '#fff6c0', color2: '#ffb020', gravity: 0.25, drag: 0.92 },
   dust: { max: 26, size: 3, color: '#b8a88c', gravity: -0.02, drag: 0.94 },
   smoke: { max: 50, size: 4, color: '#5a5560', gravity: -0.05, drag: 0.97 },
@@ -26,7 +128,7 @@ const DEFAULTS = {
   ring: { max: 18, size: 4, size1: 40, color: '#ffffff', gravity: 0, drag: 1, width: 3 },
 };
 
-function alloc() {
+function alloc(): Particle {
   for (let i = 0; i < MAX; i++) {
     cursor = (cursor + 1) % MAX;
     if (!pool[cursor].active) return pool[cursor];
@@ -42,7 +144,7 @@ export const particles = {
    * @param {object} [opts] vx, vy, vz, life, size, size1 (ring end radius), color, color2, gravity, drag, text, rot, vrot, screen, width, bounce, flat, alpha
    * @returns {object} the particle (may be tweaked further)
    */
-  spawn(kind, x, y, z = 0, opts = {}) {
+  spawn(kind: ParticleKind, x: number, y: number, z: number = 0, opts: ParticleOpts = {}): Particle {
     const d = DEFAULTS[kind] || DEFAULTS.spark;
     const p = alloc();
     p.active = true; p.kind = kind; p.x = x; p.y = y; p.z = z; p.life = 0;
@@ -57,7 +159,7 @@ export const particles = {
   /**
    * Spawn `count` particles with randomised velocities. `opts.speed` (max), `opts.up` (vy bias), other opts as spawn().
    */
-  burst(kind, x, y, z, count, opts = {}) {
+  burst(kind: ParticleKind, x: number, y: number, z: number, count: number, opts: BurstOpts = {}) {
     const speed = opts.speed != null ? opts.speed : 3;
     const up = opts.up != null ? opts.up : 1.5;
     for (let i = 0; i < count; i++) {
@@ -93,7 +195,7 @@ export const particles = {
    * @param {CanvasRenderingContext2D} ctx
    * @param {{x:number, shakeX?:number, shakeY?:number}|null} cam
    */
-  draw(ctx, cam, layer) {
+  draw(ctx: CanvasRenderingContext2D, cam: ParticleCamera | null, layer?: 'back' | 'front') {
     const camX = cam ? cam.x - (cam.shakeX || 0) : 0;
     const camY = cam ? -(cam.shakeY || 0) : 0;
     const baseAlpha = ctx.globalAlpha; // per-particle alphas multiply the caller's (e.g. a screen fade)
@@ -115,7 +217,7 @@ export const particles = {
   get count() { return liveCount; },
 };
 
-function drawOne(ctx, p, sx, sy, t, baseAlpha) {
+function drawOne(ctx: CanvasRenderingContext2D, p: Particle, sx: number, sy: number, t: number, baseAlpha: number) {
   const fade = 1 - t;
   const A = baseAlpha;
   switch (p.kind) {

@@ -39,6 +39,122 @@ import { clamp } from '../lib/engine/math.ts';
 import { dsin } from '../lib/engine/trig.ts';
 import { circle, line } from '../lib/art/shapes.ts';
 import { drawShadowScreen } from '../art/fx.ts';
+import type { CameraView, EntityKind } from './entity.ts';
+import type { Fighter } from './fighter.ts';
+import type { FighterWorld } from './fighter.ts';
+import type { DangerBox } from './hazards.ts';
+
+/** The kinds in the ENTRANCE TABLE above. `cargo` is `climbOut` addressed at a named prop — see the row. */
+export type EntranceKind = 'teleport' | 'flyIn' | 'descend' | 'ropeDrop' | 'climbOut' | 'cargo';
+
+/** What an EntranceTell draws. `none` is the kinds whose tell is the thing itself (a bladder, a crate). */
+export type EntranceLook = 'ring' | 'shadow' | 'line' | 'none';
+
+/**
+ * One row of the ENTRANCES table below: the per-kind frame budgets, the tell's size and look, and its two sounds.
+ * The ENTRANCE TABLE at the top of this file is the prose version of exactly these fields.
+ */
+export interface EntranceInfo {
+  /** Frames the tell runs BEFORE the unit exists. */
+  tell: number;
+  /** Frames of scripted path. Derived rather than authored for `descend` — see `pathFrames`. */
+  approach: number;
+  /** Frames of punishable recovery that end the entrance. */
+  arrive: number;
+  /** Half-extent of the tell in x and z: what `dangerBox` reports, and what the ring is drawn at. */
+  r: number;
+  look: EntranceLook;
+  /** Played as the tell goes up; null for the kinds whose tell is silent. */
+  tellSfx: string | null;
+  /** Played as the unit arrives. */
+  sfx: string;
+  /** Advisory: does this kind start in the air? `GROUNDED` above is what the code actually tests. */
+  air: boolean;
+  /** Frames held in the air before letting go. A FRAME COUNT, not an open-ended hover — see the note at the top. */
+  hang: number;
+  /** `descend` only: px/frame of the fall. */
+  speed?: number;
+}
+
+/**
+ * The authored `entrance` block on a spawn spec: `kind` picks the ENTRANCES row and anything else overrides one of
+ * that row's fields, plus the placement fields below. The shared list is in the note at the top of this file.
+ */
+export interface EntranceSpec extends Partial<EntranceInfo> {
+  kind: string;
+  /** Absolute landing x. */
+  x?: number;
+  /** Landing x from the centre of the camera lock — the convention a `side: 'sky'` spawn already uses. */
+  dx?: number;
+  /** `flyIn`: the side it crosses FROM, which is also the way it ends up facing. */
+  from?: 'left' | 'right';
+  /** `cargo` (issue #34): the author key of the container the unit comes out of (game/items.ts `Prop.name`). */
+  prop?: string;
+}
+
+/**
+ * A RESOLVED entrance: one ENTRANCES row patched with the spawn's own fields (`entranceFor`). This is what every
+ * function below is handed and what game/enemy.ts hangs on the unit as `e.entrance`.
+ */
+export interface Entrance extends EntranceInfo {
+  /** Narrower than the spec's: `entranceFor` returns null for a kind the table does not know, so a resolved
+   *  entrance always names a real row. */
+  kind: EntranceKind;
+  x?: number;
+  dx?: number;
+  from?: 'left' | 'right';
+  prop?: string;
+}
+
+/**
+ * The unit an entrance is run on: a Fighter plus the arrival bookkeeping game/enemy.ts hangs on one.
+ *
+ * Structural, and extending the COMBAT core rather than naming `Enemy`, for the reason game/entity.ts gives for
+ * `EntityWorld`: game/enemy.ts imports this module, so the dependency must not run back the other way. `Enemy`
+ * satisfies it.
+ */
+export interface ArrivingUnit extends Fighter {
+  /** The entrance being run, or null once it is over. */
+  entrance: Entrance | null;
+  /** Frames into the entrance, the length of its scripted path, and the frame the body touched down on. */
+  arriveT: number;
+  arrivePath: number;
+  arriveLand: number;
+  /** The x the entrance delivers to. */
+  arriveX: number;
+  /** A hit cut a rope drop's line: it falls the rest of the way. */
+  cutLine: boolean;
+  /** The AI state: an arrival holds the unit in ARRIVING and hands it back in APPROACH. */
+  aiState: string;
+  /** False while the unit is still arriving, exactly as it is while a side spawn walks in. */
+  entered: boolean;
+  /** Frames before this body may swing; `finishArrival` re-arms it against the LANDING. */
+  attackCooldown: number;
+  /** The resolved ai table. Only the first-attack grace is read here. */
+  ai?: { firstAttackDelay?: number } | null;
+}
+
+/**
+ * The world `teleportShove` reaches for: the bodies a completing ring can displace, and the bound it clamps them
+ * inside. Structural for the same reason as `ArrivingUnit`. `World` satisfies it.
+ */
+export interface ShoveWorld {
+  /** Player fighters, dead or out included — the loop below is what filters them. */
+  players: Array<Fighter & { out?: boolean }>;
+  /** Total stage width in px: a shove never pushes a body off the board. */
+  stageLength: number;
+}
+
+/** What `new EntranceTell` is given: the placement, how long it runs, and what it draws. */
+export interface EntranceTellOpts {
+  kind: EntranceKind;
+  x: number;
+  z: number;
+  /** Frames the tell is up for — the kind's `tell` budget. */
+  frames: number;
+  r: number;
+  look: EntranceLook;
+}
 
 /** Concordat aether cyan (docs/ART_STYLE 4): a teleport ring IS Concordat machinery, so it keeps the reserved colour. */
 const AETHER = '#4DF0E0';
@@ -57,7 +173,7 @@ const GROUNDED = new Set(['teleport', 'climbOut', 'cargo']);
  * Per-kind frame budgets and look. `tell` frames run BEFORE the unit exists (EntranceTell); `approach` is the
  * scripted path; `arrive` is the punishable recovery that ends the entrance.
  */
-export const ENTRANCES = Object.freeze({
+export const ENTRANCES: Readonly<Record<EntranceKind, EntranceInfo>> = Object.freeze({
   // Concordat machinery re-forming on the spot: a ring on the floor, a rising chime, then the unit is standing in it.
   // Reuses the Regent Engine's timeStop ring + chime (content/enemies/boss.js) rather than inventing an FX.
   teleport: { tell: 40, approach: 0, arrive: 12, r: 22, look: 'ring', tellSfx: 'chime', sfx: 'aether_step', air: false, hang: 0 },
@@ -78,32 +194,35 @@ export const ENTRANCES = Object.freeze({
 });
 
 /** Frames a `descend` takes to fall to its rest height at `speed` px/f — its approach length is derived, not authored. */
-function descendFrames(ent) { return Math.max(1, Math.ceil((SKY_Y - restY(ent)) / (ent.speed || ENTRANCES.descend.speed))); }
+function descendFrames(ent: Entrance): number { return Math.max(1, Math.ceil((SKY_Y - restY(ent)) / (ent.speed || ENTRANCES.descend.speed))); }
 /** Height the scripted approach ends at: a hang holds in the air, everything else arrives on the floor. */
-function restY(ent) { return ent.hang > 0 && ent.kind !== 'flyIn' ? HANG_Y : 0; }
+function restY(ent: Entrance): number { return ent.hang > 0 && ent.kind !== 'flyIn' ? HANG_Y : 0; }
 /** Frames of scripted path for this entrance (derived for `descend`, authored for the rest). */
-function pathFrames(ent) { return ent.kind === 'descend' ? descendFrames(ent) : ent.approach; }
+function pathFrames(ent: Entrance): number { return ent.kind === 'descend' ? descendFrames(ent) : ent.approach; }
 
 /** The entrance info for a spawn spec, or null when it walks on from a side as usual. */
-export function entranceFor(spec) {
+export function entranceFor(spec: { entrance?: EntranceSpec | null } | null): Entrance | null {
   const e = spec && spec.entrance;
   if (!e) return null;
   const info = ENTRANCES[e.kind];
   if (!info) return null;
-  const ent = { ...info, ...e, kind: e.kind };
+  // `e.kind` IS a key of ENTRANCES here — the lookup above just established it and returned null otherwise —
+  // but a string narrowed by an object lookup is not something tsc can follow, so the assertion says it. Types
+  // only: it erases, and the guard above is what actually runs.
+  const ent: Entrance = { ...info, ...e, kind: e.kind as EntranceKind };
   ent.hang = Math.max(0, ent.hang | 0);
   if (ent.kind === 'flyIn') ent.hang = 0;   // a flyIn's whole point is the landing recovery
   return ent;
 }
 
 /** Total frames from the tell starting to the unit becoming actionable — what a playtest asserts against. */
-export function entranceLength(ent) { return ent.tell + pathFrames(ent) + ent.hang + ent.arrive; }
+export function entranceLength(ent: Entrance): number { return ent.tell + pathFrames(ent) + ent.hang + ent.arrive; }
 
 /**
  * The floor spot an entrance delivers to. `x` is absolute; `dx` is measured from the centre of the camera lock,
  * the same convention a `side: 'sky'` spawn already uses in queueSpawns.
  */
-export function entranceLanding(ent, left, right) {
+export function entranceLanding(ent: Entrance, left: number, right: number): number {
   return ent.x != null ? ent.x : (left + right) / 2 + (ent.dx || 0);
 }
 
@@ -113,23 +232,38 @@ export function entranceLanding(ent, left, right) {
  * so `laneAroundHazards` steers both mobs and the autopilot clear of it with no code of its own in either.
  */
 export class EntranceTell extends Entity {
-  /** @param {{kind: string, x: number, z: number, frames: number, r: number, look: string}} o */
-  constructor({ kind, x, z, frames, r, look }) {
+  // The fields, for the checker only, in constructor order. `declare` because these are the constructor's own
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022 defines them
+  // before the constructor body runs), which is a runtime change. Same reasoning, and the same wording, as
+  // game/entity.ts and game/zones.ts. `kind` is NOT redeclared here — see the constructor.
+  /** Frames the tell runs for, and frames elapsed. */
+  declare life: number;
+  declare t: number;
+  /** Half-extent of the patch this tell claims, and what it draws. */
+  declare r: number;
+  declare look: EntranceLook;
+  /** What `laneAroundHazards` (game/hazards.ts `Obstacle`) scans world.entities for. */
+  declare isHazard: boolean;
+  constructor({ kind, x, z, frames, r, look }: EntranceTellOpts) {
     super('fx');
-    this.kind = kind; this.x = x; this.z = z;
+    // `super('fx')` has just set Entity's `kind` (one of the seven in game/entity.ts) and this overwrites it with
+    // the ENTRANCE kind, which is a different vocabulary entirely. Recorded with an assertion rather than changed:
+    // nothing reads it back, and net/checksum.ts's KIND table has a row for neither string, so the canary skips
+    // this entity either way. Flagged in the migration report rather than fixed in a types-only pass.
+    this.kind = kind as unknown as EntityKind; this.x = x; this.z = z;
     this.life = Math.max(1, frames); this.t = 0;
     this.r = r; this.look = look;
     this.zSize = r; this.shadowW = 0;
     this.isHazard = true;   // enemy pathing / bot lane steering look for this in world.entities
   }
-  hurtbox() { return null; }
+  override hurtbox(): null { return null; }
   /** The patch the arrival is about to take. A `descend` reports nothing: it is visible in the air the whole way. */
-  dangerBox() {
+  dangerBox(): DangerBox | null {
     if (this.look === 'none') return null;
     return { x0: this.x - this.r, x1: this.x + this.r, z0: this.z - this.r, z1: this.z + this.r };
   }
-  update() { if (++this.t >= this.life) { this.removeMe = true; this.alive = false; } }
-  draw(ctx, cam) {
+  override update(): void { if (++this.t >= this.life) { this.removeMe = true; this.alive = false; } }
+  override draw(ctx: CanvasRenderingContext2D, cam: CameraView): void {
     const k = this.t / this.life, sx = cam.toScreenX(this.x), sy = Math.round(FLOOR_TOP + this.z + cam.shakeY);
     ctx.save();
     if (this.look === 'ring') {
@@ -157,10 +291,9 @@ export class EntranceTell extends Entity {
 /**
  * Put a freshly spawned enemy onto its entrance path. Called from the Enemy constructor (which has no world
  * yet), so it only sets fields — every moving part is stepped by `stepArrival` from `Enemy.think`.
- * @param {import('./enemy.ts').Enemy} e
- * @param {object} ent resolved entrance (entranceFor)
+ * @param ent resolved entrance (entranceFor)
  */
-export function startArrival(e, ent) {
+export function startArrival(e: ArrivingUnit, ent: Entrance): void {
   e.entrance = ent;
   e.aiState = 'ARRIVING';
   e.entered = false;
@@ -190,7 +323,7 @@ export function startArrival(e, ent) {
  * drops straight out of the sky, which is the whole point of the entrance. Every other kind rides its path out;
  * hitstun still lands on it as damage, it simply does not steer the arrival.
  */
-export function stepArrival(e, world) {
+export function stepArrival(e: ArrivingUnit, world: FighterWorld): boolean {
   const ent = e.entrance;
   if (!ent) { finishArrival(e, world); return false; }
   const t = ++e.arriveT, path = e.arrivePath, hang = ent.hang;
@@ -240,19 +373,19 @@ export function stepArrival(e, world) {
  * Is `e` hanging on a dropped line right now? A hit here cuts it (Enemy.takeHit rewrites the hit to a knockdown
  * and the unit drops out of the sky), and a grab on it is a throw from height.
  */
-export function isHanging(e) {
+export function isHanging(e: ArrivingUnit): boolean {
   const ent = e.entrance;
   return !!ent && ent.kind === 'ropeDrop' && ent.hang > 0 && e.arriveT > e.arrivePath && e.arriveT <= e.arrivePath + ent.hang;
 }
 
 /** Let go of the line / end the hover: from here the unit falls under ordinary gravity into its recovery. */
-function letGo(e) {
+function letGo(e: ArrivingUnit): void {
   if (e.noGravity) audio.play('throw');
   e.noGravity = 0; e.vy = 0; e.cutLine = false;
 }
 
 /** The entrance is over: the unit becomes an ordinary wave enemy from this frame on. */
-export function finishArrival(e, world) {
+export function finishArrival(e: ArrivingUnit, world: FighterWorld): void {
   const ent = e.entrance;
   e.entrance = null;
   e.arriveT = 0;
@@ -290,9 +423,9 @@ export function finishArrival(e, world) {
  * A teleport ring that completes under a player shoves them clear: standing in it is punished, but it is never
  * a free hit on someone who could not see it coming — the ring told for `tell` frames first. Called by the
  * stage runner the frame the unit is placed.
- * @returns {boolean} true when a body was displaced (the runner staggers that arrival)
+ * @returns true when a body was displaced (the runner staggers that arrival)
  */
-export function teleportShove(world, x, z, r) {
+export function teleportShove(world: ShoveWorld, x: number, z: number, r: number): boolean {
   for (const p of world.players) {
     if (!p || !p.alive || p.dead || p.out) continue;
     if (Math.abs(p.x - x) > r || Math.abs(p.z - z) > r) continue;

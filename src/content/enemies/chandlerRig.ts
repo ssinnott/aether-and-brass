@@ -30,6 +30,7 @@ import { particles } from '../../engine/particles.ts';
 import { audio } from '../../engine/audio.ts';
 import { rad } from '../../lib/engine/math.ts';
 import { FACE } from '../../lib/art/poses.ts';
+import type { PoseSpec } from '../../lib/art/poses.ts';
 import { FLOOR_TOP, ST } from '../../constants.ts';
 import { FK } from './common.ts';
 
@@ -486,9 +487,8 @@ export function riteFlash(f, world) {
  * Hooks every Chandler shares. onUpdate drives `rig.lamp` and keeps the recipient; onHitTaken is the rite-break rule
  * (with the armour guard, because the hook runs BEFORE the armour branch in fighter.js takeHit); drawBefore paints the
  * cone, drawAfter the tether; onDeath is COSMETIC ONLY — the buffs are cleared by each rite's own onTick.
- * @type {Hooks}
  */
-export const BASE_HOOKS = {
+export const BASE_HOOKS: Hooks = {
   onSpawn(f) { f.riteTarget = null; f.riteTarget2 = null; f.riteBroken = 0; f.riteHold = 0; f.rig.lamp = 1; },
   onUpdate(f, world) {
     const ch = f.rig.build.chand || EMPTY, rig = f.rig;
@@ -615,6 +615,20 @@ const WALKS = {
 };
 
 // ---------------------------------------------------------------- shared base animation set
+/** The stance and the two set switches makeChandlerBase takes (see the block below for what each one buys). */
+export interface ChandlerBaseOpts {
+  /** Forward lean on every key, degrees; default 14 (0 for the Purser, the one straight back in the faction). */
+  stoop?: number;
+  /** Head angle on every key; default 2. */
+  head?: number;
+  /** `weapon.rot` on the lying / getup / dead keys; default -24. */
+  weaponFloor?: number;
+  /** Append the engine grab set (grabTell / grab / grabHold / grabHit / throw / throwBack). */
+  grab?: boolean;
+  /** Which WALKS cycle the walk is built from; WALKS.work otherwise. */
+  gait?: string;
+}
+
 /**
  * LIGHT OUT FRONT, LOAD AT THE WAIST. Every key leans `o.stoop` degrees forward (0 for the Purser, the one straight
  * back in the faction) with the head down, the lamp arm out in front at hip height and the off hand hanging BACK
@@ -622,13 +636,12 @@ const WALKS = {
  * States: idle 4 / walk 8 / run 8 / jump 3 / fall 2 / land 2 / hurt 3 / stagger 2 / hurtAir / knockdown / lying 2 /
  * getup 3 / dead 2 / dodge 5, plus the engine grab set (o.grab) for the Resurrection Man.
  * @param {object} c rest carry { armR, armL, weapon, weaponBack?, grip? }
- * @param {{ stoop?: number, head?: number, weaponFloor?: number, grab?: boolean, gait?: string }} o
  */
-export function makeChandlerBase(c, o = {}) {
+export function makeChandlerBase(c, o: ChandlerBaseOpts = {}): AnimSet {
   const S = o.stoop != null ? o.stoop : 14, HD = o.head != null ? o.head : 2, wf = o.weaponFloor != null ? o.weaponFloor : -24;
   const K = (s) => ({ torso: S, head: HD, legR: [8, 4], legL: [-8, 6], ...c, ...s });
   const aR = c.armR, aL = c.armL, A = (a, du, dl) => [a[0] + du, a[1] + dl];
-  const FLOOR = { armR: [-20, -6], weapon: wf, armL: [30, 20], torso: 2, head: -12, legR: [12, 10], legL: [-4, 8], root: [24, -8, -88], grip: 0, weaponBack: 0, face: 'dazed' };
+  const FLOOR: PoseSpec = { armR: [-20, -6], weapon: wf, armL: [30, 20], torso: 2, head: -12, legR: [12, 10], legL: [-4, 8], root: [24, -8, -88], grip: 0, weaponBack: 0, face: 'dazed' };
   // `du`/`dl` are the LAMP-ARM drift for this key and `ts` the torso rock: a carry arm frozen at one offset through all
   // eight keys of a bobbing walk was the flattest thing in the set (§8 walk / §10 "the sheet must not look canned").
   const walk = (lr, ll, al, ty, sq, fr, fl, hb, du, dl, ts) => K({ legR: lr, legL: ll, armL: al, armR: A(aR, du != null ? du : 2, dl != null ? dl : -2), torso: S + (ts != null ? ts : 3), head: HD + (hb || 0), root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, footR: fr || 0, footL: fl || 0 });
@@ -762,9 +775,9 @@ export function makeChandlerBase(c, o = {}) {
  *   armor, invuln, event, aimEvent, projectile, summon, recoverFx, w1, w2, h, hold, r } — poses are pose specs.
  */
 const STANCE = Object.freeze({ legR: [8, 4], legL: [-8, 6] });
-export function chandStrike(o) {
+export function chandStrike(o): Anim {
   const tell = o.tell || 20, t0 = Math.max(1, Math.round(tell * 0.6));
-  const hit = { sfx: o.sfx, fx: o.fx, move: o.move, smear: o.smear, ease: 'overshoot',
+  const hit: Partial<Frame> = { sfx: o.sfx, fx: o.fx, move: o.move, smear: o.smear, ease: 'overshoot',
     armor: o.armor || undefined, invuln: o.invuln || undefined, event: o.event, projectile: o.projectile, summon: o.summon };
   if (o.hitboxes) hit.hitboxes = o.hitboxes; else if (o.hitbox) hit.hitbox = o.hitbox;
   return { loop: false, frames: [

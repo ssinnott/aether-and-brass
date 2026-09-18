@@ -1,8 +1,7 @@
 // Captain Rook Halloway — move list + trials (issue #22). Numbers mirror the header comment in rook.js / GDD 2.3.
 import { step, comboTrial, jumpGrabTrial, dodgeCancelTrial, throwBodyTrial } from './common.ts';
 
-/** @type {MoveEntry[]} */
-export const moveList = [
+export const moveList: MoveEntry[] = [
   { id: 'combo', name: 'CUTLASS COMBO', input: 'ATTACK x4', desc: 'SLASH 8 > REVERSE 8 > POMMEL 10 STAGGER > POINT-BLANK SHOT 14 KNOCKDOWN, PIERCES FOR 8', anims: ['attack1', 'attack2', 'attack3', 'attack4'] },
   { id: 'jump', name: 'DOWNWARD SLASH', input: 'JUMP, ATTACK', desc: '12 DMG DOWNWARD SLASH', anim: 'jumpAttack' },
   { id: 'airShot', name: 'AIR SHOT', input: 'AIR: ATTACK AGAIN', desc: '8 DMG DOWNWARD SHOT AFTER THE SLASH', anim: 'jumpAttack2' },
@@ -17,8 +16,7 @@ export const moveList = [
   { id: 'taunt', name: 'TAUNT', input: 'TAUNT', desc: '+25 METER OVER THE ANIMATION. INTERRUPTIBLE', anim: 'taunt' },
 ];
 
-/** @type {Trial[]} */
-export const trials = [
+export const trials: Trial[] = [
   comboTrial(4),
   { id: 'airshot', name: 'SLASH AND SHOT', hint: 'JUMP ATTACK, THEN ATTACK AGAIN IN THE AIR', window: 60, steps: [step('DOWNWARD SLASH', 'hit', 'jumpAttack'), step('AIR SHOT', 'projectile', 'jumpAttack2')] },
   { id: 'parry', name: 'PARRY RIPOSTE', hint: 'DODGE INTO THE SWING, THEN PUNISH', dummyMode: 'cpu', window: 60, steps: [step('PARRY', 'parry'), step('PUNISH', 'hit', 'attack1')] },

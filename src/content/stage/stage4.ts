@@ -14,16 +14,29 @@
 // strapped on — and walks `salvaged` Brassbound it has re-plated in its own colours; the loft is the guild and its scrap
 // and nothing else. Four factions, and the one that was behind the other three the whole time is not keeping them
 // standing, it is carrying them away.
+import type { SpawnSpec } from '../../game/stage.ts';
 const G = 'gleaning', S = 'sootborn', C = 'stormcrow', B = 'brassbound';
+/**
+ * What `group()` takes beyond the enemy itself: which edge the wave walks in from ('alt' alternates by index),
+ * how it is spread over lanes and delays, and the spawn modifiers every entry in it carries.
+ */
+interface GroupOpts {
+  side?: SpawnSpec['side'] | 'alt';
+  z0?: number;
+  dz?: number;
+  delay0?: number;
+  ddelay?: number;
+  mods?: SpawnModName[] | null;
+}
 /**
  * Helper: n spawns of one enemy, alternating sides, spread over z lanes and delays. `mods` (traits.js SPAWN_MODS)
  * rides on every spawn of the group — the census counts footman+winged as its own variant, and so does the player.
  */
-function group(type, variant, n, { side = 'alt', z0 = 40, dz = 30, delay0 = 0, ddelay = 30, mods = null } = {}) {
-  const out = [];
+function group(type, variant, n, { side = 'alt', z0 = 40, dz = 30, delay0 = 0, ddelay = 30, mods = null }: GroupOpts = {}) {
+  const out: SpawnSpec[] = [];
   for (let i = 0; i < n; i++) {
     const s = side === 'alt' ? (i % 2 ? 'left' : 'right') : side;
-    const e = { type, variant, side: s, z: ((z0 + i * dz) % 120) + 10, delay: delay0 + i * ddelay };
+    const e: SpawnSpec = { type, variant, side: s, z: ((z0 + i * dz) % 120) + 10, delay: delay0 + i * ddelay };
     if (mods) e.mods = mods;
     out.push(e);
   }

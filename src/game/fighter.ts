@@ -71,15 +71,367 @@ import { normalizeTraits } from './traits.ts';
 import { initShield, syncShield, tickShield, absorbShield, drawShieldFx } from './shield.ts';
 import { grabMethods, BOUNCE_VY } from './grabs.ts';
 import { solidAt } from './hazards.ts';
+import type { Rig } from '../lib/art/rig.ts';
+import type { FrameFx, FrameMove, PlayOpts, PlayerFrame } from '../lib/art/animation.ts';
+import type { Aabb, CameraView, EntityKind, EntityWorld, Team } from './entity.ts';
+import type { StatusOpts } from './status.ts';
 
 export { normalizeTraits };
 
+// ================================ DECLARED SHAPES ===================================================================
+// The interfaces below are this file's half of the two reference blocks above: the def, traits, frame and world fields
+// the core actually reads. Where types/content.d.ts already declares a shape (Hit, Hitbox, Hooks, Frame and friends)
+// it is used BY NAME, or reached through indexed access on `ContentFrame`, rather than described a second time — that
+// file is derived from the blocks above and stays the authority for content.
+
+/**
+ * Every state the machine can be in, derived from ST (constants.ts) so the two can never drift and a misspelled state
+ * name is a compile error. They are STRINGS on purpose: net/checksum.ts hashes `e.state` through mixAny, and a
+ * number-only path would hash a constant and make the whole state machine invisible to the desync canary.
+ */
+export type FighterState = typeof ST[keyof typeof ST];
+
+/** types/content.d.ts's global `Frame` under a name the module augmentation below can reach it by. */
+type ContentFrame = Frame;
+
+/**
+ * The frame fields the core honours, merged into the shared player's `Frame`. lib/art/animation.ts declares the
+ * presentation fields and asks each game to add its own by declaration merging (see its header and `FrameSlots`);
+ * these are ours, and every shape is taken straight off types/content.d.ts so nothing is described twice. Fields the
+ * player already declares (dur, pose, interp, move, fx, sfx, event, smear, ease, face) are deliberately absent:
+ * merged declarations of the same property must be identical, and those are the player's own.
+ */
+declare module '../lib/art/animation.ts' {
+  interface Frame {
+    hitbox?: ContentFrame['hitbox'];
+    hitboxes?: ContentFrame['hitboxes'];
+    moveRecover?: ContentFrame['moveRecover'];
+    hurtboxScale?: ContentFrame['hurtboxScale'];
+    spawn?: ContentFrame['spawn'];
+    area?: ContentFrame['area'];
+    teleport?: ContentFrame['teleport'];
+    lockOn?: ContentFrame['lockOn'];
+    meter?: ContentFrame['meter'];
+    amount?: ContentFrame['amount'];
+    cancel?: ContentFrame['cancel'];
+    tell?: ContentFrame['tell'];
+    armor?: ContentFrame['armor'];
+    invuln?: ContentFrame['invuln'];
+    punish?: ContentFrame['punish'];
+    projectile?: ContentFrame['projectile'];
+    summon?: ContentFrame['summon'];
+    radius?: ContentFrame['radius'];
+    hit?: ContentFrame['hit'];
+    shake?: ContentFrame['shake'];
+    offset?: ContentFrame['offset'];
+  }
+}
+
+/** A frame's `spawn` spec, as spawnFromFrame reads it. */
+export type FrameSpawn = NonNullable<ContentFrame['spawn']>;
+/** A frame's `teleport` spec (Aether Step / Sael blink), as teleportTo reads it. */
+export type FrameTeleport = NonNullable<ContentFrame['teleport']>;
+/** A frame's `lockOn` spec, as lockOn reads it. */
+export type FrameLockOn = NonNullable<ContentFrame['lockOn']>;
+
+/** `traits.shield`, normalised by game/shield.ts. Absent (null) = this fighter carries no shield. */
+export interface ShieldSpec {
+  /** Pool in HP. */
+  max: number;
+  /** HP per frame once the refill starts. */
+  regen: number;
+  /** Frames of not being damaged before the refill starts. */
+  delay: number;
+  /** The same wait after the pool is emptied. */
+  breakDelay: number;
+  /** What the float text calls it when it breaks ('BOILER PLATE DOWN'). */
+  name: string;
+}
+
+/** `traits.parry` (Rook): the window, and what a parry costs the attacker. */
+export interface ParrySpec {
+  /** Frames from the start of the dodge in which a melee hit is parried (default 6). */
+  frames?: number;
+  /** Frames of `stunned` the attacker takes (default 40). */
+  stun?: number;
+  /** Meter the parrier gains (default 15). */
+  meter?: number;
+  /** Hit-stop granted to both sides (default 8). */
+  hitstop?: number;
+}
+
+/** The attack instance this fighter parried: the rest of that swing whiffs (Duelist riposte, GDD 3). */
+export interface ParriedRecord {
+  by: Fighter;
+  /** The attacker's `anim.instance` at the moment of the parry. */
+  instance: number;
+}
+
+/**
+ * One entry of `def.hurtParts`: a sub-box of the body with its own damage multiplier, matched by game/combat.ts and
+ * left on `f.hitPart` for the hit that follows.
+ */
+export interface HurtPart {
+  name?: string;
+  /** [y0, y1] px above the feet; the whole body when absent. */
+  y?: [number, number];
+  /** [x0, x1] px from the body centre, mirrored with facing. */
+  x?: [number, number];
+  damageMult?: number;
+  /** Active only while `f.flags[flag]` is set. */
+  flag?: string;
+  /** Active only while this returns true. */
+  when?(f: Fighter): boolean;
+}
+
+/** The TRAITS table of the header block, as game/traits.ts normalizeTraits returns it: every field always present. */
+export interface FighterTraits {
+  damageTakenMult: number;
+  /** burn + hit.element 'fire'. */
+  fireDamageMult: number;
+  /** Hits taken from airborne players. */
+  jumpAttackTakenMult: number;
+  /** Permanent armor: no hitstun; launch / knockdown still work unless noLaunch. */
+  superArmor: boolean;
+  /** An armored fighter also ignores launch / knockdown hits. */
+  noLaunch: boolean;
+  /** Default hit count for `armor: true` frames (0 = unlimited). */
+  armorHits: number;
+  /** Armor only vs. hits from the front (Halberdier). */
+  armorFrontOnly: boolean;
+  /** Only every Nth hit taken causes hitstun (Cinder Hulk 3). */
+  flinchEvery: number;
+  /** Every Nth hit in one combo staggers regardless of armor (Brassbound gear slip). */
+  staggerEveryNthHit: number;
+  /** Frames of that stagger. */
+  staggerFrames: number;
+  /** Knockdown / launch hits below this damage become heavy flinches. */
+  ignoreKnockdownBelow: number;
+  grabbable: boolean | ((by: Fighter, f: Fighter) => boolean);
+  grabbableByGrappler: boolean;
+  /** May grab anything grabbableByGrappler. */
+  grabAll: boolean;
+  grabReach: number;
+  /** Hold hits + throws dealt. */
+  grabDamageMult: number;
+  /** Throws dealt. */
+  throwDamageMult: number;
+  /** Throws taken (Brassbound 1.5). */
+  throwDamageTakenMult: number;
+  fleeHpFrac: number;
+  fleeChance: number;
+  /** Knockback divisor. */
+  weight: number;
+  extraJumps: number;
+  airDashes: number;
+  dodgeRecovery: number;
+  dodgeIFrames: [number, number];
+  parry: ParrySpec | null;
+  /** Meter gained over the taunt animation. */
+  tauntMeter: number;
+  /** Training dummy (screens/training.ts): never flees or ripostes. */
+  dummy: boolean;
+  shield: ShieldSpec | null;
+}
+
+/** `def.moves.throwFwd` / `throwBack` (game/grabs.ts). */
+export interface ThrowMove {
+  damage?: number;
+  vx?: number;
+  vy?: number;
+  /** stateTimer the target is released at (default 5). */
+  releaseAt?: number;
+  shockwave?: { r?: number; damage?: number };
+  /** Upward velocity the thrower gets (Brunhild's slam). */
+  selfVy?: number;
+  /** The thrown body bounces off the floor once more; a number is the pop velocity. */
+  bounce?: boolean | number;
+}
+
+/**
+ * A named hero move, as the character defs carry it (`moves.special`, `moves.super`). The core reads only
+ * `name` — game/player.ts beginSuper announces it — and spends METER.special / METER.super itself rather than
+ * the `cost` beside it, which is there for the moves screen (screens/moves.ts).
+ */
+export interface NamedMove {
+  name: string;
+  /** Advisory: what the moves screen prints. `paySpecial` / `startSuper` spend off METER directly. */
+  cost?: number;
+  damage?: number;
+}
+
+/** `def.moves.grabHit`: the hold hit and how many of them auto-throw. */
+export interface GrabHitMove { damage?: number; hits?: number; }
+
+/**
+ * `def.moves`. The three throw / grab moves the core resolves, plus the two named moves it only takes a display
+ * name off. Named moves beyond these belong to the content that reads them.
+ */
+export interface FighterMoves {
+  special?: NamedMove;
+  super?: NamedMove;
+  throwFwd?: ThrowMove;
+  throwBack?: ThrowMove;
+  grabHit?: GrabHitMove;
+}
+
+/** A throw waiting on its release frame, or a held weapon / prop waiting on its own (game/throwables.ts). */
+export interface ThrowPending {
+  /** +1 forward, -1 back. */
+  dir?: number;
+  /** stateTimer the release happens at. */
+  at: number;
+  mv?: ThrowMove | null;
+  /** Set for a held item instead of a held body. */
+  kind?: 'weapon' | 'prop';
+  /** Up / down throw: z drift per frame. */
+  vzDir?: number;
+}
+
+/** One active status (game/status.ts): the defaults for its name, the options it was applied with, and its timers. */
+export interface StatusRecord {
+  name: string;
+  source: Fighter | null;
+  timer: number;
+  age: number;
+  mash: number;
+  frames?: number;
+  tint?: string;
+  tintAlpha?: number;
+  onTick?(f: Fighter, s: StatusRecord, world?: FighterWorld): void;
+  onEnd?(f: Fighter, s: StatusRecord, world?: FighterWorld): void;
+  draw?(ctx: CanvasRenderingContext2D, f: Fighter, sx: number, sy: number, s: StatusRecord): void;
+  /** A custom status carries whatever fields its content author gave it (chandler.js LIMECRUST keeps `hits0`). */
+  [k: string]: any;
+}
+
+/** One entry of `hitTargets`: which box of this attack already connected with a target, and when (game/combat.ts). */
+export interface HitRecord { key: string | number; frame: number; }
+
+/** `def.explodeOnDeath`: a fuse projectile spawned where the body fell. */
+export interface ExplodeOnDeath {
+  delay?: number;
+  radius?: number;
+  damage?: number;
+  /** Default true: the blast damages the owner's own team as well. */
+  friendly?: boolean;
+  element?: string;
+  color?: string;
+}
+
+/** One entry of `def.deathSpawn`: a projectile fired from the body as it dies. */
+export interface DeathSpawn { projectile: any; dx?: number; dz?: number; y?: number; }
+
+/** Offsets and aim handed to world.spawnProjectile (world space, already resolved off the frame's local offsets). */
+export interface ProjectileSpawnOpts {
+  x?: number;
+  y?: number;
+  z?: number;
+  aimX?: number;
+  aimZ?: number;
+  /** Index of this projectile within a `count` burst. */
+  index?: number;
+}
+
+/**
+ * A content definition (content/characters, content/enemies). Only the fields the CORE reads are named; a def also
+ * carries the faction's own (palette, ai, variant, role, drops, score, portrait...), which is what the index
+ * signature is for — the content layer owns those and nothing here may pin them down.
+ */
+export interface FighterDef {
+  id?: string;
+  name?: string;
+  /**
+   * Rig build and animation table. `any`, not RigBuild / AnimSet: content authors both wider than the vendored
+   * library declares them (an accessory's `attach` is a plain string, not `AccessoryAttach`), so naming those types
+   * here would report that gap against every def that reaches the core rather than against the def that widened it.
+   */
+  build?: any;
+  anims?: any;
+  maxHp?: number;
+  hp?: number;
+  walkSpeed?: number;
+  runSpeed?: number;
+  jumpVy?: number;
+  damageMult?: number;
+  /** Legacy alias of traits.damageTakenMult. */
+  damageTaken?: number;
+  traits?: Partial<FighterTraits>;
+  hooks?: Hooks;
+  /** Named projectile specs a frame's `spawn` resolves against. */
+  projectiles?: Record<string, any>;
+  hurtParts?: HurtPart[];
+  moves?: FighterMoves;
+  /** Frames spent on the floor before getting up (FIGHTER_DEFAULTS.lyingFrames). */
+  lyingFrames?: number;
+  /** Frames a hold lasts before it auto-throws (FIGHTER_DEFAULTS.grabHoldFrames). */
+  grabHoldFrames?: number;
+  /** Where a held body sits, in px along facing / up. */
+  grabOffset?: number;
+  grabLift?: number;
+  /**
+   * Named sound overrides. `special` / `super` are played by game/player.ts, which falls back to
+   * `'special_' + def.id` / `'super_' + def.id` when they are absent; a def may carry more that only its own
+   * hooks play.
+   */
+  sfx?: { hurt?: string; death?: string; special?: string; super?: string };
+  explodeOnDeath?: ExplodeOnDeath;
+  deathSpawn?: DeathSpawn[];
+  /** Legacy aliases of the hooks of the same name. */
+  onSpawn?(f: Fighter, world?: FighterWorld): void;
+  onUpdate?(f: Fighter, world?: FighterWorld): void;
+  onDeath?(f: Fighter, world?: FighterWorld): void;
+  /** Elite: a wider HP bar with the name over it. */
+  elite?: boolean;
+  /** Content-layer fields the core never reads. */
+  [key: string]: any;
+}
+
+/** Where a fighter wakes up. */
+export interface FighterOpts {
+  team?: Team;
+  x?: number;
+  z?: number;
+  facing?: number;
+  kind?: EntityKind;
+}
+
+/** A hurtbox as `hurtboxes()` returns it: the body, or one `def.hurtParts` sub-box carrying the part it came from. */
+export interface HurtboxBox extends Aabb { part?: HurtPart; }
+
+/**
+ * The part of game/world.ts's `World` the combat core reaches for, on top of what every entity uses. Structural for
+ * the reason given in game/entity.ts: world.ts depends on this file, so the dependency must not run back the other
+ * way. `World` satisfies it.
+ */
+export interface FighterWorld extends EntityWorld {
+  /** Where this body may stand along x (camera / arena bounds). */
+  boundsFor(e: Entity): { x0: number; x1: number };
+  /** The floor band, or absent on a world that does not restrict z. */
+  zBounds?(e: Entity): { z0: number; z1: number } | null;
+  /**
+   * `exclude` is `any` for the reason `addFx` gives in game/entity.ts: world.ts's own `NearestEnemyOpts` types it
+   * `Entity | Set<number> | null` — one body to skip, or a set of ids — and importing that name here would run the
+   * dependency back the way this interface exists to prevent. The duck-type test (`exclude.has`) lives in world.ts,
+   * where the real type is in scope.
+   */
+  nearestEnemy(x: number, z: number, opts?: { team?: Team; maxDist?: number; exclude?: any; zWeight?: number }): Fighter | null;
+  /** Opts bag left open for the same reason: world.ts owns `AreaHitOpts` and this file may not import it. */
+  areaHit(x: number, z: number, r: number, hit: Hit, attacker?: Fighter | null, opts?: Record<string, any>): void;
+  /** Returns the Projectile it spawned; its shape is game/projectile.ts's, not this file's to declare. */
+  spawnProjectile(spec: any, owner: Fighter, x?: number, y?: number, z?: number, opts?: Record<string, any>): any;
+  /** The combat log the trials (game/trials.ts) are matched against. */
+  logEvent(kind: string, attacker: Fighter | null, target?: Fighter | null, o?: { hit?: Hit | null; anim?: string | null; air?: boolean }): void;
+  /** A body reached 0 hp and landed: drops, score, kill credit, wave bookkeeping. */
+  onDeath(f: Fighter): void;
+}
+
 /** States during which a fighter is "in hitstun" (cannot be grabbed, not actionable). */
-export const HITSTUN_STATES = new Set([ST.HURT, ST.HURT_AIR, ST.KNOCKDOWN, ST.LYING, ST.GETUP, ST.GRABBED, ST.THROWN, ST.DEAD]);
+export const HITSTUN_STATES = new Set<FighterState>([ST.HURT, ST.HURT_AIR, ST.KNOCKDOWN, ST.LYING, ST.GETUP, ST.GRABBED, ST.THROWN, ST.DEAD]);
 /** States that finish when their animation finishes. */
-const ACTION_STATES = new Set([ST.ATTACK, ST.JUMP_ATTACK, ST.DASH_ATTACK, ST.SPECIAL, ST.SUPER, ST.DODGE, ST.TAUNT, ST.GETUP]);
+const ACTION_STATES = new Set<FighterState>([ST.ATTACK, ST.JUMP_ATTACK, ST.DASH_ATTACK, ST.SPECIAL, ST.SUPER, ST.DODGE, ST.TAUNT, ST.GETUP]);
 /** Airborne fall states that land as a knockdown. */
-export const AIR_FALL_STATES = new Set([ST.KNOCKDOWN, ST.HURT_AIR, ST.THROWN]);
+export const AIR_FALL_STATES = new Set<FighterState>([ST.KNOCKDOWN, ST.HURT_AIR, ST.THROWN]);
 const GROUND_FRICTION = 0.82;
 const HITSTUN_SCALE_AFTER = 5, HITSTUN_MIN = 8, STAGGER_EXTRA = 30;
 const HP_BAR_FRAMES = 90;
@@ -89,16 +441,184 @@ const LOOP_ACTION_LIMIT = 60;
 const PLAYER_GETUP_INVULN = 30;
 /** Hit-stop granted to both sides when an attack passes through a dodge's i-frames (GDD 7). */
 const DODGE_THROUGH_HITSTOP = 4;
-const THROW_BODY_HIT = { damage: 15, type: 'knockdown', kbX: 4, kbY: 4, hitstun: 20, friendly: true, body: true, sfx: 'hit_heavy' };
+const THROW_BODY_HIT: Hit = { damage: 15, type: 'knockdown', kbX: 4, kbY: 4, hitstun: 20, friendly: true, body: true, sfx: 'hit_heavy' };
 const NO_HITBOXES = Object.freeze([]);
-const REACTION_TYPE = { flinch: 'light', stagger: 'medium', launch: 'launch', knockdown: 'knockdown' };
+const REACTION_TYPE: Record<Reaction, HitType> = { flinch: 'light', stagger: 'medium', launch: 'launch', knockdown: 'knockdown' };
 
 /**
  * Shared fighter. `def` is a content definition: { id, name, build, anims, maxHp|hp, walkSpeed, runSpeed, jumpVy, moves, hooks, traits,
  * projectiles, hurtParts, lyingFrames, grabHoldFrames, grabOffset, drops, score, sfx: { hurt, death } } (+ the legacy flags of TRAITS).
  */
 export class Fighter extends Entity {
-  constructor(def, { team = TEAM.ENEMY, x = 0, z = 70, facing = 1, kind = 'enemy' } = {}) {
+  // The fields, for the checker only, in constructor order. `declare` because these are the constructor's own
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022 defines them
+  // before the constructor body runs), and that is a runtime change this file cannot make — applyDef asks
+  // `this.shield !== undefined` whether the shield has been initialised yet, and game/combat.ts asks
+  // `t.hitPart !== undefined` whether a target is a fighter at all. `declare` erases under tsc, esbuild and
+  // node --experimental-strip-types alike, the way lib/art/animation.ts's AnimPlayer does it.
+  declare name: string;
+  declare rig: Rig;
+  declare anim: AnimPlayer;
+  /** Narrower than Entity's: the core reads the combat services off it. */
+  declare world: FighterWorld | null;
+
+  // ---------- content def and the stats derived from it (applyDef) ----------
+  declare def: FighterDef;
+  declare traits: FighterTraits;
+  declare maxHp: number;
+  declare hp: number;
+  declare walkSpeed: number;
+  declare runSpeed: number;
+  declare jumpVy: number;
+  declare damageMult: number;
+  /** traits.damageTakenMult, copied out for the hot path. */
+  declare damageTaken: number;
+  /** traits.noLaunch, likewise. */
+  declare unlaunchable: boolean;
+
+  // ---------- state machine ----------
+  declare state: FighterState;
+  declare stateTimer: number;
+  /** Frames before this body may act again (landing recovery, parry recovery). */
+  declare busy: number;
+  declare invuln: number;
+  declare hitstop: number;
+  declare flashTimer: number;
+  /** False until the first update: onSpawn fires there, not in the constructor. */
+  declare spawned: boolean;
+  /** Where this body stood before anything moved it this frame (hitSolid). */
+  declare prevX: number;
+  declare prevZ: number;
+
+  // ---------- armor ----------
+  declare armor: boolean;
+  /** Frame-armor hits left in this attack instance. */
+  declare armorHits: number;
+  declare armorInstance: number;
+  /** Set by content while armor must not apply at all (boss punish windows). */
+  declare armorSuppressed: boolean;
+
+  // ---------- taking hits ----------
+  /** Last attack instance dodged through, PER attacker (see takeHit): one scalar cannot track two players at once. */
+  declare dodgedInstances: WeakMap<Fighter, number>;
+  declare juggleCount: number;
+  declare juggleGravity: number;
+  declare juggleImmune: boolean;
+  /** Frames of hitstun left in ST.HURT. */
+  declare hurtTimer: number;
+  declare chainHits: number;
+  declare chainTimer: number;
+  declare hitCount: number;
+  declare lastHitBy: Fighter | null;
+  /** HP actually lost to the last hit (no overkill in the results tally). */
+  declare lastDamage: number;
+  declare lastHitPart: HurtPart | null;
+  /** Sub-part hit by the CURRENT hit, set by game/combat.ts from def.hurtParts and consumed by takeHit. */
+  declare hitPart: HurtPart | null;
+  /** Boss punish window: extra damage, and grabs allowed regardless of armor. */
+  declare punishable: boolean;
+  declare punishMult: number;
+  declare punishGrab: boolean;
+  /** Attack instance this fighter parried; the rest of that swing whiffs. */
+  declare parried: ParriedRecord | null;
+  declare hpBarTimer: number;
+  /** Rotates 0..2 so consecutive damage numbers do not stack (damageText). */
+  declare textJitter: number;
+  declare godmode: boolean;
+  /** The last hit dealt / taken was a throw (GDD 7 scoring); hashed by net/checksum.ts. */
+  declare lastHitWasThrow: boolean;
+
+  // ---------- death ----------
+  declare dead: boolean;
+  declare deadTimer: number;
+  /** The death hooks fire once, at the moment of death, however the body got there. */
+  declare deathHooked: boolean;
+
+  // ---------- shield (game/shield.ts owns these; initShield assigns them) ----------
+  declare shield: number;
+  declare shieldMax: number;
+  declare shieldTimer: number;
+  declare shieldFlash: number;
+  declare shieldHit: number;
+
+  // ---------- grabs and throws (game/grabs.ts) ----------
+  declare grabTarget: Fighter | null;
+  declare grabbedBy: Fighter | null;
+  declare grabHits: number;
+  declare grabTimer: number;
+  declare throwPending: ThrowPending | null;
+  declare throwDamage: number;
+  declare thrownBy: Fighter | null;
+  /** Ids this thrown body has already hit on its way (game/combat.ts resolveThrownBody). */
+  declare thrownHit: Set<number>;
+  /** Held pickup prop (issue #21, step 21.3): a Prop from game/items.ts while it is carried. */
+  declare heldProp: Entity | null;
+
+  // ---------- dealing hits ----------
+  /** Targets this attack instance has connected with: id -> which box, and on which frame. */
+  declare hitTargets: Map<number, HitRecord>;
+  declare hitInstance: number;
+  declare hitConfirmed: boolean;
+
+  // ---------- air and physics ----------
+  /** Pending ground bounce armed by hit.groundBounce / throw bounce; `bounced` = already used once this fall. */
+  declare bounceOnLand: { vy?: number } | null;
+  declare bounced: boolean;
+  /** An air action (attack / dash) has been spent this jump. */
+  declare airActed: boolean;
+  /** Frames of suspended gravity (a hang, a float). */
+  declare noGravity: number;
+  declare superTimer: number;
+
+  // ---------- statuses and flags ----------
+  /** Active statuses by name (game/status.ts). */
+  declare status: Record<string, StatusRecord>;
+  /** Free-form flags content may toggle (hurtParts `flag`, rig visuals). */
+  declare flags: Record<string, any>;
+
+  // ---------- frame fields (syncFrameFields) ----------
+  /** Aim override for the next projectile; null = fire along facing. */
+  declare aimX: number | null;
+  declare aimZ: number | null;
+  /** Ids a `teleport: { unique: true }` blink has already visited. */
+  declare blinkHit: Set<number>;
+  declare ffInstance: number;
+  declare ffIndex: number;
+
+  // ---------- rendering ----------
+  /** Rig tint, unless a status supplies one (statusTint). */
+  declare tint: string | null;
+  declare tintAlpha: number;
+
+  // ---------- owned by a subclass or another module; named here because the core touches them ----------
+  /** Meter, combo and held body: game/player.ts. resetBody clears all three. */
+  declare meter: number;
+  declare combo: number;
+  declare comboTimer: number;
+  declare heldBody: Fighter | null;
+  /** The run is won: the player holds its victory pose and stops taking hits (game/player.ts). */
+  declare victory: boolean;
+  /** This dodge is an air dash, so it is not a parry window (game/player.ts). */
+  declare airDash: boolean;
+  /** A jump attack that wants its landAttack on touchdown (game/player.ts). */
+  declare landAttackPending: boolean;
+  /** Who this fighter is fighting (game/enemy.ts). */
+  declare target: Fighter | null;
+  // `addMeter`, `clearWeapon` and `thrown` are declared as METHODS, on the interface merged into this class at
+  // the foot of the file, rather than as properties here: they live on the prototype (game/player.ts defines the
+  // first two, the Object.assign installs the third), and a subclass cannot override a class PROPERTY with a
+  // method, nor reach one through `super`.
+
+  // ---------- installed on the prototype from game/grabs.ts (see the Object.assign at the end of this file) ----------
+  declare grabbableBy: (by: Fighter, opts?: { ignoreHitstun?: boolean }) => boolean;
+  declare startGrab: (target: Fighter) => void;
+  declare updateGrab: (world: FighterWorld) => void;
+  declare grabHit: () => boolean;
+  declare throwTarget: (dir?: number) => void;
+  declare doThrow: (tp: ThrowPending) => void;
+  declare releaseGrab: (hurt?: boolean) => void;
+
+  constructor(def: FighterDef, { team = TEAM.ENEMY, x = 0, z = 70, facing = 1, kind = 'enemy' }: FighterOpts = {}) {
     super(kind);
     this.name = def.name || def.id || 'fighter';
     this.team = team;
@@ -140,7 +660,7 @@ export class Fighter extends Entity {
     this.play('idle');
   }
   /** (Re)apply a content def: traits, stats, speeds. Bosses call this on phase changes. */
-  applyDef(def) {
+  applyDef(def: FighterDef): void {
     this.def = def;
     this.traits = normalizeTraits(def);
     this.maxHp = def.maxHp || def.hp || 100;
@@ -155,28 +675,35 @@ export class Fighter extends Entity {
 
   // ---------- helpers ----------
   /** Play an animation (restart by default: every attack must restart). */
-  play(name, opts = {}) { return this.anim.play(name, { restart: true, ...opts }); }
+  play(name: string, opts: PlayOpts = {}): boolean { return this.anim.play(name, { restart: true, ...opts }); }
   /** Enter a state and play its animation. */
-  setState(state, animName = null, opts = {}) {
+  setState(state: FighterState, animName: string | null = null, opts: PlayOpts = {}): void {
     const prev = this.state;
     this.state = state; this.stateTimer = 0;
     if (animName) this.play(animName, opts);
     if (prev !== state) this.callHook('onStateEnter', state, prev);
   }
-  /** Call def.hooks[name](this, ...args) when defined. Returns the hook's result (undefined when absent). */
-  callHook(name, ...args) { const h = this.def.hooks && this.def.hooks[name]; return h ? h(this, ...args) : undefined; }
-  get airborne() { return this.y > 0 || this.vy > 0; }
-  get inHitstun() { return HITSTUN_STATES.has(this.state); }
+  /**
+   * Call def.hooks[name](this, ...args) when defined. Returns the hook's result (undefined when absent).
+   *
+   * `...args: any[]` and the `any` return are the erasure this one entry point costs: `name` is a runtime string, so
+   * the arguments and the result cannot be tied to the matching member of `Hooks` without a mapped-type lookup that
+   * every caller would then have to spell out. The per-hook contract is declared in types/content.d.ts and is what
+   * checks the content that WRITES the hooks; this is only the core's dispatcher.
+   */
+  callHook(name: string, ...args: any[]): any { const h = this.def.hooks && this.def.hooks[name]; return h ? h(this, ...args) : undefined; }
+  get airborne(): boolean { return this.y > 0 || this.vy > 0; }
+  get inHitstun(): boolean { return HITSTUN_STATES.has(this.state); }
   /** True while the fighter may start an action from the ground. */
-  get actionable() { return (this.state === ST.IDLE || this.state === ST.WALK || this.state === ST.RUN) && this.busy <= 0 && !this.airborne && !this.status.netted; }
-  get scale() { return this.rig.scale; }
+  get actionable(): boolean { return (this.state === ST.IDLE || this.state === ST.WALK || this.state === ST.RUN) && this.busy <= 0 && !this.airborne && !this.status.netted; }
+  get scale(): number { return this.rig.scale; }
   /** Status API (status.js): burn / netted / stunned / timeStopped / custom. */
-  applyStatus(name, opts = {}, source = null) { return applyStatus(this, name, opts, source); }
-  hasStatus(name) { return !!this.status[name]; }
-  clearStatus(name) { clearStatus(this, name, this.world); }
+  applyStatus(name: string, opts: StatusOpts = {}, source: Fighter | null = null): StatusRecord { return applyStatus(this, name, opts, source); }
+  hasStatus(name: string): boolean { return !!this.status[name]; }
+  clearStatus(name: string): void { clearStatus(this, name, this.world); }
 
   // ---------- per-step update ----------
-  update(world) {
+  override update(world: FighterWorld): void {
     this.world = world;
     if (!this.spawned) { this.spawned = true; this.callHook('onSpawn', world); if (this.def.onSpawn) this.def.onSpawn(this, world); }
     // where this body stood before anything moved it this frame. A solid obstacle (issue #31) is resolved against
@@ -204,9 +731,9 @@ export class Fighter extends Entity {
     this.refreshArmor(this.anim.frame);
   }
   /** Controller hook (input / AI). */
-  think(world) {}
+  think(world: FighterWorld): void {}
   /** Armor = super armor trait, SUPER state, or the current frame's `armor` (true / N hits per attack instance). */
-  refreshArmor(f) {
+  refreshArmor(f: PlayerFrame | null): void {
     let frameArmor = false;
     if (f && f.armor) {
       if (this.armorInstance !== this.anim.instance) { this.armorInstance = this.anim.instance; this.armorHits = typeof f.armor === 'number' ? f.armor : (this.traits.armorHits || Infinity); }
@@ -215,23 +742,25 @@ export class Fighter extends Entity {
     this.armor = !this.armorSuppressed && (this.traits.superArmor || frameArmor || this.state === ST.SUPER);
   }
   /** Apply the declarative fields of every frame entered since the last step (spawn / area / teleport / lockOn / meter). */
-  syncFrameFields(world) {
+  syncFrameFields(world: FighterWorld): void {
     const a = this.anim;
     if (!a.def) return;
     if (a.instance !== this.ffInstance || a.frameIndex < this.ffIndex) { this.ffInstance = a.instance; this.ffIndex = -1; }
     for (let i = this.ffIndex + 1; i <= a.frameIndex; i++) this.applyFrameFields(a.def.frames[i], world);
     this.ffIndex = a.frameIndex;
   }
-  applyFrameFields(f, world) {
+  applyFrameFields(f: PlayerFrame, world: FighterWorld): void {
     if (!f) return;
     if (f.spawn) this.spawnFromFrame(f.spawn, world);
     if (f.area) this.areaFromFrame(f.area, world);
     if (f.teleport) this.teleportTo(f.teleport, world);
     if (f.lockOn) this.lockOn(f.lockOn, world);
-    if (f.meter && this.addMeter) this.addMeter(f.meter.amount || f.meter);
+    // `meter` is `{ amount }` or a bare number and this line takes either; the assertions only say which of the
+    // two each read is looking at.
+    if (f.meter && this.addMeter) this.addMeter((f.meter as { amount?: number }).amount || (f.meter as number));
   }
 
-  updateState(world) {
+  updateState(world: FighterWorld): void {
     const s = this.state, a = this.anim;
     if (this.busy > 0) this.busy--;
     if (s === ST.IDLE) { if (a.name !== 'idle' && a.done && !this.status.netted) this.play('idle'); return; }
@@ -256,17 +785,19 @@ export class Fighter extends Entity {
     else if (s === ST.GRABBED) { const h = this.grabbedBy; if (!h || h.grabTarget !== this || (h.state !== ST.GRAB && h.state !== ST.SUPER)) { this.grabbedBy = null; this.setState(ST.IDLE, 'idle'); } }
   }
   /** Called when an action animation finishes. */
-  onActionDone(world) {
+  onActionDone(world: FighterWorld): void {
     if (this.airborne) this.setState(ST.JUMP, 'fall', { fallback: 'jump' });
     else this.setState(ST.IDLE, 'idle');
   }
 
-  physics(world) {
+  physics(world: FighterWorld): void {
     const f = this.anim.frame;
+    // `move` is declared `FrameMove | number` (lib/art/animation.ts and types/content.d.ts both), but only the
+    // object form carries root motion and only the object form is honoured here; no content authors a bare number.
     if (f && f.move && !this.grabbedBy) {
-      this.x += (f.move.x || 0) * this.facing;
-      if (f.move.z) this.z += f.move.z;
-      const vy = f.move.vy != null ? f.move.vy : f.move.y;
+      this.x += ((f.move as FrameMove).x || 0) * this.facing;
+      if ((f.move as FrameMove).z) this.z += (f.move as FrameMove).z;
+      const vy = (f.move as FrameMove).vy != null ? (f.move as FrameMove).vy : (f.move as FrameMove).y;
       if (vy != null && this.anim.newFrame) { this.vy = vy; if (this.y <= 0) this.y = 0.01; }
     }
     if (this.grabbedBy) { this.vx = this.vy = this.vz = 0; return; }
@@ -301,7 +832,7 @@ export class Fighter extends Entity {
    * victim's position directly every frame, so a carried victim is dragged through. That is a deliberate omission —
    * making a grab fail against geometry is a combat change, not an obstacle one.
    */
-  hitSolid(world) {
+  hitSolid(world: FighterWorld): void {
     // A body that is RISING is measured by the apex its current jump will reach, not by where it is right now.
     // Without this a jump started next to a wall is blocked through the first frames of its own ascent -- vx is
     // zeroed against the face while y is still below `height`, and the jump goes straight up and comes back down
@@ -341,13 +872,13 @@ export class Fighter extends Entity {
    * world.waveEnemies, and a wave that cannot clear is a SOFT-LOCK: worse than a loss, and tools/winrate.js scores
    * an unfinished run as a failure.
    */
-  plant(world) {
+  plant(world?: FighterWorld): void {
     const air = this.airborne, w = world || this.world;
     this.y = 0; this.vy = 0;
     if (air && w) this.onLand(w);
   }
 
-  onLand(world) {
+  onLand(world: FighterWorld): void {
     const s = this.state;
     // ground bounce (GDD 2.1 / 2.3): a knocked-down body armed by hit.groundBounce pops up once more instead of lying down
     if (AIR_FALL_STATES.has(s) && this.bounceOnLand && !this.dead && !this.bounced) {
@@ -393,7 +924,7 @@ export class Fighter extends Entity {
    * Boss.nextPhase deliberately does NOT route through here -- a phase change is not a revive, and
    * applyPhase owns that rig's HP.
    */
-  resetBody() {
+  resetBody(): void {
     this.hp = this.maxHp; this.meter = 0;
     initShield(this);
     this.dead = false; this.deathHooked = false; this.alive = true; this.removeMe = false;
@@ -404,18 +935,20 @@ export class Fighter extends Entity {
     this.clearWeapon();
   }
 
-  processEvents(world) {
+  processEvents(world: FighterWorld): void {
     const ev = this.anim.events;
     for (let i = 0; i < ev.length; i++) {
       const e = ev[i];
       if (e.type === 'sfx') audio.play(e.name);
-      else if (e.type === 'fx') world.addFx(e.value.kind, this.x + (e.value.x || 0) * this.facing, e.value.y || 0, this.z, { facing: this.facing, ...e.value });
+      // `AnimEvent.value` is `string | FrameFx` and the type tag does not narrow it (lib/art/animation.ts declares
+      // them as one shape, not a discriminated union), so the fx branch says which of the two this is.
+      else if (e.type === 'fx') world.addFx((e.value as FrameFx).kind, this.x + ((e.value as FrameFx).x || 0) * this.facing, (e.value as FrameFx).y || 0, this.z, { facing: this.facing, ...(e.value as FrameFx) });
       else if (e.type === 'event') { const fr = this.anim.def ? this.anim.def.frames[e.frameIndex] : null; if (this.callHook('onAnimEvent', e.name, fr, world) !== true) this.onAnimEvent(e.name, fr, world); }
     }
     ev.length = 0;
   }
   /** Animation event hook: (name, frame, world). Handles the generic projectile / area / teleport / lock-on events for every fighter. */
-  onAnimEvent(name, frame, world) {
+  onAnimEvent(name: string, frame: PlayerFrame | null, world: FighterWorld): void {
     if (name === 'spawnProjectile') this.fireProjectile(frame && frame.projectile, world);
     else if (name === 'shockwave' || name === 'area') this.areaFromFrame((frame && frame.area) || frame || {}, world);
     else if (name === 'teleport' || name === 'teleportBehind') this.teleportTo((frame && frame.teleport) || { behind: true }, world);
@@ -423,9 +956,9 @@ export class Fighter extends Entity {
     else if (name === 'meterGain' && this.addMeter) this.addMeter((frame && frame.amount) || 25);
   }
   /** Resolve a projectile spec: a string looks up def.projectiles[name]. */
-  projectileSpec(spec) { return typeof spec === 'string' ? (this.def.projectiles && this.def.projectiles[spec]) || null : spec; }
+  projectileSpec(spec: string | any): any { return typeof spec === 'string' ? (this.def.projectiles && this.def.projectiles[spec]) || null : spec; }
   /** Spawn the projectile(s) described by a frame's `projectile` spec (fields: see projectile.js / the FRAME FIELDS table). */
-  fireProjectile(spec, world, o = {}) {
+  fireProjectile(spec: string | any, world: FighterWorld, o: ProjectileSpawnOpts = {}): any {
     spec = this.projectileSpec(spec);
     if (!spec) return null;
     const count = spec.count || 1;
@@ -437,8 +970,8 @@ export class Fighter extends Entity {
     return last;
   }
   /** Frame `spawn: { projectile, x, y, z }` (offsets are local: x along facing, y up). */
-  spawnFromFrame(sp, world) {
-    const o = {};
+  spawnFromFrame(sp: FrameSpawn, world: FighterWorld): void {
+    const o: ProjectileSpawnOpts = {};
     if (sp.x != null) o.x = this.x + this.facing * sp.x;
     if (sp.y != null) o.y = this.y + sp.y;
     if (sp.z != null) o.z = this.z + sp.z;
@@ -446,14 +979,14 @@ export class Fighter extends Entity {
     this.fireProjectile(sp.count ? { ...this.projectileSpec(sp.projectile), count: sp.count } : sp.projectile, world, o);
   }
   /** Frame `area` / 'shockwave' event: radius, offset (x), hit fields. */
-  areaFromFrame(a, world) {
+  areaFromFrame(a: any, world: FighterWorld): void {
     const r = a.radius || 40, off = a.offset != null ? a.offset : (a.x || 0);
     const hit = a.hit || (a.damage != null ? { damage: a.damage, type: a.type || 'knockdown', kbX: a.kbX != null ? a.kbX : 4, kbY: a.kbY != null ? a.kbY : 4, hitstun: a.hitstun || 20, status: a.status, friendly: a.friendly, groundedOnly: a.groundedOnly, element: a.element }
       : { damage: 10, type: 'knockdown', kbX: 4, kbY: 4 });
     world.areaHit(this.x + this.facing * off, this.z, r, hit, this, { teams: a.teams, y: a.y, shake: a.shake != null ? a.shake : 4, color: a.color, silent: a.silent, exclude: this.grabTarget });
   }
   /** Teleport next to the nearest enemy: `behind` (default) lands at its back facing the same way. Returns the target or null. */
-  teleportTo(spec, world) {
+  teleportTo(spec: FrameTeleport, world: FighterWorld): Fighter | null {
     const range = spec.range || 400, other = this.team === TEAM.PLAYER ? TEAM.ENEMY : TEAM.PLAYER;
     const e = (this.target && this.target.alive && !this.target.dead && this.team !== TEAM.PLAYER) ? this.target
       : world.nearestEnemy(this.x, this.z, { team: other, maxDist: range, exclude: spec.unique ? this.blinkHit : null });
@@ -474,7 +1007,7 @@ export class Fighter extends Entity {
     return e;
   }
   /** Turn toward (and snap part of the way to) the nearest enemy within `range`. */
-  lockOn(spec, world) {
+  lockOn(spec: FrameLockOn, world: FighterWorld): Fighter | null {
     const other = this.team === TEAM.PLAYER ? TEAM.ENEMY : TEAM.PLAYER;
     const e = world.nearestEnemy(this.x, this.z, { team: other, maxDist: spec.range || 60 });
     if (!e) return null;
@@ -489,7 +1022,7 @@ export class Fighter extends Entity {
    * Apply a hit. Returns false when invulnerable, dead, friendly, parried or juggle-immune.
    * @param {{damage:number, type?:string, kbX?:number, kbY?:number, hitstun?:number, friendly?:boolean, sfx?:string}} hit
    */
-  takeHit(hit, attacker) {
+  takeHit(hit: Hit, attacker: Fighter | null): boolean {
     if (!this.alive || this.dead || this.state === ST.DEAD || this.victory) return false;
     if (attacker && attacker.team === this.team && !hit.friendly) {
       // a teammate's swing cuts a netted ally free (GDD 4 B5 "freed by the partner")
@@ -613,7 +1146,7 @@ export class Fighter extends Entity {
     return true;
   }
   /** traits.parry: an enemy melee attack during the dodge's first frames is parried (GDD 2.3 Rook). */
-  parry(attacker, hit) {
+  parry(attacker: Fighter, hit: Hit): void {
     const p = this.traits.parry;
     this.parried = { by: attacker, instance: attacker.anim.instance };
     this.setState(ST.IDLE, 'parry', { fallback: 'idle' }); this.busy = 6; this.invuln = Math.max(this.invuln, 10);
@@ -627,19 +1160,19 @@ export class Fighter extends Entity {
     this.callHook('onParry', attacker, hit);
   }
   /** Launch / knock down with a pop. */
-  knockDown(vy, vx, animName = 'knockdown') {
+  knockDown(vy: number, vx: number, animName: string = 'knockdown'): void {
     if (this.grabbedBy) { this.grabbedBy.grabTarget = null; this.grabbedBy = null; }
     this.vy = vy; this.vx = vx; if (this.y <= 0) this.y = 0.01;
     this.setState(ST.KNOCKDOWN, animName, { fallback: 'knockdown' });
   }
   /** Mark dead and fire the death hooks once (before the body lands). */
-  die() {
+  die(): void {
     this.dead = true;
     if (this.deathHooked) return;
     this.deathHooked = true;
     this.onDied(this.world);
   }
-  onDied(world) {
+  onDied(world: FighterWorld): void {
     this.callHook('onDeath', world);
     if (this.def.onDeath) this.def.onDeath(this, world);
     if (!world) return;
@@ -649,15 +1182,15 @@ export class Fighter extends Entity {
     if (this.def.deathSpawn) for (const d of this.def.deathSpawn) this.fireProjectile(d.projectile, world, { x: this.x + (d.dx || 0), y: d.y || 0, z: this.z + (d.dz || 0) });
   }
   /** Hook after any successful hit (players: combo drop, meter). */
-  onHurt(hit, attacker) {}
+  onHurt(hit: Hit, attacker: Fighter | null): void {}
   /** Hook when one of my hits connects (players: meter, combo). */
-  onHitConfirmed(target, hit) { this.hitConfirmed = true; this.callHook('onHitDealt', target, hit, this.world); }
+  onHitConfirmed(target: Fighter, hit: Hit): void { this.hitConfirmed = true; this.callHook('onHitDealt', target, hit, this.world); }
   /** Hook when I kill something. */
-  onKill(target) { this.callHook('onKill', target); }
+  onKill(target: Fighter): void { this.callHook('onKill', target); }
 
   // ---------- grabs & throws: see grabs.js (grabbableBy, startGrab, updateGrab, grabHit, throwTarget, doThrow, releaseGrab, thrown) ----------
   /** Damage without a state change (hold hits, throws, burns). opts: { noStop, fire, silent }. */
-  takeHitRaw(damage, type = 'medium', attacker = null, opts = {}) {
+  takeHitRaw(damage: number, type: HitType = 'medium', attacker: Fighter | null = null, opts: { noStop?: boolean; fire?: boolean; silent?: boolean } = {}): void {
     if (!this.alive || this.dead) return;
     // 'throw' marks the thrown body itself (grabs.js `thrown`); anything else (a burn tick, a hold squeeze) resets
     // the note so it is not still credited as a throw kill after (GDD 7 decision 8, Player.onKill).
@@ -687,18 +1220,18 @@ export class Fighter extends Entity {
     }
   }
   /** Floating damage number; consecutive numbers are staggered so multi-hits stay legible. */
-  damageText(dmg, color, size) {
+  damageText(dmg: number, color: string, size: number): void {
     const j = this.textJitter = ((this.textJitter || 0) + 1) % 3;
     const spread = 9 * Math.max(1, this.scale); // big rigs (bosses) take many hits per second: fan the numbers wider
     floatText(this.x + (j - 1) * spread, this.y + this.h + 6 + j * 7, this.z, String(dmg), color, size);
   }
   /** Hook: an attack passed through this fighter's dodge i-frames (players gain meter). */
-  onDodged(attacker) {}
+  onDodged(attacker: Fighter): void {}
   /** Hit data used when this thrown body collides with others. */
-  get bodyHit() { return THROW_BODY_HIT; }
+  get bodyHit(): Hit { return THROW_BODY_HIT; }
 
   // ---------- rendering ----------
-  hurtbox() {
+  override hurtbox(): Aabb | null {
     if (!this.alive || this.state === ST.DEAD) return null;
     const lying = this.state === ST.LYING, fr = this.anim.frame;
     const k = fr && fr.hurtboxScale != null ? fr.hurtboxScale : 1;
@@ -706,7 +1239,7 @@ export class Fighter extends Entity {
     return { x0: this.x - this.w / 2, x1: this.x + this.w / 2, y0: this.y, y1: this.y + h, z0: this.z - this.zSize / 2, z1: this.z + this.zSize / 2 };
   }
   /** Hittable boxes: the whole body, or the active `def.hurtParts` (each box carries `.part` for damage multipliers). */
-  hurtboxes() {
+  hurtboxes(): readonly HurtboxBox[] {
     const base = this.hurtbox();
     if (!base) return NO_HITBOXES;
     const parts = this.def.hurtParts;
@@ -721,7 +1254,7 @@ export class Fighter extends Entity {
     }
     return out;
   }
-  draw(ctx, cam) {
+  override draw(ctx: CanvasRenderingContext2D, cam: CameraView): void {
     if (this.state === ST.DEAD && (this.deadTimer % 6) < 3) return;
     const sx = cam.toScreenX(this.x), sy = FLOOR_TOP + this.z - this.y + cam.shakeY;
     const hooks = this.def.hooks;
@@ -752,7 +1285,7 @@ export class Fighter extends Entity {
     }
   }
   /** Debug: draw hurtboxes and current hitboxes; `labels` false omits the state text (training room hitbox overlay). */
-  drawDebug(ctx, cam, labels = true) {
+  drawDebug(ctx: CanvasRenderingContext2D, cam: CameraView, labels: boolean = true): void {
     for (const hb of this.hurtboxes()) { ctx.strokeStyle = hb.part ? 'rgba(255,220,80,0.9)' : 'rgba(80,200,255,0.8)'; ctx.strokeRect(cam.toScreenX(hb.x0), FLOOR_TOP + this.z - hb.y1, hb.x1 - hb.x0, hb.y1 - hb.y0); }
     const list = this.hitboxes();
     for (const h of list) { const b = worldHitbox(this, h); ctx.strokeStyle = 'rgba(255,80,80,0.9)'; ctx.strokeRect(cam.toScreenX(b.x0), FLOOR_TOP + this.z - b.y1, b.x1 - b.x0, b.y1 - b.y0); }
@@ -761,7 +1294,7 @@ export class Fighter extends Entity {
     drawText(ctx, `${this.state}${this.hitstop ? ' HS' : ''}${this.armor ? ' A' : ''}${stn ? ' ' + stn : ''}`, cam.toScreenX(this.x), FLOOR_TOP + this.z + 4, { size: 1, color: '#9f9', align: 'center' });
   }
   /** Current frame hitboxes (0, 1 or many); `hitsBehind` boxes add a mirrored copy, `multiHit: N` = once:false + rehit N. */
-  hitboxes() {
+  hitboxes(): readonly Hitbox[] {
     const f = this.anim.frame;
     if (!f || this.hitstop > 0) return NO_HITBOXES;
     const list = f.hitboxes || (f.hitbox ? [f.hitbox] : null);
@@ -773,6 +1306,20 @@ export class Fighter extends Entity {
     }
     return extra ? list.concat(extra) : list;
   }
+}
+
+/**
+ * The prototype members a subclass overrides with method syntax (game/player.ts). Merged in here rather than
+ * declared in the class body because only a method can be overridden by a method, and only a method can be
+ * reached through `super`.
+ */
+export interface Fighter {
+  /** Players gain meter; everything else has no meter to gain, so the core always checks first. */
+  addMeter?(amount: number): void;
+  /** Drop the held pickup weapon (game/player.ts, game/weapons.ts). */
+  clearWeapon?(): void;
+  /** Become a thrown body; installed on the prototype from game/grabs.ts by the Object.assign below. */
+  thrown(vx: number, vy: number, damage: number, thrower: Fighter): void;
 }
 
 Object.assign(Fighter.prototype, grabMethods);

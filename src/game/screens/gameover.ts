@@ -7,13 +7,54 @@ import { confirmPressed } from '../menuinput.ts';
 import { drawText, drawTextOutlined } from '../../engine/text.ts';
 import { rrect, rivetLine, gear } from '../../lib/art/shapes.ts';
 import { drawCrackGear } from '../hud.ts';
+// Type-only: `import type` is erased by tsc, esbuild and node alike, so neither adds an edge to the
+// module graph the browser loads (the note at the top of screens/gameplay.ts).
+import type { Game, ScreenParams } from '../game.ts';
+import type { GameplayScreen } from './gameplay.ts';
 
 const COUNTDOWN_FRAMES = 600, WINS_FRAMES = 150;
 
+/**
+ * One gear shard thrown off the cracking digit each second. Plain ballistics in screen space -- this
+ * overlay draws over a frozen board and owns no simulation, so these never go near engine/particles.js
+ * and nothing about them is hashed by net/checksum.js.
+ */
+export interface GameOverShard {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  /** Rotation and its per-frame delta, radians. */
+  rot: number;
+  vr: number;
+  /** Frames left; a shard is dropped at 0 and fades over the last 10. */
+  life: number;
+}
+
 /** Transparent overlay pushed by the gameplay screen when every player is out. */
 export class GameOverScreen extends Screen {
-  constructor(game) { super(game, 'gameover'); this.transparent = true; }
-  enter(params) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022
+  // defines them before the constructor body runs), which is a runtime change. Same reasoning, and the
+  // same wording, as game/entity.ts's Entity.
+  /** The board underneath, which spends the continue or builds the results plaque; null when none was passed. */
+  declare gameplay: GameplayScreen | null;
+  /** Continues the run has left. */
+  declare continues: number;
+  /** Counts the countdown down, then the THE ENGINE WINS. hold. */
+  declare timer: number;
+  /** The digit last drawn, so the crack fires on the change rather than on a modulo. */
+  declare lastDigit: number;
+  /** Frames left of the gear-crack shake; 0 when the digit is at rest. */
+  declare crack: number;
+  /** The countdown ran out (or was declined with no continues left): the plate is on its closing line. */
+  declare expired: boolean;
+  /** A fade is already running, so nothing may start a second one. */
+  declare leaving: boolean;
+  declare shards: GameOverShard[];
+
+  constructor(game: Game) { super(game, 'gameover'); this.transparent = true; }
+  override enter(params: ScreenParams): void {
     super.enter(params);
     this.gameplay = params.screen || null;
     this.continues = params.continues != null ? params.continues : 0;
@@ -22,8 +63,8 @@ export class GameOverScreen extends Screen {
     this.shards = [];
     this.game.audio.music.play('gameover');
   }
-  get digit() { return Math.max(0, Math.ceil(this.timer / 60)); }
-  update() {
+  get digit(): number { return Math.max(0, Math.ceil(this.timer / 60)); }
+  override update(): void {
     super.update();
     for (const s of this.shards) { s.x += s.vx; s.y += s.vy; s.vy += 0.25; s.rot += s.vr; s.life--; }
     this.shards = this.shards.filter((s) => s.life > 0);
@@ -50,10 +91,10 @@ export class GameOverScreen extends Screen {
       this.game.fadeTo(() => { this.game.pop(); if (gp && gp.showResults) gp.showResults(true); else this.game.reset('title'); }, 0.05);
     }
   }
-  spawnShards() {
+  spawnShards(): void {
     for (let i = 0; i < 8; i++) this.shards.push({ x: VIEW_W / 2, y: 192, vx: (i - 3.5) * 1.3, vy: -3 - (i % 3), rot: i, vr: (i % 2 ? 1 : -1) * 0.2, life: 30 + (i % 4) * 5 });
   }
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     ctx.fillStyle = 'rgba(40,40,48,0.6)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     const w = 320, h = 170, x = (VIEW_W - w) / 2, y = 92, f = this.frame;
     rrect(ctx, x, y, w, h, 8, 'rgba(24,16,20,0.95)', UI.brass, 2);

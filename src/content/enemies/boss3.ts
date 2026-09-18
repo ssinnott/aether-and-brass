@@ -30,7 +30,8 @@ import { particles } from '../../engine/particles.ts';
 import { audio } from '../../engine/audio.ts';
 
 const R = Math.round;
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
+const hit = (damage: number, type: HitType, kbX: number, kbY: number, hitstun: number, extra?: Partial<Hitbox>): Partial<Hitbox> =>
+  ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
 const BEHIND = { behind: true };
 /** The factor's rank: the Purser's officer amber, which is the highest colour on the company ladder. */
 const RANK = CLAN.purser;

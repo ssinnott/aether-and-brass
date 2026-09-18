@@ -16,12 +16,14 @@
 // oxblood coat / dark brown beard / slate trousers / warm leather boots with a steel toe / light steel blade on a brass
 // guard / dark felt tricorne with a brass band. Ground keys use G(): root.y is solved so the lowest sole sits on the floor.
 import { speedFor, hpFor, areaBox, frontBox, P, F, hit } from './common.ts';
+import type { FrameExtra, GroundSpec } from './common.ts';
 import { moveList, trials } from './rookMoves.ts';
 import { JUMP_VY, METER, ST } from '../../constants.ts';
 import { celRect, celBall, celPoly, celPath, tones, flat, band } from '../../lib/art/shading.ts';
 import { drawSkull, drawFace, drawBoot, drawFist, drawBelt } from '../../lib/art/rigParts.ts';
 import { getChain } from '../../lib/art/secondary.ts';
 import { buildRig, computeJoints } from '../../lib/art/rig.ts';
+import type { Rig, RigBuild } from '../../lib/art/rig.ts';
 import { makePose } from '../../lib/art/poses.ts';
 import { drawHeadPortrait } from '../../art/portraits.ts';
 import { pathGear, rrect, circle, pathPoly, paint, line } from '../../lib/art/shapes.ts';
@@ -180,14 +182,14 @@ function drawCoatTails(ctx, rig) {
   drawTail(ctx, rig, 'tailN', -R(rig.p.torsoW / 2) + 4, 1, PAL.primary, CREAM);
 }
 /** Bust portrait (select cards / HUD): the rig's head and shoulders in the idle carry. */
-let portraitRig = null;
+let portraitRig: Rig | null = null;
 const PORTRAIT_POSE = P({ armR: [16, -4], weapon: -60, armL: [-30, -16], legR: [10, 2], legL: [-10, 4], torso: 2, head: -2, face: 'angry' });
 function portrait(ctx, x, y, s) {
   if (!portraitRig) portraitRig = buildRig(build);
   drawHeadPortrait(ctx, portraitRig, PORTRAIT_POSE, x, y, s, { bg: null, fill: 0.6, cy: 0.52 });
 }
 
-const build = {
+const build: RigBuild = {
   scale: 1, palette: PAL, outline: '#1E1A22', outlineWidth: 1, smearColor: '#E8E8F0',
   farShade: 0.62, farDesat: 0.25,
   // 79 px tall, ~4 heads: 20 px head (big-face rows + hat), broad-shouldered 24 px coat, long legs
@@ -201,8 +203,16 @@ const build = {
 // Animation authoring
 // ---------------------------------------------------------------------------------------------------------------
 const auditRig = buildRig(build);
+/**
+ * Rook's keyframe extras: every `Frame` field, plus the one his own hooks read back off the frame. `spin` is not a
+ * core frame field and is deliberately not in types/content.d.ts — only the `spin` anim event below reads it.
+ */
+export interface RookFrameExtra extends FrameExtra {
+  /** Frames the revolver keeps turning after the `spin` event (default 30). */
+  spin?: number;
+}
 /** Ground key: like F() but root.y is solved so the lowest boot sole sits on the floor; spec.root[1] is an extra sink. */
-function G(dur, spec, extra) {
+function G(dur: number, spec: GroundSpec, extra?: RookFrameExtra): Frame & RookFrameExtra {
   const pose = P(spec), full = makePose(pose), J = computeJoints(auditRig, full), fh = auditRig.p.footH * 0.5;
   const rr = rad(full.root.rot), c = Math.cos(rr), s = Math.sin(rr);
   const boot = Math.max(J.ankleN.x * s + (J.ankleN.y + fh) * c, J.ankleF.x * s + (J.ankleF.y + fh) * c);
@@ -216,9 +226,9 @@ const GUARD = { armR: [30, 70], weapon: -50, armL: [-16, 92], legR: [14, 2], leg
 const SW = 'whiff', GUN = 'revolver';
 const SLASH = (x, y, radius, angle, sweep) => [{ kind: 'slash', x, y, radius, angle, sweep, color: '#F4F4FF' }];
 /** Downward slash hit data (shared id = one hit per target across the hit + held frames). */
-const JUMP_HIT = { id: 'jumpAttack', x: -6, y: -50, w: 58, h: 78, z: 24, once: true, damage: 12, type: 'medium', kbX: 3, kbY: 0, hitstun: 20 };
+const JUMP_HIT: Hitbox = { id: 'jumpAttack', x: -6, y: -50, w: 58, h: 78, z: 24, once: true, damage: 12, type: 'medium', kbX: 3, kbY: 0, hitstun: 20 };
 /** Cutlass dropped along the floor while lying (root rot -88: body-space +y runs toward the feet along the ground). */
-const FLOORED = { armR: [-20, -6], weapon: -24, armL: [26, 18], torso: 4, head: -10, legR: [12, 6], legL: [-4, 8], root: [32, -9, -88], face: 'dazed' };
+const FLOORED: GroundSpec = { armR: [-20, -6], weapon: -24, armL: [26, 18], torso: 4, head: -10, legR: [12, 6], legL: [-4, 8], root: [32, -9, -88], face: 'dazed' };
 const BULLET = { style: 'bullet', damage: 6, type: 'light', hitstun: 14, kbX: 2, speed: 8, maxDist: 200, offsetX: 26, offsetY: 52, color: PAL.glow, r: 3 };
 const shotFrame = (i, vz) => G(3, i & 1 ? { armR: [-46, -30], weapon: 24, armL: [104, -18], torso: 4, head: -6, root: [-2, 0], legR: [26, -12], legL: [-26, 22], face: 'shout' }
   : { armR: [-40, -30], weapon: 20, armL: [94, 2], torso: 8, head: -2, root: [0, 0], legR: [26, -12], legL: [-26, 22], face: 'grit' },

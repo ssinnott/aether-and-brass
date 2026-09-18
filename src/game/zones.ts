@@ -14,6 +14,15 @@ import { floatText, drawWind, windDrag, WIND_COLOR, WIND_BANNER } from '../art/f
 import { rrect, circle, poly, pathPoly } from '../lib/art/shapes.ts';
 import { tones } from '../art/props.ts';
 import { OL, ROSE, AIR_STATES, TELL_RED } from './hazards.ts';  // the board ink, tailings rose and air-state set both halves paint with
+import type { Aabb, CameraView, EntityWorld } from './entity.ts';
+import type { Fighter } from './fighter.ts';
+// The three shapes the other half of the old hazards.js already declares. A Zone answers `dangerBox()` to the same
+// pathing scans a Hazard does, reads the same camera behind the same visibility gate, and a gust runs the same
+// idle -> tell -> active cycle, so these are imported rather than described a second time -- the same crossing the
+// ink and the air-state set above already make.
+import type { DangerBox, HazardCamera, HazardPhase } from './hazards.ts';
+// The conveyor's crates, the ring-outs and the boss the two arena zones gate on are game/items.ts's services.
+import type { BossLike, DropWorld, RingOutWorld } from './items.ts';
 
 const MOLTEN_Z = 20, RAIL = 12, DAIS_EVERY = 30, DAIS_DMG = 4, CONVEYOR_EVERY = 240;
 /** How far past the lip a scalded player is thrown, and the forward drift that carries them there. */
@@ -21,7 +30,7 @@ const MOLTEN_EJECT = 12, MOLTEN_EJECT_VZ = 4;
 /** Edge shove: a body knocked down / thrown within EDGE_LANE px of a lethal edge by an attacker standing deeper in the lane drifts
  *  toward that edge at EDGE_VZ px/f while airborne (hits carry no z knockback, so this is what makes "knock them in" reachable). */
 const EDGE_LANE = 30, EDGE_VZ = 2.4;
-const MOLTEN_HIT = { damage: 10, type: 'knockdown', kbX: 0, kbY: 5, hitstun: 20, sfx: 'burn' };
+const MOLTEN_HIT: Hit = { damage: 10, type: 'knockdown', kbX: 0, kbY: 5, hitstun: 20, sfx: 'burn' };
 /** Gust defaults (issue #27 Mooring Spine): a 45f rising wind, then 40f of `push` px/f drift in z for grounded fighters. */
 const GUST = { period: 420, tell: 45, active: 40, push: 1.3, warn: 'GALE', warnSub: 'THE WIND HAS THE DECK' };
 /** Spoil: grounded movement inside the patch keeps this fraction of itself per frame (the ground gives under every step). */
@@ -34,13 +43,157 @@ const NET_SAG = 10, NET_OPEN = 60, NET_DROP_FRAC = 0.08, NET_CLEAR = 10, NET_SQU
  *  through the floor costs health, not a life, applied everywhere. */
 const SOLID_HEIGHT = 44;
 
+// ================================ DECLARED SHAPES ===================================================================
+// The zone vocabulary, which this file owns (game/stage.ts's runner only ever hands a row to `new Zone`): the row an
+// author writes, the two rectangles a zone works in, the per-body records it keeps, and the parts of the world and
+// of an entity it reaches for. Nothing here is described twice -- where another layer already declares a shape it is
+// imported at the top of the file.
+
+/**
+ * The rules a `zones` row can carry. The first seven are floor rules -- something is simply true of the ground while
+ * you stand in it. `solid` (issue #31) is the odd one out and is an OBSTACLE: a wall to jump, or a gap to fall
+ * through. It rides in this list because a wall is authored with the same rectangle as a rule.
+ */
+export type ZoneType = 'molten' | 'rails' | 'daisVents' | 'conveyor' | 'gust' | 'spoil' | 'netGive' | 'solid';
+
+/** One authored net square (`netGive`). `w` / `d` fall back to NET_SQUARE. */
+export interface ZoneSquareSpec { x: number; z: number; w?: number; d?: number; }
+
+/**
+ * One `zones` row: the rule, the stretch of floor it covers, and the per-type dressing. `x0` / `x1` are world x and
+ * are the whole of what every type needs; `z0` / `z1` are floor depth and each type has its own default for them
+ * (see the constructor -- `solid` is the one whose band defaults to the WHOLE floor).
+ */
+export interface ZoneSpec {
+  type: ZoneType;
+  x0: number;
+  x1: number;
+  /** Back edge of the band: 100 (the front strip) by default, Z_MIN on a `solid`. */
+  z0?: number;
+  /** Front edge of the band; Z_MAX when omitted. Read by `spoil`, `solid` and the drawn rectangles. */
+  z1?: number;
+  /**
+   * Two readings of one key, as the constructor has always taken it. A BOOLEAN forces a zone that would otherwise
+   * wait on its arena's boss (`forced`: conveyor / daisVents); a NUMBER is the gust's active frame count.
+   */
+  active?: boolean | number;
+  /** daisVents: the board's own energy colour for the edge glow. gust: the wind's colour (art/fx.ts drawWind). */
+  color?: string;
+  /** rails (issue #21, GDD 7): open air past the edge rather than a railing, so cargo drifting over it is lost. */
+  open?: boolean;
+  /** gust: frames in one full cycle, and frames of rising wind before the push. */
+  period?: number;
+  tell?: number;
+  /** gust: px/frame of z drift while it is active. */
+  push?: number;
+  /** gust: +1 / -1 fixes the push direction; 0 (the default) alternates per cycle. */
+  dir?: number;
+  /** gust: frames to shift this zone's cycle by, so two on one clock do not blow together. */
+  offset?: number;
+  /** gust: the one-shot HUD banner. '' turns it off for this zone. */
+  warn?: string;
+  warnSub?: string;
+  /** netGive: the marked squares. */
+  squares?: ZoneSquareSpec[];
+  /** solid (issue #31): the y a body must clear. 0 is a floor GAP; SOLID_HEIGHT when omitted. */
+  height?: number;
+  /** solid: the band blocks only while the `barricade` Prop standing inside it does. */
+  breakable?: boolean;
+}
+
+/** A `zoneFlash` warning patch (issue #33), as an event script authors one. */
+export interface ZoneFlashSpec { x0: number; x1: number; z0?: number; z1?: number; frames?: number; color?: string; }
+
+/**
+ * A floor rectangle in the {centre, half-extents} shape `dropPlayer` and `inSquare` were written for (a netGive
+ * square). `asRect()` restates a zone's own [x0, x1] x [z0, z1] band in it, which is how a floor gap reuses the
+ * Crop Loft's ejectors wholesale.
+ */
+export interface ZoneRect { x: number; z: number; w: number; d: number; }
+
+/** A marked net square: the authored rectangle plus its own give / open countdowns, both in frames. */
+export interface NetSquare extends ZoneRect {
+  /** Frames left of the sag a heavy landing started; it opens when this reaches 0. */
+  sag: number;
+  /** Frames left of the hole. */
+  open: number;
+}
+
+/**
+ * One candidate landing spot `dropPlayer` sorts: the z OR the x to set the body down at (whichever side of the
+ * square this edge is), and `d`, how far the body already is from that side -- what the sort picks the nearest by.
+ * Exactly one of `z` / `x` is ever set, which is what the `e.z != null` test downstream reads.
+ */
+export interface DropEdge { z?: number; x?: number; d?: number; }
+
+/** One scalded body's burn-over-time (molten): the body, 2-damage ticks left, and its own frame counter. */
+export interface ZoneBurn { f: Fighter; ticks: number; t: number; }
+
+/** Where a body stood last frame inside a spoil patch, kept per fighter id so the patch can damp the step it took. */
+export interface SpoilStep { x: number; z: number; }
+
+/**
+ * What the four scans over `world.entities` in this file read off an entry. Structural, and every member past the
+ * body optional, for the reason game/hazards.ts's `Obstacle` gives: each scan tests its own flag before it reads
+ * anything else, and every other entity in the world leaves all of them undefined.
+ */
+export interface ZoneEntity extends Entity {
+  /** Prop (game/items.ts): this is what holds a breakable `solid` band up. */
+  barricade?: boolean;
+  /** Prop: it still blocks. `blocking` reads it rather than `alive` -- see the note on that getter. */
+  solid?: boolean;
+  /** Prop: travels on the cargo-bay conveyor, and is crushed at the end of the belt. */
+  rider?: boolean;
+  /** Prop's PropState / Fighter's FighterState: a breaking or rolling prop rides its own motion, not the belt's. */
+  state?: string;
+  /** Fighter: a held body is moved by whoever is holding it, never by a zone. */
+  grabbedBy?: Entity | null;
+  /** Projectile: the WEAPONS key it was thrown as (game/throwables.ts spawnThrownWeapon). */
+  thrownWeapon?: string;
+  /** Projectile: the Prop it was thrown as (spawnThrownProp). */
+  thrownProp?: Prop | null;
+  /** WeaponPickup: which WEAPONS entry is lying on the floor (game/items.ts). */
+  weaponId?: string;
+  /** Set by `loseOverEdge`: throwables.ts's landWeapon / landProp read it and skip both the pickup and the shatter. */
+  lost?: boolean;
+  /**
+   * Projectile.expire(world, byHit), the one method a zone ever calls on cargo. Declared with the world a zone
+   * hands it rather than with game/projectile.ts's own `ProjectileWorld`, for the reason game/hazards.ts gives on
+   * `HazardProjectile`: the Projectile's shape is that module's to declare, not this one's.
+   */
+  expire?(world: ZoneWorld, byHit: boolean): void;
+}
+
+/**
+ * The part of game/world.ts's `World` a zone reaches for, on top of what every entity uses. Structural for the
+ * reason given in game/entity.ts: world.ts depends on this file (through game/stage.ts), so the dependency must not
+ * run back the other way. `World` satisfies it.
+ */
+export interface ZoneWorld extends EntityWorld, DropWorld, RingOutWorld {
+  /** Narrower than the entity core's: the molten channel's embers only spark where the camera can see them. */
+  camera: HazardCamera;
+  /** Everything in the playfield: the cargo scans and the barricade lookup walk it. */
+  entities: ZoneEntity[];
+  /** Living fighters as of the last update (world.ts's `fighters` getter). */
+  fighters: Fighter[];
+  /** The band of z the floor occupies; a boss arena shrinks it (stage.ts shrinkBand) and the dais vents are what is left. */
+  floorBand: { z0: number; z1: number };
+  /** The board's boss while it is up: what the conveyor and the dais gate on. Null between arenas. */
+  boss: BossLike | null;
+  /**
+   * The HUD banner a gust names itself with (game/stage.ts installs it over hud.showBanner). Optional, and
+   * `updateGust` tests for it before calling, because a world stood up by a tool carries no HUD at all.
+   */
+  announce?(text: string, sub?: string, life?: number): void;
+}
+
 /**
  * Open-rails edge loss (issue #21, GDD 7): a thrown weapon / prop still in flight is marked `lost` and made to
  * expire in place (its own onExpire — throwables.js landWeapon / landProp — reads `lost` and skips both the
  * pickup and the shatter FX, so it neither lands nor breaks, it is just gone); a resting weapon pickup that has
  * drifted past the edge is simply removed. Unlike `ringOut` this is cargo, not a body: no score, no death FX.
  */
-function loseOverEdge(world, e) {
+function loseOverEdge(world: ZoneWorld, e: ZoneEntity): void {
   if (e.kind === 'projectile') { e.lost = true; e.expire(world, false); } else e.removeMe = true;
   particles.burst('dust', e.x, 0, e.z, 6, { speed: 1.5, up: 1 });
 }
@@ -51,13 +204,71 @@ function loseOverEdge(world, e) {
  * squares). Drawn behind entities (z = -5).
  */
 export class Zone extends Entity {
+  // The fields, for the checker only, in constructor order. `declare` because these are the constructor's own
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022 defines them
+  // before the constructor body runs), which is a runtime change. Same reasoning, and the same wording, as
+  // game/entity.ts, game/fighter.ts and game/hazards.ts.
+  /** Which rule this stretch of floor carries. */
+  declare type: ZoneType;
+  /** The span in world x, and the band in floor depth. */
+  declare x0: number;
+  declare x1: number;
+  declare z0: number;
+  /** Narrower than Entity's: a zone reaches the fighters, the cargo and the arena's boss through it. */
+  declare world: ZoneWorld | null;
+  /** `active: true` on the row: run whatever the arena's boss is doing (see the `active` getter). */
+  declare forced: boolean;
+  /** issue #21 GDD 7: a `rails` zone with no bulwark at all (open air past the edge, not a railing) also
+   *  discards thrown weapons / props and dropped weapon pickups that drift past it (updateRails). */
+  declare open: boolean;
+  /** daisVents edge glow / gust streaks: the board's own energy colour. '' = the type's own default. */
+  declare color: string;
+  /** molten: fighter id -> the burn-over-time the scald started. */
+  declare burns: Map<number, ZoneBurn>;
+  /** molten / rails: enemy id -> was it airborne last frame (edge shove detection). */
+  declare wasAir: Map<number, boolean>;
+  /** Frames this zone has been alive, its own clock: every drawn cycle and the conveyor's crate timer key off it. */
+  declare t: number;
+  /** conveyor: `t` the last crate was fed in at. */
+  declare lastCrate: number;
+  /** gust: the cycle, in frames. `activeFrames` is the push; `tell` is the rising wind before it. */
+  declare period: number;
+  declare tell: number;
+  declare activeFrames: number;
+  /** gust: px/frame of z drift, the fixed push direction (0 alternates) and the cycle offset. */
+  declare push: number;
+  declare dir: number;
+  declare offset: number;
+  /** gust: where in its own cycle it is, frames into that phase, and which way this cycle blows. */
+  declare phase: HazardPhase;
+  declare phaseT: number;
+  declare gustDir: number;
+  /** gust: the one-shot banner's words, and the latch that spends it (updateGust). */
+  declare warn: string;
+  declare warnSub: string;
+  declare announced: boolean;
+  /** Front edge of the band. */
+  declare z1: number;
+  /** spoil: fighter id -> where that body stood last frame. */
+  declare last: Map<number, SpoilStep>;
+  /** netGive: the marked squares, and fighter id -> was it falling last frame (landing detection). */
+  declare squares: NetSquare[];
+  declare landing: Map<number, boolean>;
+  /** issue #31: this zone is an obstacle rather than a floor rule. What game/hazards.ts `solidAt` scans for. */
+  declare isSolid: boolean;
+  /** solid: the y a body must clear. 0 is a floor gap. */
+  declare height: number;
+  /** solid: the block is conditional on a `barricade` Prop inside the rectangle still standing. */
+  declare breakable: boolean;
+  /** solid: that Prop (game/items.ts `Prop`), found once by updateSolid, and the latch that looks for it once. */
+  declare prop: ZoneEntity | null;
+  declare propChecked: boolean;
   /**
-   * @param {{ type: 'molten'|'rails'|'daisVents'|'conveyor'|'gust'|'spoil'|'netGive', x0: number, x1: number, z0?: number, z1?: number, active?: boolean, color?: string, open?: boolean,
-   *   period?: number, tell?: number, push?: number, dir?: number, offset?: number, warn?: string, warnSub?: string, squares?: {x:number, z:number, w?:number, d?:number}[] }} spec
+   * @param spec one `zones` row (ZoneSpec above)
    *   gust { period 420, tell 45, active (frames) 40, push 1.3, dir 0|1|-1, warn 'GALE', warnSub } | spoil { z0, z1 } | netGive { squares }
    *   rails { open: true } (issue #21) also discards thrown weapons / props and weapon pickups that drift over the edge (loseOverEdge)
    */
-  constructor(spec) {
+  constructor(spec: ZoneSpec) {
     super('fx');
     // `solid` (issue #31) is the one type whose z band defaults to the WHOLE floor: a wall or a gap that silently
     // began at z 100 would be an obstacle the author never placed. Every other type keeps the back-edge default.
@@ -109,19 +320,19 @@ export class Zone extends Entity {
    * `prop.solid` rather than `prop.alive` is the test: Prop.break() clears `solid` on the frame the hit lands but
    * leaves the body alive through its break animation, and a gate you have just smashed has to open now.
    */
-  get blocking() { return !this.breakable || !!(this.prop && this.prop.solid && this.prop.alive && !this.prop.removeMe); }
+  get blocking(): boolean { return !this.breakable || !!(this.prop && this.prop.solid && this.prop.alive && !this.prop.removeMe); }
   /** Floor plan of a solid, for enemy pathing / the autopilot. Permanent while blocking — a wall has no quiet phase. */
-  dangerBox() {
+  dangerBox(): DangerBox | null {
     if (!this.isSolid || !this.blocking) return null;
     return { x0: this.x0, x1: this.x1, z0: this.z0, z1: this.z1 };
   }
   /** Is (x, z) inside this zone's rectangle? */
-  inBox(x, z) { return x >= this.x0 && x <= this.x1 && z >= this.z0 && z <= this.z1; }
-  hurtbox() { return null; }
-  inX(e) { return e.x >= this.x0 && e.x <= this.x1; }
+  inBox(x: number, z: number): boolean { return x >= this.x0 && x <= this.x1 && z >= this.z0 && z <= this.z1; }
+  override hurtbox(): Aabb | null { return null; }
+  inX(e: Entity): boolean { return e.x >= this.x0 && e.x <= this.x1; }
   /** Enemy `f` just entered KNOCKDOWN / THROWN near a lethal edge (low = z of the back edge, high = z of the front edge, null = none):
    *  shove it over when the attacker stood deeper in the lane than the body. */
-  edgeShove(f, low, high) {
+  edgeShove(f: Fighter, low: number | null, high: number | null): void {
     const air = f.state === ST.THROWN || f.state === ST.KNOCKDOWN;
     const was = this.wasAir.get(f.id);
     if (f.dead) this.wasAir.delete(f.id); else this.wasAir.set(f.id, air);
@@ -132,7 +343,7 @@ export class Zone extends Entity {
     else if (high != null && f.z > high - EDGE_LANE && by.z < f.z - 4) f.vz = EDGE_VZ;
   }
   /** The zone applies only while its arena's boss is up (conveyor / dais) or always (molten / rails). */
-  get active() {
+  get active(): boolean {
     if (this.forced) return true;
     const b = this.world && this.world.boss;
     if (this.type === 'conveyor') return !!(b && b.bossKind === 'midboss' && !b.defeated);
@@ -140,8 +351,8 @@ export class Zone extends Entity {
     return true;
   }
   /** Is any of the zone's span on screen (sfx gate)? */
-  onScreen(cam) { return this.x1 >= cam.x - 40 && this.x0 <= cam.x + VIEW_W + 40; }
-  update(world) {
+  onScreen(cam: CameraView): boolean { return this.x1 >= cam.x - 40 && this.x0 <= cam.x + VIEW_W + 40; }
+  override update(world: ZoneWorld): void {
     this.world = world; this.t++;
     switch (this.type) {
       case 'molten': this.updateMolten(world); break;
@@ -163,7 +374,7 @@ export class Zone extends Entity {
    *              the Crop Loft's netGive rule with the square replaced by the zone's own rectangle, so the three
    *              existing ejectors (ringOut / dropPlayer / loseOverEdge) do all of the work.
    */
-  updateSolid(world) {
+  updateSolid(world: ZoneWorld): void {
     if (this.breakable && !this.propChecked) {
       this.propChecked = true;
       for (const e of world.entities) { if (e.kind === 'prop' && e.barricade && this.inBox(e.x, e.z)) { this.prop = e; break; } }
@@ -190,8 +401,8 @@ export class Zone extends Entity {
     }
   }
   /** The zone's rectangle in the {x, z, w, d} shape dropPlayer expects (it was written for a netGive square). */
-  asRect() { return { x: (this.x0 + this.x1) / 2, z: (this.z0 + this.z1) / 2, w: this.x1 - this.x0, d: this.z1 - this.z0 }; }
-  updateMolten(world) {
+  asRect(): ZoneRect { return { x: (this.x0 + this.x1) / 2, z: (this.z0 + this.z1) / 2, w: this.x1 - this.x0, d: this.z1 - this.z0 }; }
+  updateMolten(world: ZoneWorld): void {
     for (const f of world.fighters) {
       if (!this.inX(f) || f.z >= MOLTEN_Z || f.grabbedBy) continue;
       if (f.kind === 'player') {
@@ -210,7 +421,7 @@ export class Zone extends Entity {
     // items that fell into the channel drift back to the lip so drops from ring-outs stay collectable
     if ((this.t & 3) === 0) for (const e of world.entities) if (e.kind === 'item' && this.inX(e) && e.z < MOLTEN_Z + 4) e.z = MOLTEN_Z + 6;
   }
-  updateRails(world) {
+  updateRails(world: ZoneWorld): void {
     for (const f of world.fighters) {
       if (!this.inX(f)) continue;
       if (f.kind === 'enemy') this.edgeShove(f, RAIL, Z_MAX - RAIL);
@@ -233,7 +444,7 @@ export class Zone extends Entity {
   /** Boss dais (GDD 5.2): the world's floor band shrinks 20px per phase (stage.js calls shrinkBand); the closed strips are steam
    *  vents: 4 dmg every 30f to anyone inside, jets along both edges. It is a "get back on the dais" nudge, not a kill zone —
    *  the band can close faster than a knocked-down player can stand up. */
-  updateDais(world) {
+  updateDais(world: ZoneWorld): void {
     if (!this.active) return;
     const band = world.floorBand || { z0: 0, z1: Z_MAX };
     if (band.z0 <= 0 && band.z1 >= Z_MAX) return;
@@ -247,7 +458,7 @@ export class Zone extends Entity {
       if (f.z < band.z0 || f.z > band.z1) { f.takeHitRaw(DAIS_DMG, 'light'); particles.burst('steam', f.x, 20, f.z, 4, { speed: 1.5, up: 2.5 }); }
     }
   }
-  updateConveyor(world) {
+  updateConveyor(world: ZoneWorld): void {
     if (!this.active) return;
     for (const e of world.entities) {
       if (e.removeMe || e.z < this.z0 || !this.inX(e)) continue;
@@ -282,7 +493,7 @@ export class Zone extends Entity {
    * chevrons holding through the active phase, and `windDrag`'s dust off the feet of whoever is being moved are three
    * answers to one question, and the player needs all three: what, which way, and is it happening to ME.
    */
-  updateGust(world) {
+  updateGust(world: ZoneWorld): void {
     const g = (world.frame + this.offset) % this.period, prev = this.phase;
     const tellAt = this.period - this.activeFrames - this.tell, activeAt = this.period - this.activeFrames;
     this.phase = g >= activeAt ? 'active' : g >= tellAt ? 'tell' : 'idle';
@@ -316,7 +527,7 @@ export class Zone extends Entity {
    * distance they covered since last frame - walking, knockback slides and dash attacks alike - so the patch slows
    * without touching anyone's speed stat. Last positions are kept per fighter id and pruned as bodies leave or die.
    */
-  updateSpoil(world) {
+  updateSpoil(world: ZoneWorld): void {
     const last = this.last;
     for (const f of world.fighters) {
       const inside = this.inX(f) && f.z >= this.z0 && f.z <= this.z1 && f.y <= 0 && !f.grabbedBy && f.kind !== 'boss';
@@ -338,7 +549,7 @@ export class Zone extends Entity {
    * and then it is open for NET_OPEN: enemies standing in it drop through (a ring-out, +200), players lose NET_DROP_FRAC of
    * max HP, are knocked down and set on the nearest edge. Airborne bodies over an open square are fine until they land.
    */
-  updateNetGive(world) {
+  updateNetGive(world: ZoneWorld): void {
     for (const f of world.fighters) {
       if (f.dead) { this.landing.delete(f.id); continue; }
       const air = f.y > 0 && AIR_STATES.has(f.state);
@@ -359,16 +570,16 @@ export class Zone extends Entity {
       }
     }
   }
-  inSquare(sq, x, z) { return Math.abs(x - sq.x) <= sq.w / 2 && Math.abs(z - sq.z) <= sq.d / 2; }
-  squareAt(x, z) { for (const sq of this.squares) if (this.inSquare(sq, x, z)) return sq; return null; }
+  inSquare(sq: ZoneRect, x: number, z: number): boolean { return Math.abs(x - sq.x) <= sq.w / 2 && Math.abs(z - sq.z) <= sq.d / 2; }
+  squareAt(x: number, z: number): NetSquare | null { for (const sq of this.squares) if (this.inSquare(sq, x, z)) return sq; return null; }
   /** A player fell through: knockdown that costs health (not a life) and a reposition to the nearest edge that is still floor. */
-  dropPlayer(world, p, sq) {
+  dropPlayer(world: ZoneWorld, p: Fighter, sq: ZoneRect): void {
     const band = world.floorBand;
-    const edges = [
+    const edges: DropEdge[] = [
       { z: sq.z - sq.d / 2 - NET_CLEAR, d: p.z - (sq.z - sq.d / 2) }, { z: sq.z + sq.d / 2 + NET_CLEAR, d: (sq.z + sq.d / 2) - p.z },
       { x: sq.x - sq.w / 2 - NET_CLEAR, d: p.x - (sq.x - sq.w / 2) }, { x: sq.x + sq.w / 2 + NET_CLEAR, d: (sq.x + sq.w / 2) - p.x },
     ].filter((e) => e.z == null || (e.z >= band.z0 && e.z <= band.z1)).sort((a, b) => a.d - b.d);
-    const e = edges[0] || { x: sq.x + sq.w / 2 + NET_CLEAR };
+    const e: DropEdge = edges[0] || { x: sq.x + sq.w / 2 + NET_CLEAR };
     if (e.z != null) p.z = e.z; else p.x = e.x;
     p.vx = 0; p.vz = 0;
     const dmg = Math.max(1, Math.round(p.maxHp * NET_DROP_FRAC));
@@ -377,7 +588,7 @@ export class Zone extends Entity {
     floatText(p.x, p.y + p.h + 14, p.z, 'THROUGH!', ROSE, 1);
     particles.burst('debris', sq.x, 2, sq.z, 6, { speed: 1.6, up: 1.8, color: '#8a7040' });
   }
-  draw(ctx, cam) {
+  override draw(ctx: CanvasRenderingContext2D, cam: HazardCamera): void {
     const sy0 = FLOOR_TOP + cam.shakeY, f = this.t;
     const x0 = Math.max(0, cam.toScreenX(this.x0)), x1 = Math.min(VIEW_W, cam.toScreenX(this.x1));
     if (x1 <= x0) return;
@@ -446,7 +657,7 @@ export class Zone extends Entity {
    * This is `drawWeather`, not `draw`: World runs it over the backdrop's front layer, because the front rope rail on
    * an open deck covers the very band edge a chevron row wants (see World.drawWeather).
    */
-  drawWeather(ctx, cam) {
+  drawWeather(ctx: CanvasRenderingContext2D, cam: CameraView): void {
     if (this.type !== 'gust' || this.phase === 'idle') return;
     const x0 = Math.max(0, cam.toScreenX(this.x0)), x1 = Math.min(VIEW_W, cam.toScreenX(this.x1));
     drawWind(ctx, {
@@ -468,7 +679,7 @@ export class Zone extends Entity {
    * `cart`): this projection has no x foreshortening, so a top face the depth of the band would read as a second
    * floor. A broken barricade stops drawing entirely, matching `blocking`.
    */
-  drawSolid(ctx, cam, sy0, x0, x1, f) {
+  drawSolid(ctx: CanvasRenderingContext2D, cam: CameraView, sy0: number, x0: number, x1: number, f: number): void {
     if (!this.blocking) return;
     const y = sy0 + this.z0, h = Math.max(2, this.z1 - this.z0), w = x1 - x0;
     if (this.height <= 0) {
@@ -527,8 +738,21 @@ export class Zone extends Entity {
  * board and a purely visual action would have become simulation.
  */
 export class ZoneFlash extends Entity {
-  /** @param {{x0:number, x1:number, z0?:number, z1?:number, frames?:number, color?:string}} spec */
-  constructor(spec) {
+  // `declare` for the reason given on `Zone` above: these are the constructor's own assignments, and a class field
+  // per name would be a runtime change.
+  /** The span in world x, and the band in floor depth: the patch, and the box it answers for. */
+  declare x0: number;
+  declare x1: number;
+  declare z0: number;
+  declare z1: number;
+  /** Frames the patch lasts, and frames it has run. It removes itself -- and stops answering `dangerBox()` -- at `life`. */
+  declare life: number;
+  declare t: number;
+  declare color: string;
+  /** What `laneAroundHazards` scans for (game/hazards.ts `Obstacle`): a footprint to steer mobs and the autopilot around. */
+  declare isHazard: boolean;
+  /** @param spec the `zoneFlash` action's own row */
+  constructor(spec: ZoneFlashSpec) {
     super('fx');
     this.x0 = spec.x0; this.x1 = spec.x1;
     this.z0 = spec.z0 != null ? spec.z0 : Z_MIN;
@@ -538,10 +762,10 @@ export class ZoneFlash extends Entity {
     this.color = spec.color || TELL_RED;
     this.isHazard = true;
   }
-  hurtbox() { return null; }
-  dangerBox() { return { x0: this.x0, x1: this.x1, z0: this.z0, z1: this.z1 }; }
-  update() { if (++this.t >= this.life) { this.removeMe = true; this.alive = false; } }
-  draw(ctx, cam) {
+  override hurtbox(): Aabb | null { return null; }
+  dangerBox(): DangerBox { return { x0: this.x0, x1: this.x1, z0: this.z0, z1: this.z1 }; }
+  override update(): void { if (++this.t >= this.life) { this.removeMe = true; this.alive = false; } }
+  override draw(ctx: CanvasRenderingContext2D, cam: CameraView): void {
     const sy0 = FLOOR_TOP + cam.shakeY, x0 = Math.max(0, cam.toScreenX(this.x0)), x1 = Math.min(VIEW_W, cam.toScreenX(this.x1));
     if (x1 <= x0) return;
     const y = sy0 + this.z0, h = Math.max(2, this.z1 - this.z0);
@@ -561,4 +785,4 @@ export class ZoneFlash extends Entity {
 }
 
 /** Build the Zone entities for a section's `zones` list. */
-export function createZones(list = []) { return list.map((z) => new Zone(z)); }
+export function createZones(list: ZoneSpec[] = []): Zone[] { return list.map((z) => new Zone(z)); }

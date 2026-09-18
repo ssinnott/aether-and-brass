@@ -417,8 +417,7 @@ function tallyBoard(ctx, sx, sy, p) {
 }
 /** Ledger stack: three bound ledgers, spines to the left, chalk fore-edges to the right, the top one in tallow cloth with a clasp. */
 function ledgerStack(ctx, sx, sy, p) {
-  /** @type {[number, number, number, number, string][]} */
-  const books = [[sx - 14, sy - 9, 28, 9, S3.harness], [sx - 13, sy - 18, 28, 9, S3.kiln], [sx - 15, sy - 28, 30, 10, S3.tallow]];
+  const books: [x: number, y: number, w: number, h: number, hex: string][] = [[sx - 14, sy - 9, 28, 9, S3.harness], [sx - 13, sy - 18, 28, 9, S3.kiln], [sx - 15, sy - 28, 30, 10, S3.tallow]];
   for (const [x, y, w, h, hex] of books) {
     box(ctx, x, y, w, h, hex, 1, 0.3);
     if (flash) continue;

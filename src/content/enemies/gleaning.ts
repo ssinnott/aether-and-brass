@@ -11,10 +11,12 @@
 // Every hover ends in a long `punish: true` recovery with ai.punishGrabbable, so the landing is the hero moment: you
 // cannot grab a hovering Gleaner (grabs.js refuses airborne targets), you collect it on the deck.
 import { frontBox, makeEnemyDef } from './common.ts';
+import type { EnemyDef } from './common.ts';
 import {
   GLEAN, GLEAN_OUTLINE, GLEAN_PAL, GLEAN_PROPS, GLEAN_PARTS, CHALK, FK,
   drawBladder, drawWristTool, drawHipGear, makeGleanBase, BASE_HOOKS, ventPuff,
 } from './gleaningRig.ts';
+import type { PoseSpec } from '../../lib/art/poses.ts';
 import { celRect, band, tones } from '../../lib/art/shading.ts';
 import { pathRrect, pathPoly, paint } from '../../lib/art/shapes.ts';
 import { floatText } from '../../art/fx.ts';
@@ -24,7 +26,8 @@ import { clamp } from '../../lib/engine/math.ts';
 import { ST } from '../../constants.ts';
 
 const R = Math.round;
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
+const hit = (damage: number, type: HitType, kbX: number, kbY: number, hitstun: number, extra?: Partial<Hitbox>): Partial<Hitbox> =>
+  ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
 // THE HANG LINE is 64: `move: { vy: 8 }` under GRAVITY 0.5 tops out there, two pixels above every standard ground
 // hitbox in the game (frontBox tops out at owner.y + 62) and comfortably inside a jump attack (hero apex ~90).
 /** A Sickle only runs for a purse worth running with (and never takes more than one). */
@@ -39,7 +42,7 @@ const BASE = {
   ai: { attackRange: 44, zTolerance: 12, attackCooldown: [40, 85], firstAttackDelay: 40, tokenGroup: 'gleaning', maxAttackers: 2, tellWarnFrames: 10 },
 };
 /** makeEnemyDef does not carry traits / hooks / hurtParts / projectiles: the faction wrapper attaches them. */
-function def(v, hooks) {
+function def(v, hooks?: Hooks): EnemyDef {
   const d = makeEnemyDef(BASE, v);
   d.traits = { ...(v.traits || {}) };
   d.hooks = { ...BASE_HOOKS, ...(hooks || {}) };
@@ -138,7 +141,7 @@ function drawBallast(ctx, p, sx, sy) {
 const BALLAST = { style: 'bomb', kind: 'lob', aimAt: true, flight: 26, gravity: 0.5, bounces: 0, rest: false, offsetX: 0, offsetY: 0,
   r: 6, muzzle: false, color: GLEAN.sack, damage: 9, type: 'knockdown', kbX: 2, kbY: 4, hitstun: 20, friendly: true, hitSfx: 'land_heavy', draw: drawBallast };
 const WIN_CARRY = { armR: [10, 22], armL: [-14, 24] };
-const WIN_HANG = { armR: [-30, 40], armL: [-40, 42], torso: -6, head: 12, legR: [16, -40], legL: [-12, -34], footR: -30, footL: -28, face: 'angry' };
+const WIN_HANG: PoseSpec = { armR: [-30, 40], armL: [-40, 42], torso: -6, head: 12, legR: [16, -40], legL: [-12, -34], footR: -30, footL: -28, face: 'angry' };
 const winnowAnims = Object.assign(makeGleanBase(WIN_CARRY, WIN_STANCE), {
   // ballast: 20f crank tell -> 16f rise to the hang line -> 34f hang at y 64 -> sink -> 26f punish.
   // The hang is THREE micro-beats of aim(5-6f, `aim` re-aims live) -> reach(3f, arm back to the bandolier, torso up,
@@ -226,7 +229,7 @@ const winnow = def({
 
 // ---------------------------------------------------------------- C3 THRESHER: the shadow. No hitbox in the air; only the landing hurts.
 const THR_CARRY = { armR: [20, 26], armL: [-24, 28] };
-const THR_AIR = { armR: [-54, 30], armL: [-64, 32], torso: -10, head: 8, legR: [30, -50], legL: [-16, -44], footR: -34, footL: -32, face: 'shout' };
+const THR_AIR: PoseSpec = { armR: [-54, 30], armL: [-64, 32], torso: -10, head: 8, legR: [30, -50], legL: [-16, -44], footR: -34, footL: -32, face: 'shout' };
 const thresherAnims = Object.assign(makeGleanBase(THR_CARRY, THR_STANCE), {
   // dive: 34f of both bags swelling -> up to y 100 -> 72px of travel with NO hitbox -> pull-down -> the landing shockwave (onLanded) -> 40f punish
   dive: { loop: false, frames: [
@@ -413,7 +416,7 @@ const sickle = def({
 
 // ---------------------------------------------------------------- C5 HARVESTMAN: the caller. Takes the floor away at the exact moment it doubles the crowd.
 const HAR_CARRY = { armR: [18, 24], armL: [-22, 26] };
-const HAR_HANG = { armR: [-150, -20], armL: [-40, 40], torso: -6, head: 10, legR: [18, -44], legL: [-14, -38], footR: -32, footL: -30, face: 'shout' };
+const HAR_HANG: PoseSpec = { armR: [-150, -20], armL: [-40, 40], torso: -6, head: 10, legR: [18, -44], legL: [-14, -38], footR: -32, footL: -30, face: 'shout' };
 const harvestmanAnims = Object.assign(makeGleanBase(HAR_CARRY, HAR_STANCE), {
   // haul: 40f of horn and blazing bag -> the winch to the hang line -> 40f hanging while two Chaff fall in -> 34f grabbable
   // landing. The four hang keys are a BREATHING LOOP (root y 0/-2/0/-1, torso -6/-10/-4/-8, head +10/+14/+8/+12, legs
@@ -600,7 +603,7 @@ const RIG_STANCE = { stance: { torso: -6, head: 8, legR: [26, 8], legL: [-28, 12
 // The other hand is UP on its line — a rigger never lets go of the rope.
 const RIG_CARRY = { armR: [30, 66], armL: [-58, 44] };
 const RIG_LEGS = { legR: [26, 8], legL: [-28, 12], footR: -16, footL: -14, root: [0, 3] };
-const RIG_HANG = { armR: [-44, 44], armL: [-56, 46], torso: -8, head: 10, legR: [22, -46], legL: [-16, -40], footR: -30, footL: -28, face: 'angry' };
+const RIG_HANG: PoseSpec = { armR: [-44, 44], armL: [-56, 46], torso: -8, head: 10, legR: [22, -46], legL: [-16, -40], footR: -30, footL: -28, face: 'angry' };
 const riggermanAnims = Object.assign(makeGleanBase(RIG_CARRY, { ...RIG_STANCE, grab: true }), {
   // netDrop: 24f harness-hitch tell (both hands haul the lines, knees drop, the bag lights) -> 16f rise to the hang line
   // -> ~29f hang at y 64: aim (re-aimed live) -> reach (the coil comes off the hip: grip 1) -> release (both arms driven

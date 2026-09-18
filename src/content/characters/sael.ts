@@ -7,12 +7,14 @@
 // keys are authored with G(): the pose is grounded automatically (root.y solved so the lowest boot sole sits on the floor),
 // so long-legged stances never float; root[1] in a G() spec is an EXTRA sink (breathing / squash), not an absolute offset.
 import { speedFor, hpFor, areaBox, frontBox, P, F, hit } from './common.ts';
+import type { FrameExtra, GroundSpec } from './common.ts';
 import { moveList, trials } from './saelMoves.ts';
 import { METER, FLOOR_TOP, ST } from '../../constants.ts';
 import { celBall, celPoly, tones, flat } from '../../lib/art/shading.ts';
 import { drawSkull, drawBoot, drawBelt } from '../../lib/art/rigParts.ts';
 import { getChain } from '../../lib/art/secondary.ts';
 import { buildRig, computeJoints, drawRig } from '../../lib/art/rig.ts';
+import type { Rig, RigBuild } from '../../lib/art/rig.ts';
 import { makePose } from '../../lib/art/poses.ts';
 import { drawHeadPortrait } from '../../art/portraits.ts';
 import { farShade } from '../../art/palettes.ts';
@@ -158,7 +160,7 @@ function drawSatchel(ctx, rig) {
   ctx.fillStyle = rig.col(PAL.accent); ctx.fillRect(x0 + 4, y0 + 4, 3, 3);
 }
 
-const build = {
+const build: RigBuild = {
   scale: 1, palette: PAL, outline: '#1E1A22', outlineWidth: 1, smearColor: '#BFEFFF', farShade: 0.62, farDesat: 0.25,
   face: { brow: BROW, big: true },
   // 81 px tall, ~4 heads: long legs (17 + 17), slim 17 px torso, thin limbs, big 19 px head so the goggles and face get their rows
@@ -172,8 +174,19 @@ const build = {
 // Animation authoring
 // ---------------------------------------------------------------------------------------------------------------
 const auditRig = buildRig(build);
+/**
+ * Sael's keyframe extras: every `Frame` field, plus the two her own hooks read back off the frame. Neither is a core
+ * frame field, so neither is in types/content.d.ts — only her `jet` / `charge` anim events below read them, and F()
+ * is called as `F<SaelFrameExtra>(...)` wherever a keyframe carries one.
+ */
+export interface SaelFrameExtra extends FrameExtra {
+  /** Frames the jet-boot flame burns for after the `jet` event (default 8). */
+  jet?: number;
+  /** Frames the blade stays lit after the `charge` event (default 40). */
+  charge?: number;
+}
 /** Ground key: like F() but root.y is solved so the lowest boot sole sits on the floor; spec.root[1] is an extra sink. */
-function G(dur, spec, extra) {
+function G(dur: number, spec: GroundSpec, extra?: SaelFrameExtra): Frame & SaelFrameExtra {
   const pose = P(spec), full = makePose(pose), J = computeJoints(auditRig, full), fh = auditRig.p.footH * 0.5;
   const rr = rad(full.root.rot), c = Math.cos(rr), s = Math.sin(rr);
   const boot = Math.max(J.ankleN.x * s + (J.ankleN.y + fh) * c, J.ankleF.x * s + (J.ankleF.y + fh) * c);
@@ -185,11 +198,11 @@ const CARRY = { armR: [18, -6], weapon: -58, armL: [-28, -18], legR: [10, 2], le
 /** En garde: blade forward at chest height, rear arm raised behind (fencer's balance), knees soft. */
 const GARDE = { armR: [62, -46], weapon: -70, armL: [-70, -60], legR: [18, -6], legL: [-14, 10] };
 const SW = 'rapier', ARC_SFX = 'rapier_arc';
-const SLASH = (x, y, radius, angle, sweep) => [{ kind: 'slash', x, y, radius, angle, sweep, color: ARC }];
+const SLASH = (x: number, y: number, radius: number, angle: number, sweep: number) => [{ kind: 'slash', x, y, radius, angle, sweep, color: ARC }];
 /** Dive kick hit data (shared id = one hit per target across the hit + held frames); rebound on hit (GDD 2.2). */
-const DIVE_HIT = { id: 'jumpAttack', x: -6, y: -50, w: 56, h: 78, z: 24, once: true, damage: 12, type: 'medium', kbX: 3, kbY: 0, hitstun: 20, onHit: 'rebound' };
+const DIVE_HIT: Hitbox = { id: 'jumpAttack', x: -6, y: -50, w: 56, h: 78, z: 24, once: true, damage: 12, type: 'medium', kbX: 3, kbY: 0, hitstun: 20, onHit: 'rebound' };
 /** Rapier dropped along the floor while lying (root rot -88: body-space +y runs toward the feet along the ground). */
-const FLOORED = { armR: [-20, -6], weapon: -30, armL: [26, 18], torso: 4, head: -10, legR: [12, 6], legL: [-4, 8], root: [32, -9, -88], face: 'dazed' };
+const FLOORED: GroundSpec = { armR: [-20, -6], weapon: -30, armL: [26, 18], torso: 4, head: -10, legR: [12, 6], legL: [-4, 8], root: [32, -9, -88], face: 'dazed' };
 const thrustHit = hit(5, 'light', 1.5, 0, 14);
 
 const anims = {
@@ -272,7 +285,7 @@ const anims = {
     G(3, { armR: [-10, -60], weapon: -80, armL: [-40, -60], torso: 24, head: 4, root: [-2, 0], squash: 1.1, stretch: 0.9, legR: [40, -40], legL: [-30, 30], face: 'angry' }, { sfx: SW, ease: 'in' }),
     G(2, { armR: [-16, -70], weapon: -90, armL: [-50, -70], torso: 30, head: 6, root: [-3, 0], squash: 1.14, stretch: 0.86, legR: [44, -46], legL: [-34, 34], face: 'grit' }, { ease: 'out' }),
     // hit: rising lunge — the whole body launches up-forward on the jet boots, blade thrust at 45 deg through the high box
-    F(5, { armR: [150, -10], weapon: 8, armL: [-110, -30], torso: -14, head: -10, root: [6, -16], squash: 0.92, stretch: 1.1, legR: [50, -20], legL: [-50, 10], face: 'shout' },
+    F<SaelFrameExtra>(5, { armR: [150, -10], weapon: 8, armL: [-110, -30], torso: -14, head: -10, root: [6, -16], squash: 0.92, stretch: 1.1, legR: [50, -20], legL: [-50, 10], face: 'shout' },
       { hitbox: frontBox(38, hit(10, 'launch', 2, 8, 20), { high: true }), move: { x: 4 }, event: 'jet', jet: 14, smear: { from: 40, to: -70, a: 0.5, r: 66 }, sfx: ARC_SFX,
         fx: [{ kind: 'ring', x: 24, y: 40, r0: 2, r1: 26, color: ARC }, { kind: 'steam', x: -12, y: 8, count: 3 }], ease: 'overshoot' }),
     F(3, { armR: [154, -10], weapon: 10, armL: [-114, -30], torso: -16, head: -12, root: [6, -18], squash: 0.94, stretch: 1.06, legR: [50, -20], legL: [-50, 10], face: 'shout' }, { ease: 'out' }),
@@ -283,7 +296,7 @@ const anims = {
 
   // ---- 45 deg dive kick (12): jet boot leads, blade trailing; rebounds 30px up on hit and she can act again ----
   jumpAttack: { loop: false, frames: [
-    F(3, { armR: [-40, -60], weapon: -60, armL: [-80, -40], torso: -10, head: -6, legR: [70, -110], legL: [30, -60], face: 'angry' }, { sfx: SW, event: 'jet', jet: 26, ease: 'in' }),
+    F<SaelFrameExtra>(3, { armR: [-40, -60], weapon: -60, armL: [-80, -40], torso: -10, head: -6, legR: [70, -110], legL: [30, -60], face: 'angry' }, { sfx: SW, event: 'jet', jet: 26, ease: 'in' }),
     F(5, { armR: [-90, -20], weapon: -30, armL: [-110, -20], torso: 48, head: -12, legR: [96, -6], legL: [20, -70], footR: 20, face: 'shout', stretch: 1.06, squash: 0.96 },
       { hitbox: DIVE_HIT, move: { x: 3, vy: -4 }, fx: [{ kind: 'steam', x: -14, y: 30, count: 3 }], ease: 'overshoot' }),
     F(20, { armR: [-96, -20], weapon: -30, armL: [-116, -20], torso: 50, head: -14, legR: [100, -4], legL: [22, -74], footR: 22, face: 'grit' }, { hitbox: DIVE_HIT, move: { x: 3 } }),
@@ -301,9 +314,9 @@ const anims = {
 
   // ---- Tempest Waltz: lock onto the nearest enemy (60px), 6 thrusts (4 each) + thunderclap (10, knockdown); 36f, i-frames 1-20 ----
   special: (() => {
-    const th = (i, ex) => {
+    const th = (i: number, ex?: SaelFrameExtra) => {
       const hi = i % 3 === 1, lo = i % 3 === 2, dx = [8, 6, 10, 7, 9, 11][i];
-      const pose = hi ? { armR: [126, -20], weapon: 26, armL: [-100, -40], torso: 14, head: -2, root: [dx, 0], legR: [40, -30], legL: [-34, 8], face: 'shout' }
+      const pose: GroundSpec = hi ? { armR: [126, -20], weapon: 26, armL: [-100, -40], torso: 14, head: -2, root: [dx, 0], legR: [40, -30], legL: [-34, 8], face: 'shout' }
         : lo ? { armR: [76, -6], weapon: -14, armL: [-110, -20], torso: 30, head: 6, root: [dx, 0], legR: [54, -58], legL: [-44, 2], face: 'shout' }
           : { armR: [98, -4], weapon: 22, armL: [-96, -30], torso: 22, head: 4, root: [dx, 0], legR: [48, -40], legL: [-36, 6], face: 'shout' };
       return G(4, pose, { hitbox: frontBox(40, hit(4, 'light', 0.4, 0, 12)), invuln: i < 5, sfx: SW, ease: i % 2 ? 'out' : 'overshoot',
@@ -385,7 +398,7 @@ const anims = {
   // forward throw: jet-boot kick — she hops off the ground with the kick (moves.throwFwd.selfVy) and the enemy flies 160px
   throw: { loop: false, frames: [
     G(5, { armR: [40, -60], weapon: -80, armL: [70, 10], torso: 20, head: 6, root: [-2, 0], squash: 1.08, stretch: 0.92, legR: [-30, 60], legL: [-20, 30], face: 'angry' }, { ease: 'in' }),
-    F(6, { armR: [-70, -30], weapon: -40, armL: [-100, -20], torso: -18, head: -8, root: [6, -14], squash: 0.94, stretch: 1.06, legR: [98, -4], legL: [-30, 20], footR: 24, face: 'shout' },
+    F<SaelFrameExtra>(6, { armR: [-70, -30], weapon: -40, armL: [-100, -20], torso: -18, head: -8, root: [6, -14], squash: 0.94, stretch: 1.06, legR: [98, -4], legL: [-30, 20], footR: 24, face: 'shout' },
       { sfx: 'throw', event: 'jet', jet: 16, fx: [{ kind: 'ring', x: 26, y: 44, r0: 2, r1: 30, color: ARC }, { kind: 'steam', x: -8, y: 20, count: 3 }], ease: 'overshoot' }),
     F(8, { armR: [-60, -30], weapon: -40, armL: [-90, -20], torso: -12, head: -6, root: [6, -8], legR: [80, -10], legL: [-24, 20], face: 'grit' }, { ease: 'out' }),
     G(5, { ...GARDE, torso: 10, root: [4, 0], squash: 1.06, stretch: 0.94, legR: [26, 10], legL: [-20, 16] }, { ease: 'out' }),
@@ -394,7 +407,7 @@ const anims = {
   throwBack: { loop: false, frames: [
     G(5, { armR: [80, 20], weapon: -100, armL: [80, 20], torso: 26, head: 6, root: [-2, 0], squash: 1.12, stretch: 0.88, legR: [34, -20], legL: [-30, 30], face: 'angry' }, { ease: 'in' }),
     // forward vault: three keys rotating about the body centre (c = (0, -38)); the boot lands on the enemy on the way over
-    F(4, { armR: [150, -10], weapon: 20, armL: [140, -10], torso: 10, head: 6, root: [-30, -66, 110], legR: [40, 30], legL: [10, 50], squash: 0.9, stretch: 1.1, face: 'grit' }, { sfx: 'throw', event: 'jet', jet: 14, ease: 'out' }),
+    F<SaelFrameExtra>(4, { armR: [150, -10], weapon: 20, armL: [140, -10], torso: 10, head: 6, root: [-30, -66, 110], legR: [40, 30], legL: [10, 50], squash: 0.9, stretch: 1.1, face: 'grit' }, { sfx: 'throw', event: 'jet', jet: 14, ease: 'out' }),
     F(4, { armR: [110, 20], weapon: -60, armL: [100, 20], torso: 10, head: 4, root: [30, -76, 230], legR: [100, -10], legL: [30, 20], footR: 20, face: 'shout' }, { fx: [{ kind: 'ring', x: -22, y: 50, r0: 2, r1: 30, color: ARC }], ease: 'linear' }),
     F(4, { armR: [60, -30], weapon: -70, armL: [-60, -30], torso: 20, head: 0, root: [6, -12, 350], legR: [50, -30], legL: [-20, 30], face: 'grit' }, { ease: 'in' }),
     G(7, { ...GARDE, torso: 16, root: [4, 0, 360], squash: 1.1, stretch: 0.9, legR: [30, -6], legL: [-22, 20] }, { ease: 'out', fx: [{ kind: 'dust', x: 0, y: 0 }] }),

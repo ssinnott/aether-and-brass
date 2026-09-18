@@ -6,6 +6,8 @@
 // hurt / knockdown / lying / getup / dead (flop with X-eyes) and the panic / stagger loops all have their own keys.
 // Type traits: fire x1.5, at most 2 attack at once (tokenGroup), last-enemy flee (ai.fleeLast). Numbers from the GDD 4 table.
 import { P, frontBox, FK, GOB, GOB_PAL, GOB_PROPS, GOB_PARTS, gobCuffArm, gobRimTop, makeEnemyDef } from './common.ts';
+import type { EnemyDef } from './common.ts';
+import type { PoseSpec } from '../../lib/art/poses.ts';
 import { celRect, celBall, celPoly, tones, band } from '../../lib/art/shading.ts';
 import { getChain } from '../../lib/art/secondary.ts';
 import { jointScreen } from '../../lib/art/rig.ts';
@@ -18,7 +20,8 @@ import { FLOOR_TOP, ST } from '../../constants.ts';
 const R = Math.round, TAU = Math.PI * 2;
 /** Every goblin pose leans forward (GDD: hunched 15 deg). */
 const HUNCH = 14;
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
+const hit = (damage: number, type: HitType, kbX: number, kbY: number, hitstun: number, extra?: Partial<Hitbox>): Partial<Hitbox> =>
+  ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
 const CLAN = { cutthroat: '#9A4A22', slinger: '#D9A62B', firebrand: '#F08A24', hulk: '#B8692E', wrangler: '#7A1E2A' };
 // LEATHER and WOOD are the ONLY warm browns on a green faction, and this pass had desaturated both (Oklab C 4.63 ->
 // 2.87 and 5.84 -> 3.20) at unchanged lightness, which merged their tone ramps into one another and into GOB.ragsDark:
@@ -166,17 +169,19 @@ function drawBolt(ctx, p, sx, sy) {
 
 // ---------------------------------------------------------------- shared animation set
 /** Body on the floor (root rot -88): on its back, head behind, weapon along the ground, X-eyes. */
-const FLOOR = { armR: [-20, -6], weapon: -10, armL: [30, 20], torso: 2, head: -12, legR: [12, 10], legL: [-4, 8], root: [24, -8, -88], grip: 0, weaponBack: 0, face: 'dazed' };
+const FLOOR: PoseSpec = { armR: [-20, -6], weapon: -10, armL: [30, 20], torso: 2, head: -12, legR: [12, 10], legL: [-4, 8], root: [24, -8, -88], grip: 0, weaponBack: 0, face: 'dazed' };
+/** The one switch gobAnims takes: append the Cinder Hulk grab set. */
+interface GobAnimsOpts { grab?: boolean; }
 /**
  * Base goblin animation set for a rest carry `c` ({ armR, armL, weapon, weaponBack? }): idle 4 / walk 8 / run 8 / flee 6 / panic 4 /
  * jump / fall / land / hurt 3 / stagger 2 / hurtAir / knockdown / lying 2 / getup 3 / dead 2 (flop) / dodge 5 (back-hop, used by the
  * Wrangler's whiff backstep) and, with o.grab, the Cinder Hulk grab set (grabTell / grab / grabHold / grabHit / throw).
  */
-function gobAnims(c, o = {}) {
+function gobAnims(c, o: GobAnimsOpts = {}): AnimSet {
   const K = (s) => ({ torso: HUNCH, head: -7, legR: [8, 4], legL: [-8, 6], ...c, ...s });
   const aR = c.armR, aL = c.armL, A = (a, du, dl) => [a[0] + du, a[1] + dl];
   const walk = (lr, ll, al, ty, sq, fr, fl, hd) => K({ legR: lr, legL: ll, armL: al, armR: A(aR, 3, -3), torso: HUNCH + 3, head: -7 + (hd || 0), root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, footR: fr || 0, footL: fl || 0 });
-  const run = (lr, ll, al, ty, sq) => K({ legR: lr, legL: ll, armL: al, armR: A(aR, -16, -8), torso: HUNCH + 18, head: -14, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'angry' });
+  const run = (lr: number[], ll: number[], al: number[], ty: number, sq?: number) => K({ legR: lr, legL: ll, armL: al, armR: A(aR, -16, -8), torso: HUNCH + 18, head: -14, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'angry' });
   const flee = (lr, ll, i, ty) => K({ legR: lr, legL: ll, armR: [-150 + i * 10, -20 - i * 6], armL: [-172 - i * 8, -26], weapon: 0, torso: 4, head: -12 + i * 5, root: [0, ty], face: 'hurt' });
   const anims = {
     idle: { loop: true, frames: [
@@ -314,15 +319,14 @@ const BASE = {
 /**
  * Fleeing goblins use the arms-up `flee` cycle; a panicking Slinger the `panic` hop (both while the core keeps its
  * run / stagger states).
- * @type {Hooks}
  */
-const BASE_HOOKS = {
+const BASE_HOOKS: Hooks = {
   onUpdate(f) {
     if (f.aiState === 'FLEE' && f.state === ST.RUN && f.anim.name === 'run') f.play('flee');
     else if (f.panicFlee && f.aiState === 'STAGGER' && f.anim.name === 'stagger') f.play('panic');
   },
 };
-function def(v, hooks) {
+function def(v, hooks?: Hooks): EnemyDef {
   const d = makeEnemyDef(BASE, v);
   d.traits = { fireDamageMult: 1.5, ...(v.traits || {}) };
   d.hooks = { ...BASE_HOOKS, ...(hooks || {}) };
@@ -414,7 +418,7 @@ const slinger = def({
 const FLAME_BOX = { ...frontBox(70, hit(5, 'light', 1, 0, 12)), once: false, rehit: 10, id: 'flame', element: 'fire', status: { burn: { frames: 60, every: 20, damage: 2 } } };
 const PUDDLE = { kind: 'puddle', style: 'fire', r: 22, life: 180, every: 20, pierce: 99, damage: 4, type: 'light', kbX: 1, kbY: 0, hitstun: 12, friendly: true, teamNone: true, element: 'fire', muzzle: false };
 const FIRE_CARRY = { armR: [30, 40], weapon: 0, armL: [-30, -30], grip: 0 };
-const FLAME_POSE = { weapon: 4, grip: 1, torso: 26, head: -4, root: [3, 1], armL: [-24, 16], legR: [36, 8], legL: [-28, 26], face: 'shout' };
+const FLAME_POSE: PoseSpec = { weapon: 4, grip: 1, torso: 26, head: -4, root: [3, 1], armL: [-24, 16], legR: [36, 8], legL: [-28, 26], face: 'shout' };
 const firebrandAnims = Object.assign(gobAnims(FIRE_CARRY), {
   // flame: 24f tell (nozzle raised, pilot light pops bigger: grip 1) -> 3 x 9f cone sweeps (3 hits + burn) -> fire puddle -> 24f recovery
   flame: { loop: false, frames: [

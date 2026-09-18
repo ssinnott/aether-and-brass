@@ -172,7 +172,7 @@ const { chromium } = loadPlaywright();
 const server = createServer();
 await new Promise((res) => server.listen(0, res));
 const port = server.address().port;
-const browser = await chromium.launch();
+const browser = await launch();
 // deviceScaleFactor 1, or every PNG comes back at 2x and the pixel grid being inspected is a lie
 const page = await browser.newPage({ viewport: { width: 1800, height: 1000 }, deviceScaleFactor: 1 });
 const pageErrors = [];

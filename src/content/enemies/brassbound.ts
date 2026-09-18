@@ -6,6 +6,7 @@
 // Type traits: 1.5x damage from throws, gear-slip stagger every 4th hit, wind-up key spins while acting and stops when staggered,
 // lens + core turn red on every tell. Death: six parts fly out and the aether core pops cyan.
 import { makeEnemyDef, frontBox, BRASS, FK, BRASS_OUTLINE, BRASS_PAL, BRASS_PROPS, BRASS_PARTS, BRASS_KEY, makeBrassBase, brassPuff } from './common.ts';
+import type { EnemyDef } from './common.ts';
 import { celRect, celBall, celPoly, tones, outlinePath, band } from '../../lib/art/shading.ts';
 import { getChain } from '../../lib/art/secondary.ts';
 import { rrect, circle, pathPoly, paint, gear } from '../../lib/art/shapes.ts';
@@ -21,7 +22,8 @@ const CREST_PTS = [-5, 0, 5, 0, 3, -6, 0, -11, -4, -8];
 // (s 35) this pass had made of it. Cold metals, ART_STYLE 4.
 const WOOD = '#6A5236', IRON = '#3A4A5A', LIGHT = '#9EB5D3', BOMB = '#2C3654', HOT = '#FFD27A', CAPE = '#2E4A6B';
 const LENS = BRASS.lens;
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
+const hit = (damage: number, type: HitType, kbX: number, kbY: number, hitstun: number, extra?: Partial<Hitbox>): Partial<Hitbox> =>
+  ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
 
 // ---------------------------------------------------------------- weapons (hand space: +x along the forearm / handle)
 /** 22px wooden club: dark handle, swelling head with an iron band. */
@@ -202,7 +204,7 @@ const BASE = {
   ai: { attackRange: 40, zTolerance: 12, retreatChance: 0.15, attackCooldown: [45, 90], staggerEvery: 4, staggerFrames: 30, firstAttackDelay: 50, flank: false },
 };
 /** makeEnemyDef + the hook / trait / projectile tables the core reads (fighter.js header). */
-function variant(v) {
+function variant(v): EnemyDef {
   const d = makeEnemyDef(BASE, v);
   d.hooks = { onDeath: brassDeath, ...(v.hooks || {}) };
   d.traits = { throwDamageTakenMult: 1.5, ...(v.traits || {}) };
@@ -329,8 +331,8 @@ const warden = variant({
 // ================================================================ A5 Chrome Duelist: chrome, verdigris stripe, thin arms, rapier, cape, half-mask
 const C_DUEL = { armR: [30, 0], weapon: -30, armL: [-40, -30], legR: [10, 0], legL: [-12, 4] };
 const LUNGE_HIT = frontBox(44, hit(12, 'medium', 4, 0, 18, { id: 'lunge' }));
-const FL = (n, last) => frontBox(40, last ? hit(3, 'knockdown', 5, 4, 20, { id: 'fl' + n }) : hit(3, 'light', 1, 0, 10, { id: 'fl' + n }));
-const flurryHit = (n, last) => FK(2, { ...C_DUEL, armR: [95, -5], weapon: 0, armL: [-50, -20], torso: 22, head: 4, root: [3 + n, 0], legR: [44, 6], legL: [-36, 34] },
+const FL = (n: number, last?: boolean) => frontBox(40, last ? hit(3, 'knockdown', 5, 4, 20, { id: 'fl' + n }) : hit(3, 'light', 1, 0, 10, { id: 'fl' + n }));
+const flurryHit = (n: number, last?: boolean) => FK(2, { ...C_DUEL, armR: [95, -5], weapon: 0, armL: [-50, -20], torso: 22, head: 4, root: [3 + n, 0], legR: [44, 6], legL: [-36, 34] },
   { hitbox: FL(n, last), sfx: last ? 'rapier_arc' : 'rapier', smear: last ? { from: -40, to: 20, a: 0.45, r: 60 } : undefined, fx: [{ kind: 'slash', x: 46, y: 40 + (n % 2) * 10, radius: 14, angle: 0, sweep: 40 }], ease: 'overshoot' });
 const flurryPull = (n) => FK(3, { ...C_DUEL, armR: [60, 24], weapon: -24, armL: [-46, -20], torso: 14, head: 2, root: [2 + n, 0], legR: [40, 6], legL: [-34, 30] }, { ease: 'in' });
 const duelistAnims = { ...makeBrassBase(C_DUEL, { weaponFloor: -10 }), lunge: { loop: false, frames: [

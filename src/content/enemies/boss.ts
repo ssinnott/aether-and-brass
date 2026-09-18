@@ -16,6 +16,7 @@ import { pathTaperedCapsule } from '../../lib/art/shapes.ts';
 import { drawFist, drawBoot, drawSkull, drawFace } from '../../lib/art/rigParts.ts';
 import { getChain } from '../../lib/art/secondary.ts';
 import { FACE } from '../../lib/art/poses.ts';
+import type { PoseSpec } from '../../lib/art/poses.ts';
 import { farShade } from '../../art/palettes.ts';
 import { rad } from '../../lib/engine/math.ts';
 import { particles } from '../../engine/particles.ts';
@@ -398,25 +399,24 @@ const EC = { armR: [64, 22], armL: [50, 24], weapon: 0, torso: 2, head: 0, legR:
 /** Phase 2: the legs have buckled, the barrel sits on the dais (feet stay on the floor line: root +20 with splayed legs). */
 const LOW = { ...EC, root: [0, 25], legR: [80, -8], legL: [-80, 8], torso: 6, armR: [70, 10], armL: [52, 22] };
 const EBASE = makeBrassBase(EC);
-const ED = (x, y) => ({ kind: 'dust', x, y: y || 0, count: 3 });
+const ED = (x: number, y?: number) => ({ kind: 'dust', x, y: y || 0, count: 3 });
 const ESTEAM = (x, y, n) => ({ kind: 'steam', x, y, count: n || 4 });
 /** Engine walk key: heavy tripod stomp — contact / down (root +2, squash) / pass / up. */
-const ew = (lr, ll, ty, sq, aR, aL) => ({ ...EC, legR: lr, legL: ll, armR: aR || EC.armR, armL: aL || EC.armL, torso: 4, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
+const ew = (lr: number[], ll: number[], ty: number, sq?: number, aR?: number[], aL?: number[]): PoseSpec => ({ ...EC, legR: lr, legL: ll, armR: aR || EC.armR, armL: aL || EC.armL, torso: 4, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
 
 const SHELL = { style: 'shell', speed: 6, damage: 18, type: 'knockdown', kbX: 5, kbY: 4, hitstun: 22, maxDist: 500, life: 110, offsetX: 62, offsetY: 100, color: CYAN, r: 6, muzzle: false, draw: drawShell };
 const BOLTS = { style: 'bolt', speed: 5, damage: 8, type: 'light', kbX: 3, hitstun: 14, count: 8, spreadZ: 4, spreadY: 3, maxDist: 400, life: 100, offsetX: 30, offsetY: 40, color: RED, r: 3, muzzle: false };
-const STOMP_HIT = { damage: 20, type: 'knockdown', kbX: 5, kbY: 5 };
-const sawHit = (zOff) => ({ x: -420, y: -50, w: 840, h: 50, z: 30, zOff, once: true, damage: 28, type: 'knockdown', kbX: 6, kbY: 5, id: 'saw' + zOff });
+const STOMP_HIT: Hit = { damage: 20, type: 'knockdown', kbX: 5, kbY: 5 };
+const sawHit = (zOff: number): Hitbox => ({ x: -420, y: -50, w: 840, h: 50, z: 30, zOff, once: true, damage: 28, type: 'knockdown', kbX: 6, kbY: 5, id: 'saw' + zOff });
 const ESCORT = [{ type: 'brassbound', variant: 'footman' }, { type: 'brassbound', variant: 'footman' }];
 const FX_MUZZLE = [{ kind: 'ring', x: 46, y: 58, r0: 4, r1: 26, color: CYAN }];
 const FX_SLAM = [{ kind: 'dust', x: 24, y: 0, count: 9 }, { kind: 'ring', x: 20, y: 0, r0: 6, r1: 60, flat: true, color: HOT }];
 /** The Stomp impact key and its shockwave, reused by Time Stop's free stomp. */
-const SLAM_POSE = { ...EC, legR: [22, 8], legL: [-20, 10], torso: 10, head: 4, root: [3, 3], squash: 1.09, stretch: 0.91, armR: [64, 12], armL: [42, 18], face: 'shout' };
-const SHOT_POSE = { ...EC, armL: [70, 8], armR: [38, 34], torso: -10, head: -6, root: [-7, 1], legR: [16, 8], legL: [-20, 12], face: 'shout' };
+const SLAM_POSE: PoseSpec = { ...EC, legR: [22, 8], legL: [-20, 10], torso: 10, head: 4, root: [3, 3], squash: 1.09, stretch: 0.91, armR: [64, 12], armL: [42, 18], face: 'shout' };
+const SHOT_POSE: PoseSpec = { ...EC, armL: [70, 8], armR: [38, 34], torso: -10, head: -6, root: [-7, 1], legR: [16, 8], legL: [-20, 12], face: 'shout' };
 const SHOT_FX = { event: 'spawnProjectile', projectile: SHELL, sfx: 'cannon', ease: 'out', fx: FX_MUZZLE };
 
-/** @type {AnimSet} */
-const engineAnims = {
+const engineAnims: AnimSet = {
   ...EBASE,
   // idle: the pistons breathe, the barrel rocks 3 deg, the boiler chuffs and the saw idles over (drawSaw / rig.tick)
   idle: { loop: true, frames: [
@@ -529,9 +529,8 @@ engineAnims.run = engineAnims.walk;
 engineAnims.flee = engineAnims.walk;
 /**
  * Phase 2: the same rig with the collapsed rest poses (the legs are down; the barrel is at floor height and hittable).
- * @type {AnimSet}
  */
-const engineBodyAnims = { ...engineAnims,
+const engineBodyAnims: AnimSet = { ...engineAnims,
   idle: { loop: true, frames: [
     FK(16, { ...LOW, torso: 6, root: [0, 25] }, { ease: 'inout' }),
     FK(14, { ...LOW, torso: 9, head: 3, root: [0, 26], armR: [72, 8], armL: [54, 20], squash: 1.01, stretch: 0.99 }, { ease: 'inout' }),
@@ -810,19 +809,18 @@ const VC = { armR: [30, 30], weapon: 40, armL: [-26, 16], grip: 0, handL: 0, leg
 const VBASE = makeBrassBase(VC, { weaponFloor: 10 });
 const AD = (a, du, dl) => [a[0] + du, a[1] + dl];
 /** Vane walk / run key. */
-const vw = (lr, ll, al, ty, sq, hd) => ({ ...VC, legR: lr, legL: ll, armL: al, armR: AD(VC.armR, 2, -2), torso: 2, head: hd || 0, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
-const vr = (lr, ll, al, ty, sq) => ({ ...VC, legR: lr, legL: ll, armL: al, armR: [50, -10], weapon: 20, torso: 20, head: -8, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'angry' });
-const flurryHit = (dmg, type, kbY) => frontBox(44, { damage: dmg, type, kbX: 2, kbY: kbY || 0, hitstun: 14 });
+const vw = (lr: number[], ll: number[], al: number[], ty: number, sq?: number, hd?: number): PoseSpec => ({ ...VC, legR: lr, legL: ll, armL: al, armR: AD(VC.armR, 2, -2), torso: 2, head: hd || 0, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
+const vr = (lr: number[], ll: number[], al: number[], ty: number, sq?: number): PoseSpec => ({ ...VC, legR: lr, legL: ll, armL: al, armR: [50, -10], weapon: 20, torso: 20, head: -8, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'angry' });
+const flurryHit = (dmg: number, type: HitType, kbY?: number) => frontBox(44, { damage: dmg, type, kbX: 2, kbY: kbY || 0, hitstun: 14 });
 const SLASH_UP = { kind: 'slash', x: 30, y: 60, radius: 34, angle: -70 };
 const FIST_BOX = frontBox(100, { damage: 18, type: 'knockdown', kbX: 6, kbY: 4, hitstun: 16 });
 const WATCH_SPEC = { style: 'watch', aimAt: true, flight: 40, gravity: 0.4, noContactHit: true, bounces: 0, rest: true, life: 130, onExpire: 'explode', radius: 40,
   explodeHit: { damage: 16, type: 'knockdown', kbX: 5, kbY: 5 }, color: BRASSB, r: 7, muzzle: false, offsetX: 10, offsetY: 50, draw: drawWatch };
 /** Cane Flurry thrust / recovery pair (the string alternates them; `k` nudges the lunge deeper each time). */
-const vThrust = (k) => ({ ...VC, grip: 1, armR: [96, -8], weapon: 8, armL: [-46, 24], torso: 16, head: 4, root: [4 + k, 0], legR: [40, 8], legL: [-30, 26], face: 'shout' });
-const vCoil = (k) => ({ ...VC, grip: 1, armR: [32, 40], weapon: -8, armL: [-38, 20], torso: 6, head: -2, root: [1 + k, 0], legR: [26, 14], legL: [-22, 22], face: 'angry' });
+const vThrust = (k: number): PoseSpec => ({ ...VC, grip: 1, armR: [96, -8], weapon: 8, armL: [-46, 24], torso: 16, head: 4, root: [4 + k, 0], legR: [40, 8], legL: [-30, 26], face: 'shout' });
+const vCoil = (k: number): PoseSpec => ({ ...VC, grip: 1, armR: [32, 40], weapon: -8, armL: [-38, 20], torso: 6, head: -2, root: [1 + k, 0], legR: [26, 14], legL: [-22, 22], face: 'angry' });
 
-/** @type {AnimSet} */
-const vaneAnims = {
+const vaneAnims: AnimSet = {
   ...VBASE,
   // idle: an unhurried fencer's rest — weight on the back foot, cane at the side, coat tails and queue drifting
   idle: { loop: true, frames: [

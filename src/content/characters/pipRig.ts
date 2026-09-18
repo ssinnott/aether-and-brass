@@ -4,6 +4,7 @@
 import { celRect, celBall, celPoly, celCapsule, tones, flat, band, outlinePath } from '../../lib/art/shading.ts';
 import { pathTaperedCapsule } from '../../lib/art/shapes.ts';
 import { drawSkull, drawFace } from '../../lib/art/rigParts.ts';
+import type { RigBuild } from '../../lib/art/rig.ts';
 import { getChain } from '../../lib/art/secondary.ts';
 import { rad } from '../../lib/engine/math.ts';
 
@@ -286,7 +287,7 @@ function drawBackGear(ctx, rig) {
   stackPuffs(ctx, rig, -hw - 0.5, -H - 10, 10);
 }
 
-const build = {
+const build: RigBuild = {
   scale: 1, palette: PAL, outline: INK, outlineWidth: 1, smearColor: '#E8D8A0',
   // the far claw arm and far piston leg are pushed 45 % darker and greyer (ART_STYLE 0.3) and every near limb crossing the
   // chassis gets a heavier contact shadow, so the two arms and the two legs never merge into one scaffold

@@ -24,6 +24,81 @@ import { VIEW_W, FLOOR_TOP, UI } from '../constants.ts';
 import { drawText, measureText } from '../engine/text.ts';
 import { rrect } from '../lib/art/shapes.ts';
 import { clamp } from '../lib/engine/math.ts';
+import type { CameraView } from './entity.ts';
+
+/**
+ * One of the nine triggers. Tied to `CharacterLines` in types/content.d.ts rather than spelled out again: that
+ * declaration is what the content tables are authored against, so a trigger added to one is added to both.
+ */
+export type DialogueTrigger = keyof CharacterLines;
+
+/**
+ * Two-hero exchanges, keyed by the pairing (`pairKey`) and then by trigger — content/characters/lines.ts BANTER.
+ */
+export type BanterTable = Record<string, CharacterLines>;
+
+/**
+ * What a hero says with nobody to answer, keyed by hero id and then by trigger. A solo row is a bare string rather
+ * than an `Exchange`: there is no second speaker, which is the whole difference between the two tables.
+ */
+export type SoloTable = Record<string, Partial<Record<DialogueTrigger, string[]>>>;
+
+/** The content the bus is handed at construction. It owns none of this — see the class note below. */
+export interface DialogueTables {
+  banter: BanterTable;
+  solo: SoloTable;
+  /** Hero ids in CHARACTERS order: what `pairKey` and `cast` order a pairing by. */
+  order: string[];
+}
+
+/**
+ * Anybody a plate is drawn over. `draw` places it off the body's position and height, and takes the slot's row so
+ * two speakers standing on each other do not draw one plate on top of the other.
+ */
+export interface PlateSpeaker {
+  x: number;
+  y: number;
+  z: number;
+  h: number;
+  /** Player slot (game/player.ts), which picks the plate's row. A boss `shout`ing has none. */
+  index?: number;
+  /** Out of lives, or gone from the field: `draw` drops a plate over them rather than leaving it hanging. */
+  out?: boolean;
+  removeMe?: boolean;
+}
+
+/**
+ * A hero who can carry an exchange. `def` is declared as the one field this file reads off it rather than as
+ * game/fighter.ts's `FighterDef`, for the reason game/entity.ts gives for `EntityWorld`: the bus holds no content
+ * and knows nothing about fighters beyond the id both tables are keyed by. `Player` satisfies it.
+ */
+export interface DialogueSpeaker extends PlateSpeaker {
+  def: { id?: string };
+}
+
+/** One live plate: who is speaking, what they said, and how far through its life it is. */
+export interface Plate {
+  who: PlateSpeaker;
+  text: string;
+  /** Frames since it went up. */
+  t: number;
+  life: number;
+}
+
+/** The second line of an exchange, already chosen, counting `t` down to zero. */
+export interface PendingReply {
+  who: PlateSpeaker;
+  text: string;
+  t: number;
+}
+
+/** What a playtest scenario reads back through StageRunner.summary. */
+export interface DialogueSummary {
+  /** Plates up now, plus the reply still waiting to land. */
+  speaking: number;
+  lines: string[];
+  cool: number;
+}
 
 /**
  * The triggers, in the order issue #25 lists them, then the two an opening beat raises by hand.
@@ -59,13 +134,10 @@ const PAD_X = 5, PAD_Y = 3, ROW_H = 13;
  * The plate is clamped into the view rather than allowed to run off it: a hero standing at the screen edge is the
  * common case in a beat-em-up, and a line half off the screen is worse than a line that has shifted a few pixels.
  *
- * @param {CanvasRenderingContext2D} ctx
- * @param {number} cx screen x of the speaker
- * @param {number} y screen y of the plate's top edge
- * @param {string} text
- * @param {number} [alpha]
+ * @param cx screen x of the speaker
+ * @param y screen y of the plate's top edge
  */
-export function drawSpeechPlate(ctx, cx, y, text, alpha = 1) {
+export function drawSpeechPlate(ctx: CanvasRenderingContext2D, cx: number, y: number, text: string, alpha: number = 1): void {
   if (!text || alpha <= 0) return;
   const w = measureText(text, 1) + PAD_X * 2, h = ROW_H;
   const x = Math.round(clamp(cx, w / 2 + 3, VIEW_W - w / 2 - 3) - w / 2);
@@ -81,7 +153,7 @@ export function drawSpeechPlate(ctx, cx, y, text, alpha = 1) {
 }
 
 /** Canonical pairing key for two hero ids, ordered by their index in CHARACTERS so 'a+b' and 'b+a' are one table. */
-export function pairKey(idA, idB, order) {
+export function pairKey(idA: string, idB: string, order: string[]): string {
   const ia = order.indexOf(idA), ib = order.indexOf(idB);
   return ia <= ib ? `${idA}+${idB}` : `${idB}+${idA}`;
 }
@@ -93,17 +165,32 @@ export function pairKey(idA, idB, order) {
  * so writing a line never touches engine code — which is the rule issue #25 sets for it.
  */
 export class Dialogue {
+  // The fields, for the checker only, in constructor order. `declare` because these are the constructor's own
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022 defines them
+  // before the constructor body runs), which is a runtime change. `declare` erases under tsc, esbuild and
+  // node --experimental-strip-types alike. Same reasoning, and the same wording, as game/entity.ts and game/world.ts.
+  declare banter: BanterTable;
+  declare solo: SoloTable;
+  /** Hero ids in CHARACTERS order. */
+  declare order: string[];
+  declare enabled: boolean;
+  /** Live plates by player slot. At most one per slot, by construction. */
+  declare plates: Plate[];
+  /** A queued reply: the second line of an exchange, already chosen, waiting out REPLY_DELAY. */
+  declare pending: PendingReply | null;
+  /** Frames until anything may speak again, and the rank of whatever is speaking now. */
+  declare cool: number;
+  declare rank: number;
+  declare frame: number;
   /**
-   * @param {{ banter: object, solo: object, order: string[] }} tables
-   * @param {{ enabled?: boolean }} [o] `enabled: false` is the harness / bot gate: every trigger becomes a no-op.
+   * @param o `enabled: false` is the harness / bot gate: every trigger becomes a no-op.
    */
-  constructor(tables, { enabled = true } = {}) {
+  constructor(tables: DialogueTables, { enabled = true }: { enabled?: boolean } = {}) {
     this.banter = (tables && tables.banter) || {};
     this.solo = (tables && tables.solo) || {};
     this.order = (tables && tables.order) || [];
     this.enabled = enabled;
     /** Live plates by player slot: { text, t, life, who }. At most one per slot, by construction. */
-    /** @type {Array<{ text: string, t: number, life: number, who: object }|null>} */
     this.plates = [];
     /** A queued reply: the second line of an exchange, already chosen, waiting out REPLY_DELAY. */
     this.pending = null;
@@ -114,21 +201,22 @@ export class Dialogue {
   }
 
   /** Clear everything (section change, teardown). */
-  reset() { this.plates.length = 0; this.pending = null; this.cool = 0; this.rank = -1; }
+  reset(): void { this.plates.length = 0; this.pending = null; this.cool = 0; this.rank = -1; }
 
   /**
    * Raise an exchange. `speakers` are the live players, in slot order; the first two that have a def with `lines`
    * carry the exchange. Returns true when something was actually said.
    *
-   * @param {string} trigger one of TRIGGERS
-   * @param {object[]} speakers live players (each needs `.def` and `.index`)
-   * @param {number} frame `world.frame` — the deterministic clock the line is picked with
-   * @param {{ focus?: object, row?: number|null }} [o] `focus` forces who speaks first (the hero who hit the combo,
+   * @param trigger one of TRIGGERS
+   * @param speakers live players (each needs `.def` and `.index`)
+   * @param frame `world.frame` — the deterministic clock the line is picked with
+   * @param o `focus` forces who speaks first (the hero who hit the combo,
    *   the one who went out). `row` names WHICH row of the trigger's table to use instead of letting the frame
    *   choose it: an opening beat is written about its own board, so board 3 must get board 3's exchange and not
    *   whichever one the clock landed on. Everything else leaves it null and keeps the frame-indexed rotation.
    */
-  say(trigger, speakers, frame, { focus = null, row = null } = {}) {
+  say(trigger: string, speakers: DialogueSpeaker[], frame: number,
+      { focus = null, row = null }: { focus?: DialogueSpeaker | null; row?: number | null } = {}): boolean {
     if (!this.enabled) return false;
     const rank = RANK[trigger] != null ? RANK[trigger] : 0;
     // Already speaking, and this is not more important: drop it rather than queue it.
@@ -152,11 +240,10 @@ export class Dialogue {
    * (a boss has its own lines, on its own def) but keeps the same discipline: it takes the floor from a lower-ranked
    * exchange, and it holds it for the cooldown so the heroes do not talk over the Chancellor.
    *
-   * @param {object} who any entity with x / z / y / h
-   * @param {string} text
-   * @param {number} [rank] defaults above every hero trigger: when the boss speaks, the boss speaks
+   * @param who any entity with x / z / y / h
+   * @param rank defaults above every hero trigger: when the boss speaks, the boss speaks
    */
-  shout(who, text, rank = 9) {
+  shout(who: PlateSpeaker, text: string, rank: number = 9): boolean {
     if (!this.enabled || !who || !text) return false;
     if ((this.cool > 0 || this.pending) && rank <= this.rank) return false;
     this.plates.length = 0;
@@ -179,7 +266,7 @@ export class Dialogue {
    * A hero who is `out` is never a speaker — they have left the field. In a two-player run that is what turns
    * `partnerDown` into a solo line, which is the right thing to hear: there is nobody left to answer.
    */
-  cast(speakers, focus) {
+  cast(speakers: DialogueSpeaker[], focus: DialogueSpeaker | null): DialogueSpeaker[] {
     const live = (speakers || []).filter((p) => p && p.def && !p.out);
     if (!live.length) return [];
     if (live.length === 1) return [live[0]];
@@ -191,7 +278,7 @@ export class Dialogue {
    * Pick the exchange. `row.a` belongs to whichever hero sorts first in the pairing key, and `cast` has already put
    * the two speakers in that same order, so the two line up without a flip.
    */
-  pickBanter(trigger, a, b, frame, want = null) {
+  pickBanter(trigger: string, a: DialogueSpeaker, b: DialogueSpeaker, frame: number, want: number | null = null): Exchange | null {
     const key = pairKey(a.def.id, b.def.id, this.order);
     const rows = (this.banter[key] || {})[trigger];
     // Two players on the SAME hero is a legal party (game/screens/select.js allows duplicates) and has no pairing
@@ -202,7 +289,7 @@ export class Dialogue {
   }
 
   /** A hero alone (or a pairing with nothing written for this trigger) mutters to themselves. */
-  pickSolo(trigger, a, frame, want = null) {
+  pickSolo(trigger: string, a: DialogueSpeaker, frame: number, want: number | null = null): Exchange | null {
     const rows = (this.solo[a.def.id] || {})[trigger];
     if (!rows || !rows.length) return null;
     return { a: rows[this.index(rows.length, frame, a, want)], b: '' };
@@ -216,16 +303,16 @@ export class Dialogue {
    * own board's exchange must get the same one in every seat, or two players in the same room would watch two
    * different conversations. It is wrapped rather than clamped so a table shorter than the boards still answers.
    */
-  index(len, frame, who, want = null) {
+  index(len: number, frame: number, who: DialogueSpeaker | null, want: number | null = null): number {
     if (len <= 1) return 0;
     if (want != null) return (((want | 0) % len) + len) % len;
     return (((frame | 0) + (who && who.index ? who.index * 7 : 0)) % len + len) % len;
   }
 
-  plate(who, text) { if (text) this.plates.push({ who, text: String(text), t: 0, life: PLATE_LIFE }); }
+  plate(who: PlateSpeaker, text: string): void { if (text) this.plates.push({ who, text: String(text), t: 0, life: PLATE_LIFE }); }
 
   /** One sim frame. Ages plates, releases a pending reply, runs the cooldown down. */
-  update() {
+  update(): void {
     this.frame++;
     if (this.pending && --this.pending.t <= 0) { this.plate(this.pending.who, this.pending.text); this.pending = null; }
     let n = 0;
@@ -240,7 +327,7 @@ export class Dialogue {
    * the plate inside the view so a speaker at the screen edge still reads, and offset alternate slots by a row so
    * two heroes standing on each other do not draw one plate on top of the other.
    */
-  draw(ctx, cam) {
+  draw(ctx: CanvasRenderingContext2D, cam: CameraView): void {
     for (const p of this.plates) {
       const who = p.who;
       if (!who || who.out || who.removeMe) continue;
@@ -255,7 +342,7 @@ export class Dialogue {
   }
 
   /** What a playtest scenario reads back (StageRunner.summary). */
-  summary() {
+  summary(): DialogueSummary {
     return { speaking: this.plates.length + (this.pending ? 1 : 0), lines: this.plates.map((p) => p.text), cool: this.cool };
   }
 }

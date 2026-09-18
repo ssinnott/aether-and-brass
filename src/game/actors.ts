@@ -32,10 +32,46 @@ import { Entity } from './entity.ts';
 import { clamp, sign } from '../lib/engine/math.ts';
 import { drawText, measureText, lineHeight } from '../engine/text.ts';
 import { rrect, rivetLine } from '../lib/art/shapes.ts';
+import type { Aabb, CameraView } from './entity.ts';
+import type { FighterDef, FighterWorld } from './fighter.ts';
 
 /** Hooks and def-level callbacks an actor must not run. `applyDef` reads `def.hooks`, so blanking it disables all. */
-export function actorDef(def) {
+export function actorDef(def: FighterDef): FighterDef {
   return { ...def, hooks: null, onSpawn: null, onUpdate: null, drops: null, score: 0 };
+}
+
+/** Where an Actor wakes up, on top of `def`: everything a beat's `actor` action may name. */
+export interface ActorOpts {
+  /** What a later `walk` action addresses this body by, and what the beat teardown removes it by. */
+  id?: string;
+  x?: number;
+  z?: number;
+  /**
+   * +1 facing right, -1 facing left. Declared as a plain `number`, the way FighterOpts declares it, because that is
+   * what a stage's ActorSpec carries (`spec.facing || 1`) rather than the narrowed pair the JSDoc below names.
+   */
+  facing?: number;
+  /** Animation to play on spawn. 'idle' is what Fighter's constructor already plays, so it is left alone. */
+  anim?: string;
+  /** Frames after which the actor removes itself; 0 = it stands until the beat ends. */
+  life?: number;
+}
+
+/**
+ * One leg of an actor's motion queue, as `think` consumes it. `push` fills every field in, so a QUEUED leg is never
+ * partial; what a caller hands `push` / `retarget` is a `Partial<ActorLeg>`.
+ */
+export interface ActorLeg {
+  /** px/frame along x. Written straight onto the position, so the leg's distance is exactly `vx * frames`. */
+  vx: number;
+  /** px/frame along z (depth), clamped to the floor band. */
+  vz: number;
+  /** Frames the leg lasts. `<= 0` holds it until something replaces it. */
+  frames: number;
+  /** Animation to play for the leg; '' picks walk / idle off the leg's own speed. */
+  anim: string;
+  /** Forced facing (+1 / -1) when it is not simply the direction of travel; 0 = take it from `vx`. */
+  face: number;
 }
 
 /**
@@ -43,19 +79,33 @@ export function actorDef(def) {
  * `walk` event actions; when the queue empties the actor stands. Nothing here reads input, targets or the rng.
  */
 export class Actor extends Fighter {
+  // The fields, for the checker only, in constructor order. `declare` for the reason game/entity.ts and
+  // game/fighter.ts set out at length: a plain field declaration emits one class field per name (es2022 defines
+  // them before the constructor body runs), which is a runtime change, while `declare` erases under tsc, esbuild
+  // and node --experimental-strip-types alike.
+  /** Addressed by `{ walk: { id } }`, and by the beat teardown that removes every actor it spawned. */
+  declare actorId: string;
+  /** Frames since spawn. The only clock the script reads — never world.frame, never the rng. */
+  declare t: number;
+  /** Frames after which the actor removes itself; 0 = it stands until the beat ends. */
+  declare life: number;
+  /** The motion queue: `think` walks the head of it and shifts a leg off when its frames run out. */
+  declare legs: ActorLeg[];
+  /** Scenery, so never inside the arena as far as the camera clamp is concerned (see the constructor). */
+  declare entered: boolean;
+
   /**
    * @param {object} def any character or enemy def
    * @param {{ id?: string, x?: number, z?: number, facing?: 1|-1, anim?: string, life?: number }} o
    *   `id` is what a later `walk` action addresses; `life` removes the actor after N frames (0 = until the beat ends).
    */
-  constructor(def, { id = '', x = 0, z = 70, facing = 1, anim = 'idle', life = 0 } = {}) {
+  constructor(def: FighterDef, { id = '', x = 0, z = 70, facing = 1, anim = 'idle', life = 0 }: ActorOpts = {}) {
     super(actorDef(def), { team: TEAM.NONE, kind: 'fx', x, z, facing });
     /** Addressed by `{ walk: { id } }`, and by the beat teardown that removes every actor it spawned. */
     this.actorId = id;
     /** Frames since spawn. The only clock the script reads — never world.frame, never the rng. */
     this.t = 0;
     this.life = life | 0;
-    /** @type {{ vx: number, vz: number, frames: number, anim: string, face: number }[]} */
     this.legs = [];
     // An actor is scenery, so it is exempt from the one-screen clamp a locked camera puts on a fighter
     // (world.boundsFor keys on `entered !== false`). A handcart has to be able to cross the screen and leave.
@@ -65,19 +115,19 @@ export class Actor extends Fighter {
   }
 
   /** Queue one leg of movement. `frames <= 0` holds the leg until something replaces it. */
-  push({ vx = 0, vz = 0, frames = 0, anim = '', face = 0 } = {}) {
+  push({ vx = 0, vz = 0, frames = 0, anim = '', face = 0 }: Partial<ActorLeg> = {}): this {
     this.legs.push({ vx, vz, frames: frames | 0, anim, face: face | 0 });
     return this;
   }
 
   /** Replace the queue outright (a `walk` action retargeting an actor mid-beat). */
-  retarget(spec) { this.legs.length = 0; return this.push(spec); }
+  retarget(spec: Partial<ActorLeg>): this { this.legs.length = 0; return this.push(spec); }
 
   /**
    * Scripted motion. Positions are written directly rather than through `vx`, the way Enemy.moveToward does, so a
    * leg's distance is exactly `vx * frames` and an author can place a body on a mark without solving for friction.
    */
-  think(world) {
+  override think(world: FighterWorld): void {
     this.t++;
     if (this.life > 0 && this.t >= this.life) { this.removeMe = true; this.alive = false; return; }
     const leg = this.legs[0];
@@ -94,14 +144,14 @@ export class Actor extends Fighter {
   }
 
   /** Idle between legs, without Enemy's facing-the-player behaviour. */
-  stand() {
+  stand(): void {
     if (this.state !== ST.IDLE) { this.state = ST.IDLE; this.stateTimer = 0; this.play('idle', { restart: false }); }
     else if (this.anim.name !== 'idle' && (this.anim.done || (this.anim.def && this.anim.def.loop))) this.play('idle');
   }
 
   /** Scenery is never a target; combat.js already refuses kind 'fx', and this closes the door from the other side. */
-  hurtbox() { return null; }
-  takeHit() { return false; }
+  override hurtbox(): Aabb | null { return null; }
+  override takeHit(): boolean { return false; }
 }
 
 /** Z speed an author writes as a plain px/frame, matched to the depth foreshortening the rest of the game uses. */
@@ -125,6 +175,12 @@ export const SIGN_LIFT = 118;
 // breakable, lootable, throwable furniture that items.js owns, and a Sign is none of those things.
 
 /**
+ * One board look. Paints the board at (x, y, w, h) in screen px and, below it, its own support the `legs` px down
+ * to the floor at its own z.
+ */
+export type SignLook = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, legs: number) => void;
+
+/**
  * Board looks, keyed by the `style` a stage writes. Each paints the board behind the letters.
  *
  * Every one of them is handed `legs` — the px from the bottom of the board down to the floor at its own z — and is
@@ -132,7 +188,7 @@ export const SIGN_LIFT = 118;
  * banner rows (114..160, game/hud.js) without floating: a dockside hoarding is mounted where it can be read from
  * the far end of the quay, and it has posts all the way down to the planks to prove it.
  */
-const SIGN_LOOKS = {
+const SIGN_LOOKS: Record<string, SignLook> = {
   /** Board 1: paper pasted to a plank hoarding on two posts, rain-stained. */
   hoarding(ctx, x, y, w, h, legs) {
     ctx.fillStyle = '#3a2a1a'; ctx.fillRect(x + 8, y + h, 4, legs); ctx.fillRect(x + w - 12, y + h, 4, legs);
@@ -169,13 +225,53 @@ const SIGN_LOOKS = {
 };
 
 /**
+ * What a `sign` action puts up, as the constructor reads it. Every field is optional because the constructor
+ * defends against each one being absent, which is also what lets game/stage.ts hand its own `SignSpec` — the
+ * authored action, every field optional there too — straight to `new Sign(spec)`.
+ */
+export interface SignSpec {
+  text?: string;
+  sub?: string;
+  x?: number;
+  /** Floor depth; 12 when absent. */
+  z?: number;
+  /** Height off the floor the board hangs at; SIGN_LIFT when absent. */
+  y?: number;
+  /** Which SIGN_LOOKS entry paints the board. A name no look answers to falls back to 'hoarding'. */
+  style?: string;
+  size?: number;
+  /** Frames the board fades in over; 0 = it is up at full opacity from the first frame. */
+  fade?: number;
+  /** Frames after which the sign removes itself; 0 = it stands until the beat drops it. */
+  life?: number;
+  color?: string;
+}
+
+/**
  * A lettered board standing in the world. Fades in over `fade` frames so it does not pop as the camera reaches it.
  *
  * @param {{ text: string, sub?: string, x: number, z?: number, style?: keyof SIGN_LOOKS, y?: number, size?: number,
  *           fade?: number, life?: number, color?: string }} spec
  */
 export class Sign extends Entity {
-  constructor(spec = /** @type {any} */ ({})) {
+  // Fields for the checker only, in constructor order, `declare` for the reason game/entity.ts gives: a plain field
+  // declaration emits one class field per name, which is a runtime change. `x`, `z` and `shadowW` are Entity's own.
+  declare text: string;
+  declare sub: string;
+  /** Height off the floor the board hangs at (see the constructor). */
+  declare lift: number;
+  /** Which SIGN_LOOKS entry paints the board. */
+  declare style: string;
+  declare size: number;
+  declare color: string;
+  /** Frames the board fades in over. */
+  declare fade: number;
+  /** Frames after which the sign removes itself; 0 = it stands until the beat drops it. */
+  declare life: number;
+  /** Frames since it went up. */
+  declare t: number;
+
+  constructor(spec: SignSpec = {}) {
     super('fx');
     this.text = String(spec.text || '');
     this.sub = String(spec.sub || '');
@@ -193,9 +289,9 @@ export class Sign extends Entity {
     this.t = 0;
     this.shadowW = 0;
   }
-  hurtbox() { return null; }
-  update() { this.t++; if (this.life > 0 && this.t >= this.life) { this.removeMe = true; this.alive = false; } }
-  draw(ctx, cam) {
+  override hurtbox(): Aabb | null { return null; }
+  override update(): void { this.t++; if (this.life > 0 && this.t >= this.life) { this.removeMe = true; this.alive = false; } }
+  override draw(ctx: CanvasRenderingContext2D, cam: CameraView): void {
     const a = this.fade > 0 ? Math.min(1, this.t / this.fade) : 1;
     if (a <= 0) return;
     const groundY = Math.round(FLOOR_TOP + this.z + (cam.shakeY || 0));

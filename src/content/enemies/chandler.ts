@@ -16,6 +16,7 @@
 // every crust, dose and mend on the field in the same frame. ONE TOUCH BREAKS A RITE (BASE_HOOKS.onHitTaken). THE
 // COMPANY DOES NOT INSURE ITS OWN (every rite filters faction !== 'chandler'). NO RITE TARGET, TAKE IT YOURSELF.
 import { P, FK, frontBox, areaBox, makeEnemyDef } from './common.ts';
+import type { EnemyDef } from './common.ts';
 import {
   CH, CH_PAL, CH_PROPS, CH_PARTS, CLAN, BASE_HOOKS, makeChandlerBase, drawRiteRim, riteSourceGone, isClient, riteFlash,
 } from './chandlerRig.ts';
@@ -31,7 +32,8 @@ import { audio } from '../../engine/audio.ts';
 import { ST, Z_SPEED_FACTOR } from '../../constants.ts';
 
 const R = Math.round;
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
+const hit = (damage: number, type: HitType, kbX: number, kbY: number, hitstun: number, extra?: Partial<Hitbox>): Partial<Hitbox> =>
+  ({ damage, type, kbX, kbY, hitstun, ...(extra || {}) });
 const LOW = { low: true }, BEHIND = { behind: true };
 // WOOD is a BLEACHED ash, 11 Oklab L* over the tallow coat and 40 over harness leather. #B79A6A sat at L* 70.1
 // against a coat that is now L* 70.9, so the stave and the crook would have vanished into the shoulder they are
@@ -181,7 +183,7 @@ const BASE = {
   ai: { attackRange: 44, zTolerance: 12, attackCooldown: [40, 90], firstAttackDelay: 45, tokenGroup: 'chandler', tellWarnFrames: 12 },
 };
 /** makeEnemyDef copies neither traits nor hooks, so attach them here; every variant hook calls BASE_HOOKS first. */
-function def(v, hooks) {
+function def(v, hooks?: Hooks): EnemyDef {
   const d = makeEnemyDef(BASE, v);
   d.traits = { ...(v.traits || {}) };
   d.hooks = { ...BASE_HOOKS, ...(hooks || {}) };

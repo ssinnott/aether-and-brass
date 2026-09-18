@@ -3,6 +3,7 @@
 // desktop with a touchscreen still behaves like a keyboard game until someone actually taps.
 import { VIEW_W, VIEW_H, UI } from '../constants.ts';
 import { input } from './input.ts';
+import type { Action, RawActions } from './input.ts';
 import { drawText } from './text.ts';
 
 /** Deflection (internal px) that counts as full tilt, and the dead zone around the origin. */
@@ -13,12 +14,32 @@ const RUN_AT = 0.72;
 /** Everything left of this x starts the movement stick; everything right of it hits buttons. */
 const STICK_ZONE_X = 300;
 
+/** One on-screen button: which action it raises, where it sits and how its plate is drawn. */
+interface TouchButton {
+  action: Action;
+  /** Centre and hit radius in internal 640x360 space. */
+  x: number;
+  y: number;
+  r: number;
+  label: string;
+  color: string;
+}
+
+/**
+ * A finger that is currently down. One of two things, told apart by `kind`: a press on an action
+ * button (which holds that button for as long as the finger is down) or the movement stick (which
+ * tracks its own origin so the stick floats to wherever the thumb first landed).
+ */
+type TouchPointer =
+  | { kind: 'button'; button: TouchButton }
+  | { kind: 'stick'; ox: number; oy: number; x: number; y: number };
+
 /**
  * Action buttons in internal 640x360 space, ordered back-to-front for drawing. The five fight
  * buttons sit in a diamond under the right thumb; the two that are not a fight move (start and
  * taunt) are the small pair up the right-hand margin, out of the way of a panicked thumb.
  */
-const BUTTONS = [
+const BUTTONS: TouchButton[] = [
   { action: 'start', x: 616, y: 62, r: 15, label: 'II', color: '#9aa6b2' },
   { action: 'taunt', x: 616, y: 104, r: 15, label: 'TAU', color: '#9aa6b2' },
   { action: 'super', x: 592, y: 168, r: 24, label: 'SUP', color: '#e8c23a' },
@@ -28,19 +49,19 @@ const BUTTONS = [
   { action: 'attack', x: 588, y: 306, r: 33, label: 'ATK', color: '#e8623a' },
 ];
 
-const OCTANTS = [
+const OCTANTS: Action[][] = [
   ['right'], ['right', 'down'], ['down'], ['left', 'down'],
   ['left'], ['left', 'up'], ['up'], ['right', 'up'],
 ];
 
-function emptyActions() {
+function emptyActions(): RawActions {
   return { left: false, right: false, up: false, down: false, attack: false, jump: false, special: false, super: false, dodge: false, taunt: false, start: false, run: false };
 }
 
 /** Pointers currently down, keyed by pointerId. */
-const pointers = new Map();
+const pointers = new Map<number, TouchPointer>();
 /** Buttons pressed since the last update, so a tap shorter than one step still registers. */
-const latched = new Set();
+const latched = new Set<Action>();
 const actions = emptyActions();
 
 export const touch = {

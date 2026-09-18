@@ -9,7 +9,70 @@ import {
 } from './bindings.ts';
 
 /** All per-player actions. */
-export const ACTIONS = ['left', 'right', 'up', 'down', 'attack', 'jump', 'special', 'super', 'dodge', 'taunt', 'start'];
+export const ACTIONS: Action[] = ['left', 'right', 'up', 'down', 'attack', 'jump', 'special', 'super', 'dodge', 'taunt', 'start'];
+
+/**
+ * One of ACTIONS -- annotated onto the array above rather than inferred from it, so the union and
+ * the array cannot drift apart. The ORDER of ACTIONS is the wire order net/protocol.ts packs into
+ * the uint16 input mask, so this is those same eleven names and nothing else: adding one is a wire
+ * break (bump PROTOCOL_VERSION and RUN_BIT).
+ */
+export type Action = 'left' | 'right' | 'up' | 'down' | 'attack' | 'jump' | 'special' | 'super' | 'dodge' | 'taunt' | 'start';
+
+/**
+ * A per-action map. Pressed states hold booleans; the buffer map holds frame ages, so `V` is
+ * whichever of the two the caller needs.
+ */
+export type ActionMap<V = boolean> = Record<Action, V>;
+
+/**
+ * A raw device read: every action, plus the `run` trigger that is NOT one of ACTIONS (gamepad RT,
+ * or a full touch tilt). What `pollRaw` returns, what engine/touch.ts hands to `setTouch`, and what
+ * net/protocol.ts packActions() takes -- `run` rides the mask in its own bit, RUN_BIT.
+ */
+export type RawActions = ActionMap<boolean> & { run: boolean };
+
+/** Which device last drove a seat (`input.device(player)`). */
+export type InputDevice = 'none' | 'keyboard' | 'gamepad' | 'touch' | 'virtual';
+
+/**
+ * A `setVirtual` override: netplay's injected mask or a test hook. Partial because a caller writes
+ * only the actions it means to hold -- every absent key reads as not held.
+ */
+export type VirtualActions = Partial<RawActions>;
+
+/**
+ * One seat's live input state. One of these per slot, allocated once by makePlayer() and mutated in
+ * place for the life of the process, so nothing here is ever reallocated mid-match.
+ */
+export interface PlayerInput {
+  /** Every device OR-ed together: what held() reads. */
+  cur: ActionMap<boolean>;
+  /** `cur` as it was last step; the two together are the edge. */
+  prev: ActionMap<boolean>;
+  pressedNow: ActionMap<boolean>;
+  /** Frames since each action's last edge, or NEVER when it has none buffered. */
+  bufAge: ActionMap<number>;
+  virtual: VirtualActions | null;
+  device: InputDevice;
+  /** The same three again for the devices that CANNOT type: pad, touch and the test virtual. */
+  offKey: ActionMap<boolean>;
+  offKeyPrev: ActionMap<boolean>;
+  offKeyPressed: ActionMap<boolean>;
+  joined: boolean;
+  /** This seat joined (or re-claimed a pad) THIS step. */
+  joinNow: boolean;
+  /** Gamepad RT (or virtual / touch `run`) held: run without double-tapping. Not one of ACTIONS. */
+  run: boolean;
+  /** Any button of this seat's pad is active, and the same last step (the join edge). */
+  gpAny: boolean;
+  gpAnyPrev: boolean;
+  /** Gamepad index claimed to this slot, or -1. */
+  pad: number;
+  /** This seat's own keyboard half has been used, so a pad may no longer claim it. */
+  kbSeen: boolean;
+  idleFrames: number;
+}
 
 /** Live bindings, mutated in place by rebind() / importBindings() / resetBindings(). Same object forever. */
 export const bindings = cloneBindings(DEFAULT_BINDINGS);
@@ -41,12 +104,14 @@ let virtualPads = null; // test hook: setPadVirtual() override for pollGamepads(
  * whichever of the two the caller needs.
  * @param {boolean|number} [v]
  */
-function makeActionMap(v = false) {
-  const o = {};
-  for (const a of ACTIONS) o[a] = v;
+function makeActionMap<V = boolean>(v: V | boolean = false): ActionMap<V> {
+  const o = {} as ActionMap<V>;
+  // `v as V`: the parameter is widened to `V | boolean` only so that the no-argument call defaults
+  // V to boolean; every caller passes a V (or nothing), so the two are the same type in practice.
+  for (const a of ACTIONS) o[a] = v as V;
   return o;
 }
-function makePlayer() {
+function makePlayer(): PlayerInput {
   return { cur: makeActionMap(), prev: makeActionMap(), pressedNow: makeActionMap(), bufAge: makeActionMap(NEVER), virtual: null, device: 'none',
     // The same state again for the devices that CANNOT type: pad, touch and the test virtual. A
     // screen that reads the keyboard raw (the lobby's room code) drives its cursor off these, so
@@ -186,7 +251,7 @@ function keyHeld(codes) {
 }
 
 /** Touch-control state, OR-ed into player 1's input each step (see engine/touch.js). */
-let touchActions = null;
+let touchActions: RawActions | null = null;
 
 /** Input singleton (ARCHITECTURE.md section 3 / 16). Players are 0..3 (MAX_PLAYERS), but couch play
  *  fills only the first LOCAL_PLAYERS of them: slots 0 and 1 own a nine-key keyboard block each and
@@ -396,10 +461,10 @@ export const input = {
    * written only inside update().
    * @returns {object} action map plus `run`
    */
-  pollRaw(player = 0) {
+  pollRaw(player: number = 0): RawActions {
     if (!boundCodes) rebuildBoundCodes();
     pollGamepads();
-    const o = {};
+    const o = {} as RawActions;
     const map = bindings.keyboard[player];
     for (const a of ACTIONS) o[a] = map ? keyHeld(map[a]) : false;
     // Reads the pad bound to `player` (if any) plus every unbound pad -- readUnboundPads keys off
@@ -417,7 +482,7 @@ export const input = {
   /** Test hook: override devices with { left:true, attack:true, run:true ... } until cleared. */
   setVirtual(player, actions) { players[player].virtual = actions ? { ...actions } : null; },
   /** On-screen touch controls: merged into player 1 alongside the keyboard (engine/touch.js). */
-  setTouch(actions) { touchActions = actions || null; },
+  setTouch(actions: RawActions | null) { touchActions = actions || null; },
   /** Test hook: remove the virtual override. */
   clearVirtual(player) { players[player].virtual = null; },
   /** Last device that produced input for the player ('keyboard' | 'gamepad' | 'virtual' | 'none'). */

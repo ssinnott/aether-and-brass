@@ -64,26 +64,97 @@ export const EVENT_ACTIONS = Object.freeze([
 export const BEAT_ACTIONS = Object.freeze(['actor', 'walk', 'sign', 'say']);
 
 /**
+ * A payload the runner FORWARDS without looking inside it — every action but `wait` and `camera` is one.
+ *
+ * Deliberately opaque. game/stage.ts declares the authored vocabulary each of these really is (`PropSpec`,
+ * `ActorSpec`, `ZoneFlashSpec`, `HazardSetSpec`, `SaySpec` and the rest) and its `EventAction` is what content is
+ * written against; naming those here would mean either duplicating them or importing game/stage.ts, and stage.ts
+ * already imports THIS file. The dependency runs one way and the far side declares what it needs structurally —
+ * the rule game/entity.ts sets out for `EntityWorld` and game/stage.ts follows for `StageWorld`. It is also what
+ * keeps the promise in the note at the top of this file: the runner imports nothing.
+ */
+export type ActionPayload = object;
+
+/** What `host.hazardSet` hands back for `host.hazardRevert` to spend. Opaque here for the same reason. */
+export type HazardRevertToken = object;
+
+/**
+ * One action of a script, as the RUNNER sees it: the ACTION TABLE above is the authority on the vocabulary, and
+ * `run` dispatches on the key, so an entry carries exactly one action and every field is optional. Only `wait` and
+ * `camera` are read into — the rest go to the host untouched. game/stage.ts's `EventAction` is the authored shape
+ * and satisfies this.
+ */
+export interface ScriptAction {
+  caption?: string;
+  sub?: string;
+  life?: number;
+  /** The only action that spends time. */
+  wait?: number;
+  /** The two fields `run` reads off it; game/stage.ts's `CameraCue` is the authored shape. */
+  camera?: { shake?: number; frames?: number };
+  sfx?: string;
+  music?: string;
+  hazardSet?: ActionPayload;
+  zoneFlash?: ActionPayload;
+  /** `run` wraps a bare spec in an array, so an author may write either. */
+  spawn?: ActionPayload | ActionPayload[];
+  prop?: ActionPayload;
+  actor?: ActionPayload;
+  walk?: ActionPayload;
+  sign?: ActionPayload;
+  say?: ActionPayload;
+}
+
+/**
+ * One event script. `id`, `atX` and `once` are the example at the top of this file; the runner itself reads nothing
+ * but `actions`, and game/stage.ts owns the arming fields and the latch because arming is its job.
+ */
+export interface EventScript {
+  id?: string;
+  actions?: ScriptAction[];
+}
+
+/**
+ * Every effect a script can have, injected so this module imports nothing. The four beat actions are optional: a
+ * host that does not implement them stages no scenery and the script's timing is unchanged (see `run`).
+ */
+export interface EventHost {
+  caption(text: string, sub: string, life: number): void;
+  camera(shake: number, frames: number): void;
+  sfx(name: string): void;
+  music(track: string): void;
+  hazardSet(spec: ActionPayload): HazardRevertToken | null;
+  hazardRevert(token: HazardRevertToken): void;
+  zoneFlash(spec: ActionPayload): void;
+  spawn(specs: ActionPayload[]): void;
+  prop(spec: ActionPayload): void;
+  actor?(spec: ActionPayload): void;
+  walk?(spec: ActionPayload): void;
+  sign?(spec: ActionPayload): void;
+  say?(spec: ActionPayload): void;
+}
+
+/**
  * Runs one section's events. The StageRunner owns exactly one of these and steps it every sim frame.
  *
- * @param {{
- *   caption: (text: string, sub: string, life: number) => void,
- *   camera: (shake: number, frames: number) => void,
- *   sfx: (name: string) => void,
- *   music: (track: string) => void,
- *   hazardSet: (spec: object) => object|null,
- *   hazardRevert: (token: object) => void,
- *   zoneFlash: (spec: object) => void,
- *   spawn: (specs: object[]) => void,
- *   prop: (spec: object) => void,
- *   actor?: (spec: object) => void,
- *   walk?: (spec: object) => void,
- *   sign?: (spec: object) => void,
- *   say?: (spec: object) => void,
- * }} host every effect the script can have, injected so this module imports nothing
+ * @param host every effect the script can have, injected so this module imports nothing
  */
 export class EventRunner {
-  constructor(host) {
+  // The fields, for the checker only, in constructor order. `declare` because these are the constructor's own
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022 defines them
+  // before the constructor body runs), which is a runtime change. `declare` erases under tsc, esbuild and
+  // node --experimental-strip-types alike. Same reasoning, and the same wording, as game/entity.ts and game/world.ts.
+  declare host: EventHost;
+  /** The event currently running, or null. */
+  declare event: EventScript | null;
+  /** Index of the next action, and frames still to burn on a `wait`. */
+  declare step: number;
+  declare waitT: number;
+  /** Frames since the event started (what a test asserts against). */
+  declare t: number;
+  /** hazardSet tokens to hand back when the event ends, newest first. */
+  declare pending: HazardRevertToken[];
+  constructor(host: EventHost) {
     this.host = host;
     /** The event currently running, or null. */
     this.event = null;
@@ -94,15 +165,15 @@ export class EventRunner {
     /** hazardSet tokens to hand back when the event ends, newest first. */
     this.pending = [];
   }
-  get running() { return !!this.event; }
+  get running(): boolean { return !!this.event; }
 
   /**
    * Start an event. `once` is the default: the caller latches `ev._done` exactly as wave triggers latch `_state`,
    * so an event never re-arms unless the section is re-entered. A second arm while one is running is ignored
    * rather than queued — two scripts changing the room at once is never what an author meant.
-   * @returns {boolean} true when this event actually started
+   * @returns true when this event actually started
    */
-  arm(ev) {
+  arm(ev: EventScript | null): boolean {
     if (this.event || !ev || !Array.isArray(ev.actions)) return false;
     this.event = ev;
     this.step = 0; this.waitT = 0; this.t = 0;
@@ -113,9 +184,9 @@ export class EventRunner {
   /**
    * One sim frame. Runs every action until it hits a `wait` (or the end), so a run of instant actions all land on
    * the same frame — which is what makes `{ caption }, { sfx }, { zoneFlash }` read as one beat rather than three.
-   * @returns {boolean} true while an event is still running
+   * @returns true while an event is still running
    */
-  update() {
+  update(): boolean {
     if (!this.event) return false;
     this.t++;
     if (this.waitT > 0) { this.waitT--; return true; }
@@ -132,8 +203,8 @@ export class EventRunner {
     return false;
   }
 
-  /** Apply one action. @returns {number} frames to block for (only `wait` is ever non-zero). */
-  run(a) {
+  /** Apply one action. @returns frames to block for (only `wait` is ever non-zero). */
+  run(a: ScriptAction | null): number {
     if (!a || typeof a !== 'object') return 0;
     if (a.wait != null) return Math.max(0, a.wait | 0);
     if (a.caption != null) this.host.caption(String(a.caption), a.sub || '', a.life || 90);
@@ -157,7 +228,7 @@ export class EventRunner {
    * The event is over. Every hazard override is handed back here as well as on its own `frames` timer, so a script
    * that ends early — or a section left mid-event — can never strand a vent open for the rest of the board.
    */
-  finish() {
+  finish(): void {
     for (let i = this.pending.length - 1; i >= 0; i--) this.host.hazardRevert(this.pending[i]);
     this.pending.length = 0;
     this.event = null;
@@ -165,14 +236,14 @@ export class EventRunner {
   }
 
   /** Section change / teardown: stop and revert, without pretending the script completed. */
-  cancel() { if (this.event) this.finish(); }
+  cancel(): void { if (this.event) this.finish(); }
 }
 
 /**
  * Total frames a script takes, for docs and tests. Only `wait` spends time, so this is just the sum of the waits
  * plus one frame for the run of instant actions that follows the last of them.
  */
-export function eventLength(ev) {
+export function eventLength(ev: EventScript | null): number {
   let n = 1;
   for (const a of (ev && ev.actions) || []) if (a && a.wait != null) n += Math.max(0, a.wait | 0);
   return n;

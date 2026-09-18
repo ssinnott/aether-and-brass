@@ -27,6 +27,29 @@
  */
 /** @typedef {{ ok: true, swapped?: string } | { ok: false, reason: string }} RebindResult */
 
+// The two `@typedef`s above are what this file documented itself with while it was `.js`. A `.ts`
+// file ignores the JSDoc form, so they are restated below as real declarations -- the comments stay
+// because they are what every `@param {Bindings}` in this file still points at.
+
+/**
+ * A whole bindings table: one action->codes map per keyboard player (index 0 is P1), the gamepad
+ * map, the buttons that mean "run", the three global keys and the stick deadzone.
+ */
+export interface Bindings {
+  /** One map per keyboard slot; `keyboard[0]` is P1's nine-key block. */
+  keyboard: Array<Record<string, string[]>>;
+  /** Standard-mapping button indices per action. */
+  gamepad: Record<string, number[]>;
+  /** Held gamepad buttons that mean "run" (RT). */
+  gamepadRun: number[];
+  /** The keys bound outside any player: pause / mute / debug. */
+  global: Record<string, string[]>;
+  stickDeadzone: number;
+}
+
+/** What `rebindKey` / `rebindPad` answer with: the swap they made, or the reason they refused. */
+export type RebindResult = { ok: true; swapped?: string } | { ok: false; reason: string };
+
 /** Default bindings. Keyboard entries are KeyboardEvent.code values; gamepad entries are standard-mapping button indices. */
 export const DEFAULT_BINDINGS = {
   keyboard: [
@@ -82,15 +105,18 @@ export function layoutMap(b, layout) {
 export function sideOf(layout) { return Number(layout.slice(1)) - 1; }
 
 /** @param {Record<string, Array<string|number>>} m @returns {Record<string, Array<string|number>>} */
-function cloneActionMap(m) {
+// Generic over the code type so one helper serves both maps: a keyboard map's codes are
+// KeyboardEvent.code strings, a gamepad map's are button indices, and the copy keeps whichever it
+// was handed rather than widening both to `string | number`.
+function cloneActionMap<T extends string | number>(m: Record<string, T[]>): Record<string, T[]> {
   /** @type {Record<string, Array<string|number>>} */
-  const o = {};
+  const o: Record<string, T[]> = {};
   for (const k of Object.keys(m)) o[k] = m[k].slice();
   return o;
 }
 
 /** Deep copy of a bindings object (arrays sliced, maps copied per action). @param {Bindings} src @returns {Bindings} */
-export function cloneBindings(src) {
+export function cloneBindings(src: Bindings): Bindings {
   return {
     keyboard: src.keyboard.map((m) => /** @type {Record<string, string[]>} */ (cloneActionMap(m))),
     gamepad: /** @type {Record<string, number[]>} */ (cloneActionMap(src.gamepad)),

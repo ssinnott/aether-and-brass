@@ -1,8 +1,7 @@
 // Pip Gearlock & The Rig — move list + trials (issue #22). Numbers mirror the header comment in pip.js / GDD 2.4.
 import { step, comboTrial, jumpGrabTrial, dodgeCancelTrial, throwBodyTrial } from './common.ts';
 
-/** @type {MoveEntry[]} */
-export const moveList = [
+export const moveList: MoveEntry[] = [
   { id: 'combo', name: 'CLAW COMBO', input: 'ATTACK x3', desc: 'CLAW SWAT 12 > DOUBLE CLAP 14 FRONT+BACK STAGGER > PISTON UPPERCUT 18 LAUNCH', anims: ['attack1', 'attack2', 'attack3'] },
   { id: 'jump', name: 'BUTT-STOMP', input: 'JUMP, ATTACK', desc: '16 DMG + 30PX SHOCKWAVE KNOCKDOWN', anims: ['jumpAttack', 'landAttack'] },
   { id: 'dash', name: 'GRAPPLE SHOT', input: 'RUN + ATTACK', desc: 'CHAINED CLAW 140PX, 6 DMG, REELS THE FIRST ENEMY INTO A GRAB', anim: 'dashAttack' },
@@ -15,8 +14,7 @@ export const moveList = [
   { id: 'taunt', name: 'TAUNT', input: 'TAUNT', desc: '+25 METER OVER THE ANIMATION. INTERRUPTIBLE', anim: 'taunt' },
 ];
 
-/** @type {Trial[]} */
-export const trials = [
+export const trials: Trial[] = [
   comboTrial(3),
   { id: 'grapple', name: 'GRAPPLE PULL', hint: 'RUN + ATTACK FROM RANGE: THE HOOK REELS IT IN', window: 40, steps: [step('HOOK', 'projectile', 'dashAttack'), step('REEL GRAB', 'grab')] },
   { id: 'crush', name: 'CRUSH AND HURL', hint: 'GRAB, ATTACK THREE TIMES', window: 90, steps: [step('GRAB', 'grab'), step('CRUSH', 'grabHit'), step('CRUSH', 'grabHit'), step('CRUSH', 'grabHit'), step('HURL', 'throw')] },

@@ -87,7 +87,7 @@ const BOSSES = { midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss
  *   (aliases: typeA, typeB, typeC, typeD, typeE, grubbik, vane, skree, kestrel, marl, hasp, culm, oke)
  * @param {string} [variant]
  */
-export function getEnemyDef(type, variant) {
+export function getEnemyDef(type, variant?) {
   const t = resolveType(type);
   if (BOSSES[t]) return BOSSES[t];
   let v = String(variant || '').toLowerCase().replace(/[^a-z]/g, '');

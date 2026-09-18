@@ -12,6 +12,9 @@ import { options, VOLUME_STEPS } from '../options.ts';
 import { createControlsPanel } from './controls.ts';
 import { input } from '../../engine/input.ts';
 import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.ts';
+// Type-only, so nothing here adds an edge to the module graph the browser loads (the same note the
+// block at the top of screens/gameplay.ts carries).
+import type { Game, ScreenParams, ScreenSummary } from '../game.ts';
 
 const ROWS = ['DIFFICULTY', 'MUSIC', 'SFX', 'MUTE', 'SCREEN SHAKE', 'CONTROLS', 'RESET TO DEFAULTS', 'BACK'];
 const R_DIFF = 0, R_MUSIC = 1, R_SFX = 2, R_MUTE = 3, R_SHAKE = 4, R_CONTROLS = 5, R_RESET = 6, R_BACK = 7;
@@ -28,22 +31,65 @@ const SHAKE_LABELS = { off: 'OFF', low: 'LOW', full: 'FULL' };
 // Precomputed finished row strings so draw() never builds a template string per frame (no
 // allocation in the draw path): DIFF_ROW / DIFF_ROW_LOCKED index by difficulty, MUTE_ROW by
 // on/off, SHAKE_ROW by shake level, and STEP_LABELS gives String(n) for every slider value.
-const DIFF_ROW = {};
-const DIFF_ROW_LOCKED = {};
+const DIFF_ROW: Record<string, string> = {};
+const DIFF_ROW_LOCKED: Record<string, string> = {};
 for (const d of Object.keys(DIFF_LABELS)) {
   DIFF_ROW[d] = `< ${DIFF_LABELS[d]} >`;
   DIFF_ROW_LOCKED[d] = `< ${DIFF_LABELS[d]} > NEXT BOARD`;
 }
 const MUTE_ROW = { on: '< ON >', off: '< OFF >' };
-const SHAKE_ROW = {};
+const SHAKE_ROW: Record<string, string> = {};
 for (const s of Object.keys(SHAKE_LABELS)) SHAKE_ROW[s] = `< ${SHAKE_LABELS[s]} >`;
 const STEP_LABELS = Array.from({ length: VOLUME_STEPS + 1 }, (_, i) => String(i));
+
+/**
+ * Which plate the overlay is showing: its own rows, or the CONTROLS sub-plate over them.
+ */
+export type OptionsPanel = 'main' | 'controls';
+
+/**
+ * The CONTROLS sub-plate, as this screen holds it: the closure `createControlsPanel` (screens/controls.js)
+ * returns. Declared here rather than there because this field is the only place one is ever held, and the
+ * panel is a closure over its own private `st` -- there is no class to hang the shape off. `summary()`'s
+ * keys are spread into this screen's own summary, which is how window.__game reports the capture state.
+ */
+export interface ControlsPanel {
+  /** Reset the grid to P1/left and install the raw keydown listener capture reads. */
+  open(): void;
+  /** Remove that listener and end any capture in progress. */
+  close(): void;
+  /** Safety net so a panel left mid-capture never leaks its listener when the options plate closes. */
+  dispose(): void;
+  update(): void;
+  draw(ctx: CanvasRenderingContext2D): void;
+  summary(): ScreenSummary;
+}
 
 /** Options overlay screen. CONFIRM (ENTER or attack) activates a row and BACK (Escape, jump or dodge)
  *  closes the plate -- the one scheme in game/menuinput.js; left/right changes a row in place. */
 export class OptionsScreen extends Screen {
-  constructor(game) { super(game, 'options'); this.transparent = true; }
-  enter(params = {}) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are the
+  // constructor's / enter()'s own assignments and nothing else: a plain field declaration would emit a
+  // class field per name (es2022 defines them before the constructor body runs), which is a runtime
+  // change. Same reasoning, and the same wording, as game/entity.ts's Entity.
+  /** Dim the frame behind the plate: false when the opener already did (pause.js). */
+  declare dim: boolean;
+  /** The DIFFICULTY row is greyed and inert while a board is running; see enter(). */
+  declare lockDifficulty: boolean;
+  declare cursor: number;
+  declare panel: OptionsPanel;
+  declare controls: ControlsPanel;
+  /** The transient line under the rows ('DEFAULTS RESTORED'), and the frames it has left. */
+  declare notice: string;
+  declare noticeTimer: number;
+  /** Frames of input swallowed after the CONTROLS plate backs out to this one. */
+  declare settle: number;
+  /** The control hint, and the `input.bindingsVersion` it was built from. */
+  declare hint: string;
+  declare hintVersion: number;
+
+  constructor(game: Game) { super(game, 'options'); this.transparent = true; }
+  override enter(params: ScreenParams = {}): void {
     super.enter(params);
     // Pause already dims the frame behind it 60%; the title does not, so this overlay dims for
     // itself unless the opener passes `dim: false` (pause.js does).
@@ -62,8 +108,8 @@ export class OptionsScreen extends Screen {
     // rather than being built once here (ARCHITECTURE.md section 16: no hard-coded key names).
     this.hint = ''; this.hintVersion = -1;
   }
-  exit() { this.controls.dispose(); }
-  update() {
+  override exit(): void { this.controls.dispose(); }
+  override update(): void {
     super.update();
     if (this.hintVersion !== input.bindingsVersion) {
       this.hintVersion = input.bindingsVersion;
@@ -90,7 +136,7 @@ export class OptionsScreen extends Screen {
       if (cancelPressed(inp, p) || escapePressed(inp)) { this.close(); return; }
     }
   }
-  activate(i) {
+  activate(i: number): void {
     const audio = this.game.audio;
     if (i === R_DIFF) { if (!this.lockDifficulty) { options.cycle('difficulty', 1); this.game.options.difficulty = options.difficulty(); audio.play('menu_move'); } }
     // CONFIRM on a slider would otherwise be a silent no-op. It steps the slider, reversing at the ceiling so
@@ -109,11 +155,11 @@ export class OptionsScreen extends Screen {
       audio.play('menu_confirm');
     } else if (i === R_BACK) this.close();
   }
-  close() { this.game.audio.play('menu_back'); this.game.pop(); }
-  showNotice(text) { this.notice = text; this.noticeTimer = NOTICE_FRAMES; }
+  close(): void { this.game.audio.play('menu_back'); this.game.pop(); }
+  showNotice(text: string): void { this.notice = text; this.noticeTimer = NOTICE_FRAMES; }
   /** Called by the controls panel when it backs out to this plate. */
-  closeControls() { this.controls.close(); this.panel = 'main'; this.settle = SETTLE_FRAMES; }
-  draw(ctx) {
+  closeControls(): void { this.controls.close(); this.panel = 'main'; this.settle = SETTLE_FRAMES; }
+  override draw(ctx: CanvasRenderingContext2D): void {
     if (this.dim) { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
     if (this.panel === 'controls') { this.controls.draw(ctx); return; }
     const x = (VIEW_W - PLATE.w) / 2, y = PLATE.y, f = this.frame;
@@ -141,7 +187,7 @@ export class OptionsScreen extends Screen {
     if (this.noticeTimer > 0) drawText(ctx, this.notice, VIEW_W / 2, y + PLATE.h - 34, { size: 1, color: UI.teal, align: 'center' });
     drawText(ctx, this.hint, VIEW_W / 2, y + PLATE.h - 22, { size: 1, color: UI.brassDark, align: 'center' });
   }
-  summary() {
+  override summary(): ScreenSummary {
     return {
       screen: 'options', panel: this.panel, cursor: this.cursor, notice: this.notice,
       lockDifficulty: this.lockDifficulty,
@@ -153,12 +199,12 @@ export class OptionsScreen extends Screen {
 
 /** A volume slider plus its 0..VOLUME_STEPS number, drawn at `x, y`. Shared with the COMMANDS plate
  *  (screens/help.js), whose SOUND rows are the same two settings so both read one drawing. */
-export function drawVolumeRow(ctx, x, y, value, sel, color) {
+export function drawVolumeRow(ctx: CanvasRenderingContext2D, x: number, y: number, value: number, sel: boolean, color: string): void {
   drawSlider(ctx, x, y + 1, value, sel);
   drawText(ctx, STEP_LABELS[value], x + SLIDER_W + 4, y, { size: 1, color });
 }
 /** A row of VOLUME_STEPS cells, filled brass up to `value`, in a dark trough. */
-function drawSlider(ctx, x, y, value, sel) {
+function drawSlider(ctx: CanvasRenderingContext2D, x: number, y: number, value: number, sel: boolean): void {
   ctx.fillStyle = '#120c14';
   ctx.fillRect(x - 1, y - 1, SLIDER_W + 2, SLIDER.h + 2);
   for (let i = 0; i < VOLUME_STEPS; i++) {

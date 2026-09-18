@@ -73,7 +73,7 @@ function dodgeAllowed(p, world) {
  * @param {string} [style] key into BOT_STYLES; defaults to `balanced`
  * @returns {{x:number, y:number, attack:boolean, jump:boolean, special:boolean, super:boolean, dodge:boolean, taunt:boolean, run:boolean, start:boolean}}
  */
-export function botIntent(p, world, style) {
+export function botIntent(p, world, style?) {
   const s = botStyle(style || p.botStyle);
   const it = { x: 0, y: 0, attack: false, jump: false, special: false, super: false, dodge: false, taunt: false, run: false, start: false };
   const f = world.frame + (p.index || 0) * 3;

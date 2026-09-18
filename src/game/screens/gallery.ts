@@ -6,11 +6,30 @@ import { buildRig, drawRig } from '../../lib/art/rig.ts';
 import { AnimPlayer } from '../../lib/art/animation.ts';
 import { drawShadowScreen } from '../../art/fx.ts';
 import { confirmPressed, cancelPressed, escapePressed } from '../menuinput.ts';
+// Type-only, all of them: `import type` is erased by tsc, esbuild and node alike, so none of these adds
+// an edge to the module graph the browser loads (the note at the top of screens/gameplay.ts).
+import type { Game, ScreenParams, RegistryEntry } from '../game.ts';
+import type { Rig } from '../../lib/art/rig.ts';
 
 /** Preferred animation cycling order (only names present in at least one entry are shown). */
 export const GALLERY_ANIMS = ['idle', 'walk', 'attack1', 'hurt', 'run', 'attack2', 'attack3', 'attack4', 'jumpAttack', 'dashAttack', 'special', 'super',
   'grab', 'grabHit', 'throw', 'jump', 'fall', 'land', 'dodge', 'taunt', 'hurtAir', 'knockdown', 'lying', 'getup', 'dead', 'win', 'lunge'];
 const HEADER_H = 24;
+
+/**
+ * One cell of the grid: a registry entry built into a rig, its own player parked on the shared animation
+ * name, and the frames it has been sitting on a finished one. Built once in enter() -- the whole registry
+ * at once, which is the hitch this screen accepts for being a developer tool (the bestiary builds per tab
+ * for exactly that reason; see the header of screens/bestiary.js).
+ */
+export interface GalleryEntry {
+  /** `e.name`, `e.id` or '?': what is lettered under the cell. */
+  name: string;
+  rig: Rig;
+  anim: AnimPlayer;
+  /** Frames a finished (non-looping) animation has been held before it is replayed. */
+  hold: number;
+}
 
 /**
  * Gallery screen. Entries come from `params.registry` or `game.galleryRegistry`: [{ name, build, anims }].
@@ -19,12 +38,30 @@ const HEADER_H = 24;
  * return to the title.
  */
 export class GalleryScreen extends Screen {
-  constructor(game) { super(game, 'gallery'); }
-  enter(params) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022
+  // defines them before the constructor body runs), which is a runtime change. Same reasoning, and the
+  // same wording, as game/entity.ts's Entity.
+  declare entries: GalleryEntry[];
+  /** Every animation name present in at least one entry, GALLERY_ANIMS order first; never empty. */
+  declare animNames: string[];
+  declare animIndex: number;
+  /** First visible row of the grid. */
+  declare scroll: number;
+  // The grid, recomputed by _layout() from the entry count alone.
+  declare cols: number;
+  declare rows: number;
+  declare cellW: number;
+  declare cellH: number;
+  declare visibleRows: number;
+  declare gridY: number;
+
+  constructor(game: Game) { super(game, 'gallery'); }
+  override enter(params: ScreenParams): void {
     super.enter(params);
-    const registry = params.registry || this.game.galleryRegistry || [];
+    const registry: RegistryEntry[] = params.registry || this.game.galleryRegistry || [];
     this.entries = registry.map((e) => ({ name: e.name || e.id || '?', rig: buildRig(e.build || {}), anim: new AnimPlayer(e.anims || {}), hold: 0 }));
-    const present = new Set();
+    const present = new Set<string>();
     for (const e of registry) for (const k of Object.keys(e.anims || {})) present.add(k);
     this.animNames = GALLERY_ANIMS.filter((n) => present.has(n));
     for (const k of present) if (!this.animNames.includes(k)) this.animNames.push(k);
@@ -34,7 +71,7 @@ export class GalleryScreen extends Screen {
     this._layout();
     this._playAll(true);
   }
-  _layout() {
+  _layout(): void {
     const n = this.entries.length;
     this.cols = n > 10 ? 6 : Math.max(1, Math.min(n, 5));
     this.rows = Math.max(1, Math.ceil(n / this.cols));
@@ -43,13 +80,13 @@ export class GalleryScreen extends Screen {
     this.visibleRows = Math.min(this.rows, Math.max(1, Math.floor((VIEW_H - HEADER_H) / this.cellH)));
     this.gridY = HEADER_H + Math.floor((VIEW_H - HEADER_H - this.visibleRows * this.cellH) / 2);
   }
-  _playAll(restart) {
+  _playAll(restart: boolean): void {
     const name = this.animNames[this.animIndex];
     for (const e of this.entries) { e.anim.play(name, { restart, fallback: 'idle' }); e.hold = 0; }
   }
   /** Current animation name. */
-  get animName() { return this.animNames[this.animIndex]; }
-  update() {
+  get animName(): string { return this.animNames[this.animIndex]; }
+  override update(): void {
     super.update();
     const inp = this.game.input;
     if (inp.pressed(0, 'right') || inp.pressed(1, 'right')) { this.animIndex = (this.animIndex + 1) % this.animNames.length; this._playAll(true); this.game.audio.play('menu_move'); }
@@ -62,7 +99,7 @@ export class GalleryScreen extends Screen {
       if (e.anim.done) { if (++e.hold > 30) e.anim.play(this.animName, { restart: true, fallback: 'idle' }), (e.hold = 0); }
     }
   }
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     ctx.fillStyle = '#2a2430'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.fillStyle = '#1a1420'; ctx.fillRect(0, 0, VIEW_W, HEADER_H);
     drawText(ctx, `GALLERY  ${this.entries.length} RIGS   ANIM: ${this.animName.toUpperCase()} (${this.animIndex + 1}/${this.animNames.length})   LEFT/RIGHT: CYCLE  UP/DOWN: SCROLL`, 8, 8, { size: 1, color: UI.brass });

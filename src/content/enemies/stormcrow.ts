@@ -35,6 +35,7 @@
 // | Galewright       |  90 |  12 | 1.00x | lens visor, lightning rods; a long charge, then a stunning arc  |
 // | Ironwing Marine  | 190 |  16 | 0.70x | crested helm, wing-plate: super armour until a launcher strips  |
 import { frontBox, areaBox, makeEnemyDef } from './common.ts';
+import type { EnemyDef } from './common.ts';
 import { CROW, CROW_PAL, CROW_PROPS, crowScarf, crowTails, crowWings, makeCrowBase, crowStrike } from './stormcrowRig.ts';
 import {
   CROW_PARTS, crowLines, crowReel, crowKeg, crowBandolier, crowRods, crowBedroll, crowDrum,
@@ -46,7 +47,8 @@ import { particles } from '../../engine/particles.ts';
 import { audio } from '../../engine/audio.ts';
 import { ST } from '../../constants.ts';
 
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
+const hit = (damage: number, type: HitType, kbX: number, kbY: number, hitstun: number, extra?: Partial<Hitbox>): Partial<Hitbox> =>
+  ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
 /** drawFace options for the one variant with a beard over his mouth (ART_STYLE section 6). */
 const BEARDED = { noMouth: true };
 /**
@@ -120,9 +122,8 @@ const BASE = {
  * — which is why every variant hook must call BASE_HOOKS.onUpdate first (galeHooks and corsairHooks do).
  * `rig.wings` is only ever read by the crowWings accessory: a rig that does not carry the pack (the Deckhand, and
  * every line rate but the Marine) sets the flag and nothing looks at it, so these hooks need no packless branch.
- * @type {Hooks}
  */
-const BASE_HOOKS = {
+const BASE_HOOKS: Hooks = {
   onUpdate(f) {
     const n = f.anim.name;
     f.rig.wings = f.state === ST.DODGE || f.airborne || n === 'lunge' || n === 'gale' || n === 'shove';
@@ -131,7 +132,7 @@ const BASE_HOOKS = {
   onDeath(f) { f.rig.down = true; },
 };
 /** Assemble a Stormcrow variant: faction traits + hooks on top of makeEnemyDef (which carries neither, nor the grab fields). */
-function def(v, hooks) {
+function def(v, hooks?: Hooks): EnemyDef {
   const d = makeEnemyDef(BASE, v);
   d.traits = { jumpAttackTakenMult: 1.5, ...(v.traits || {}) };
   d.hooks = { ...BASE_HOOKS, ...(hooks || {}) };
@@ -371,9 +372,8 @@ const grapnelAnims = crowAnims(MATE_CARRY, MATE_STANCE, {
  * updateGrab, then this hook, then think (the squeeze timer), so the hook always sees the hold before the next
  * squeeze can fire. onThrow closes the attack the reel interrupted: the grab was entered from inside the grapnel's
  * ST.ATTACK, so finishAttack never ran and neither the cooldown nor the token was released.
- * @type {Hooks}
  */
-const grapnelHooks = {
+const grapnelHooks: Hooks = {
   onSpawn(f) { f.lineOut = 0; },
   onUpdate(f, world) {
     BASE_HOOKS.onUpdate(f, world);

@@ -51,6 +51,32 @@ export function charStrap(def) {
 }
 
 /**
+ * One cell of the `cursors` array below: a player slot's cursor, as it sits on THIS card. Every field is
+ * optional because the two callers write different halves of it -- the local CHOOSE YOUR FIGHTER screen
+ * (screens/select.ts) writes `confirmed` alone and takes the default 'P1'..'P4' numbering, while the lobby
+ * hands over its own party rows, which carry a `label` and their own bookkeeping besides.
+ */
+export interface CardCursor {
+  /** This slot has locked the hero in: the card takes the READY stamp. */
+  confirmed?: boolean;
+  /** What the READY stamp calls the slot. Defaults to 'P1'..'P4'. */
+  label?: string;
+}
+
+/** The options `drawCharCard` takes. All optional: the object itself is (`= {}`). */
+export interface CharCardOptions {
+  /**
+   * One entry per player slot, MAX_PLAYERS long, null where that slot's cursor is not on this card. A
+   * short array is fine -- the loops below index it by slot and skip the holes.
+   */
+  cursors?: Array<CardCursor | null>;
+  /** Grey the card out: a hero this viewer may not choose (online, the one the peer is holding). */
+  taken?: boolean;
+  /** Which card this is in the row. Only de-phases the backdrop gear, so two cards never spin in step. */
+  index?: number;
+}
+
+/**
  * One hero card.
  *
  * `cursors` is a 4-slot array (one per player slot): null when that slot is not on this card,
@@ -61,7 +87,7 @@ export function charStrap(def) {
  * `taken` greys out a card this viewer may not choose: online co-op forbids two players on the
  * same hero, so the card the peer is holding is shown as unavailable rather than silently skipped.
  */
-export function drawCharCard(ctx, slot, x, y, f, o = {}) {
+export function drawCharCard(ctx, slot, x, y, f, o: CharCardOptions = {}) {
   const { cursors = [], taken = false, index = 0 } = o;
   const d = slot.def;
   let on = 0, first = -1;

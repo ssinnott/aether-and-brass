@@ -2,6 +2,7 @@
 // Content files (content/characters, content/enemies) assemble their animation tables from these helpers; the
 // results are plain data ({ loop, frames: [{ dur, pose, hitbox, move, fx, sfx, cancel, event }] }).
 import { P } from '../lib/art/poses.ts';
+import type { PoseSpec } from '../lib/art/poses.ts';
 
 /** Default hitbox geometry for a frontal strike with the given reach (px in front of the feet). */
 export function frontBox(reach, hit, { low = false, high = false, behind = false } = {}) {
@@ -77,14 +78,14 @@ export function strike(o) {
   const hit = o.hit || { damage: 5, type: 'light', kbX: 2, kbY: 0, hitstun: 14 };
   const hb = o.hitbox || (o.area ? areaBox(o.area, hit) : frontBox(o.reach || 40, hit, { low: o.low, high: o.high, behind: o.behind }));
   const frames = [];
-  const w = { dur: o.startup || 5, pose: st.w };
+  const w: Frame = { dur: o.startup || 5, pose: st.w };
   if (o.sfx) w.sfx = o.sfx;
   if (o.armor) w.armor = true;
   if (o.invuln) w.invuln = true;
   if (o.windupEvent) w.event = o.windupEvent;
   if (o.moveWindup) w.move = o.moveWindup;
   frames.push(w);
-  const h = { dur: o.active || 3, pose: st.h };
+  const h: Frame = { dur: o.active || 3, pose: st.h };
   if (o.hitboxes) h.hitboxes = o.hitboxes; else h.hitbox = hb;
   if (o.fx) h.fx = o.fx;
   if (o.move) h.move = o.move;
@@ -94,7 +95,7 @@ export function strike(o) {
   if (o.hitSfx) h.sfx = o.hitSfx;
   frames.push(h);
   if (o.extraActive) for (const ex of o.extraActive) frames.push({ dur: ex.dur || 3, pose: ex.pose || st.h, hitbox: ex.hitbox, hitboxes: ex.hitboxes, event: ex.event, fx: ex.fx, move: ex.move, invuln: o.invuln || undefined });
-  const r = { dur: o.recovery || 8, pose: st.r };
+  const r: Frame = { dur: o.recovery || 8, pose: st.r };
   if (o.cancel !== false) r.cancel = o.cancel || 'attack';
   if (o.moveRecover) r.move = o.moveRecover;
   frames.push(r);
@@ -106,7 +107,7 @@ export function strike(o) {
  * Base animation set every fighter needs (idle walk run jump fall land hurt hurtAir knockdown lying getup dead win dodge taunt grab grabHold grabHit throw throwBack).
  * `carry` is the partial pose of the resting weapon arm, e.g. { armR: [30, 30], weapon: -100 }.
  */
-export function makeBaseAnims(carry = {}) {
+export function makeBaseAnims(carry: PoseSpec = {}) {
   const c = carry, c2 = { ...c, armR: c.armR ? [c.armR[0] + 4, c.armR[1] + 4] : [24, 14] };
   return {
     idle: { loop: true, frames: [

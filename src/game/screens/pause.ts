@@ -12,6 +12,24 @@ import { drawText, drawTextOutlined } from '../../engine/text.ts';
 import { rrect, rivetLine, gear } from '../../lib/art/shapes.ts';
 import { dropInChar, joinHint } from '../party.ts';
 import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.ts';
+// Type-only, every one of them: `import type` is erased by tsc, esbuild and node alike, so none of these
+// adds an edge to the module graph the browser loads (the note at the top of screens/gameplay.ts).
+import type { Game, ScreenParams } from '../game.ts';
+import type { GameplayScreen } from './gameplay.ts';
+import type { input as inputService } from '../../engine/input.ts';
+
+/** The engine/input.js singleton, as every screen reaches it (`this.game.input`). */
+type Input = typeof inputService;
+
+/**
+ * The screen this plate was pushed over, as the two rows that reach past the plate use it: the drop-in
+ * (addSlot) and the MOVES row. The stack holds a plain `Screen`, and the four members below are
+ * GameplayScreen's -- optional here because BOTH call sites already guard for a screen that has none of
+ * them (`typeof gp.addPlayer !== 'function'`, `gp && gp.players`). Those guards are the contract; this
+ * type only names what they guard for, and must never be narrowed to the point where one of them reads
+ * as redundant and is deleted.
+ */
+export type PausedScreen = Screen & Partial<Pick<GameplayScreen, 'players' | 'addPlayer' | 'maxPlayers' | 'hud'>>;
 
 // MOVES and COMMANDS are hidden under netplay (ITEMS_ONLINE): a screen-stack divergence between peers
 // must be impossible by construction (docs/MULTIPLAYER.md), and both are local-only overlays like OPTIONS.
@@ -23,7 +41,7 @@ const PLATE_W = 240, PLATE_BASE_H = 84, ROW_H = 16, PLATE_Y = 104;
 
 /** Draw a titled brass plate (rrect frame, rivet lines, two idle gears, outlined title). Shared by
  *  every plate-style overlay: pause, trainpause, trials, moves (issue #22). */
-export function drawPlate(ctx, x, y, w, h, f, title) {
+export function drawPlate(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, f: number, title: string): void {
   rrect(ctx, x, y, w, h, 8, 'rgba(30,20,26,0.96)', UI.brass, 2);
   rrect(ctx, x + 4, y + 4, w - 8, h - 8, 6, null, UI.brassDark, 1);
   rivetLine(ctx, x + 12, y + 9, x + w - 12, y + 9, 10, 2, UI.brass);
@@ -33,7 +51,7 @@ export function drawPlate(ctx, x, y, w, h, f, title) {
 }
 /** Draw one centred row per label; the selected row gets the spinning-gear marker. Shared by every
  *  plate-style overlay (issue #22): `rows` are already-built display strings, so draw() allocates nothing. */
-export function drawMenuRows(ctx, rows, cursor, y0, f, pitch = 16) {
+export function drawMenuRows(ctx: CanvasRenderingContext2D, rows: string[], cursor: number, y0: number, f: number, pitch: number = 16): void {
   for (let i = 0; i < rows.length; i++) {
     const sel = i === cursor, yy = y0 + i * pitch, label = rows[i];
     if (sel) gear(ctx, VIEW_W / 2 - (label.length * 6) / 2 - 12, yy + 4, 5, 6, UI.brass, '#3a2010', 1, f * 0.05, 1.5);
@@ -41,15 +59,37 @@ export function drawMenuRows(ctx, rows, cursor, y0, f, pitch = 16) {
   }
 }
 /** A resume / confirm press must not leak into gameplay through the input buffer as an attack / jump / etc. */
-export function consumeMenuBuffers(input) {
+export function consumeMenuBuffers(input: Input): void {
   for (let p = 0; p < input.playerCount; p++) for (const a of ['attack', 'jump', 'special', 'super', 'dodge', 'taunt']) input.consume(p, a);
 }
 
 /** Pause overlay. Escape (or jump / dodge) resumes; CONFIRM -- ENTER or attack -- picks the highlighted
  *  row, which on the RESUME row it opens on is the same thing (game/menuinput.js owns that scheme). */
 export class PauseScreen extends Screen {
-  constructor(game) { super(game, 'pause'); this.transparent = true; }
-  enter(params) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022
+  // defines them before the constructor body runs), which is a runtime change. Same reasoning, and the
+  // same wording, as game/entity.ts's Entity.
+  declare cursor: number;
+  /** A match is live: the row list is the shorter ITEMS_ONLINE and Escape is not read locally. */
+  declare online: boolean;
+  /** The rows themselves (ITEMS_LOCAL / ITEMS_ONLINE); `labels` is what is actually drawn. */
+  declare items: string[];
+  /** The `input.joinState()` the drop-in hint was built for; -1 before the first update(). */
+  declare joinKey: number;
+  /** The composite drop-in hint (two lines, '\n'-separated), or '' when no slot is free. */
+  declare hint: string;
+  /** `items` with the MUTE row's value folded in; rebuilt only when the mute state changes. */
+  declare labels: string[];
+  /** The mute state `labels` was built for. Seeded null -- which never equals a live value -- so the
+   *  first update() always rebuilds. */
+  declare muted: boolean | null;
+  /** The control hint, and the `input.bindingsVersion` it was built from. */
+  declare keysHint: string;
+  declare hintVersion: number;
+
+  constructor(game: Game) { super(game, 'pause'); this.transparent = true; }
+  override enter(params: ScreenParams): void {
     super.enter(params);
     this.cursor = 0;
     this.online = !!(this.game.net && this.game.net.active);
@@ -58,7 +98,7 @@ export class PauseScreen extends Screen {
     this.labels = this.items.slice(); this.muted = null; // forces one rebuild below
     this.keysHint = ''; this.hintVersion = -1;           // ditto: rebuilt on the first update() below
   }
-  update() {
+  override update(): void {
     super.update();
     const inp = this.game.input, audio = this.game.audio, online = this.online;
     if (this.muted !== audio.muted) {
@@ -94,7 +134,7 @@ export class PauseScreen extends Screen {
         else if (item === 'COMMANDS') { audio.play('menu_confirm'); this.game.push('help'); return; }
         else if (item === 'MOVES') {
           audio.play('menu_confirm');
-          const gp = this.game.screens[this.game.screens.length - 2];
+          const gp = this.game.screens[this.game.screens.length - 2] as PausedScreen;
           this.game.push('moves', { chars: gp && gp.players ? gp.players.filter(Boolean).map((p) => this.game.characters.indexOf(p.def)) : [0] });
           return;
         }
@@ -104,15 +144,15 @@ export class PauseScreen extends Screen {
     if (resume) { audio.play('unpause'); this.consumeBuffers(); this.game.pop(); }
   }
   /** The RESUME press must not leak into gameplay through the input buffer as an attack / jump. */
-  consumeBuffers() { consumeMenuBuffers(this.game.input); }
+  consumeBuffers(): void { consumeMenuBuffers(this.game.input); }
   /** Drop-in from the pause overlay: adds the player to the GameplayScreen underneath (games.screens[-2]). */
-  addSlot(slot) {
-    const gp = this.game.screens[this.game.screens.length - 2];
+  addSlot(slot: number): void {
+    const gp = this.game.screens[this.game.screens.length - 2] as PausedScreen;
     if (!gp || typeof gp.addPlayer !== 'function' || !gp.players || gp.players[slot] || gp.players.filter(Boolean).length >= gp.maxPlayers()) return;
     gp.addPlayer(dropInChar(this.game.options, this.game.characters, slot), slot);
     if (gp.hud && gp.hud.showBanner) gp.hud.showBanner(`P${slot + 1} JOINS!`, '', 60);
   }
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     // A composite hint with both a keyboard and a pad-only part is two lines ('\n', see party.js) --
     // the plate grows by one row per extra line so the second line still sits inside the brass frame

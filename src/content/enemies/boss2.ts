@@ -50,7 +50,8 @@ const GOLD = '#D8AE52', GOLD_DK = '#8A6A26', COAT = '#253A72', COAT_DK = '#22316
 const SASH = '#C0392F';
 /** The cape lining is the same red one value down, so the cape reads off the coat without being a rank mark. */
 const LINING = '#8E2F38';
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
+const hit = (damage: number, type: HitType, kbX: number, kbY: number, hitstun: number, extra?: Partial<Hitbox>): Partial<Hitbox> =>
+  ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
 
 // ---------------------------------------------------------------- phase 1: the Admiral
 /** Bicorne worn athwart — the widest thing on the bridge — with a gold cord, a cockade and the Wing's badge. */

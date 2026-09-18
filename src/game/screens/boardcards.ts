@@ -17,8 +17,31 @@ export const PLAQUE_H = 100;
 
 export const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
+/**
+ * What `rowMetrics` takes. Every field is optional because the options object itself is (`= {}`), which is how the
+ * signature was already written -- `minW` and `viewW` are the two that carry a default of their own.
+ */
+export interface RowMetricsOpts {
+  /** Widest a card may be drawn. */
+  maxW?: number;
+  /** Gap between neighbouring cards, in px. */
+  gap?: number;
+  /** Total horizontal room the row leaves for itself either side, in px. */
+  pad?: number;
+  /** Narrowest a card may shrink to before the row runs wider than `viewW` instead. */
+  minW?: number;
+  viewW?: number;
+}
+
+/** What `rowMetrics` returns: the card width it settled on, the gap it was given, and the row's left edge. */
+export interface RowMetrics {
+  w: number;
+  gap: number;
+  x0: number;
+}
+
 /** One centred row of `n` cards: they shrink as boards are added rather than overflowing the view. */
-export function rowMetrics(n, { maxW, gap, pad, minW = 96, viewW = VIEW_W } = {}) {
+export function rowMetrics(n: number, { maxW, gap, pad, minW = 96, viewW = VIEW_W }: RowMetricsOpts = {}): RowMetrics {
   const w = Math.max(minW, Math.min(maxW, Math.floor((viewW - pad - (n - 1) * gap) / Math.max(1, n))));
   return { w, gap, x0: Math.round((viewW - (n * w + (n - 1) * gap)) / 2) };
 }
@@ -36,11 +59,26 @@ export function wrapText(text, maxW, size = 1) {
 }
 
 /**
+ * What `drawBoardPlaque` takes. Every field is optional because the options object itself is (`= {}`), and
+ * each carries the default the signature already spelled out.
+ */
+export interface BoardPlaqueOpts {
+  /** This is the chosen plaque: brighter frame, and it lifts and bobs unless `bob` says otherwise. */
+  sel?: boolean;
+  /** Colour of the cursor chevrons, or null to draw none. The lobby passes P1's white. */
+  cursor?: string | null;
+  /** Frames left of the "sealed board" refusal shake; 0 = not shaking. */
+  deny?: number;
+  /** Let the chosen plaque bob. False pins it still for a row that is already moving. */
+  bob?: boolean;
+}
+
+/**
  * A compact board plaque, sized for a row that shares the screen with something else. `board` is
  * `{ stage, index, unlocked, record, prev }` - the same shape BOARD SELECT builds.
  * @param {{ sel?: boolean, cursor?: string|null, deny?: number, bob?: boolean }} [o]
  */
-export function drawBoardPlaque(ctx, board, x, y, w, h, f, o = {}) {
+export function drawBoardPlaque(ctx, board, x, y, w, h, f, o: BoardPlaqueOpts = {}) {
   const { sel = false, cursor = null, deny = 0, bob = true } = o;
   const st = board.stage, sealed = !board.unlocked;
   const frameCol = sealed ? '#6a6a72' : sel ? UI.brassLight : UI.brass;
@@ -313,8 +351,22 @@ export function drawHatchDoors(ctx, x, y, w, h, k) {
   }
 }
 
+/** What `drawPadlock` takes; every field optional, like the options object itself. */
+export interface PadlockOpts {
+  /** Frame counter driving the idle breathing scale, or null to hold the lock still. */
+  breathe?: number | null;
+  /** 0..1: how far the shackle is bowed before it snaps. Also whitens the steel past 0.6. */
+  strain?: number;
+  /** Draw the lock already snapped, shackle sprung. */
+  open?: boolean;
+  /** Tumble angle in radians, for the snapped lock falling away. */
+  rot?: number;
+  /** 0..1, multiplied into the current globalAlpha so the lock can fade as it falls. */
+  alpha?: number;
+}
+
 /** A brass padlock. `strain` bows the shackle before it breaks; `open` draws it snapped, `rot`/`alpha` tumble it. */
-export function drawPadlock(ctx, cx, cy, opts = {}) {
+export function drawPadlock(ctx, cx, cy, opts: PadlockOpts = {}) {
   const { breathe = null, strain = 0, open = false, rot = 0, alpha = 1 } = opts;
   ctx.save();
   if (alpha < 1) ctx.globalAlpha *= alpha;

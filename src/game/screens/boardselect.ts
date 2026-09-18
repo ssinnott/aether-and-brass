@@ -19,6 +19,11 @@ import { progress } from '../progress.ts';
 import { DEFAULT_PREVIEW, clamp01, rowMetrics, wrapText, drawVignette, drawLockHatch, drawHatchDoors, drawPadlock } from './boardcards.ts';
 import { input } from '../../engine/input.ts';
 import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.ts';
+// Type-only: this screen reaches down for the shapes it works in rather than adding a module edge, the same
+// arrangement (and for the same reason) as the block at the top of game/screens/gameplay.ts. `import type` is
+// erased by tsc, esbuild and node alike.
+import type { Game, ScreenParams, ScreenSummary } from '../game.ts';
+import type { RowMetrics } from './boardcards.ts';
 
 const CARD_Y = 46, CARD_H = 196, GAP = 24, CARD_W_MAX = 200, ROW_PAD = 60;
 const ART_X = 9, ART_Y = 26, ART_H = 78;
@@ -31,10 +36,78 @@ const RV_SKIPPABLE = 12;
 /** Glyphs the resolving name flickers through (all present in the 5x7 font). */
 const SCRAMBLE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
+/**
+ * A board as a PLAQUE reads one, which is a much smaller thing than the board the stage runner reads: an id, a
+ * name, and the screen-facing extras below.
+ *
+ * Deliberately not game/stage.ts's `StageData`. A content stage literal is not assignable to it today -- a
+ * section's `hazards[].type` is authored as a plain `string` rather than a `HazardType`, so the whole board fails
+ * the check -- and pinning it here would report that widening against THIS line rather than against the board
+ * that widened it, which is where it belongs. Same arrangement, and the same reasoning, as game/game.ts's
+ * `RegistryEntry`. (game/screens/gameplay.ts escapes it only because its stage arrives through `params`, as
+ * `any`.)
+ */
+export interface BoardStage {
+  id: string;
+  name: string;
+  /**
+   * Everything else a plaque draws rides along here rather than being named: `number` (stage 1 carries none and
+   * falls back to its index, which is what `stage.number || i + 1` below is), `subtitle`, `preview` -- whose own
+   * `blurb` is per-board and absent from DEFAULT_PREVIEW -- and `sections`, of which only the count is read.
+   */
+  [key: string]: any;
+}
+
+/**
+ * One board's plaque, in the shape screens/boardcards.ts draws one. The online lobby builds the same shape at
+ * lobby size (screens/lobby.ts `BoardEntry`), which is what that file's header means by "the same shape BOARD
+ * SELECT builds".
+ */
+export interface BoardEntry {
+  stage: BoardStage;
+  index: number;
+  /** Open in the ACTIVE SCOPE (game/progress.ts), not to whoever happens to be at the keyboard. */
+  unlocked: boolean;
+  /**
+   * The clear record for this board, or null. `ReturnType` rather than a shape of its own: game/progress.ts owns
+   * what a record is, and this tightens by itself the day that file declares it.
+   */
+  record: ReturnType<typeof progress.record>;
+  /** The board whose clear opens this one; null for board 1. Kept even once this one IS open, so a reveal can
+   *  still show the note the plaque used to carry. */
+  prev: BoardStage | null;
+}
+
+/** The unlock flourish: which plaque is opening, how far into it we are, and the jolt it is under. */
+export interface Reveal {
+  /** Index into `boards`. */
+  index: number;
+  /** Frames since the flourish started; every RV_* mark is read off it. */
+  t: number;
+  /** Frames left on the shake the rattle / snap / stamp kicked off. */
+  shake: number;
+}
+
 /** Board select screen. Left/right picks a board, attack/start confirms, dodge returns to the title. */
 export class BoardSelectScreen extends Screen {
-  constructor(game) { super(game, 'boardselect'); }
-  enter(params) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are assignments
+  // and nothing else: a plain field declaration would emit a class field per name (es2022 defines them before the
+  // constructor body runs), which is a runtime change. Same reasoning, and the same wording, as game/entity.ts.
+  declare boards: BoardEntry[];
+  /** The board this run just opened, while its plaque is opening on camera; null the rest of the time. */
+  declare reveal: Reveal | null;
+  declare hint: string;
+  /** Index into `boards` of the highlighted plaque. */
+  declare cursor: number;
+  /** Frames left on the refusal buzz after confirming a sealed board. */
+  declare deny: number;
+  /** Frames since the board was confirmed; -1 until it is. */
+  declare confirm: number;
+  /** The screen has handed off and stops reading input. */
+  declare leaving: boolean;
+
+  constructor(game: Game) { super(game, 'boardselect'); }
+  override enter(params: ScreenParams): void {
     super.enter(params);
     this.boards = STAGES.map((stage, i) => ({
       stage, index: i,
@@ -57,18 +130,18 @@ export class BoardSelectScreen extends Screen {
     particles.clear();
   }
   /** Index of the last board that is open (0 when none beyond the first). */
-  lastUnlocked() { let n = 0; for (let i = 0; i < this.boards.length; i++) if (this.boards[i].unlocked) n = i; return n; }
-  get board() { return this.boards[this.cursor]; }
+  lastUnlocked(): number { let n = 0; for (let i = 0; i < this.boards.length; i++) if (this.boards[i].unlocked) n = i; return n; }
+  get board(): BoardEntry { return this.boards[this.cursor]; }
   /** Card geometry: one centred row, cards shrink as boards are added rather than overflowing the view. */
-  get metrics() { return rowMetrics(this.boards.length, { maxW: CARD_W_MAX, gap: GAP, pad: ROW_PAD }); }
-  cardX(i) { const m = this.metrics; return m.x0 + i * (m.w + GAP); }
+  get metrics(): RowMetrics { return rowMetrics(this.boards.length, { maxW: CARD_W_MAX, gap: GAP, pad: ROW_PAD }); }
+  cardX(i: number): number { const m = this.metrics; return m.x0 + i * (m.w + GAP); }
   /** How far this board's hatch has opened: 0 sealed, 1 fully open. */
-  peelOf(i) {
+  peelOf(i: number): number {
     const b = this.boards[i], rv = this.reveal;
     if (rv && rv.index === i) return clamp01((rv.t - RV_PEEL) / RV.peel);
     return b.unlocked ? 1 : 0;
   }
-  update() {
+  override update(): void {
     super.update();
     const inp = this.game.input, audio = this.game.audio;
     if (this.deny > 0) this.deny--;
@@ -97,7 +170,7 @@ export class BoardSelectScreen extends Screen {
     }
   }
   /** Drive the unlock reveal one frame: rattle, snap, the doors retracting, the name resolving, the stamp. */
-  tickReveal() {
+  tickReveal(): void {
     const r = this.reveal, audio = this.game.audio, inp = this.game.input;
     const prev = r.t;
     r.t++;
@@ -133,12 +206,12 @@ export class BoardSelectScreen extends Screen {
     if (r.t >= RV_END) this.endReveal();
   }
   /** Leave the reveal for the normal interactive selector, however it ended. */
-  endReveal() {
+  endReveal(): void {
     this.reveal = null;
     this.game.audio.music.play('title');
   }
   /** Confirm the highlighted board, or buzz and shake it when it is still locked. */
-  pick() {
+  pick(): void {
     const b = this.board;
     if (!b) return;
     if (!b.unlocked) { this.deny = DENY_FRAMES; this.game.audio.play('menu_back'); return; }
@@ -148,14 +221,14 @@ export class BoardSelectScreen extends Screen {
     for (let i = 0; i < 18; i++) particles.spawn('spark', x, CARD_Y + CARD_H / 2, 0, { screen: true, vx: (i % 6 - 2.5) * 1.6, vy: -1.5 - (i % 4), life: 26 });
   }
   /** Test / debug hook: what the screen is showing, per board. */
-  summary() {
+  override summary(): ScreenSummary {
     return {
       screen: 'boardselect', cursor: this.cursor,
       revealing: !!this.reveal, revealIndex: this.reveal ? this.reveal.index : -1,
       boards: this.boards.map((b) => ({ id: b.stage.id, name: b.stage.name, unlocked: b.unlocked, cleared: !!b.record })),
     };
   }
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     const f = this.frame, rv = this.reveal;
     ctx.fillStyle = '#1c1420'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     // the snap kicks the whole screen
@@ -183,7 +256,7 @@ export class BoardSelectScreen extends Screen {
     ctx.restore();
   }
   /** One board plaque: brass frame, vignette (or padlock plate), stage number, name and clear stamp. */
-  drawCard(ctx, i, x, y, w, f) {
+  drawCard(ctx: CanvasRenderingContext2D, i: number, x: number, y: number, w: number, f: number): void {
     const b = this.boards[i], sel = i === this.cursor;
     const rv = this.reveal && this.reveal.index === i ? this.reveal : null;
     const peel = this.peelOf(i), sealed = peel <= 0;
@@ -256,7 +329,7 @@ export class BoardSelectScreen extends Screen {
     }
   }
   /** The padlock on a sealed plaque: still, rattling itself apart, or tumbling off once it has snapped. */
-  drawRevealPadlock(ctx, x, y, w, h, rv, f) {
+  drawRevealPadlock(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, rv: Reveal | null, f: number): void {
     const cx = x + w / 2, cy = y + h / 2 + 4;
     if (!rv) { drawPadlock(ctx, cx, cy, { breathe: f }); return; }
     if (rv.t >= RV_SNAP) {
@@ -269,7 +342,7 @@ export class BoardSelectScreen extends Screen {
     drawPadlock(ctx, cx + Math.round(Math.sin(rv.t * 2.4) * k * 3), cy, { breathe: f, strain: k });
   }
   /** Subtitle / lock explanation for the highlighted board plus the control legend, or the reveal's stamp. */
-  drawFooter(ctx, f) {
+  drawFooter(ctx: CanvasRenderingContext2D, f: number): void {
     const rv = this.reveal, b = this.board;
     if (rv) {
       const stage = this.boards[rv.index].stage;
@@ -303,7 +376,7 @@ export class BoardSelectScreen extends Screen {
  * A board name resolving out of noise: characters lock in left to right, the rest flicker through SCRAMBLE.
  * Spaces are preserved and the length never changes, so the wrap stays put while it resolves.
  */
-function scrambleName(name, k, f) {
+function scrambleName(name: string, k: number, f: number): string {
   const chars = String(name).split('');
   const settled = Math.floor(k * chars.length * 1.12);
   return chars.map((c, i) => {

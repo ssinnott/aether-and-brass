@@ -26,6 +26,11 @@ import { options } from '../options.ts';
 import { joinHint } from '../party.ts';
 import { confirmPressed } from '../menuinput.ts';
 import { links } from '../../engine/links.ts';
+// Type-only: this screen reaches down for the shapes it works in rather than adding a module edge, the same
+// arrangement (and for the same reason) as the block at the top of game/screens/gameplay.ts. `import type` is
+// erased by tsc, esbuild and node alike.
+import type { Game, ScreenParams, ScreenSummary, RegistryEntry } from '../game.ts';
+import type { Rig } from '../../lib/art/rig.ts';
 
 // A remapped legend line is centred at x=320 and must not clip the view; 16px clears the side gutter.
 const LEGEND_MAX_W = VIEW_W - 16;
@@ -71,12 +76,69 @@ const STACKS = [[196, 206], [372, 210], [566, 222]];
 const HERO_X = [96, 184, 456, 544], HERO_Y = 300;
 const GEAR_CX = 320, GEAR_CY = 300, GEAR_R = 140;
 
+/** One hero idling on the gear: the rig, the animation playing on it, and the def both were built from. */
+export interface TitleHero {
+  rig: Rig;
+  anim: AnimPlayer;
+  def: RegistryEntry;
+}
+
+/**
+ * The "P2 JOINED!" flash on the walkway, which briefly overrides the composite hint for the still-free slots.
+ * Null while nothing has joined this visit.
+ */
+export interface JoinFlash {
+  /** The slot that joined; the flash is drawn in that slot's colour. */
+  slot: number;
+  /** Frames left, counted down by update(). */
+  t: number;
+  text: string;
+}
+
+/**
+ * The controls legend lines, rebuilt from the live bindings by refreshLegends() because every one of them names
+ * keys and keys are rebindable. `solo` and `p1` are the same nine keys under two labels; `coop` is P2's block
+ * advertised while nobody holds it and `p2` the same block once somebody does.
+ */
+export interface TitleLegends {
+  solo: string;
+  p1: string;
+  p2: string;
+  coop: string;
+  /** The fixed footer. Global keys are not remappable, so ESC / M stay literal in it. */
+  foot: string;
+}
+
 /** Title screen. CONFIRM -- ENTER or attack -- picks the menu item (game/menuinput.js owns that scheme,
  *  so `jump` is BACK here as it is everywhere else, not a third confirm key); any slot's own keys/pad
  *  join at any time. */
 export class TitleScreen extends Screen {
-  constructor(game) { super(game, 'title'); }
-  enter(params) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are assignments
+  // and nothing else: a plain field declaration would emit a class field per name (es2022 defines them before the
+  // constructor body runs), which is a runtime change. Same reasoning, and the same wording, as game/entity.ts.
+  /** The highlighted MENU row. */
+  declare cursor: number;
+  declare joinFlash: JoinFlash | null;
+  /** The `joinState()` mask `hint` was built for; -1 until the first build. */
+  declare joinKey: number;
+  /** The drop-in hint for the still-free slots. */
+  declare hint: string;
+  /** A row has handed off and the menu stops reading input. */
+  declare starting: boolean;
+  /** What following the SOURCE CODE link did, and how many frames the answer has left. */
+  declare notice: string;
+  declare noticeTimer: number;
+  /** The four heroes on the walkway, in registry order (at most four fit). */
+  declare heroes: TitleHero[];
+  /** Bestiary completion on the BESTIARY row: the percentage as drawn, and whether the book is full. */
+  declare bookPct: string;
+  declare bookFull: boolean;
+  declare legends: TitleLegends;
+  /** The `input.bindingsVersion` `legends` was built from; a change rebuilds them (see update()). */
+  declare legendVersion: number;
+
+  constructor(game: Game) { super(game, 'title'); }
+  override enter(params: ScreenParams): void {
     super.enter(params);
     this.game.audio.music.play('title');
     particles.clear();
@@ -104,10 +166,10 @@ export class TitleScreen extends Screen {
     this.bookFull = book.seen === book.total && book.total > 0;
   }
   /** The address stops being clickable the moment the title leaves the stack. */
-  exit() { links.clearZone(); }
+  override exit(): void { links.clearZone(); }
   /** Report what following the SOURCE CODE link actually did. Called from the row and from a click.
    *  @param {boolean} opened */
-  linkNotice(opened) {
+  linkNotice(opened: boolean): void {
     this.notice = opened ? LINK_OPENED : LINK_BLOCKED;
     this.noticeTimer = NOTICE_FRAMES;
     this.game.audio.play(opened ? 'menu_confirm' : 'menu_back');
@@ -117,7 +179,7 @@ export class TitleScreen extends Screen {
    * so the version check below is what picks up a remap); draw() itself allocates nothing new.
    * Remapping several actions to long-label keys (e.g. "L SHIFT", "NUM ENTER") can push a centred
    * line past the view width, so each line is fit to `LEGEND_MAX_W` before it is stored. */
-  refreshLegends() {
+  refreshLegends(): void {
     const inp = this.game.input;
     this.legends = {
       solo: fitLegend('1P  ' + inp.legend('p1')),
@@ -128,7 +190,7 @@ export class TitleScreen extends Screen {
     };
     this.legendVersion = inp.bindingsVersion;
   }
-  update() {
+  override update(): void {
     super.update();
     const inp = this.game.input, audio = this.game.audio;
     if (this.legendVersion !== inp.bindingsVersion) this.refreshLegends();
@@ -155,7 +217,7 @@ export class TitleScreen extends Screen {
       if (confirmPressed(inp, p)) { this.activate(this.cursor); return; }
     }
   }
-  activate(i) {
+  activate(i: number): void {
     const audio = this.game.audio;
     if (i === I_START) {
       this.starting = true;
@@ -182,7 +244,7 @@ export class TitleScreen extends Screen {
       this.linkNotice(links.open(REPO_URL));
     } else if (i === I_OPTIONS) { audio.play('menu_confirm'); this.game.push('options'); }
   }
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     const f = this.frame;
     // sky + moon
     const g = ctx.createLinearGradient(0, 0, 0, VIEW_H);
@@ -278,7 +340,7 @@ export class TitleScreen extends Screen {
     ctx.fillStyle = linkColor;
     ctx.fillRect(LINK_X, LINK_RULE_Y, LINK_W, 1);
   }
-  summary() {
+  override summary(): ScreenSummary {
     return {
       screen: 'title', cursor: this.cursor, rows: MENU.length, row: MENU[this.cursor],
       link: REPO_URL, linkLabel: REPO_LABEL, linkZone: LINK_ZONE, notice: this.noticeTimer > 0 ? this.notice : '',
@@ -286,7 +348,7 @@ export class TitleScreen extends Screen {
   }
 }
 
-function drawTextWidth(s) { return s.length * 6 - 1; }
+function drawTextWidth(s: string): number { return s.length * 6 - 1; }
 /**
  * Fit a legend line to `LEGEND_MAX_W`: first try `fallback` (e.g. the same line without the
  * "CO-OP " prefix) if it is narrower and given, then collapse double spaces to single, then hard
@@ -296,7 +358,7 @@ function drawTextWidth(s) { return s.length * 6 - 1; }
  * @param {string} [fallback]
  * @returns {string}
  */
-function fitLegend(s, fallback) {
+function fitLegend(s: string, fallback?: string): string {
   if (measureText(s, 1) <= LEGEND_MAX_W) return s;
   if (fallback && measureText(fallback, 1) <= LEGEND_MAX_W) return fallback;
   let out = (fallback || s).replace(/ {2,}/g, ' ');
@@ -305,7 +367,7 @@ function fitLegend(s, fallback) {
   return out + '...';
 }
 /** Chunky bevelled brass lettering: dark outline, highlight pass offset up-left, base fill on top. */
-function bevelText(ctx, text, x, y, size, base, hi) {
+function bevelText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, base: string, hi: string): void {
   drawTextOutlined(ctx, text, x, y, { size, color: '#6a4014', outline: '#2a1408', thickness: 2, align: 'center' });
   drawText(ctx, text, x - 2, y - 2, { size, color: hi, align: 'center', shadow: false });
   drawText(ctx, text, x - 1, y - 1, { size, color: base, align: 'center', shadow: false });

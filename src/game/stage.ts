@@ -7,6 +7,7 @@ import { createBackdrop, backdropsReady } from '../art/backgrounds/index.ts';
 import { Prop } from './items.ts';
 import { Hazard } from './hazards.ts';
 import { Zone, ZoneFlash } from './zones.ts';
+import type { ZoneSpec, ZoneFlashSpec } from './zones.ts';
 import { Transition, drawSpotlight, VictorySpectacle } from './transitions.ts';
 import { entranceFor, entranceLanding, EntranceTell, teleportShove } from './entrances.ts';
 import { createPlatform } from './platforms.ts';
@@ -22,6 +23,16 @@ import { audio } from '../engine/audio.ts';
 import { particles } from '../engine/particles.ts';
 import { floatText } from '../art/fx.ts';
 import { ease } from '../lib/art/poses.ts';
+// Type-only, every one of them, and they have to stay that way: this module sits at the top of the game layer and
+// reaches DOWN for the shapes it works in. `import type` is erased by tsc, esbuild and node alike, so none of these
+// adds an edge to the module graph the browser loads.
+import type { Entity, EntityWorld } from './entity.ts';
+import type { Player } from './player.ts';
+import type { Fighter, FighterDef } from './fighter.ts';
+import type { Game } from './game.ts';
+import type { ArenaCamera, Enemy, EnemyOpts, Entrance } from './enemy.ts';
+import type { ForcePhase, HazardPhase, HazardSpec, Obstacle } from './hazards.ts';
+import type { Platform } from './platforms.ts';
 
 const SPAWN_MARGIN = 50;
 const GO_FRAMES = 150;
@@ -60,14 +71,608 @@ const CINEMA_H = VIEW_H - (FLOOR_TOP + Z_MAX);
 /** Frames the bars take to slide in, and the same again to slide back out. */
 const CINEMA_SLIDE = 18;
 
+// ------------------------------------------------------------------------------------------------------------------
+// The shapes this file works in.
+//
+// Two kinds. The STAGE DATA shapes -- StageData and everything under it -- are the format ARCHITECTURE.md section 7
+// documents in prose, written down; content/stage/*.ts is authored against them and nothing else declares them. The
+// COLLABORATOR shapes -- StageWorld, StageHud, StageScreen -- are the parts of game/world.ts, game/hud.ts and the
+// gameplay screen the runner touches, declared structurally for the reason game/entity.ts gives for EntityWorld:
+// the screen imports this module and the World holds the runner itself (`world.stage`), so the dependency must not
+// run back the other way.
+//
+// Where an interface EXTENDS a class from a module that has not been typed yet -- Transition, EventRunner, Platform,
+// Actor -- what it adds are the fields that class's constructor assigns without declaring. Those are not on its
+// instance type, and an OPTIONAL member here is what keeps the class assignable to the interface; every one of them
+// is in fact always present at runtime. When that module is typed, tsc reports the clash against the lines below,
+// which is exactly where they should then be deleted.
+// ------------------------------------------------------------------------------------------------------------------
+
+/** Where a boss fight has got to. The mid-boss and the boss each run one of these. */
+export type BossState = 'none' | 'active' | 'done';
+
+/** One `spawns` entry (ARCHITECTURE.md section 7): which unit, where it comes in from, and when. */
+export interface SpawnSpec {
+  type: string;
+  variant?: string;
+  /** Which edge of the lock it walks in from; 'sky' comes through the roof. Alternates by index when absent. */
+  side?: 'left' | 'right' | 'sky';
+  /** Floor depth, clamped to 10..130. 70 when absent. */
+  z?: number;
+  /** Frames after the wave starts. */
+  delay?: number;
+  /** sky: px from the centre of the lock. */
+  dx?: number;
+  /** sky: the camera shake it lands with (8 through the roof, capped at 3 for a `winged` bladder). */
+  shake?: number;
+  /** Spawn modifiers (game/traits.ts SPAWN_MODS), applied to the def before the rig is built. */
+  mods?: SpawnModName[];
+  /**
+   * An authored arrival (issue #30). The vocabulary is game/entrances.ts's — it resolves the `kind` against its
+   * ENTRANCES table and patches the row with whatever else the spec carries — so only `kind` is named here.
+   */
+  entrance?: { kind: string; [key: string]: any };
+}
+
+/** One wave: `spawns` is queued when the party reaches `triggerX`, and the camera locks behind them. */
+export interface WaveSpec {
+  /**
+   * Trigger position: the camera centre, or the furthest living player when the camera is pinned at the stage end.
+   * Absent on the ad-hoc wave an event's `spawn` action starts, which has no trigger position at all (eventSpawn).
+   */
+  triggerX?: number;
+  /** false = run the wave without locking the camera. */
+  lock?: boolean;
+  spawns?: SpawnSpec[];
+  /** A second list, queued once the wave is down to `whenRemaining` bodies. Only the first entry is read. */
+  reinforcements?: Array<{ whenRemaining?: number; spawns?: SpawnSpec[] }>;
+  /** Trigger latch, written by the runner in start() and checkTriggers. Never authored. */
+  _state?: 'idle' | 'done';
+}
+
+/** A locked section's wave: it fires `at` seconds after the section opened, or as soon as the previous one clears. */
+export interface TimedWave extends WaveSpec {
+  /** Seconds since the section was entered. */
+  at?: number;
+  banner?: string;
+  sub?: string;
+}
+
+/** One `props` row. The five fields the runner reads are named; the rest is game/items.ts's vocabulary. */
+export interface PropSpec {
+  type: string;
+  x: number;
+  z?: number;
+  /** A pickup id, a list of them, or null for nothing. game/items.ts owns the ids themselves. */
+  drops?: string | string[] | null;
+  hp?: number;
+  /** Every other field of a prop row (name / cargo / throwable / solid / rider / fire ...) is forwarded to the Prop
+   *  as-is, which is what this is for: items.ts owns their meaning and nothing here may pin them down. */
+  [key: string]: any;
+}
+
+/** One `zones` row: an environment rule over a stretch of floor. game/zones.ts owns the vocabulary; the runner
+ *  only ever hands the row to `new Zone`. Now that it declares that vocabulary, this IS that declaration rather
+ *  than a looser second copy of it, and a misspelled zone type is caught in the stage data that wrote it. */
+export type { ZoneSpec };
+
+/** A section's scripted exit (game/transitions.ts). `kind` is the whole of what it does; the rest is dressing. */
+export interface TransitionSpec {
+  kind: 'lift' | 'board' | 'dock' | 'descent';
+  /** Trigger position, when the exit is not simply the end of the section. */
+  atX?: number;
+  /** Where the gate stands (default: the section's x1). */
+  gateX?: number;
+  /** dock: the arrival banner. '' = none, absent = 'FUNICULAR DOCKING'. */
+  banner?: string;
+  /** dock: what the party arrives on. */
+  look?: 'stairs' | 'ladder' | 'door' | 'hoist' | 'none';
+  /** dock: Meat Pies laid on at the far end (default 2; 0 allowed). */
+  pies?: number;
+  /** lift: ride the shaft upward instead of down. */
+  up?: boolean;
+  /** issue #25: the between-section moment played over the ride. */
+  vignette?: Vignette;
+  /** Latch, written by startTransition and by start(): a transition plays once. Never authored. */
+  _done?: boolean;
+}
+
+/** A vignette: cues fired by frame across the whole transition (game/transitions.ts `cues`). */
+export interface Vignette { cues: VignetteCue[]; }
+
+/**
+ * One vignette cue. The vocabulary is deliberately the event runner's — `actor`, `walk`, `caption`, `sfx`,
+ * `camera` — so an author writing a between-section moment writes the same shapes as one writing a mid-board beat.
+ */
+export interface VignetteCue {
+  /** Frames since the transition began. */
+  at: number;
+  actor?: ActorSpec;
+  walk?: WalkSpec;
+  caption?: string;
+  sub?: string;
+  life?: number;
+  sfx?: string;
+  camera?: CameraCue;
+  /** A companion trigger (game/dialogue.ts TRIGGERS). */
+  say?: string;
+}
+
+/** A `camera` action / cue. Shake only — which is why net/checksum.ts can exclude it from the hash outright. */
+export interface CameraCue { shake?: number; frames?: number; }
+
+/**
+ * An `actor` action: one scripted body (game/actors.ts). It names a def from ONE of the two rosters — `def` for an
+ * enemy, `hero` for a character — and the fields after `facing` are the opening leg of its motion queue.
+ */
+export interface ActorSpec {
+  /** What a later `walk` action addresses it by. */
+  id?: string;
+  /** An enemy type slug, resolved through content/enemies. */
+  def?: string;
+  variant?: string;
+  /** A hero id, resolved through content/characters; 'other' is the one the player is not using. */
+  hero?: string;
+  x?: number;
+  /** Floor depth; 70 when absent. */
+  z?: number;
+  /** Vignette cues only: x measured from the left edge of the view, which is the only frame of reference a
+   *  between-section moment has (see vignetteCue). */
+  dx?: number;
+  facing?: number;
+  anim?: string;
+  /** Frames before the actor strikes itself; 0 = it stands until the beat ends. */
+  life?: number;
+  vx?: number;
+  vz?: number;
+  frames?: number;
+  /** Forced facing for the leg, when it is not simply the direction of travel. */
+  face?: number;
+}
+
+/** A `walk` action: replace an actor's motion queue. `id` addresses one actor; without it every actor retargets. */
+export interface WalkSpec { id?: string; vx?: number; vz?: number; frames?: number; anim?: string; face?: number; }
+
+/** A `sign` action: lettering on something standing in the world (game/actors.ts Sign owns the look names). */
+export interface SignSpec {
+  text?: string;
+  sub?: string;
+  x?: number;
+  z?: number;
+  /** Height off the floor the board hangs at (SIGN_LIFT when absent). */
+  y?: number;
+  style?: string;
+  size?: number;
+  color?: string;
+  fade?: number;
+  life?: number;
+}
+
+/** A `say` action, and the options `say` / `saySoon` take: which trigger, who it belongs to, which authored row. */
+export interface SaySpec {
+  /** One of game/dialogue.ts's TRIGGERS. */
+  trigger?: string;
+  /** The hero the moment belongs to, when there is one. */
+  focus?: Player | null;
+  /** The authored row an opening beat names, so board 3 hears board 3's exchange (see Dialogue.index). */
+  row?: number | null;
+}
+
+/** A scheduled exchange: one slot, counted down in update() (saySoon). */
+export interface PendingSay { trigger: string; t: number; focus: Player | null; }
+
+/** A `hazardSet` action: force every hazard tagged `name` into a phase, and/or retime it. */
+export interface HazardSetSpec {
+  /** The author key a placement carries (HazardSpec.name); every hazard sharing it is addressed. */
+  name?: string;
+  /** The phase to hold them in, or null to release them. Absent = leave the phase alone and only retime. */
+  force?: HazardPhase | null;
+  /** Frames the override lasts; absent = until the event ends. */
+  frames?: number;
+  /** New cycle length. `offset` is re-solved with it so the hazard stays at the same fraction of its cycle. */
+  period?: number;
+}
+
+/** What one hazard had before a `hazardSet` override, so hazardRevert can put exactly that back. */
+export interface HazardOverride {
+  h: StageEntity;
+  forcePhase: ForcePhase | null;
+  period: number;
+  offset: number;
+}
+
+/** The token `hazardSet` hands back and `hazardRevert` takes. Null when the action addressed nothing. */
+export interface HazardToken { hazards: HazardOverride[]; }
+
+/** A `zoneFlash` action: a warning patch on the floor BEFORE anything hurts. Re-exported from game/zones.ts for
+ *  the reason `ZoneSpec` above gives: the runner only ever hands the row to `new ZoneFlash`. */
+export type { ZoneFlashSpec };
+
+/**
+ * One action of an event script. The vocabulary is the ACTION TABLE at the top of game/events.ts, which owns it and
+ * dispatches on the key: an entry carries exactly one action, so every field here is optional.
+ */
+export interface EventAction {
+  caption?: string;
+  sub?: string;
+  life?: number;
+  /** The only action that spends time. */
+  wait?: number;
+  camera?: CameraCue;
+  sfx?: string;
+  music?: string;
+  hazardSet?: HazardSetSpec;
+  zoneFlash?: ZoneFlashSpec;
+  spawn?: SpawnSpec[];
+  prop?: PropSpec;
+  actor?: ActorSpec;
+  walk?: WalkSpec;
+  sign?: SignSpec;
+  say?: SaySpec;
+}
+
+/** One scripted mid-board event (issue #33): armed by position or by wave count, then stepped a frame at a time. */
+export interface StageEvent {
+  id?: string;
+  /** Armed when the trigger position passes this. */
+  atX?: number;
+  /** Armed after the section's Nth wave clears (counted within the section, not across the board). */
+  onWaveClear?: number;
+  /** Advisory: the runner latches `_done` either way, so an event never re-arms inside one visit to a section. */
+  once?: boolean;
+  /** A STORY BEAT rather than a mid-board script: scenery, and skipped outright when beats are off (startEvent). */
+  beat?: boolean;
+  /** Hold the wave director — and with it the section — for as long as the script runs. */
+  holdWaves?: boolean;
+  actions?: EventAction[];
+  /** The one-banner shorthand board 1 shipped with, still working: no script, one caption. */
+  kind?: 'text';
+  text?: string;
+  /** `kind: 'text'` only: the banner's subtitle and how long it holds the slot (90 frames when absent). */
+  sub?: string;
+  life?: number;
+  /** Latch, written by clearWave / checkTriggers / start(). Never authored. */
+  _done?: boolean;
+}
+
+/** A board's mid-boss or boss: where it triggers, which def it is, and how the camera frames the fight. */
+export interface BossSpec {
+  /** Trigger position, the same `reach` value the wave triggers use. */
+  atX: number;
+  /** Enemy type slug (content/enemies). */
+  def: string;
+  /** The arena the fight is held in; the final boss also clamps the floor band to it (world.arenaBounds). */
+  arena?: { x0: number; x1: number };
+  /** The camera lock, when it is not the arena itself. */
+  camera?: { x0: number; x1: number };
+  /** Name plate overrides; the boss's own name and `def.subtitle` when absent. */
+  intro?: { name?: string; sub?: string };
+  /** Board 1 only: Vane descends the spiral stair before the fight (game/transitions.ts 'descent'). */
+  descent?: boolean;
+}
+
+/** One section of a board: a stretch of x with its own backdrop, furniture and waves. */
+export interface StageSection {
+  id: string;
+  name?: string;
+  /** The name plate's subtitle. */
+  sub?: string;
+  /** issue #25: the room's own line, which takes the subtitle's place when beats are on. */
+  stinger?: string;
+  x0: number;
+  x1: number;
+  /** art/backgrounds id, which is also the music key when `stage.music` names no track for it. */
+  backdrop: string;
+  floor?: string;
+  /** 'locked' = the camera is pinned to [x0, x1] and the section runs `timedWaves` instead of `waves`. */
+  mode?: 'locked';
+  props?: PropSpec[];
+  hazards?: HazardSpec[];
+  zones?: ZoneSpec[];
+  waves?: WaveSpec[];
+  timedWaves?: TimedWave[];
+  events?: StageEvent[];
+  transition?: TransitionSpec;
+  /** issue #32: the section's moving floor. game/platforms.ts owns the rest of the block's vocabulary. */
+  platform?: { kind: string; [key: string]: any };
+  /** What the backdrop modules read off a section (drift, weather, lights ...): art/backgrounds owns those and
+   *  nothing here may pin them down, the same reasoning as FighterDef's index signature. */
+  [key: string]: any;
+}
+
+/** One board (content/stage/stage1.ts ...). Only what the game layer reads is named; see the index signature. */
+export interface StageData {
+  id?: string;
+  name?: string;
+  /** Total world width in px; the sections tile left to right across it. */
+  length: number;
+  /** backdrop id (and 'midboss' / 'boss') -> music track. */
+  music?: Record<string, string>;
+  sections: StageSection[];
+  midboss?: BossSpec;
+  boss?: BossSpec;
+  /** Per-board banner wording; a board that supplies none keeps stage 1's. */
+  banners?: { midbossDown?: string; clear?: string };
+  /** The board-select vignette, the intro card's text and anything else a board carries for the screens rather
+   *  than for the runner (`preview`, `subtitle`): those screens own them. */
+  [key: string]: any;
+}
+
+/** The camera the runner drives: a wave's lock bounds (ArenaCamera), plus the three calls that move the lock. */
+export interface StageCamera extends ArenaCamera {
+  /** Left-most x the camera may scroll back to; raised when a debug jump starts the party mid-board. */
+  minX: number;
+  lock(x0: number, x1: number): void;
+  unlock(): void;
+  snapTo(x: number): void;
+}
+
+/**
+ * What the runner's scans over `world.entities` read. `Obstacle` (game/hazards.ts) is already the barricade scan's
+ * shape; this adds the per-instance fields a `hazardSet` override saves and writes, and the container fields a
+ * `cargo` spawn climbs out of. Every addition is optional for the same reason Obstacle's own flags are: each scan
+ * tests its flag first, and everything else in the world leaves them undefined.
+ */
+export interface StageEntity extends Entity, Obstacle {
+  /** Hazard: the author key a `hazardSet` action addresses every copy of. Prop: the name a `cargo` spawn asks for. */
+  name?: string;
+  /** Hazard: the scripted phase override, and the cycle hazardSet saves and hazardRevert restores. */
+  forcePhase?: ForcePhase | null;
+  period?: number;
+  offset?: number;
+  /** Prop: 'idle' / 'rolling' while it still stands, anything else while it is coming apart. */
+  state?: string;
+  /** Prop: the units the container tips out (issue #34). */
+  cargo?: SpawnSpec[] | null;
+  releaseCargo?(world: StageWorld, n?: number): number;
+}
+
+/**
+ * A unit the screen spawned for the runner: an Enemy, plus the four members game/boss.ts assigns without declaring
+ * them yet. Optional for the reason given at the top of this block — and honestly so here, because all four are
+ * genuinely absent on the ordinary wave enemies this same type covers.
+ */
+export interface StageUnit extends Enemy {
+  /** Which trigger spawned it. Only a Boss carries one. */
+  bossKind?: 'midboss' | 'boss';
+  /**
+   * The def as authored, BEFORE a phase change merged an override over it: `mergePhase` replaces every non-`ai` key
+   * of `def`, so by phase 2 `def.lines` is whatever that phase happened to carry, which is nothing.
+   */
+  baseDef?: FighterDef & { lines?: BossLines };
+  /** 0-based phase (GDD 5.2); the dais band shrinks once per step. */
+  phaseIndex?: number;
+  /** The last phase is down: the body is still on screen, playing out its defeat. */
+  defeated?: boolean;
+}
+
+/** A name plate, held for `life` frames over the boss that earned it. */
+export interface BossPlate {
+  name: string;
+  sub: string;
+  timer: number;
+  life: number;
+  kind: 'midboss' | 'boss';
+}
+
+/**
+ * The part of game/world.ts's `World` the stage runner reaches for, on top of what every entity uses. Structural
+ * for the reason given in game/entity.ts: the World holds the runner itself (`world.stage`), so the dependency must
+ * not run back the other way. `World` satisfies it.
+ */
+export interface StageWorld extends EntityWorld {
+  camera: StageCamera;
+  entities: StageEntity[];
+  players: Player[];
+  /** Total stage width in px. The runner hands its world to a Transition, which restores it as the camera's right
+   *  bound across a section switch and stands Vane's helix 46px in from it (game/transitions.ts). */
+  stageLength: number;
+  /** Living wave enemies: no boss, nothing fleeing or dead — what a wave waits to be empty. */
+  waveEnemies: StageUnit[];
+  /** Heroes still in the run; the wave size scales off it (WAVE_EXTRA_BY_PARTY). */
+  partySize: number;
+  /** Mirrors of the runner's own bookkeeping, for the HUD and the results plaque. */
+  sectionIndex: number;
+  wavesCleared: number;
+  /** The section's moving floor, hung here so world.draw can draw it (issue #32). */
+  platform: StagePlatform | null;
+  /**
+   * The two members the runner never reads itself but hands straight through to `Platform.update` (issue #32): a
+   * deck carries or shoves the living fighters, and a pallet running on z clamps its riders to the floor band.
+   * Declared here because passing this world on is what makes them part of the shape the runner requires of it.
+   */
+  fighters: Fighter[];
+  floorBand: { z0: number; z1: number };
+  /** The running stage: the runner installs itself here in its constructor. */
+  stage: StageRunner | null;
+  /** The band a boss fight clamps bodies to, or null outside one. */
+  arenaBounds: { x0: number; x1: number } | null;
+  add(e: Entity): Entity;
+  spawnProp(type: string, x: number, z: number, opts?: PropSpec): Entity;
+  /**
+   * Freeze every entity for `frames` (the boss descent). Optional, and tested for with `typeof` at the one call
+   * site, because a stripped-down world stood up by a tool has no cutscene to play.
+   */
+  cutscene?(frames: number, drawFn?: ((ctx: CanvasRenderingContext2D, world: StageWorld, t: number) => void) | null): void;
+  /** GDD 5.2 dais: shrink the floor band by `px` on each edge, and put it back. Optional for the same reason. */
+  shrinkBand?(px: number): void;
+  resetBand?(): void;
+  /** Installed by the runner's constructor; the AI and the content layer call them through the world. */
+  spawnEnemy: (type: string, variant: string, x: number, z: number, opts?: EnemyOpts) => StageUnit;
+  announce: (text: string, sub?: string, life?: number) => void;
+  onBossSpawn: (b: StageUnit) => void;
+  bossLine: (b: StageUnit, key: 'phase' | 'defeat', phase?: number) => boolean;
+}
+
+/** The one banner slot (game/hud.ts). It is one slot and the last write wins — half this file turns on that. */
+export interface StageHud {
+  showBanner(text: string, sub?: string, life?: number): void;
+}
+
+/** The three calls the runner makes back into the gameplay screen (game/screens/gameplay.ts satisfies it). */
+export interface StageScreen {
+  /** Spawn an enemy from the content registry at absolute world coords. */
+  spawnEnemyAt(type: string, variant: string | null, x: number, z: number, opts?: EnemyOpts): StageUnit;
+  /** Swap the backdrop on a section change (and once more when the real section art has loaded). */
+  setBackdrop(b: ReturnType<typeof createBackdrop>): void;
+  /** The board is cleared: the results plaque. */
+  onVictory(): void;
+}
+
+/**
+ * A running scripted transition. `kind` WAS added here while game/transitions.ts was untyped; that file now declares
+ * it (`Transition.kind: TransitionKind`), so per the note at the top this is where the addition gets deleted —
+ * re-declaring it optional is now the error rather than the fix. The name stays as what the runner calls one.
+ */
+export interface StageTransition extends Transition {}
+
+/**
+ * The section's moving floor. `kind` / `phase` / `offset` WERE added here while game/platforms.ts was untyped; that
+ * file now declares all three (`Platform.kind: PlatformKind`, `phase: HazardPhase`, `offset?: number`), so per the
+ * note at the top this is where the additions get deleted — re-declaring them optional is now the error rather than
+ * the fix. The name stays as what the runner calls one.
+ */
+export interface StagePlatform extends Platform {}
+
+/**
+ * The event script runner. `step` / `t` WERE added here while game/events.ts was untyped; that file now declares
+ * both, so per the note at the top they are gone — re-declaring them optional is now the error rather than the fix.
+ *
+ * `event` stays, and is NOT a shim: game/events.ts types it as its own `EventScript`, which is all the runner reads
+ * (`actions`), while the fields the STAGE reads off a running script — `holdWaves`, `beat`, the arming latch — are
+ * this file's vocabulary and live on `StageEvent`. Narrowing it here is the same move `WorldCamera` makes on the
+ * camera, and the `as StageEvents` at the construction below is its other half.
+ */
+export interface StageEvents extends EventRunner {
+  event: StageEvent | null;
+}
+
+/**
+ * A beat's cast. `actorId` is game/actors.ts's own — see the note at the top — and that file now DECLARES it
+ * (`Actor.actorId: string`), so there is nothing left to add here: the name stays as what the runner calls an
+ * Actor it put on stage. Re-declaring it optional would now be the error, not the fix.
+ */
+export interface BeatActor extends Actor {}
+
+/** One queued spawn, waiting out its delay (and its entrance's tell) in `pending`. */
+export interface PendingSpawn {
+  /** Runner frame the unit is placed on. */
+  at: number;
+  spec: SpawnSpec;
+  /** The resolved entrance (game/entrances.ts), or null when the unit simply walks on from a side. */
+  ent: Entrance | null;
+  /** issue #34: the named container this spawn comes out of, resolved when the wave was queued. */
+  box: StageEntity | null;
+  x: number;
+  z: number;
+  facing: number;
+  /** Has the entrance's tell been placed? */
+  told: boolean;
+}
+
+/** The wave being fought, and the two things the anti-stall watchdog needs to tell a slow fight from a stuck one. */
+export interface ActiveWave {
+  wave: WaveSpec;
+  /** Has the reinforcement list been queued? */
+  reinforced: boolean;
+  startFrame: number;
+  /** playerHits() as the wave started: equal at the end means nobody was hit (GDD 7 NO DAMAGE). */
+  hits: number;
+  /** Hash of the wave's hp total, and the frame it last changed on. */
+  sig: number;
+  sigAt: number;
+  /** Have the survivors been pressed in? Once only. */
+  pressed: boolean;
+}
+
+/** What the gameplay screen hands the runner besides the world and the board. */
+export interface StageRunnerOpts {
+  game: Game;
+  hud: StageHud;
+  screen: StageScreen;
+  /** The free-roam test arena: no waves, no hazards, no story beats. */
+  nowaves?: boolean;
+  startSection?: number;
+  /** `?event=<id>` (issue #33). */
+  startEvent?: string;
+}
+
 /** Drives one stage for a World. The gameplay screen owns it and forwards update()/draw(). */
 export class StageRunner {
+  // The fields, for the checker only, in constructor order and then in the order the rest of the file first writes
+  // them. `declare` because these are assignments and nothing else: a plain field declaration would emit a class
+  // field per name (es2022 defines them before the constructor body runs), which is a runtime change. Same
+  // reasoning, and the same wording, as game/entity.ts's Entity.
+  declare world: StageWorld;
+  declare stage: StageData;
+  declare game: Game;
+  declare hud: StageHud;
+  declare screen: StageScreen;
+  declare nowaves: boolean;
+  declare sections: StageSection[];
+  /** Index into `sections`; -1 until start() enters the first one. */
+  declare sectionIndex: number;
+  /** The runner's own frame counter — `pending` is scheduled against it, not against world.frame. */
+  declare frame: number;
+  declare pending: PendingSpawn[];
+  declare activeWave: ActiveWave | null;
+  /** Stage-wide running total. `sectionWaves` is the one an author means by "the second wave of this section". */
+  declare wavesCleared: number;
+  /** Frames of GO arrow left (the HUD draws it). */
+  declare goTimer: number;
+  /** Frames since the section was entered — a locked section's timed waves are measured off it. */
+  declare sectionTimer: number;
+  declare timedIndex: number;
+  declare timedDone: boolean;
+  declare midbossState: BossState;
+  declare bossState: BossState;
+  declare bossEntity: StageUnit | null;
+  /** Frames since the boss went down; -1 until it does. */
+  declare victoryTimer: number;
+  /** Has the results screen been asked for? Once only. */
+  declare finished: boolean;
+  declare spectacle: VictorySpectacle | null;
+  declare transition: StageTransition | null;
+  declare plate: BossPlate | null;
+  /** A plate raised during a descent, held until the descent ends (onBossSpawn). */
+  declare pendingPlate: BossPlate | null;
+  /** Frames into the mid-boss spotlight; -1 when there is none. */
+  declare spotlightT: number;
+  /** The track currently playing, so playMusic can tell a change from a repeat. */
+  declare music: string;
+  declare startSection: number;
+  /** `?event=<id>` (issue #33): jump to this scripted event instead of the section start. */
+  declare startEventId: string;
+  declare forceEvents: boolean;
+  declare beats: boolean;
+  /** bodies the running beat put on stage, dropped when it ends */
+  declare actors: BeatActor[];
+  /** lettered boards the running beat put up, dropped with it */
+  declare signs: Sign[];
+  /** Letterbox travel in frames, 0..CINEMA_SLIDE: counts up while a beat runs and back down once it is over. */
+  declare cinemaT: number;
+  /** A scheduled exchange: `{ trigger, t, focus }`, counted down in update(). See saySoon(). */
+  declare pendingSay: PendingSay | null;
+  /** Last frame's `out` / `combo` per slot — the edges pollDialogue() turns into triggers. */
+  declare wasOut: boolean[] | null;
+  declare wasCombo: number[] | null;
+  declare dialogue: Dialogue;
+  declare events: StageEvents;
+  /** false once the screen has exited: the backdrop swap below must not fire into a dead screen. */
+  declare alive: boolean;
+  /** Waves cleared IN THIS SECTION (enterSection resets it); what an event's `onWaveClear` counts. */
+  declare sectionWaves: number;
+  /** The section's moving floor, rebuilt on every section entry (issue #32). */
+  declare platform: StagePlatform | null;
+  /** The boss phase the dais band was last shrunk for; -1 before the first. */
+  declare bossPhase: number;
+
   /**
    * @param {import('./world.ts').World} world
    * @param {object} stage stage data (content/stage/stage1.js)
    * @param {{ game: object, hud: object, screen: object, nowaves?: boolean, startSection?: number, startEvent?: string }} o
    */
-  constructor(world, stage, { game, hud, screen, nowaves = false, startSection = 0, startEvent = '' }) {
+  constructor(world: StageWorld, stage: StageData, { game, hud, screen, nowaves = false, startSection = 0, startEvent = '' }: StageRunnerOpts) {
     this.world = world; this.stage = stage; this.game = game; this.hud = hud; this.screen = screen;
     this.nowaves = nowaves;
     this.sections = stage.sections;
@@ -125,23 +730,25 @@ export class StageRunner {
      * Scripted mid-board events (issue #33). The runner itself imports nothing from the engine — every effect it can
      * have is in this bag — which is what lets tools/simtest.js step a whole script in pure Node with no canvas.
      */
+    // Each payload lambda names the spec it is handed. game/events.ts forwards these without looking inside them
+    // (its `ActionPayload`), so THIS is where the authored vocabulary above is attached to the bag.
     this.events = new EventRunner({
       caption: (text, sub, life) => this.hud.showBanner(text, sub, life),
       camera: (shake, frames) => this.world.camera.shake(shake, frames),
       sfx: (name) => audio.play(name),
       music: (track) => this.playMusic(track),
-      hazardSet: (spec) => this.hazardSet(spec),
-      hazardRevert: (token) => this.hazardRevert(token),
-      zoneFlash: (spec) => this.world.add(new ZoneFlash(spec)),
-      spawn: (specs) => this.eventSpawn(specs),
-      prop: (spec) => this.world.spawnProp(spec.type, spec.x, spec.z, spec),
+      hazardSet: (spec: HazardSetSpec) => this.hazardSet(spec),
+      hazardRevert: (token: HazardToken) => this.hazardRevert(token),
+      zoneFlash: (spec: ZoneFlashSpec) => this.world.add(new ZoneFlash(spec)),
+      spawn: (specs: SpawnSpec[]) => this.eventSpawn(specs),
+      prop: (spec: PropSpec) => this.world.spawnProp(spec.type, spec.x, spec.z, spec),
       // Story-beat actions (issue #25). Every one is scenery, and every one is a no-op when beats are off, so a
       // peer running `?bot=1` steps the SAME script for the same number of frames and simply stages nothing.
-      actor: (spec) => this.spawnActor(spec),
-      walk: (spec) => this.walkActor(spec),
-      sign: (spec) => this.spawnSign(spec),
-      say: (spec) => this.say(spec && spec.trigger, spec || {}),
-    });
+      actor: (spec: ActorSpec) => this.spawnActor(spec),
+      walk: (spec: WalkSpec) => this.walkActor(spec),
+      sign: (spec: SignSpec) => this.spawnSign(spec),
+      say: (spec: SaySpec) => this.say(spec && spec.trigger, spec || {}),
+    }) as StageEvents;
   }
 
   // --------------------------------------------------------------------------------------------------------------
@@ -154,7 +761,7 @@ export class StageRunner {
    * Deliberately NOT routed through `eventSpawn`: that starts a wave and locks the camera behind it, and an actor
    * that locked the camera would be a section the player could never walk out of.
    */
-  spawnActor(spec) {
+  spawnActor(spec: ActorSpec): BeatActor | null {
     if (!this.beats || !spec) return null;
     const def = resolveActorDef(spec, this.game);
     if (!def) return null;
@@ -170,7 +777,7 @@ export class StageRunner {
    * own `life` timer: a sign belongs to the beat that put it up, and a section left early (a speedrun, `?nowaves`,
    * a debug jump) must not carry a hoarding into the next backdrop.
    */
-  spawnSign(spec) {
+  spawnSign(spec: SignSpec): Sign | null {
     if (!this.beats || !spec) return null;
     const s = new Sign(spec);
     this.signs.push(s);
@@ -179,7 +786,7 @@ export class StageRunner {
   }
 
   /** Retarget an actor already on stage, addressed by the `id` its `actor` action gave it. */
-  walkActor(spec) {
+  walkActor(spec: WalkSpec): void {
     if (!this.beats || !spec) return;
     for (const a of this.actors) {
       if (a.removeMe || (spec.id && a.actorId !== spec.id)) continue;
@@ -198,10 +805,10 @@ export class StageRunner {
    * fast the party moves, the beat is cancelled the moment they reach the section's last authored wave, and the
    * section plays out normally from wherever they are.
    */
-  get holdingWaves() { return !!(this.events.running && this.events.event && this.events.event.holdWaves); }
+  get holdingWaves(): boolean { return !!(this.events.running && this.events.event && this.events.event.holdWaves); }
 
   /** The furthest authored trigger in this section: past it, a beat has nothing left to hold and stands down. */
-  outrunAt(sec) {
+  outrunAt(sec: StageSection): number {
     let x = -Infinity;
     for (const w of sec.waves || []) if (w.triggerX > x) x = w.triggerX;
     const tr = sec.transition;
@@ -214,7 +821,7 @@ export class StageRunner {
    * mid-board combat script (the over-fire, the broadside) is a thing happening TO the player in the middle of a
    * fight, not a scene, and framing one would say the fight had stopped when it very much has not.
    */
-  get beatRunning() { return !!(this.events.running && this.events.event && this.events.event.beat); }
+  get beatRunning(): boolean { return !!(this.events.running && this.events.event && this.events.event.beat); }
 
   /**
    * Step the letterbox one frame toward open or shut.
@@ -224,16 +831,16 @@ export class StageRunner {
    * and a close that had to be remembered at each of them is a close that will be forgotten at one of them. This
    * also gives the retract for free when a beat is cut off mid-caption, which is the case that most needs it.
    */
-  updateCinema() {
+  updateCinema(): void {
     if (this.beatRunning) { if (this.cinemaT < CINEMA_SLIDE) this.cinemaT++; }
     else if (this.cinemaT > 0) this.cinemaT--;
   }
 
   /** Stop a running beat early and strike everything it staged. The script's own end goes through clearActors(). */
-  endBeat() { this.events.cancel(); this.clearActors(); }
+  endBeat(): void { this.events.cancel(); this.clearActors(); }
 
   /** Drop everything a beat put on stage — bodies and lettering alike (the beat ended, or the section changed). */
-  clearActors() {
+  clearActors(): void {
     for (const a of this.actors) { a.removeMe = true; a.alive = false; }
     for (const s of this.signs) { s.removeMe = true; s.alive = false; }
     this.actors.length = 0; this.signs.length = 0;
@@ -247,7 +854,7 @@ export class StageRunner {
    * @param {{ focus?: object, row?: number|null }} [o] the hero the moment belongs to, when there is one, and the
    *   authored row an opening beat names so that board 3 hears board 3's exchange (see Dialogue.index)
    */
-  say(trigger, { focus = null, row = null } = {}) {
+  say(trigger: string, { focus = null, row = null }: SaySpec = {}): boolean {
     if (!this.dialogue || !trigger) return false;
     return this.dialogue.say(trigger, this.world.players, this.world.frame, { focus, row });
   }
@@ -257,7 +864,7 @@ export class StageRunner {
    * the player's attention — a section banner, a boss name plate — and a line that lands on that frame is a line
    * nobody reads. One slot, so a later schedule replaces an earlier one rather than stacking.
    */
-  saySoon(trigger, delay, { focus = null } = {}) {
+  saySoon(trigger: string, delay: number, { focus = null }: SaySpec = {}): void {
     if (!this.dialogue || !trigger) return;
     this.pendingSay = { trigger, t: Math.max(1, delay | 0), focus };
   }
@@ -276,7 +883,7 @@ export class StageRunner {
    *
    * Deterministic: `p.out` and `p.combo` are simulation state, agreed by lockstep before this runs.
    */
-  pollDialogue() {
+  pollDialogue(): void {
     const ps = this.world.players;
     // Both baselines are seeded from LIVE state, never from zero. The player list grows when somebody drops in
     // mid-run (game/party.js), and a zeroed combo baseline turns every combo already past 20 into a fresh crossing
@@ -306,7 +913,7 @@ export class StageRunner {
    * because it still has a live target, so it never walks right and the run never reaches the next trigger. That is
    * a STALL rather than a loss, and tools/winrate.js counts an unfinished run as a failure.
    */
-  eventSpawn(specs) {
+  eventSpawn(specs: SpawnSpec[]): void {
     if (!specs || !specs.length) return;
     if (this.activeWave) { this.queueSpawns(specs); return; }
     this.startWave({ spawns: specs }, true);
@@ -317,10 +924,10 @@ export class StageRunner {
    * rest of the page load (HAZARD_TYPES is a shared live table), so only per-instance fields are ever touched.
    * @returns {{ hazards: Array<{h: object, forcePhase: object|null, period: number, offset: number}> }|null}
    */
-  hazardSet(spec) {
+  hazardSet(spec: HazardSetSpec): HazardToken | null {
     const name = spec && spec.name;
     if (!name) return null;
-    const token = { hazards: [] };
+    const token: HazardToken = { hazards: [] };
     for (const e of this.world.entities) {
       if (!e.isHazard || e.removeMe || e.name !== name) continue;
       token.hazards.push({ h: e, forcePhase: e.forcePhase, period: e.period, offset: e.offset });
@@ -348,7 +955,7 @@ export class StageRunner {
    * putting the old pair back raw can drop the hazard straight into 'active' with no tell — which GDD 6 forbids, and
    * which is nastier on the way back than on the way out because nobody is expecting the room to change again.
    */
-  hazardRevert(token) {
+  hazardRevert(token: HazardToken | null): void {
     for (const t of (token && token.hazards) || []) {
       t.h.forcePhase = t.forcePhase;
       if (t.h.period !== t.period) {
@@ -361,7 +968,7 @@ export class StageRunner {
   }
 
   /** Place every prop / hazard / zone, position the camera, enter the first section. */
-  start() {
+  start(): void {
     for (const sec of this.sections) {
       // every extra field of a prop entry (release / dump / solid / rider / fire ...) is forwarded to the Prop as-is: items.js owns the meaning
       // every extra field of a prop row reaches the Prop through this spread, but Prop's constructor destructures a
@@ -375,7 +982,7 @@ export class StageRunner {
     }
     // `?event=<id>`: resolve the id to the section that owns it and start there, just short of its trigger, so an
     // author can iterate on one event without replaying the board. `forceEvents` lets it run under ?nowaves=1 too.
-    let jumpTo = null;
+    let jumpTo: { i: number, ev: StageEvent } | null = null;
     if (this.startEventId) {
       for (let i = 0; i < this.sections.length && !jumpTo; i++) {
         for (const ev of this.sections[i].events || []) if (ev.id === this.startEventId) { jumpTo = { i, ev }; break; }
@@ -400,15 +1007,15 @@ export class StageRunner {
     backdropsReady().then(() => { if (this.alive && this.sectionIndex >= 0) this.screen.setBackdrop(createBackdrop(this.section, this.stage)); });
   }
   /** Stop swapping backdrops after the screen exits. */
-  dispose() { this.alive = false; }
+  dispose(): void { this.alive = false; }
 
   /** Section index containing world x. */
-  sectionAt(x) { for (let i = this.sections.length - 1; i >= 0; i--) if (x >= this.sections[i].x0) return i; return 0; }
-  get section() { return this.sections[this.sectionIndex] || this.sections[0]; }
-  get busy() { return !!this.activeWave || this.pending.length > 0 || this.bossActive || !!this.transition; }
-  get bossActive() { return this.midbossState === 'active' || this.bossState === 'active'; }
+  sectionAt(x: number): number { for (let i = this.sections.length - 1; i >= 0; i--) if (x >= this.sections[i].x0) return i; return 0; }
+  get section(): StageSection { return this.sections[this.sectionIndex] || this.sections[0]; }
+  get busy(): boolean { return !!this.activeWave || this.pending.length > 0 || this.bossActive || !!this.transition; }
+  get bossActive(): boolean { return this.midbossState === 'active' || this.bossState === 'active'; }
 
-  enterSection(i, first = false) {
+  enterSection(i: number, first: boolean = false): void {
     if (i === this.sectionIndex) return;
     const sec = this.sections[i];
     this.sectionIndex = i;
@@ -445,10 +1052,10 @@ export class StageRunner {
     // before the board has drawn once.
     this.saySoon('sectionStart', SECTION_REPLY_DELAY);
   }
-  playMusic(track) { if (track && track !== this.music) { this.music = track; this.game.audio.music.play(track); } }
+  playMusic(track: string): void { if (track && track !== this.music) { this.music = track; this.game.audio.music.play(track); } }
 
   // ---------- per-step ----------
-  update() {
+  update(): void {
     this.frame++;
     const world = this.world, cam = world.camera, center = cam.x + VIEW_W / 2;
     // Companion plates age HERE, at the very top, above the transition early-return below: a line raised as a
@@ -502,7 +1109,7 @@ export class StageRunner {
     else this.checkTriggers(reach);
   }
   /** Locked section: waves fire at `at` seconds since the section started, or as soon as the previous wave is cleared. */
-  updateTimed() {
+  updateTimed(): void {
     const sec = this.section, list = sec.timedWaves || [];
     this.sectionTimer++;
     if (this.timedIndex >= list.length) return;
@@ -515,7 +1122,7 @@ export class StageRunner {
     if (this.activeWave) this.queueSpawns(tw.spawns || []); else this.startWave(tw, false);
   }
 
-  updateSpawns() {
+  updateSpawns(): void {
     let n = 0;
     for (const s of this.pending) {
       if (this.frame < s.at) { this.pending[n++] = s; continue; }
@@ -534,7 +1141,7 @@ export class StageRunner {
    * test, the same way a barricade's `blocking` reads `prop.solid`: Prop.break() leaves the body alive through its
    * break animation, and a crate that is currently flying apart cannot hand anybody out of it.
    */
-  propNamed(name) {
+  propNamed(name: string): StageEntity | null {
     if (!name) return null;
     for (const e of this.world.entities) {
       if (e.kind !== 'prop' || e.name !== name || !e.alive || e.removeMe) continue;
@@ -544,7 +1151,7 @@ export class StageRunner {
     return null;
   }
   /** Hand one queued spawn to its container, or climb it out of the wreck if the container is already gone. */
-  spawnFromCargo(s) {
+  spawnFromCargo(s: PendingSpawn): void {
     const box = this.propNamed(s.ent.prop);
     if (box) { box.cargo = box.cargo || []; box.cargo.push(s.spec); box.releaseCargo(this.world, 1); return; }
     this.screen.spawnEnemyAt(s.spec.type, s.spec.variant, s.x, s.z, {
@@ -552,14 +1159,14 @@ export class StageRunner {
     });
   }
   /** Place an entrance's tell and push its spawn back by the tell's length (game/entrances.js). */
-  startTell(s) {
+  startTell(s: PendingSpawn): void {
     const ent = s.ent;
     s.told = true;
     s.at = this.frame + ent.tell;
     this.world.add(new EntranceTell({ kind: ent.kind, x: s.x, z: s.z, frames: ent.tell, r: ent.r, look: ent.look }));
     if (ent.tellSfx) audio.play(ent.tellSfx);
   }
-  spawn(s) {
+  spawn(s: PendingSpawn): StageUnit {
     // spec.mods (spawn modifiers, traits.js SPAWN_MODS) ride the pending spec and reach the Enemy constructor through spawnEnemyAt;
     // s.ent (issue #30) is the resolved entrance, which sets the unit's own start pose and takes over its first frames
     const e = this.screen.spawnEnemyAt(s.spec.type, s.spec.variant, s.x, s.z, { entered: false, facing: s.facing, fromSky: !s.ent && s.spec.side === 'sky', mods: s.spec.mods, entrance: s.ent });
@@ -590,7 +1197,7 @@ export class StageRunner {
    *  double its shake/SFX burst). Applies to every list that reaches here: waves, reinforcements and
    *  timed waves alike. No randomness; parties of 1-2 get `specs === list` (identity, byte-for-byte
    *  unchanged streams for solo, two-player and netplay checksums). */
-  queueSpawns(list, extraDelay = 0) {
+  queueSpawns(list: SpawnSpec[], extraDelay: number = 0): void {
     const cam = this.world.camera;
     const left = cam.locked ? cam.left : cam.x, right = cam.locked ? cam.right : cam.x + VIEW_W;
     const extra = WAVE_EXTRA_BY_PARTY[Math.min(this.world.partySize, WAVE_EXTRA_BY_PARTY.length - 1)];
@@ -618,21 +1225,21 @@ export class StageRunner {
    * ordinary queueSpawns path so the tell, the ARRIVING state and the punish window are exactly a wave's.
    * @param {string} type @param {string} variant @param {object} entrance @param {{ z?: number, delay?: number }} [o]
    */
-  spawnEntrance(type, variant, entrance, { z = 70, delay = 0 } = {}) {
+  spawnEntrance(type: string, variant: string, entrance: SpawnSpec['entrance'], { z = 70, delay = 0 }: { z?: number, delay?: number } = {}): PendingSpawn | null {
     this.queueSpawns([{ type, variant, z, delay, entrance }]);
     return this.pending[this.pending.length - 1] || null;
   }
-  lockHere() {
+  lockHere(): void {
     const cam = this.world.camera;
     const x0 = clamp(Math.round(cam.x), 0, this.stage.length - VIEW_W);
     cam.lock(x0, x0 + VIEW_W);
   }
-  startWave(wave, lock = true) {
+  startWave(wave: WaveSpec, lock: boolean = true): void {
     if (lock) this.lockHere();
     this.activeWave = { wave, reinforced: false, startFrame: this.frame, hits: this.playerHits(), sig: -1, sigAt: this.frame, pressed: false };
     this.queueSpawns(wave.spawns || []);
   }
-  updateWave() {
+  updateWave(): void {
     const aw = this.activeWave, w = aw.wave, alive = this.world.waveEnemies.length;
     if (this.pending.length) return;
     if (!aw.reinforced && w.reinforcements && w.reinforcements.length) {
@@ -655,7 +1262,7 @@ export class StageRunner {
    * total, which every landed hit moves, so a fight that is merely slow never trips it; and it is derived from
    * hashed state on a deterministic frame counter, so every peer in a netplay room presses on the same frame.
    */
-  checkWaveStall(aw) {
+  checkWaveStall(aw: ActiveWave): void {
     if (aw.pressed) return;
     const list = this.world.waveEnemies;
     let sig = list.length;
@@ -675,7 +1282,7 @@ export class StageRunner {
    * the right edge of the lock the first Tallow Works wave takes — and what that reads as is a room emptied of
    * enemies that never opens. One that far out is the NEXT wave's gate; this one clears on its enemies alone.
    */
-  barricadeHolding() {
+  barricadeHolding(): boolean {
     const cam = this.world.camera;
     if (!cam.locked) return false;
     for (const e of this.world.entities) {
@@ -685,8 +1292,8 @@ export class StageRunner {
     return false;
   }
   /** Total times the players have been hit this run (GDD 7 no-damage wave bonus). */
-  playerHits() { let n = 0; for (const p of this.world.players) n += p.hitCount || 0; return n; }
-  clearWave() {
+  playerHits(): number { let n = 0; for (const p of this.world.players) n += p.hitCount || 0; return n; }
+  clearWave(): void {
     const sec = this.section, aw = this.activeWave;
     // GDD 7 scoring: clearing a wave without a single player getting hit is worth +1000 to each survivor
     if (aw && this.playerHits() === aw.hits) {
@@ -720,7 +1327,7 @@ export class StageRunner {
    * Begin one scripted event (issue #33). `kind: 'text'` is the shorthand board 1 already shipped and stays working:
    * it is a one-action script with a single caption, so no existing stage data changes.
    */
-  startEvent(ev) {
+  startEvent(ev: StageEvent): void {
     if (this.nowaves && !this.forceEvents) return;
     // A STORY BEAT (issue #25) does not arm at all when beats are off, and this is the whole of that switch.
     //
@@ -733,7 +1340,7 @@ export class StageRunner {
     if (ev.kind === 'text') { this.hud.showBanner(ev.text || '', ev.sub || '', ev.life || 90); return; }
     this.events.arm(ev);
   }
-  checkTriggers(center) {
+  checkTriggers(center: number): void {
     const sec = this.section, stage = this.stage;
     // final boss
     if (stage.boss && this.bossState === 'none' && center >= stage.boss.atX && this.sectionAt(stage.boss.atX) === this.sectionIndex) { this.startBoss(stage.boss, 'boss'); return; }
@@ -772,7 +1379,7 @@ export class StageRunner {
    * arrives on `look` ('stairs' default | 'ladder' | 'door' | 'hoist' | 'none') with `pies` Meat Pies (default 2); a 'lift' with
    * `up: true` rides the shaft upward (transitions.js).
    */
-  startTransition(spec, extra = {}) {
+  startTransition(spec: TransitionSpec, extra: Record<string, any> = {}): void {
     if (this.transition) return;
     spec._done = true;
     this.goTimer = 0;
@@ -788,7 +1395,7 @@ export class StageRunner {
     this.transition = new Transition(this, spec.kind, { gateX: spec.gateX, nextSection: this.sectionIndex + 1, banner: spec.banner, look: spec.look, pies: spec.pies, up: spec.up, vignette, ...extra });
     this.holdPlayers();
   }
-  endTransition() {
+  endTransition(): void {
     const tr = this.transition;
     this.transition = null;
     if (!tr) return;
@@ -805,7 +1412,7 @@ export class StageRunner {
    * runner's — `actor`, `walk`, `caption`, `sfx`, `camera` — so an author writing a between-section moment writes
    * the same shapes as one writing a mid-board beat.
    */
-  vignetteCue(cue) {
+  vignetteCue(cue: VignetteCue): void {
     if (!cue || !this.beats) return;
     // A vignette plays under a LOCKED camera parked wherever the transition began, so an author has no absolute x
     // worth writing: the same lift is a different place on every board. `dx` is therefore measured from the left
@@ -818,7 +1425,7 @@ export class StageRunner {
     if (cue.say) this.say(cue.say);
   }
   /** Freeze player input for this frame (cutscenes): no actions, i-frames, walking stops. */
-  holdPlayers() {
+  holdPlayers(): void {
     for (const p of this.world.players) {
       if (!p || p.out || p.dead) continue;
       p.busy = 2; p.invuln = Math.max(p.invuln, 2);
@@ -827,7 +1434,7 @@ export class StageRunner {
   }
 
   // ---------- bosses ----------
-  startBoss(spec, kind) {
+  startBoss(spec: BossSpec, kind: 'midboss' | 'boss'): void {
     const world = this.world, cam = world.camera;
     const camBox = spec.camera || spec.arena;
     if (camBox) cam.lock(camBox.x0, camBox.x1); else this.lockHere();
@@ -851,13 +1458,13 @@ export class StageRunner {
       this.trackBossBand();
     } else { this.midbossState = 'active'; this.spotlightT = 0; }
   }
-  onBossSpawn(b) {
+  onBossSpawn(b: StageUnit): void {
     const spec = b.bossKind === 'midboss' ? this.stage.midboss : this.stage.boss;
     const plate = { name: ((spec && spec.intro) || {}).name || b.name, sub: ((spec && spec.intro) || {}).sub || b.def.subtitle || '', timer: 0, life: PLATE_FRAMES, kind: b.bossKind };
     if (this.transition && this.transition.kind === 'descent') { this.pendingPlate = plate; return; }
     this.showPlate(plate);
   }
-  showPlate(plate) {
+  showPlate(plate: BossPlate): void {
     this.plate = plate;
     this.hud.showBanner(plate.name, plate.sub, PLATE_FRAMES);
     audio.play('boss_intro'); audio.play('roar');
@@ -871,13 +1478,13 @@ export class StageRunner {
     this.saySoon(plate.kind === 'midboss' ? 'midbossIntro' : 'bossIntro', BOSS_REPLY_DELAY);
   }
   /** GDD 5.2 dais: the floor band shrinks 20px per phase as the edge vents open (world.shrinkBand); reset when the boss is gone. */
-  trackBossBand() {
+  trackBossBand(): void {
     const b = this.bossEntity, world = this.world;
     if (!b || !world.shrinkBand) return;
     const ph = b.phaseIndex || 0;
     if (ph !== this.bossPhase) { this.bossPhase = ph; world.shrinkBand(DAIS_SHRINK); }
   }
-  updateBoss() {
+  updateBoss(): void {
     const b = this.bossEntity;
     if (this.bossState === 'active' && !this.transition) this.trackBossBand();
     if (!b) { this.bossState = this.bossState === 'active' ? 'done' : this.bossState; this.midbossState = this.midbossState === 'active' ? 'done' : this.midbossState; return; }
@@ -908,7 +1515,7 @@ export class StageRunner {
    * that is above every entity, particle and weather effect and still below all HUD — a line spoken in the rain on
    * board 1 has to be readable through it, and the HUD strip must still win over the line.
    */
-  draw(ctx) {
+  draw(ctx: CanvasRenderingContext2D): void {
     const cam = this.world.camera;
     if (this.spotlightT >= 0 && this.bossEntity && this.midbossState === 'active') drawSpotlight(ctx, cam, this.bossEntity, this.spotlightT);
     if (this.transition) this.transition.draw(ctx);
@@ -925,7 +1532,7 @@ export class StageRunner {
    * visible. The bottom bar starts at the floor band's bottom edge -- see CINEMA_H -- so nothing standing on the
    * floor is ever behind it. Speech plates draw after this, because a companion line is not scenery to be framed.
    */
-  drawCinema(ctx) {
+  drawCinema(ctx: CanvasRenderingContext2D): void {
     if (this.cinemaT <= 0) return;
     const h = Math.round(CINEMA_H * ease('out', this.cinemaT / CINEMA_SLIDE));
     if (h <= 0) return;
@@ -961,7 +1568,7 @@ export class StageRunner {
  * A hero actor defaults to the def the PLAYER is not using where a beat asks for `hero: 'other'`, so a stage can
  * stage "the rest of the party" without knowing who was picked.
  */
-function resolveActorDef(spec, game) {
+function resolveActorDef(spec: ActorSpec, game: Game) {
   if (spec.hero) {
     if (spec.hero === 'other') {
       const taken = new Set((game && game.options && game.options.chars) || []);

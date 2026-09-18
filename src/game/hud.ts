@@ -19,6 +19,13 @@ import { drawShieldBar } from './shield.ts';
 import { WEAPONS } from './weapons.ts';
 import { drawWeaponIcon, drawDurabilityPips, WPN_ICON_W, PIP_PITCH } from '../art/weapons.ts';
 import { joinHint } from './party.ts';
+import type { World, WorldBoss } from './world.ts';
+import type { Game } from './game.ts';
+import type { Player } from './player.ts';
+import type { Fighter, FighterDef } from './fighter.ts';
+import type { StageScreen } from './stage.ts';
+import type { Rig } from '../lib/art/rig.ts';
+import type { PartialPose } from '../lib/art/poses.ts';
 
 /** Rows the top strip owns (0..STRIP_H-1). Exported because the story-beat letterbox (game/stage.js) slides its top
  *  bar out from UNDER the strip rather than from row 0 -- see drawCinema(). */
@@ -37,9 +44,150 @@ const HP_COLORS = ['#59C3A0', '#F2C94C', '#FF5C5C'];
 const COL_W = 158, COL_X0 = 4, QUAD_DY = 40;
 const COMBO_X_WIDE = [46, VIEW_W - 46], CONT_X_WIDE = [100, VIEW_W - 100], CONT_HALF = 70, CONT_Y_QUAD = 200;
 
+// ================================ DECLARED SHAPES ===================================================================
+// What this file builds and keeps: the per-slot bars and portrait rigs, the three timed overlays (banner, cut-in,
+// bestiary plate) and the per-slot CONTINUE countdown. Each of them lived in the constructor and a dozen scattered
+// assignments and nowhere else, so a misspelled field was a HUD element that quietly stopped drawing; named here it
+// is a compile error. Shapes another file already declares are used BY NAME -- World, Game, Player, Fighter, Rig --
+// and the two that need more EXTEND that file's declaration rather than describing a boss or a screen a second time.
+
+/**
+ * The delayed second health bar (GDD 9). `hp` trails the player's own down after `delay` frames, so a big hit reads
+ * as a red band draining behind the front bar, and `flash` whites the front bar for the 4 frames of the hit itself.
+ */
+export interface GhostBar {
+  /** The trailing bar's HP, eased toward the real one at GHOST_SPEED once `delay` runs out. */
+  hp: number;
+  /** Frames to hold still before that ease starts (GHOST_DELAY). */
+  delay: number;
+  /** Frames of white flash left on the front bar. */
+  flash: number;
+  /** The player's hp last frame: a drop is what arms `flash` and `delay`. */
+  lastHp: number;
+}
+
+/** A slot's cached portrait rig. Rebuilt only when that slot's character changes -- never per frame. */
+export interface PortraitRig {
+  /** The def the rig was built from, and the cache key `playerRig` compares against. */
+  def: FighterDef;
+  rig: Rig;
+  /** The def's first idle keyframe (art/portraits.ts idlePoseOf), or null when it has none. */
+  pose: PartialPose | null;
+}
+
+/** The one centre banner slot: wave text, section names, GO, CONTINUE!. It is one slot and the last write wins. */
+export interface Banner {
+  text: string;
+  sub: string;
+  /** Frames since it went up, counted to `life`. */
+  timer: number;
+  life: number;
+  /** Draw a riveted brass plate behind it (boss and phase names). */
+  plate: boolean;
+  /** The stage runner is already drawing its own plaque behind this name: plain text, no nested plate. */
+  inPlaque: boolean;
+}
+
+/** The super cut-in: one player's portrait slams in and their move name banners across, during the 12f freeze. */
+export interface CutIn {
+  /** Whose super it is. The slam side and the name colour are that player's slot. */
+  p: Player;
+  /** The move name, and the hero's name under it. */
+  text: string;
+  sub: string;
+  timer: number;
+  life: number;
+}
+
+/** One slot's CONTINUE? countdown, running while the rest of the party keeps playing (GDD 9). */
+export interface ContinueCountdown {
+  /** Frames left, from CONTINUE_FRAMES. The digit on screen is ceil(timer / 60). */
+  timer: number;
+  /** The digit drawn last step: a change is what cracks the gear and ticks the sound. */
+  lastDigit: number;
+  /** Frames of crack left on the gear. */
+  crack: number;
+  /** The countdown ran out, or there was no continue to spend in the first place: the box stays up, dead. */
+  expired: boolean;
+}
+
+/** A BESTIARY unlock plate (issue #26), on screen for NEW_ENTRY_LIFE frames. */
+export interface NewEntryPlate {
+  /** The enemy whose entry just opened. */
+  name: string;
+  timer: number;
+}
+
+/**
+ * The boss the 400x10 bar is drawn for. game/world.ts's `WorldBoss` is what the world itself asks of a boss; these
+ * are the phase fields the bar reads off game/boss.ts's `Boss`, which has not declared its own fields yet. Optional
+ * because that is how this file already reads them -- `hpTotal != null`, `phaseHps` before `phases` -- and because a
+ * midboss carries none of them.
+ */
+export interface HudBoss extends WorldBoss {
+  /** The current phase's name, drawn at the bar's right end when it differs from the boss's own. */
+  phaseName?: string;
+  /** The phase's bar colour (UI.hp when it has none). */
+  phaseColor?: string;
+  /** HP summed over the phases still standing; absent on a boss that fights as one pool, where `hp` is it. */
+  hpTotal?: number;
+  hpTotalMax?: number;
+  /** Per-phase HP: the segment ticks are stepped back from the bar's right end through it. */
+  phaseHps?: number[];
+  /** How many equal phases, for a boss with no `phaseHps` to step through. */
+  phases?: number;
+}
+
+/**
+ * The gameplay screen, as the HUD reaches it: `world.stage.screen`. game/stage.ts declares the three calls the stage
+ * runner makes back into that screen; these are the four members the HUD reads off the same object. Optional because
+ * this file already assumes a screen can be without them -- `scr.maxPlayers ? scr.maxPlayers() : MAX_PLAYERS` and
+ * `scr.time || 0` are what it does today.
+ */
+export interface HudScreen extends StageScreen {
+  /** Continues left to spend. `revive` spends one. */
+  continues?: number;
+  /** Continues spent this run (the results plaque reads it). */
+  continuesUsed?: number;
+  /** Frames the board has been running, for the centre timer. */
+  time?: number;
+  /** Seats this room can hold; absent means MAX_PLAYERS (screens/training.ts returns 1). */
+  maxPlayers?(): number;
+}
+
 /** Draws the HUD for a World's players. The gameplay screen forwards update()/draw(). */
 export class Hud {
-  constructor(world, game) {
+  // The fields, for the checker only, in constructor order. `declare` because these are the constructor's own
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022 defines
+  // them before the constructor body runs), which is a runtime change. `declare` erases under tsc, esbuild and
+  // node --experimental-strip-types alike. Same reasoning (and the same wording) as game/entity.ts's Entity.
+  declare world: World;
+  declare game: Game;
+  /** The HUD's own step counter: every blink, pulse and cached-hint rebuild is measured off it. */
+  declare frame: number;
+  /** Delayed second health bar per player SLOT (`p.index`), not per array position -- drop-in fills slots out of order. */
+  declare ghost: (GhostBar | null)[];
+  /** Portrait rigs per player slot. */
+  declare prig: (PortraitRig | null)[];
+  /** The enemy the centre bar is showing, and the frames it has left (TARGET_FRAMES, refreshed by every hit). */
+  declare target: Fighter | null;
+  declare targetTimer: number;
+  declare banner: Banner | null;
+  declare cutIn: CutIn | null;
+  /** Per slot: the anim instance already turned into a cut-in, so one super raises one cut-in. -1 = none yet. */
+  declare superInst: number[];
+  /** Per-slot continue countdown while the rest of the party plays; null for a slot that is not out. */
+  declare cont: (ContinueCountdown | null)[];
+  /** The join bitmask the cached hints were built for (`input.joinState()` + the room-full bit); -1 until the first build. */
+  declare joinKey: number;
+  /** The cached join hints -- never allocated in draw(). `hint` is the wide-mode line, `slotHints` the per-column ones. */
+  declare hint: string;
+  declare slotHints: string[];
+  /** The bestiary plate on screen, and the names waiting their turn behind it. */
+  declare newEntry: NewEntryPlate | null;
+  declare newEntryQueue: string[];
+
+  constructor(world: World, game: Game) {
     this.world = world; this.game = game;
     this.frame = 0;
     this.ghost = new Array(MAX_PLAYERS).fill(null); // { hp, delay, flash, lastHp } per slot (delayed second bar + damage flash)
@@ -54,28 +202,28 @@ export class Hud {
     this.newEntryQueue = [];        // names waiting their turn (a crowd clear can open three entries at once)
   }
   /** The gameplay screen that owns this HUD (via the stage runner). */
-  get screen() { const s = this.world.stage; return s && s.screen ? s.screen : null; }
+  get screen(): HudScreen | null { const s = this.world.stage; return s && s.screen ? s.screen : null; }
   /** True once a player holds slot 2 or 3 -- switches the strip from mirrored two-column to four columns. */
-  get quad() {
+  get quad(): boolean {
     for (const p of this.world.players) if (p.index >= 2) return true;
     return false;
   }
   /** Column left edge for slot `i`: four left-aligned 158px columns in quad mode, else today's mirrored pair.
    *  Split from `right` (below) into two allocation-free helpers -- draw() runs these every frame. */
-  slotX0(i) {
+  slotX0(i: number): number {
     if (this.quad) return COL_X0 + i * COL_W;
     return i === 1 ? VIEW_W - 8 - PORTRAIT : 8;
   }
   /** True when slot `i` draws mirrored on the right (only slot 1, and only outside quad mode). */
-  slotRight(i) { return !this.quad && i === 1; }
-  playerRig(p) {
+  slotRight(i: number): boolean { return !this.quad && i === 1; }
+  playerRig(p: Player): PortraitRig {
     const i = p.index;
     let r = this.prig[i];
     if (!r || r.def !== p.def) r = this.prig[i] = { def: p.def, rig: buildRig(p.def.build || {}), pose: idlePoseOf(p.def) };
     return r;
   }
   /** Centre banner (wave text, GO, section names). A super's announce becomes the cut-in; boss names become a plate. */
-  showBanner(text, sub = '', life = 90) {
+  showBanner(text: string, sub: string = '', life: number = 90): void {
     for (const p of this.world.players) {
       if (p.state === ST.SUPER && p.anim && p.anim.instance !== this.superInst[p.index]) {
         this.superInst[p.index] = p.anim.instance;
@@ -83,7 +231,7 @@ export class Hud {
         return;
       }
     }
-    const b = this.world.boss, st = this.world.stage;
+    const b: HudBoss | null = this.world.boss, st = this.world.stage;
     // the stage runner draws its own riveted plaque behind boss intro names: plain text sits inside it (no nested plates)
     const inPlaque = !!(st && st.plate && st.plate.name === text);
     const plate = !inPlaque && !!(b && b.alive && (text === b.name || text === b.phaseName));
@@ -95,14 +243,14 @@ export class Hud {
    * stacked: clearing a fresh wave can open three entries on the same frame, and three plates over each other is
    * unreadable. The queue is capped because a `?unlockall=1` sweep could otherwise line up thirty of them.
    */
-  showNewEntry(name) {
+  showNewEntry(name: string): void {
     if (this.newEntry) { if (this.newEntryQueue.length < NEW_ENTRY_QUEUE_MAX) this.newEntryQueue.push(name); return; }
     this.newEntry = { name, timer: 0 };
     this.game.audio.play('chime');
   }
 
   // ---------- update ----------
-  update() {
+  update(): void {
     this.frame++;
     const ps = this.world.players;
     for (let i = 0; i < ps.length; i++) {
@@ -145,7 +293,7 @@ export class Hud {
     }
   }
   /** GDD 9: a player at 0 lives counts down CONTINUE? on their side while the partner keeps playing. */
-  updateContinue(p, i) {
+  updateContinue(p: Player, i: number): void {
     const ps = this.world.players, scr = this.screen;
     const partnerAlive = ps.some((q) => q && q !== p && !q.out);
     if (!p.out || !partnerAlive || !scr) { this.cont[i] = null; return; }
@@ -163,7 +311,7 @@ export class Hud {
     if (c.timer <= 0) { c.expired = true; this.game.audio.play('game_over'); }
   }
   /** Spend a continue on one player (fresh lives, full HP, drops in from the top with i-frames). */
-  revive(p) {
+  revive(p: Player): void {
     const scr = this.screen, w = this.world;
     scr.continues--; scr.continuesUsed++; p.continuesUsed++;
     p.out = false; p.lives = 4; // respawn() takes one -> 3
@@ -174,7 +322,7 @@ export class Hud {
   }
 
   // ---------- draw ----------
-  draw(ctx) {
+  draw(ctx: CanvasRenderingContext2D): void {
     const w = this.world, ps = w.players;
     ctx.fillStyle = 'rgba(10,6,12,0.5)'; ctx.fillRect(0, 0, VIEW_W, STRIP_H);
     ctx.fillStyle = 'rgba(226,179,74,0.5)'; ctx.fillRect(0, STRIP_H - 1, VIEW_W, 1);
@@ -190,7 +338,7 @@ export class Hud {
     else if (this.banner) this.drawBanner(ctx, this.banner);
   }
   /** NEW ENTRY plate: slides in from the right under the strip, holds, then slides back out the way it came. */
-  drawNewEntry(ctx, e) {
+  drawNewEntry(ctx: CanvasRenderingContext2D, e: NewEntryPlate): void {
     const t = e.timer;
     // one ease in, one ease out, both cubic; `k` is how far on screen the plate is (0 fully off, 1 fully on)
     const inK = Math.min(1, t / NEW_ENTRY_SLIDE), outK = Math.min(1, (NEW_ENTRY_LIFE - t) / NEW_ENTRY_SLIDE);
@@ -203,7 +351,7 @@ export class Hud {
   }
   /** Cached composite join hint (never rebuilt here -- see update()): one line per free pad-only column in quad
    *  mode, else today's corner spot (slot 1 free) or a centred line below the strip (slot 1 taken, 3/4 free). */
-  drawJoinHints(ctx) {
+  drawJoinHints(ctx: CanvasRenderingContext2D): void {
     if ((this.frame % 90) >= 60) return;
     if (this.quad) {
       const ps = this.world.players;
@@ -219,7 +367,7 @@ export class Hud {
       else drawText(ctx, this.hint, VIEW_W / 2, STRIP_H + 4, { size: 1, color: UI.p3, align: 'center' });
     }
   }
-  drawPlayer(ctx, p) {
+  drawPlayer(ctx: CanvasRenderingContext2D, p: Player): void {
     const i = p.index, x0 = this.slotX0(i), right = this.slotRight(i), col = PLAYER_COLORS[i], pr = this.playerRig(p);
     const bx = right ? VIEW_W - 12 - PORTRAIT - BAR_W : x0 + PORTRAIT + 4;
     // portrait (24x24 rig head in a brass frame)
@@ -274,7 +422,7 @@ export class Hud {
   /** Held pickup weapon: 14x8 icon with one 2x4 pip per remaining hit (game/weapons.js). Wide mode puts it past
    *  the end of the health bar; quad columns have no room there (158 - 148 = 10px), so it moves onto the name
    *  row instead, at the bar's own right end, with pips reading leftward. */
-  drawWeaponSlot(ctx, p, bx, right, quad) {
+  drawWeaponSlot(ctx: CanvasRenderingContext2D, p: Player, bx: number, right: boolean, quad: boolean): void {
     const w = WEAPONS[p.weaponId];
     if (!w) return;
     if (quad) {
@@ -288,7 +436,7 @@ export class Hud {
     drawDurabilityPips(ctx, right ? ix - 4 : ix + WPN_ICON_W + 3, 15, w.hits, p.weaponHits, right ? -1 : 1);
   }
   /** Stage timer, GO arrow and the targeted enemy's bar; dropped 40px in quad mode to clear the wider name row. */
-  drawCenter(ctx) {
+  drawCenter(ctx: CanvasRenderingContext2D): void {
     const scr = this.screen, st = this.world.stage, cx = VIEW_W / 2, dy = this.quad ? QUAD_DY : 0;
     const frames = scr ? scr.time || 0 : 0, s = Math.floor(frames / 60);
     drawText(ctx, `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`, cx, 3 + dy, { size: 2, color: UI.paper, align: 'center' });
@@ -309,7 +457,7 @@ export class Hud {
     }
   }
   /** Armor icon beside the 60x4 elite bars drawn by the fighters themselves. */
-  drawEnemyArmor(ctx) {
+  drawEnemyArmor(ctx: CanvasRenderingContext2D): void {
     const cam = this.world.camera;
     for (const e of this.world.enemies) {
       if (e.kind === 'boss' || !e.def.elite || e.hpBarTimer <= 0 || e.dead || !e.armor) continue;
@@ -318,7 +466,7 @@ export class Hud {
     }
   }
   /** 400x10 boss bar in rows 342..358 with a brass name plate and phase segments. */
-  drawBoss(ctx, b) {
+  drawBoss(ctx: CanvasRenderingContext2D, b: HudBoss): void {
     const x = Math.round(VIEW_W / 2 - BOSS_BAR_W / 2), y = BOSS_BAR_Y;
     const hp = b.hpTotal != null ? b.hpTotal : b.hp, max = b.hpTotalMax || b.maxHp || 1;
     ctx.fillStyle = 'rgba(10,6,12,0.72)'; ctx.fillRect(0, 340, VIEW_W, VIEW_H - 340);
@@ -340,7 +488,7 @@ export class Hud {
   }
   /** Combo counter by slot (GDD 9): number pops 1.3 -> 1.0, colour climbs grey/yellow/orange/cyan/white. Quad
    *  columns centre it under the player's own column; wide mode keeps today's mirrored corners. */
-  drawCombo(ctx, p) {
+  drawCombo(ctx: CanvasRenderingContext2D, p: Player): void {
     const i = p.index, quad = this.quad, x = quad ? COL_X0 + i * COL_W + COL_W / 2 : COMBO_X_WIDE[i], y = 50;
     if (p.combo >= 3) {
       const tier = p.combo >= 60 ? 4 : p.combo >= 35 ? 3 : p.combo >= 20 ? 2 : p.combo >= 10 ? 1 : 0, col = COMBO_COLORS[tier];
@@ -361,7 +509,7 @@ export class Hud {
   }
   /** Per-slot CONTINUE? countdown with a cracking gear digit (rest of the party still fighting). Quad mode sits
    *  below the size-3 banner block (rows 196..288); wide mode keeps today's mirrored spot. */
-  drawContinue(ctx, p, c) {
+  drawContinue(ctx: CanvasRenderingContext2D, p: Player, c: ContinueCountdown): void {
     const i = p.index, quad = this.quad;
     const x = quad ? clamp(COL_X0 + i * COL_W + COL_W / 2, CONT_HALF + 4, VIEW_W - CONT_HALF - 4) : CONT_X_WIDE[i];
     const y = quad ? CONT_Y_QUAD : 60, scr = this.screen;
@@ -378,7 +526,7 @@ export class Hud {
     if ((this.frame % 40) < 28) drawText(ctx, `ATTACK: CONTINUE (${scr ? scr.continues : 0})`, x, y + 72, { size: 1, color: UI.paper, align: 'center' });
   }
   /** Wave / section banners, or a brass name plate for bosses and phases. */
-  drawBanner(ctx, b) {
+  drawBanner(ctx: CanvasRenderingContext2D, b: Banner): void {
     const t = b.timer / b.life, a = t < 0.1 ? t / 0.1 : t > 0.8 ? (1 - t) / 0.2 : 1;
     ctx.globalAlpha = a;
     if (b.plate) {
@@ -398,7 +546,7 @@ export class Hud {
   }
   /** Super cut-in: dark band, 64px portrait slamming in from the player's side, move name + hero name banner.
    *  Slots 0/2 slam from the left, 1/3 from the right (four columns are never mirrored past that choice). */
-  drawCutIn(ctx, c) {
+  drawCutIn(ctx: CanvasRenderingContext2D, c: CutIn): void {
     const p = c.p, i = p.index || 0, t = c.timer, life = c.life, left = i % 2 === 0;
     const a = t > life - 12 ? (life - t) / 12 : 1, pr = this.playerRig(p);
     const y0 = 92, h = 84;
@@ -423,10 +571,10 @@ export class Hud {
   }
 }
 
-function comboWord(n) { return n >= 60 ? 'AETHERIC' : n >= 35 ? 'STEAMED' : n >= 20 ? 'BRASSY' : n >= 10 ? 'SPARKY' : n >= 3 ? 'SOOTY' : ''; }
+function comboWord(n: number): string { return n >= 60 ? 'AETHERIC' : n >= 35 ? 'STEAMED' : n >= 20 ? 'BRASSY' : n >= 10 ? 'SPARKY' : n >= 3 ? 'SOOTY' : ''; }
 
 /** A brass gear that shows crack lines while `crack` > 0 (countdown digits crack like a gear each second). */
-export function drawCrackGear(ctx, cx, cy, r, crack, frame) {
+export function drawCrackGear(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, crack: number, frame: number): void {
   gear(ctx, cx, cy, r, 10, crack > 0 ? '#f4e8c8' : '#5a3a1c', UI.brass, 1.5, frame * 0.01, r * 0.3, '#1a1018');
   if (crack > 0) {
     ctx.strokeStyle = '#1a1018'; ctx.lineWidth = 1.5; ctx.beginPath();

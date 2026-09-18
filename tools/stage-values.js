@@ -477,7 +477,7 @@ window.__sv = (function () {
 const server = createServer();
 await new Promise((r) => server.listen(0, r));
 const port = server.address().port;
-const browser = await chromium.launch();
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 await page.addInitScript({ content: ANALYSIS });
 const pageErrors = [];

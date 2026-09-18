@@ -28,7 +28,8 @@ const DRUM = '#544A34', CHAIN = '#8A94A2', HOT = '#FFD27A';
  * than a line rate's heat-ramp colour. Hers is the lighter, hotter of the two boss reds; the Admiral's is deeper.
  */
 const RANK = '#D8532C';
-const hit = (damage, type, kbX, kbY, hitstun, extra) => ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
+const hit = (damage: number, type: HitType, kbX: number, kbY: number, hitstun: number, extra?: Partial<Hitbox>): Partial<Hitbox> =>
+  ({ damage, type, kbX, kbY, hitstun, once: true, ...(extra || {}) });
 
 // ---------------------------------------------------------------- the harness (phase 1 only)
 /**

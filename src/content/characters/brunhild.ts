@@ -24,6 +24,8 @@ import { celRect, celBall, celPoly, celPath, tones, flat, band } from '../../lib
 import { drawSkull, drawFace, drawBoot, drawFist, drawBelt } from '../../lib/art/rigParts.ts';
 import { getChain } from '../../lib/art/secondary.ts';
 import { buildRig } from '../../lib/art/rig.ts';
+import type { Rig, RigBuild } from '../../lib/art/rig.ts';
+import type { PoseSpec } from '../../lib/art/poses.ts';
 import { drawHeadPortrait } from '../../art/portraits.ts';
 import { rad } from '../../lib/engine/math.ts';
 
@@ -196,14 +198,14 @@ function drawPauldron(ctx, rig) {
   if (!rig.override) { ctx.fillStyle = tones(rig, PAL.accent).deep; ctx.fillRect(R(cx) - 1, R(cy) - 1, 3, 3); }
 }
 /** Bust portrait (select cards / HUD): the real rig's head and shoulders in the idle carry, so it matches the sprite. */
-let portraitRig = null;
+let portraitRig: Rig | null = null;
 const PORTRAIT_POSE = P({ armR: [24, -10], weapon: -99, armL: [-36, -30], legR: [8, 0], legL: [-8, 0], torso: 2, head: -2, face: 'angry' });
 function portrait(ctx, x, y, s) {
   if (!portraitRig) portraitRig = buildRig(build);
   drawHeadPortrait(ctx, portraitRig, PORTRAIT_POSE, x, y, s, { bg: null, fill: 0.62, cy: 0.5 });
 }
 
-const build = {
+const build: RigBuild = {
   scale: 1, palette: PAL, outline: '#1E1A22', outlineWidth: 1, smearColor: '#D9C9A8',
   // readability knobs at their defaults, spelled out because this file is the reference (ART_STYLE section 0):
   // contact shadow under every limb, far limbs 38 % darker / 25 % greyer, two tones on parts thinner than 8 px
@@ -228,18 +230,18 @@ const build = {
  * canister standing on the ground. The far arm hangs BACK (-36/-30) so its fist emerges below the boiler behind the hip
  * and both arms show; feet planted wide. Face, beard, torso, both arms and both legs stay open (readability pass).
  */
-const CARRY = { armR: [24, -10], weapon: -99, armL: [-36, -30], legR: [8, 0], legL: [-8, 0] };
+const CARRY: PoseSpec = { armR: [24, -10], weapon: -99, armL: [-36, -30], legR: [8, 0], legL: [-8, 0] };
 /**
  * Hammer held ready in front of the chest, both hands on the handle (pose.grip = 1 solves the far arm onto it).
  * Two-handed keys were fitted so the grip point stays within the far arm's reach (see docs/ART_STYLE.md section 5):
  * every `grip: 1` key below keeps the far-shoulder -> grip distance under 25px.
  */
-const READY = { armR: [88, -130], weapon: -130, armL: [30, -60], grip: 1, legR: [14, 4], legL: [-14, 6] };
+const READY: PoseSpec = { armR: [88, -130], weapon: -130, armL: [30, -60], grip: 1, legR: [14, 4], legL: [-14, 6] };
 const SW = 'hammer_swing';
 /** Hit data of the jump slam (shared id = one hit per target across the hit + held frames). */
-const JUMP_HIT = { id: 'jumpAttack', x: -6, y: -50, w: 60, h: 78, z: 24, once: true, damage: 14, type: 'knockdown', kbX: 3, kbY: 4, hitstun: 20 };
+const JUMP_HIT: Hitbox = { id: 'jumpAttack', x: -6, y: -50, w: 60, h: 78, z: 24, once: true, damage: 14, type: 'knockdown', kbX: 3, kbY: 4, hitstun: 20 };
 /** Hammer dropped along the floor while lying (root rot -88: body-space +y runs toward the feet along the ground). */
-const FLOORED = { armR: [-24, -4], weapon: -24, armL: [25, 20], torso: 4, head: -10, legR: [10, 8], legL: [-4, 6], root: [30, -9, -88], face: 'dazed' };
+const FLOORED: PoseSpec = { armR: [-24, -4], weapon: -24, armL: [25, 20], torso: 4, head: -10, legR: [10, 8], legL: [-4, 6], root: [30, -9, -88], face: 'dazed' };
 
 const anims = {
   idle: { loop: true, frames: [

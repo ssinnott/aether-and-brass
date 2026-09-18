@@ -19,27 +19,69 @@
 // They are deliberately scope-independent: a link is a key to a board, whoever is playing.
 import { STAGES } from '../content/stage/index.ts';
 import { store } from './storage.ts';
+import type { StageData } from './stage.ts';
 
 const KEY = 'aetherAndBrass.progress.v1';
 const ID_KEY = 'aetherAndBrass.playerId.v1';
 /** The scope used when not in an online session. */
 export const SOLO_SCOPE = 'solo';
 
+/** One cleared board. There is no record for a board that has never been cleared, so `cleared` is always true. */
+export interface BoardRecord {
+  cleared: true;
+  /** Best score across every clear of this board in this scope. */
+  score: number;
+  /** The rank that best score earned; '' when the save carried none. */
+  rank: string;
+}
+
+/** One scope's cleared boards, by stage id. */
+export type BoardRecords = Record<string, BoardRecord>;
+
+/**
+ * A board record as it comes off disk. Every field is `unknown` because that is the honest type of anything
+ * `JSON.parse` produced — checking each one back into a `BoardRecord` is precisely what `sanitise` is.
+ */
+export interface SavedBoard {
+  cleared?: unknown;
+  score?: unknown;
+  rank?: unknown;
+}
+
+/** The save file as it comes off disk. `boards` at the top level is the v1 shape, read as solo (see `loadAll`). */
+interface SavedProgress {
+  version?: number;
+  scopes?: Record<string, { boards?: Record<string, SavedBoard> }>;
+  boards?: Record<string, SavedBoard>;
+}
+
 /** { [scopeKey]: { [stageId]: { cleared: true, score, rank } } }, read once per page load. */
-let scopes = null;
+let scopes: Record<string, BoardRecords> | null = null;
 /** Which scope reads and writes currently address. */
 let active = SOLO_SCOPE;
 /** This install's player id, cached after the first read. */
 let myId = '';
 /** Stage indices opened for this page load by a URL param. Not scoped: a link is a key, whoever plays. */
-const sessionOpen = new Set();
+const sessionOpen = new Set<number>();
 /** Stage indices opened for this page load WITHIN one scope, e.g. the board a co-op host chose. */
-const scopedOpen = new Map();
+const scopedOpen = new Map<string, Set<number>>();
 let sessionOpenAll = false;
 
+/**
+ * One board of the campaign. `StageData` (game/stage.ts) is the declared shape, and it is what every consumer of a
+ * board handed back from here already declares its own field as (screens/results.ts `unlocked`), so it is the
+ * contract this module publishes.
+ *
+ * The two returns below assert into it. The authored boards in content/stage/*.ts are NOT yet assignable to
+ * `StageData` — an authored row widens several literal unions to `string` (a hazard's `type` is the one tsc names
+ * first) — but that is a gap in the CONTENT layer's typing, not in this one, and it closes when content/stage
+ * joins the checked set. Asserting here rather than loosening the contract keeps the gap in one named place.
+ */
+export type Board = StageData;
+
 /** Keep only entries for boards that still exist, so a removed stage cannot unlock its neighbour. */
-function sanitise(boards) {
-  const out = {};
+function sanitise(boards: Record<string, SavedBoard> | null | undefined): BoardRecords {
+  const out: BoardRecords = {};
   if (!boards || typeof boards !== 'object') return out;
   for (const stage of STAGES) {
     const r = boards[stage.id];
@@ -49,13 +91,13 @@ function sanitise(boards) {
 }
 
 /** Read the save once per page load; a missing, unreadable or malformed save reads as empty. */
-function loadAll() {
+function loadAll(): Record<string, BoardRecords> {
   if (scopes) return scopes;
   scopes = {};
   const s = store(KEY);
   if (!s) return scopes;
   try {
-    const parsed = JSON.parse(s.getItem(KEY) || '{}');
+    const parsed: SavedProgress = JSON.parse(s.getItem(KEY) || '{}');
     if (parsed && parsed.scopes && typeof parsed.scopes === 'object') {
       for (const [key, rec] of Object.entries(parsed.scopes)) scopes[key] = sanitise(rec && rec.boards);
     } else if (parsed && parsed.boards) {
@@ -66,22 +108,22 @@ function loadAll() {
 }
 
 /** Records for the active scope, created on demand. */
-function load() {
+function load(): BoardRecords {
   const all = loadAll();
   if (!all[active]) all[active] = {};
   return all[active];
 }
 
-function persist() {
+function persist(): boolean {
   const s = store(KEY);
   if (!s) return false;
-  const out = {};
+  const out: Record<string, { boards: BoardRecords }> = {};
   for (const [key, boards] of Object.entries(loadAll())) out[key] = { boards };
   try { s.setItem(KEY, JSON.stringify({ version: 2, scopes: out })); return true; } catch (e) { return false; }
 }
 
 /** FNV-1a over a string, as 8 lowercase hex digits. Short enough to read in a save file. */
-function hash(str) {
+function hash(str: string): string {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
   return h.toString(16).padStart(8, '0');
@@ -93,7 +135,7 @@ export const progress = {
    * sent anywhere except to the peer you are playing with. When storage is unavailable the id is
    * per-page-load, so the group simply will not be remembered.
    */
-  playerId() {
+  playerId(): string {
     if (myId) return myId;
     const s = store(KEY);
     try {
@@ -109,14 +151,14 @@ export const progress = {
   },
 
   /** The scope a party of player ids shares, whoever hosts and whatever order they arrived in. */
-  groupScope(...ids) { return 'g:' + hash(ids.flat().map((v) => String(v || '')).sort().join('|')); },
+  groupScope(...ids: Array<string | string[]>): string { return 'g:' + hash(ids.flat().map((v) => String(v || '')).sort().join('|')); },
 
   /** Which scope is being read and written ('solo', or 'g:...' during an online session). */
-  get scope() { return active; },
+  get scope(): string { return active; },
   /** True while a co-op group's progress is the active scope. */
-  get isGroup() { return active !== SOLO_SCOPE; },
+  get isGroup(): boolean { return active !== SOLO_SCOPE; },
   /** Point reads and writes at a scope. Pass nothing to go back to solo. */
-  setScope(key) { active = key || SOLO_SCOPE; },
+  setScope(key?: string | null): void { active = key || SOLO_SCOPE; },
 
   /**
    * Run `fn` with `scope` active, restoring the scope that was active before it either way.
@@ -125,9 +167,9 @@ export const progress = {
    * left the stack, and leaving it is what releases the session's grip on the group's progress, so
    * the scope the run was played in has to be handed to the plaque explicitly rather than read off
    * whatever is active by the time it is drawn.
-   * @param {string} scope a scope key, or '' / null to just run `fn` where it is
+   * @param scope a scope key, or '' / null to just run `fn` where it is
    */
-  inScope(scope, fn) {
+  inScope<T>(scope: string | null | undefined, fn: () => T): T {
     if (!scope || scope === active) return fn();
     const prev = active;
     active = scope;
@@ -135,15 +177,15 @@ export const progress = {
   },
 
   /** Record for a cleared board in the active scope, or null. `{ cleared: true, score, rank }` */
-  record(stageId) { return load()[stageId] || null; },
+  record(stageId: string): BoardRecord | null { return load()[stageId] || null; },
   /** True when this board has been cleared at least once in the active scope. */
-  isCleared(stageId) { return !!load()[stageId]; },
+  isCleared(stageId: string): boolean { return !!load()[stageId]; },
   /**
    * True when the board at this index can be picked: board 0 always, later boards once their predecessor is
    * cleared IN THE ACTIVE SCOPE, plus any board opened for this session by a URL param.
-   * @param {number} index 0-based index into STAGES
+   * @param index 0-based index into STAGES
    */
-  isUnlocked(index) {
+  isUnlocked(index: number): boolean {
     if (index <= 0) return true;
     if (sessionOpenAll || sessionOpen.has(index)) return true;
     const scoped = scopedOpen.get(active);
@@ -152,17 +194,15 @@ export const progress = {
     return !!(prev && this.isCleared(prev.id));
   },
   /** The board whose clear opens the one at `index` (null for board 1 and for anything already open). */
-  requirementFor(index) { return index > 0 && !this.isUnlocked(index) ? STAGES[index - 1] || null : null; },
+  requirementFor(index: number): Board | null { return index > 0 && !this.isUnlocked(index) ? (STAGES[index - 1] as Board) || null : null; },
   /** How many boards are currently selectable in the active scope. */
-  unlockedCount() { return STAGES.reduce((n, _, i) => n + (this.isUnlocked(i) ? 1 : 0), 0); },
+  unlockedCount(): number { return STAGES.reduce((n, _, i) => n + (this.isUnlocked(i) ? 1 : 0), 0); },
   /**
    * Mark a board cleared in the ACTIVE SCOPE and keep the best score / rank. Returns the board this clear
    * opened, or null when it opened nothing (already cleared, or it was the last board). A co-op clear
    * therefore advances the group and leaves both players' solo saves untouched.
-   * @param {string} stageId
-   * @param {{score?: number, rank?: string}} run
    */
-  markCleared(stageId, run = {}) {
+  markCleared(stageId: string, run: { score?: number; rank?: string } = {}): Board | null {
     const all = load();
     const index = STAGES.findIndex((s) => s.id === stageId);
     if (index < 0) return null;
@@ -173,25 +213,25 @@ export const progress = {
     persist();
     const next = STAGES[index + 1];
     // "newly unlocked" is about the board this clear opened, so a repeat clear of the same board opens nothing
-    return !wasCleared && next ? next : null;
+    return !wasCleared && next ? next as Board : null;
   },
   /**
    * Open one board for this page load only (never saved).
-   * @param {number} index 0-based index into STAGES
-   * @param {string} [scope] when given, the board opens only while that scope is active. A co-op host's
+   * @param index 0-based index into STAGES
+   * @param scope when given, the board opens only while that scope is active. A co-op host's
    *   board choice uses this so it cannot show up as unlocked on the guest's own solo BOARD SELECT;
    *   `?stage=N` passes no scope, because a link is a key whoever is playing.
    */
-  allowSession(index, scope) {
+  allowSession(index: number, scope?: string | null): void {
     if (index <= 0) return;
     if (!scope) { sessionOpen.add(index); return; }
     if (!scopedOpen.has(scope)) scopedOpen.set(scope, new Set());
     scopedOpen.get(scope).add(index);
   },
   /** Open every board for this page load only (never saved). Used by `?unlockall=1`. */
-  unlockAllForSession() { sessionOpenAll = true; },
+  unlockAllForSession(): void { sessionOpenAll = true; },
   /** Forget all progress in EVERY scope, in memory and on disk. */
-  reset() {
+  reset(): void {
     scopes = {};
     active = SOLO_SCOPE;
     sessionOpen.clear(); scopedOpen.clear(); sessionOpenAll = false;

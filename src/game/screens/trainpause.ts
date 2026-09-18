@@ -9,6 +9,12 @@ import { drawText } from '../../engine/text.ts';
 import { drawPlate, drawMenuRows, consumeMenuBuffers } from './pause.ts';
 import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.ts';
 import { DUMMY_MODES, METER_LOCKS } from './training.ts';
+// Type-only: the plate reaches down for the room's own shapes rather than adding a module edge (it already
+// imports the two tables above from there), the same arrangement as the block at the top of
+// game/screens/gameplay.ts. `import type` is erased by tsc, esbuild and node alike.
+import type { Game, ScreenParams } from '../game.ts';
+import type { MeterLock, TrainingScreen } from './training.ts';
+import type { DummyMode } from '../enemy.ts';
 
 const PLATE_W = 260, PLATE_Y = 52, PLATE_H = 250, ROWS_Y0 = PLATE_Y + 40, ROW_H = 14;
 const DUMMY_LABEL = { stand: 'STAND', block: 'BLOCK-STAGGER', cpu: 'CPU' };
@@ -16,16 +22,51 @@ const METER_LABEL = { normal: 'NORMAL', full: 'LOCK FULL', empty: 'LOCK EMPTY' }
 const ROWS = ['RESUME', 'DUMMY', 'VARIANT', 'FACING', 'REFILL HEALTH', 'METER', 'HITBOXES', 'FRAME DATA', 'RESET POSITIONS', 'MOVES', 'TRIALS', 'COMMANDS', 'QUIT TO TITLE'];
 const R = { RESUME: 0, DUMMY: 1, VARIANT: 2, FACING: 3, REFILL: 4, METER: 5, HITBOXES: 6, FRAME_DATA: 7, RESET: 8, MOVES: 9, TRIALS: 10, COMMANDS: 11, QUIT: 12 };
 
+/**
+ * One choice on the VARIANT row: the `type:variant` pair the room respawns its dummy from, and the enemy's own
+ * display name to put on the row. Built once in enter() from `game.enemyList`, bosses left out.
+ */
+export interface DummyVariant {
+  key: string;
+  name: string;
+}
+
 /** Training pause plate. Escape (or a joined slot's jump / dodge) resumes; up/down moves the cursor;
  *  left/right cycles a row's value; CONFIRM -- ENTER or attack -- activates a row, which on the RESUME
  *  row it opens on resumes (game/menuinput.js owns that scheme). window.__game reaches the room through
  *  the TrainingScreen underneath, `this.tr`. */
 export class TrainPauseScreen extends Screen {
-  constructor(game) { super(game, 'trainpause'); this.transparent = true; }
-  enter(params) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are assignments
+  // and nothing else: a plain field declaration would emit a class field per name (es2022 defines them before the
+  // constructor body runs), which is a runtime change. Same reasoning, and the same wording, as game/entity.ts.
+  /** The highlighted ROWS index. */
+  declare cursor: number;
+  /** The training room underneath, or undefined when nothing is below (see enter()). */
+  declare tr: TrainingScreen | undefined;
+  declare variants: DummyVariant[];
+  /** ROWS with the six value rows rewritten by refreshLabels(); what draw() hands drawMenuRows. */
+  declare labels: string[];
+  // The cached opts keys the labels were last built from. Declared as the live field's type ORed with null because
+  // null is what enter() seeds them with: null never equals a live value, so the first refreshLabels() always
+  // rebuilds. Same arrangement, and the same wording, as the frame-data keys in screens/training.ts.
+  declare lkMode: DummyMode | null;
+  declare lkVariant: string | null;
+  declare lkFaceLock: boolean | null;
+  declare lkMeterLock: MeterLock | null;
+  declare lkHitboxes: boolean | null;
+  declare lkFrameData: boolean | null;
+  /** The key hint, and the `input.bindingsVersion` it was built from; -1 until the first build. */
+  declare keysHint: string;
+  declare hintVersion: number;
+
+  constructor(game: Game) { super(game, 'trainpause'); this.transparent = true; }
+  override enter(params: ScreenParams): void {
     super.enter(params);
     this.cursor = 0;
-    this.tr = this.game.screens[this.game.screens.length - 2];
+    // Type-only and no wider than this line: the stack is a `Screen[]`, and only this plate's pusher knows the
+    // screen below it is the training room (TrainingScreen.pauseScreenId). `| undefined` is the case where
+    // nothing is below at all, which is what the `!tr` guards in refreshLabels() and update() are for.
+    this.tr = this.game.screens[this.game.screens.length - 2] as TrainingScreen | undefined;
     this.variants = (this.game.enemyList || []).filter((e) => e.role !== 'boss').map((e) => ({ key: `${e.type}:${e.variant}`, name: e.name }));
     this.labels = ROWS.slice();
     // Cached opts, compared field-by-field below (never through a throwaway template-string key -- review
@@ -37,7 +78,7 @@ export class TrainPauseScreen extends Screen {
     this.keysHint = ''; this.hintVersion = -1;
   }
   /** Rebuild the 12 row labels from the training screen's live opts -- cursor moves alone never rebuild. */
-  refreshLabels() {
+  refreshLabels(): void {
     const tr = this.tr;
     if (!tr) return;
     const o = tr.opts;
@@ -53,7 +94,7 @@ export class TrainPauseScreen extends Screen {
     this.labels[R.HITBOXES] = `HITBOXES  < ${o.hitboxes ? 'ON' : 'OFF'} >`;
     this.labels[R.FRAME_DATA] = `FRAME DATA  < ${o.frameData ? 'ON' : 'OFF'} >`;
   }
-  update() {
+  override update(): void {
     super.update();
     const inp = this.game.input, audio = this.game.audio, tr = this.tr;
     if (this.hintVersion !== inp.bindingsVersion) {
@@ -103,8 +144,8 @@ export class TrainPauseScreen extends Screen {
   }
   /** Resume: consume the buffered press so it never leaks into the sim as an attack / jump / etc. Also
    *  called by trialsScreen.js after picking a trial, so the buffer is cleared through the same path. */
-  resume() { this.game.audio.play('unpause'); consumeMenuBuffers(this.game.input); this.game.pop(); }
-  draw(ctx) {
+  resume(): void { this.game.audio.play('unpause'); consumeMenuBuffers(this.game.input); this.game.pop(); }
+  override draw(ctx: CanvasRenderingContext2D): void {
     const f = this.frame, w = PLATE_W, h = PLATE_H, x = (VIEW_W - w) / 2, y = PLATE_Y;
     drawPlate(ctx, x, y, w, h, f, 'TRAINING');
     drawMenuRows(ctx, this.labels, this.cursor, ROWS_Y0, f, ROW_H);

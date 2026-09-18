@@ -141,8 +141,31 @@ export function windowDots(g, x, y, w, h, rnd, color = '#e8c070', sx = 6, sy = 8
     for (let xx = x + 3; xx < x + w - wx; xx += sx) if (rnd() < litChance) g.fillRect(xx, yy, wx, wy);
   }
 }
+/** The lit-window grid a skyline block carries, in `windowDots`' own terms. */
+export interface SkylineWindows {
+  color?: string;
+  /** Column / row pitch of the grid, px. */
+  sx?: number;
+  sy?: number;
+  /** Fraction of cells that are lit, 0..1. */
+  chance?: number;
+}
+
+/** What `skyline` takes beyond the baseline: block width range, windows, chimneys and the roof terrace step. */
+export interface SkylineOpts {
+  /** Block width range, px (default 18..48). */
+  minW?: number;
+  maxW?: number;
+  /** Lit windows on every block; null draws none. */
+  windows?: SkylineWindows | null;
+  /** Fraction of blocks that get a chimney, 0..1 (default 0.3). */
+  chimneys?: number;
+  /** Height of the inset terrace on top of each block, px (0 = flat). */
+  step?: number;
+}
+
 /** Stepped city silhouette (terraces of flat-roofed blocks) drawn along a baseline, filled with `color`. */
-export function skyline(g, x0, x1, baseY, minH, maxH, rnd, color, opts = {}) {
+export function skyline(g, x0, x1, baseY, minH, maxH, rnd, color, opts: SkylineOpts = {}) {
   const { minW = 18, maxW = 48, windows = null, chimneys = 0.3, step = 0 } = opts;
   let x = x0;
   g.fillStyle = color;

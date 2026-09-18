@@ -7,6 +7,11 @@ import { drawCorsairCutlass } from '../art/weapons.ts';
 import { drawHalberd, drawRapier } from '../content/enemies/brassbound.ts';
 import { drawShovel } from '../content/enemies/chandlerKit.ts';
 import { VIEW_W } from '../constants.ts';
+// The rig and animation shapes come from the vendored library rather than being restated here: `RigWeapon` is
+// exactly the `build.weapon` block lib/art/rig.ts draws in hand space, and `AnimSet` is the set lib/art/animation.ts's
+// AnimPlayer takes as an overlay — which is what a wielded weapon's table is handed to (game/player.ts wield).
+import type { RigWeapon } from '../lib/art/rig.ts';
+import type { AnimSet } from '../lib/art/animation.ts';
 
 /**
  * Resting weapon-arm pose while a hero carries a pickup weapon (a copy of brassbound's private C_HALB: weapon low
@@ -26,7 +31,7 @@ const SM_LOW = { from: 200, to: 0, a: 0.5, r: 66 };
  * (art/animLib.js), so a swing carrying its own `smear` gets it patched onto the active frame (frames[1], the key
  * the hitbox lives on) here.
  */
-function swing(s, last) {
+function swing(s: WeaponSwing, last: boolean) {
   const a = strike({
     style: s.style, startup: s.startup, active: s.active, recovery: s.recovery, ret: 4, carry: WEAPON_CARRY,
     reach: s.reach, low: s.low, sfx: s.sfx,
@@ -38,8 +43,8 @@ function swing(s, last) {
   return a;
 }
 /** Build a weapon's { attack1..N } table from its `swings` list; the last swing chain-cancels into anything. */
-function anims(swings) {
-  const t = {};
+function anims(swings: WeaponSwing[]): AnimSet {
+  const t: AnimSet = {};
   swings.forEach((s, i) => { t['attack' + (i + 1)] = swing(s, i === swings.length - 1); });
   return t;
 }
@@ -50,11 +55,82 @@ function anims(swings) {
 // Per-weapon throw feel (issue #21, GDD 7): speed/vy/gravity shape the arc, damage/type/kbX/kbY/hitstun/pierce/
 // maxDist the hit it lands, spin a visual rotation-rate multiplier (throwables.js drawThrownWeapon). limeRake's
 // `patch` is the lime-patch spec its landing spot leaves behind (step 21.2). See ThrowSpec in throwables.js.
-const THROW_HALBERD = { speed: 7, vy: 1.5, gravity: 0.25, damage: 22, type: 'knockdown', kbX: 5, kbY: 5, hitstun: 24, pierce: 0, maxDist: 200, spin: 0 };
-const THROW_CUTLASS = { speed: 10, vy: 1, gravity: 0.2, damage: 14, type: 'heavy', kbX: 4, kbY: 0, hitstun: 22, pierce: 1, maxDist: 260, spin: 0.5 };
-const THROW_LIMERAKE = { speed: 6, vy: 5, gravity: 0.45, damage: 12, type: 'knockdown', kbX: 3, kbY: 4, hitstun: 20, pierce: 0, maxDist: 220, spin: 0.2, patch: { life: 150, r: 34, mult: 0.5, frames: 30 } };
+/** A smear spec as art/secondary.ts consumes one on the active frame. */
+export interface WeaponSmear { from: number; to: number; a: number; r?: number; }
 
-const table = {
+/** One swing of a weapon's ground chain: the frame budget, the reach, and the hit it lands. */
+export interface WeaponSwing {
+  /** Which `strike()` shape to build (art/animLib.ts): thrust, swing, backhand, slam. */
+  style: string;
+  /** A low swing: the arc and the slash FX drop to shin height. */
+  low?: boolean;
+  startup: number;
+  active: number;
+  recovery: number;
+  reach: number;
+  /** Damage. Named `dmg` here and mapped onto the hit's `damage` by `swing()`. */
+  dmg: number;
+  type: HitType;
+  kbX: number;
+  kbY?: number;
+  hitstun: number;
+  /** Statuses the hit applies (game/status.ts): the lime rake's burn. `any` per entry: each status names its own
+   *  fields, same as `Hit.status` in types/content.d.ts and `ProjectileOpts.status` in game/projectile.ts. */
+  status?: Record<string, any>;
+  sfx: string;
+  smear?: WeaponSmear;
+}
+
+/**
+ * Per-weapon throw feel (issue #21, GDD 7) — the block the comment above describes, and the weapon half of
+ * game/throwables.ts's `ThrowSpec`. Declared here because this module AUTHORS these and throwables.ts imports
+ * this one, so the dependency must not run back the other way (see the cycle note at the top of this file).
+ */
+export interface WeaponThrow {
+  /** The arc: launch speed along facing, initial upward velocity, and the gravity pulling it down. */
+  speed: number;
+  vy: number;
+  gravity: number;
+  /** The hit it lands. */
+  damage: number;
+  type: HitType;
+  kbX: number;
+  kbY: number;
+  hitstun: number;
+  /** Extra targets after the first. */
+  pierce: number;
+  /** How far it flies before it drops. */
+  maxDist: number;
+  /** Visual rotation-rate multiplier (throwables.ts drawThrownWeapon). */
+  spin: number;
+  /** The lime rake only: the lime patch its landing spot leaves behind (step 21.2). */
+  patch?: { life: number; r: number; mult: number; frames: number; };
+}
+
+/** One pickup weapon. */
+export interface WeaponDef {
+  id: string;
+  name: string;
+  /** Durability: connecting swings it can make before it shatters. */
+  hits: number;
+  color: string;
+  rig: RigWeapon;
+  swings: WeaponSwing[];
+  throw: WeaponThrow;
+  /**
+   * The `{ attack1..N }` table built from `swings`, and the shortest reach in the chain. Both are filled in by the
+   * loop under the table below, so both are always present by the time anything reads a weapon; they are optional
+   * only because the table is AUTHORED without them.
+   */
+  anims?: AnimSet;
+  reach?: number;
+}
+
+const THROW_HALBERD: WeaponThrow = { speed: 7, vy: 1.5, gravity: 0.25, damage: 22, type: 'knockdown', kbX: 5, kbY: 5, hitstun: 24, pierce: 0, maxDist: 200, spin: 0 };
+const THROW_CUTLASS: WeaponThrow = { speed: 10, vy: 1, gravity: 0.2, damage: 14, type: 'heavy', kbX: 4, kbY: 0, hitstun: 22, pierce: 1, maxDist: 260, spin: 0.5 };
+const THROW_LIMERAKE: WeaponThrow = { speed: 6, vy: 5, gravity: 0.45, damage: 12, type: 'knockdown', kbX: 3, kbY: 4, hitstun: 20, pierce: 0, maxDist: 220, spin: 0.2, patch: { life: 150, r: 34, mult: 0.5, frames: 30 } };
+
+const table: Record<string, WeaponDef> = {
   halberd: {
     id: 'halberd', name: 'HALBERD', hits: 12, color: '#9EB5D3',
     rig: { attach: 'handR', length: 58, draw: drawHalberd, headAt: 44 },
@@ -100,7 +176,7 @@ for (const w of Object.values(table)) {
   w.reach = Math.min(...w.swings.map((s) => s.reach));
 }
 /** The four pickup weapon defs, keyed by id (game/items.js WeaponPickup, game/player.js wield/drop/break). */
-export const WEAPONS = Object.freeze(table);
+export const WEAPONS: Readonly<Record<string, WeaponDef>> = Object.freeze(table);
 
 /** Bot weapon-seeking tuning (game/bot.js) and player-drop behaviour (game/player.js). */
 export const WEAPON_SEEK_DIST = 140, WEAPON_SEEK_SAFE_X = 110, WEAPON_SEEK_SAFE_Z = 40;

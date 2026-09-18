@@ -15,6 +15,7 @@ import { celRect, celBall, celPoly, celCapsule, celPath, tones, flat, rimTop, pa
 import { getChain } from '../../lib/art/secondary.ts';
 import { jointScreen } from '../../lib/art/rig.ts';
 import { rrect, pathPoly, paint } from '../../lib/art/shapes.ts';
+import type { PoseSpec } from '../../lib/art/poses.ts';
 import { rad } from '../../lib/engine/math.ts';
 import { particles } from '../../engine/particles.ts';
 
@@ -318,17 +319,16 @@ const HOISTER_BUILD = {
 // ---------------------------------------------------------------- Hoister animations
 const HC = { armR: [58, -8], armL: [-57, 22], weapon: -90, torso: 3, head: 0, legR: [7, 2], legL: [-7, 2], grip: 0, handL: 0 };
 const HBASE = makeBrassBase(HC);
-const HD = (t, y) => ({ kind: 'dust', x: t, y: y || 0, count: 2 });
+const HD = (t: number, y?: number) => ({ kind: 'dust', x: t, y: y || 0, count: 2 });
 /** Chassis walk key: heavy contact / down / pass / up, dust on the two down keys. */
-const hw8 = (lr, ll, aR, aL, ty, sq) => ({ ...HC, legR: lr, legL: ll, armR: aR, armL: aL, torso: 5, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
+const hw8 = (lr: number[], ll: number[], aR: number[], aL: number[], ty: number, sq?: number): PoseSpec => ({ ...HC, legR: lr, legL: ll, armR: aR, armL: aL, torso: 5, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
 
 const CLAW_BOX = { ...frontBox(100, hitOf(22, 'knockdown', 6, 4, 16)), sfx: 'hit_heavy' };
-const POUND_HIT = { damage: 18, type: 'knockdown', kbX: 5, kbY: 5, hitstun: 16, once: true };
+const POUND_HIT: Hit = { damage: 18, type: 'knockdown', kbX: 5, kbY: 5, hitstun: 16, once: true };
 const CRATE_SPEC = { fromSky: true, aimAt: true, style: 'crate', height: 230, gravity: 0.55, life: 200, damage: 24, type: 'knockdown', kbX: 4, kbY: 5, radius: 60, color: '#9a7040', r: 12, muzzle: false, draw: drawCrate };
 const HOOK_SPEC = { style: 'claw', chained: true, speed: 6, maxDist: 320, damage: 30, type: 'knockdown', kbX: -4, kbY: 4, hitstun: 24, offsetX: 40, offsetY: 50, color: STEEL, r: 9, life: 70, muzzle: false, draw: drawHookShot };
 
-/** @type {AnimSet} */
-const hoisterAnims = {
+const hoisterAnims: AnimSet = {
   ...HBASE,
   // idle: the pistons breathe, the chassis rocks 3 deg and the boiler chuffs (drawBoiler / rig.tick)
   idle: { loop: true, frames: [
@@ -516,14 +516,14 @@ const HUNCH = 15;
 const GC = { armR: [26, 30], weapon: 0, armL: [-30, -18], grip: 0, handL: 0 };
 const K = (s) => ({ torso: HUNCH, head: -7, legR: [8, 4], legL: [-8, 6], ...GC, ...s });
 const AD = (a, du, dl) => [a[0] + du, a[1] + dl];
-const gw = (lr, ll, al, ty, sq, hd) => K({ legR: lr, legL: ll, armL: al, armR: AD(GC.armR, 3, -3), torso: HUNCH + 3, head: -7 + (hd || 0), root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
-const gr = (lr, ll, al, ty, sq) => K({ legR: lr, legL: ll, armL: al, armR: AD(GC.armR, -16, -8), torso: HUNCH + 18, head: -14, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'angry' });
+const gw = (lr: number[], ll: number[], al: number[], ty: number, sq?: number, hd?: number) => K({ legR: lr, legL: ll, armL: al, armR: AD(GC.armR, 3, -3), torso: HUNCH + 3, head: -7 + (hd || 0), root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
+const gr = (lr: number[], ll: number[], al: number[], ty: number, sq?: number) => K({ legR: lr, legL: ll, armL: al, armR: AD(GC.armR, -16, -8), torso: HUNCH + 18, head: -14, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'angry' });
 const GFLOOR = { armR: [-20, -6], weapon: -10, armL: [30, 20], torso: 2, head: -12, legR: [12, 10], legL: [-4, 8], root: [24, -8, -88], grip: 0, handL: 0 };
 const NET_SPEC = { style: 'net', speed: 5, damage: 4, type: 'medium', kbX: 0, hitstun: 70, maxDist: 220, life: 80, offsetX: 16, offsetY: 50, color: '#c8b070', r: 10, muzzle: false };
 const HAT_SPEC = { style: 'hat', speed: 5, damage: 8, type: 'medium', kbX: 3, hitstun: 16, maxDist: 220, life: 90, offsetX: 10, offsetY: 60, color: HAT, r: 8, muzzle: false, pierce: 2 };
 const WHIP_BOX = frontBox(60, hitOf(8, 'medium', 3, 0, 18), { high: true });
 
-const grubbikAnims = {
+const grubbikAnims: AnimSet = {
   idle: { loop: true, frames: [
     FK(14, K({ root: [0, 0] }), { ease: 'inout' }),
     FK(12, K({ torso: HUNCH + 3, head: -4, root: [0, 1], armL: AD(GC.armL, 4, 2), armR: AD(GC.armR, 2, -2), squash: 1.02, stretch: 0.98 }), { ease: 'inout' }),

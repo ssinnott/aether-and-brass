@@ -24,7 +24,7 @@ fs.mkdirSync(outDir, { recursive: true });
 const server = createServer();
 await new Promise((r) => server.listen(0, r));
 const port = server.address().port;
-const browser = await chromium.launch();
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));

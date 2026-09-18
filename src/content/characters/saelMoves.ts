@@ -1,8 +1,7 @@
 // Sael Windwright — move list + trials (issue #22). Numbers mirror the header comment in sael.js / GDD 2.2.
 import { step, comboTrial, jumpGrabTrial, dodgeCancelTrial, throwBodyTrial } from './common.ts';
 
-/** @type {MoveEntry[]} */
-export const moveList = [
+export const moveList: MoveEntry[] = [
   { id: 'combo', name: 'RAPIER COMBO', input: 'ATTACK x4', desc: 'THRUST 5 > THRUST 5 > SPIN SLASH 8 FRONT+BACK > RISING LUNGE 10 LAUNCH', anims: ['attack1', 'attack2', 'attack3', 'attack4'] },
   { id: 'jump', name: 'DIVE KICK', input: 'JUMP, ATTACK', desc: '12 DMG. ON HIT SHE REBOUNDS AND CAN ACT AGAIN', anim: 'jumpAttack' },
   { id: 'dash', name: 'ARC DASH', input: 'RUN + ATTACK', desc: '60PX DASH THROUGH ENEMIES, 8 TO EACH, CANCELS INTO THE COMBO', anim: 'dashAttack' },
@@ -17,8 +16,7 @@ export const moveList = [
   { id: 'taunt', name: 'TAUNT', input: 'TAUNT', desc: '+25 METER OVER THE ANIMATION. INTERRUPTIBLE', anim: 'taunt' },
 ];
 
-/** @type {Trial[]} */
-export const trials = [
+export const trials: Trial[] = [
   comboTrial(4),
   { id: 'airdash', name: 'AIR DASH KICK', hint: 'JUMP, DODGE IN THE AIR, THEN ATTACK', window: 60, steps: [step('AIR DASH', 'airDash'), step('DIVE KICK', 'hit', 'jumpAttack')] },
   { id: 'rebound', name: 'DOUBLE DIVE', hint: 'DIVE KICK, REBOUND, DIVE KICK AGAIN', window: 60, steps: [step('DIVE KICK', 'hit', 'jumpAttack'), step('DIVE KICK AGAIN', 'hit', 'jumpAttack')] },

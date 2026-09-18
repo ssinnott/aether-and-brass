@@ -56,6 +56,10 @@ import { Entity } from './entity.ts';
 import { Projectile } from './projectile.ts';
 
 import { worldHitbox } from './entity.ts';
+import type { Aabb, CameraView, EntityWorld } from './entity.ts';
+// Type-only, and it has to stay that way: game/fighter.ts imports `solidAt` from this module, so a value import
+// back the other way would close an import cycle. `import type` is erased by tsc, esbuild and node alike.
+import type { Fighter, FighterState } from './fighter.ts';
 import { particles } from '../engine/particles.ts';
 import { audio } from '../engine/audio.ts';
 import { rng, makeRng } from '../lib/engine/rng.ts';
@@ -72,7 +76,10 @@ const vrng = makeRng(0x4a2d);
 /** Board outline ink, the air-borne state set and the board palette: shared with game/zones.js, which is the
  *  other half of this file and paints the same boards. */
 export const OL = '#2B2B30';
-export const AIR_STATES = new Set([ST.KNOCKDOWN, ST.THROWN, ST.HURT_AIR]);
+// Typed with the state union rather than left to infer the three literals it is built from: it is asked about a
+// fighter's CURRENT state (game/zones.ts), and a set of three literals cannot be. Same form as game/fighter.ts's
+// own HITSTUN_STATES / AIR_FALL_STATES.
+export const AIR_STATES = new Set<FighterState>([ST.KNOCKDOWN, ST.THROWN, ST.HURT_AIR]);
 /** Board energy colours (docs/ART_STYLE 4): storm violet / gas green (board 2), rite lime / quicklime / tallow (board 3), tailings rose (board 4). */
 const STORM = '#9B7BFF', GAS = '#7FD66B', LIME = '#D8FF6E', QUICKLIME = '#E6ECDC', TALLOW = '#C29B4A';
 export const ROSE = '#FF57B0';
@@ -87,8 +94,71 @@ const BURN = { frames: 60, every: 20, damage: 2 };
  * juggled whoever it launched until the juggle cap — a single vent could take half a health bar.
  */
 const HAZARD_GRACE = 90;
+
+/**
+ * The types HAZARD_TYPES below defines, which is also the set a stage spec may name. `drop` is not one of them:
+ * it is a spec alias resolved to ledgerDrop / ballastDrop by `look` in the constructor (see HazardSpec).
+ */
+export type HazardType = 'steamVent' | 'aetherVent' | 'piston' | 'hook' | 'crossbar' | 'lightning' | 'cannon'
+  | 'gasCell' | 'limePit' | 'wagon' | 'tallowVat' | 'kilnMouth' | 'ledgerDrop' | 'ballastDrop' | 'gasSeep';
+
+/** Where a hazard is in its cycle: dormant, giving its fair warning (GDD 6), or live. */
+export type HazardPhase = 'idle' | 'tell' | 'active';
+
+/**
+ * The hit a hazard deals: a content `Hit` (types/content.d.ts) plus the one field an OWNERLESS area hit carries
+ * that a frame's hitbox does not — `z`, the HALF-DEPTH in z of the band it covers. world.areaHit forces `hit.z = r`
+ * on the circular hits; the crossbar, the cannon's lane and the kiln's cone set their own, because their footprint
+ * is a rectangle in z rather than a circle.
+ */
+export interface HazardHit extends Hit {
+  z?: number;
+}
+
+/**
+ * One row of HAZARD_TYPES: the timing, the footprint, the sounds and the hit a type is built from. Everything a
+ * placement leaves out of its HazardSpec is read off here; the HAZARD TABLE at the top of this file is the same
+ * data in prose, and the two are meant to be read together.
+ */
+export interface HazardInfo {
+  /** Frames in one full cycle: idle, then `tell`, then `active`. */
+  period: number;
+  /** Frames of fair warning before the hit. */
+  tell: number;
+  /** Frames the hazard is live. The wagon derives its own from the length of its run. */
+  active: number;
+  /** Footprint radius, which is also the entity's zSize. */
+  r: number;
+  /** Frames between re-scans of the active window for someone who has walked into it. */
+  every: number;
+  /** Frames a body it catches is immune to THIS hazard; HAZARD_GRACE when a type leaves it out. */
+  grace: number;
+  color: string;
+  hit: HazardHit;
+  /** Played on the first tell frame. */
+  tellSfx?: string;
+  /** Played on the first active frame. null for the hook, which is always swinging and so never starts. */
+  sfx: string | null;
+  /** hook: half the sweep, px either side of x. */
+  swing?: number;
+  /** crossbar / cannon: the full z width of the band it sweeps. */
+  lane?: number;
+  /** cannon: how far the ball travels in x. kilnMouth: how far the cone reaches in z. */
+  reach?: number;
+  /** cannon: which way it fires, +1 or -1. */
+  dir?: number;
+  /** gasCell: px/frame the cloud drifts along x. */
+  drift?: number;
+  /** kilnMouth: half the cone's width in x. */
+  halfW?: number;
+  /** wagon: px/frame it rolls. */
+  speed?: number;
+  /** gasCell: the hit everyone in the cloud takes when something lights it. */
+  burst?: HazardHit;
+}
+
 /** Per-type defaults: period / tell / active frames, the hit applied while active, and the per-body grace after it. */
-export const HAZARD_TYPES = {
+export const HAZARD_TYPES: Record<HazardType, HazardInfo> = {
   steamVent: { period: 180, tell: 30, active: 45, r: 26, every: 12, grace: 90, color: '#e8f0f4', hit: { damage: 7, type: 'launch', kbX: 6, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
   aetherVent: { period: 120, tell: 30, active: 40, r: 26, every: 12, grace: 100, color: '#4DF0E0', hit: { damage: 10, type: 'launch', kbX: 6, kbY: 8, hitstun: 20 }, tellSfx: 'vent_tell', sfx: 'steam' },
   piston: { period: 240, tell: 36, active: 10, r: 30, every: 10, grace: 110, color: '#4a4e58', hit: { damage: 16, type: 'knockdown', kbX: 5, kbY: 5, hitstun: 24 }, tellSfx: 'hydraulic', sfx: 'piston_crush' },
@@ -138,6 +208,141 @@ const CAM_MARGIN = 120;
 
 const HAZARD_CLEARANCE = 10;   // z margin an enemy leaves around a hazard footprint
 
+/** A floor rectangle to route around: what `dangerBox()` reports to enemy pathing and to the autopilot. */
+export interface DangerBox { x0: number; x1: number; z0: number; z1: number; }
+
+/** One fire source registered for the frame (world.fires): a burn tick, a fire projectile or puddle, a boiling vat. */
+export interface FireSource { x: number; z: number; r: number; }
+
+/**
+ * What the three pathing scans below read off an entry of `world.entities`. Two classes answer it — `Hazard` in
+ * this file (`isHazard`) and `Zone` in game/zones.ts (`isSolid`, issue #31) — and everything else in the world
+ * leaves both flags undefined and is dropped by the first test of every scan. Every member but `removeMe` is
+ * optional because that is precisely what the flags mean: the solid fields are there when `isSolid` is.
+ */
+export interface Obstacle {
+  removeMe: boolean;
+  /** A cyclic stage hazard: it goes quiet between cycles, so its dangerBox() comes and goes. */
+  isHazard?: boolean;
+  /** A `solid` zone: a wall or a floor gap, which never has a quiet phase. */
+  isSolid?: boolean;
+  /** Solid: the y a body must clear to pass over it. 0 is a floor GAP, which blocks nothing. */
+  height?: number;
+  /** Solid: false once a `breakable` band's barricade Prop is down. */
+  blocking?: boolean;
+  /** Solid: the band blocks only while the Prop inside it still stands. */
+  breakable?: boolean;
+  x0?: number;
+  x1?: number;
+  z0?: number;
+  z1?: number;
+  dangerBox?(): DangerBox | null;
+}
+
+/**
+ * What the three pathing scans need off the world: the entity list they filter, and nothing else. Separate from
+ * `HazardWorld` below, and optional, because their callers reach them through their own layer's world type —
+ * game/fighter.ts's FighterWorld, game/enemy.ts's EnemyWorld, the autopilot's — and none of those should have to
+ * grow the rest of a hazard's world to ask where the walls are.
+ */
+export interface ObstacleWorld extends EntityWorld {
+  entities?: Obstacle[];
+}
+
+/**
+ * A scripted phase override (issue #33 `hazardSet`): hold this hazard in `phase` until world frame `until`.
+ * game/stage.ts writes it, saves whatever was there before, and writes that back when the event ends.
+ */
+export interface ForcePhase {
+  phase: HazardPhase;
+  /** World frame the override lifts itself at; null holds it until the script restores it. */
+  until?: number | null;
+}
+
+/**
+ * The camera a hazard reads: `CameraView` (game/entity.ts) plus the visibility test the camera gate uses. Every
+ * section's hazards are in the world from Stage.start(), so `isVisible` is what keeps the ones off screen quiet.
+ */
+export interface HazardCamera extends CameraView {
+  /** Is world x within `margin` px of the visible strip? */
+  isVisible(x: number, margin?: number): boolean;
+}
+
+/**
+ * The part of game/world.ts's `World` a hazard reaches for, on top of what every entity uses. Structural for the
+ * reason given in game/entity.ts: world.ts depends on this file, so the dependency must not run back the other
+ * way. `World` satisfies it.
+ */
+export interface HazardWorld extends EntityWorld {
+  camera: HazardCamera;
+  /** Living fighters as of the last update — what `fireIn` scans for a flame cone or a Powder Bosun's keg. */
+  fighters: Fighter[];
+  /** Fire sources registered this frame, and last frame's: `fireIn` reads both, and says why. */
+  fires: FireSource[];
+  lastFires: FireSource[];
+  /**
+   * Register a fire source for this frame (a boiling vat, a burning cone). Optional because the callers test for
+   * it: a stripped-down world stood up by a tool carries no fire at all.
+   */
+  addFire?(x: number, z: number, r?: number): void;
+  /**
+   * An ownerless area hit. Returns the Projectile it spawned; that shape is game/projectile.ts's to declare and
+   * not this file's, the same reasoning as `spawnProjectile` in game/fighter.ts's FighterWorld.
+   */
+  spawnAreaHit(owner: Fighter | null, x: number, z: number, r: number, hit: HazardHit, exclude?: Entity | null, y?: number): any;
+  /** Put an entity in the world and hand it back. `any` for the same reason as spawnAreaHit. */
+  add(e: Entity): any;
+  /** The running stage, or null between runs. Only the scripted transition is read here. */
+  stage?: { transition?: { kind?: string } | null } | null;
+}
+
+/**
+ * The part of a game/projectile.ts `Projectile` this file touches: the two fields `arm` gates a hit through, and
+ * the height the hook's sweep is lifted to. Structural rather than imported for the same reason as the `any`
+ * returns above — the Projectile's own shape is that module's to declare.
+ */
+export interface HazardProjectile {
+  /** Height of the box off the floor (the hook swings at chest height, not at the ankles). */
+  y: number;
+  /** Entity ids this projectile has hit already, or has been told to skip. */
+  hitTargets: Set<number>;
+  /** Called with each target it connects with. */
+  onHit: ((t: Entity) => void) | null;
+}
+
+/**
+ * One entry of a section's `hazards` list. `type` and `x` are all a placement must give; every number it leaves
+ * out falls back to the type's row in HAZARD_TYPES.
+ */
+export interface HazardSpec {
+  /** A HAZARD_TYPES key, or `drop` — an alias `look` resolves to ledgerDrop / ballastDrop. */
+  type: HazardType | 'drop';
+  x: number;
+  /** Floor depth; 100 when omitted. */
+  z?: number;
+  period?: number;
+  active?: number;
+  tell?: number;
+  /** Frames to shift this hazard's cycle by, so two on one clock do not fire together. */
+  offset?: number;
+  r?: number;
+  /** Author key (issue #33): a `hazardSet` action addresses every hazard sharing this name. */
+  name?: string;
+  /** cannon: the z width of the lane it fires down, which way, and how far. */
+  lane?: number;
+  dir?: number;
+  reach?: number;
+  /** kilnMouth: half the cone's width in x (`reach` is how far it reaches in z). */
+  halfW?: number;
+  /** gasCell: px/frame the cloud drifts. */
+  drift?: number;
+  /** wagon: where the run ends, and how fast it rolls. */
+  x1?: number;
+  speed?: number;
+  /** drop: which load falls. */
+  look?: 'ledger' | 'ballast';
+}
+
 /**
  * Is (x, z) inside a blocking `solid` zone that a body at height `y` cannot clear (issue #31)? Same scan, flag and
  * removeMe filter as laneAroundHazards above, and it lives here for the same reason: game/fighter.js, game/enemy.js
@@ -145,7 +350,7 @@ const HAZARD_CLEARANCE = 10;   // z margin an enemy leaves around a hazard footp
  * A `height` of 0 is a floor gap and blocks nothing — walking into it is the point (see Zone.updateSolid).
  * @returns {Zone|null} the blocking zone, or null
  */
-export function solidAt(world, x, z, y = 0) {
+export function solidAt(world: ObstacleWorld, x: number, z: number, y: number = 0): Obstacle | null {
   for (const e of world.entities) {
     if (!e.isSolid || e.removeMe || e.height <= 0 || !e.blocking) continue;
     if (y > e.height) continue;
@@ -160,7 +365,7 @@ export function solidAt(world, x, z, y = 0) {
  * take, so the only way past it is over the top.
  * @returns {Zone|null}
  */
-export function solidBetween(world, fromX, toX, z) {
+export function solidBetween(world: ObstacleWorld, fromX: number, toX: number, z: number): Obstacle | null {
   const lo = Math.min(fromX, toX), hi = Math.max(fromX, toX);
   let best = null, bestD = Infinity;
   for (const e of world.entities) {
@@ -179,7 +384,7 @@ export function solidBetween(world, fromX, toX, z) {
  * Returns `z` unchanged when the lane is clear. Every type's footprint is in the HAZARD TABLE above: the cannon's
  * lane and the drifting gas cloud are stepped around in z like the hook's arc; the crossbar reports nothing.
  */
-export function laneAroundHazards(world, fromX, toX, z, zLo, zHi) {
+export function laneAroundHazards(world: ObstacleWorld, fromX: number, toX: number, z: number, zLo: number, zHi: number): number {
   const x0 = Math.min(fromX, toX), x1 = Math.max(fromX, toX);
   let out = z;
   for (const e of world.entities) {
@@ -201,7 +406,7 @@ export function laneAroundHazards(world, fromX, toX, z, zLo, zHi) {
  * projectiles / puddles, a broken lantern, boiling vats) and any fighter swinging a `element: 'fire'` hitbox (the
  * Firebrand's flame cone). `keg` also counts a Powder Bosun standing in it - the keg on his back is a fuse.
  */
-function fireIn(world, x, z, r, keg = false) {
+function fireIn(world: HazardWorld, x: number, z: number, r: number, keg: boolean = false): boolean {
   // this frame's fires AND last frame's: an entity later in the update order than this hazard registers after it has run
   for (const list of [world.fires, world.lastFires]) for (const f of list || []) { const dx = f.x - x, dz = f.z - z, rr = r + f.r; if (dx * dx + dz * dz <= rr * rr) return true; }
   for (const f of world.fighters) {
@@ -219,12 +424,56 @@ function fireIn(world, x, z, r, keg = false) {
 
 /** A cyclic stage hazard placed at world (x, z). */
 export class Hazard extends Entity {
+  // The fields, for the checker only, in constructor order. `declare` because these are the constructor's own
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022 defines them
+  // before the constructor body runs), which is a runtime change. Same reasoning, and the same wording, as
+  // game/entity.ts and game/fighter.ts.
+  /** The HAZARD_TYPES row this hazard was built from: every default it did not override. */
+  declare info: HazardInfo;
+  /** Always a real HAZARD_TYPES key: a spec naming none falls back to steamVent, and `drop` resolves to one. */
+  declare type: HazardType;
+  declare period: number;
+  declare activeFrames: number;
+  declare tellFrames: number;
+  declare offset: number;
+  /** Footprint radius. Also the entity's zSize. */
+  declare r: number;
+  declare lane: number;
+  declare dir: number;
+  declare reach: number;
+  declare halfW: number;
+  declare drift: number;
+  /** Author key (issue #33): a `hazardSet` action addresses every hazard sharing this name. */
+  declare name: string;
+  /** Scripted phase override, or null (issue #33 hazardSet). */
+  declare forcePhase: ForcePhase | null;
+  declare phase: HazardPhase;
+  /** Frames into the cycle for the periodic types; frames into the current PHASE for the event-driven seep. */
+  declare t: number;
+  /** World frame of the last area hit this hazard spawned — `info.every` paces the next. */
+  declare lastHit: number;
+  /** fighter id -> world frame this hazard may hit it again (see HAZARD_GRACE). */
+  declare immune: Map<number, number>;
+  /** enemy pathing looks for this in world.entities (laneAroundHazards). */
+  declare isHazard: boolean;
+  /** moving parts: the cannonball, the gas cloud, the wagon */
+  declare ballX: number;
+  declare cloudX: number;
+  declare wagonX: number;
+  /** gasCell: ignited this cycle - the cell stays empty until the next one. */
+  declare spent: boolean;
+  /** wagon only: where the run ends, and how fast it rolls there. */
+  declare x1: number;
+  declare speed: number;
+  /** Narrower than Entity's: a hazard reads the fire register and the area-hit services off it. */
+  declare world: HazardWorld | null;
+
   /**
    * @param {{ type: string, x: number, z: number, period?: number, active?: number, tell?: number, offset?: number, r?: number,
    *   lane?: number, dir?: number, reach?: number, halfW?: number, drift?: number, x1?: number, speed?: number, look?: 'ledger'|'ballast' }} spec
    *   type-specific: cannon { lane, dir, reach } | gasCell { drift } | wagon { x1, speed } | kilnMouth { reach, halfW } | drop { look }
    */
-  constructor(spec) {
+  constructor(spec: HazardSpec) {
     super('fx');
     let type = spec.type;
     if (type === 'drop') type = spec.look === 'ballast' ? 'ballastDrop' : 'ledgerDrop';
@@ -266,13 +515,13 @@ export class Hazard extends Entity {
     // the seep is event-driven (see updateSeep): it starts seeping, and `t` counts frames in the current phase
     if (this.type === 'gasSeep') this.phase = 'tell';
   }
-  hurtbox() { return null; }
+  override hurtbox(): Aabb | null { return null; }
   /**
    * The floor patch this hazard threatens, for enemy pathing. The hook reports its WHOLE sweep rather than
    * where the head is this frame: walking into the far end of the arc is still walking into the hook.
    * null when there is nothing to walk around - the crossbar takes the entire back lane at once.
    */
-  dangerBox() {
+  dangerBox(): DangerBox | null {
     // Only what is live now: a dormant vent is still bait (GDD 6 "hits enemies"), it is the tell that clears the lane.
     if (this.type === 'crossbar' || this.phase === 'idle') return null;
     const r = this.r;
@@ -293,9 +542,9 @@ export class Hazard extends Entity {
     return { x0: this.x - sw - r, x1: this.x + sw + r, z0: this.z - r, z1: this.z + r };
   }
   /** Screen-relative sweep position for the hook (px from x). */
-  get swingX() { return dsin((this.t / this.period) * Math.PI * 2) * (this.info.swing || 0); }
-  get tellStart() { return this.period - this.activeFrames - this.tellFrames; }
-  get activeStart() { return this.period - this.activeFrames; }
+  get swingX(): number { return dsin((this.t / this.period) * Math.PI * 2) * (this.info.swing || 0); }
+  get tellStart(): number { return this.period - this.activeFrames - this.tellFrames; }
+  get activeStart(): number { return this.period - this.activeFrames; }
   /**
    * How many frames INTO the active window we are. `t` is the natural cycle, so a scripted `force: 'active'`
    * (stage.hazardSet) can hold a hazard active anywhere in it -- hazardSet writes only `forcePhase`, never
@@ -306,11 +555,11 @@ export class Hazard extends Entity {
    * (a held vent keeps venting on its `every` clock).
    * Unforced this is exactly `t - activeStart`, already 0..activeFrames-1, so the natural cycle is untouched.
    */
-  get activeT() { const n = this.activeFrames || 1; return ((this.t - this.activeStart) % n + n) % n; }
+  get activeT(): number { const n = this.activeFrames || 1; return ((this.t - this.activeStart) % n + n) % n; }
   /** Which way the wagon rolls (x -> x1). */
-  get wagonDir() { return Math.sign(this.x1 - this.x) || 1; }
+  get wagonDir(): number { return Math.sign(this.x1 - this.x) || 1; }
   /** World x of the part that matters for the camera's visibility gate (the moving bit, where there is one). */
-  get liveX() { return this.type === 'wagon' ? this.wagonX : this.type === 'gasCell' ? this.cloudX : this.x; }
+  get liveX(): number { return this.type === 'wagon' ? this.wagonX : this.type === 'gasCell' ? this.cloudX : this.x; }
   /**
    * Is the camera near enough that this hazard should be STEPPED at all? Stage.start() puts every section's hazards
    * in the world at once, so this gate is also what keeps the Ledger House's drops quiet while the party is still on
@@ -323,11 +572,11 @@ export class Hazard extends Entity {
    * later with no tell at all). It is stepped while the camera is anywhere over the TRACK it rolls down, which is
    * exactly the stretch it is a hazard to, and which is what lets you hear it coming from off screen (stage3.js).
    */
-  onCamera(cam) {
+  onCamera(cam: HazardCamera): boolean {
     if (this.type !== 'wagon') return cam.isVisible(this.liveX, CAM_MARGIN);
     return Math.max(this.x, this.x1) >= cam.x - CAM_MARGIN && Math.min(this.x, this.x1) <= cam.x + VIEW_W + CAM_MARGIN;
   }
-  update(world) {
+  override update(world: HazardWorld): void {
     this.world = world;
     if (this.type === 'gasSeep') { this.updateSeep(world); return; }
     this.t = (world.frame + this.offset) % this.period;
@@ -362,7 +611,7 @@ export class Hazard extends Entity {
     if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; this.arm(world, world.spawnAreaHit(null, this.x, this.z, this.r, this.hitFrom(this.x))); }
   }
   /** First active frame: the sound, the shake and the one-off burst of each type. */
-  onActiveStart(world) {
+  onActiveStart(world: HazardWorld): void {
     if (this.info.sfx) audio.play(this.info.sfx);
     switch (this.type) {
       case 'piston': case 'crossbar': world.camera.shake(this.type === 'piston' ? 4 : 6, 8); world.addFx('dust', this.type === 'piston' ? this.x : world.camera.x + VIEW_W / 2, 0, this.type === 'piston' ? this.z : 20, { count: 8 }); break;
@@ -378,7 +627,7 @@ export class Hazard extends Entity {
     }
   }
   /** Tell-phase particles: the fair warning, per type (GDD 6). */
-  tellFx(world) {
+  tellFx(world: HazardWorld): void {
     const t = this.t, k = (t - this.tellStart) / this.tellFrames;
     switch (this.type) {
       case 'steamVent': case 'aetherVent': if (t % 6 === 0) particles.burst('steam', this.x + (t % 12 ? 6 : -6), 4, this.z, 1, { speed: 0.4, up: 0.8, color: this.info.color }); break;
@@ -394,7 +643,7 @@ export class Hazard extends Entity {
     }
   }
   /** Active-phase particles for the stationary area-hit types. */
-  activeFx(world) {
+  activeFx(world: HazardWorld): void {
     const t = this.t;
     switch (this.type) {
       case 'lightning': if (t % 3 === 0) particles.burst('spark', this.x, 12, this.z, 3, { speed: 2.6, up: 1.6, color: this.info.color }); break;
@@ -408,7 +657,7 @@ export class Hazard extends Entity {
     }
   }
   /** Cannon: the ball crosses the lane in `active` frames; each frame's hit covers the stretch it just flew. */
-  updateCannon(world) {
+  updateCannon(world: HazardWorld): void {
     const k0 = this.activeT / this.activeFrames, k1 = (this.activeT + 1) / this.activeFrames;
     const xa = this.x + this.dir * this.reach * k0, xb = this.x + this.dir * this.reach * k1;
     this.ballX = xb;
@@ -418,14 +667,14 @@ export class Hazard extends Entity {
     this.arm(world, this.boxHit(world, mid, this.z, half, this.lane / 2, this.hitFrom(this.x)));
   }
   /** Gas cell: the cloud drifts along its z-band, stuns what it rolls over, and goes up if anything in it is burning. */
-  updateGasCell(world) {
+  updateGasCell(world: HazardWorld): void {
     this.cloudX += this.drift;
     if (this.t % 3 === 0) particles.burst('steam', this.cloudX + rng.range(-this.r, this.r) * 0.6, 6, this.z + rng.range(-6, 6), 1, { speed: 0.5, up: 0.6, color: GAS, sizeJitter: 2 });
     if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; this.arm(world, world.spawnAreaHit(null, this.cloudX, this.z, this.r, this.hitFrom(this.cloudX))); }
     if (fireIn(world, this.cloudX, this.z, this.r, true)) this.burstCloud(world);
   }
   /** The cloud ignites: one fire knockdown for EVERYONE in it (no grace - lighting it is the punishment), then the cell is spent. */
-  burstCloud(world) {
+  burstCloud(world: HazardWorld): void {
     const R = Math.round(this.r * 1.6), cx = this.cloudX;
     world.spawnAreaHit(null, cx, this.z, R, { ...this.info.burst, fromX: cx });
     world.addFx('ring', cx, 0, this.z, { r1: R, flat: true, color: GAS });
@@ -437,7 +686,7 @@ export class Hazard extends Entity {
     this.spent = true; this.phase = 'idle';
   }
   /** Wagon: rolls x -> x1; a moving knockdown that throws the body on down the road. */
-  updateWagon(world) {
+  updateWagon(world: HazardWorld): void {
     const dir = this.wagonDir;
     this.wagonX += dir * this.speed;
     // The RUN is simulation (see onCamera) but the dust and the hit are not: the far end of this track is within a
@@ -447,7 +696,7 @@ export class Hazard extends Entity {
     if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; this.arm(world, world.spawnAreaHit(null, this.wagonX, this.z, this.r, this.hitFrom(this.wagonX - dir * this.r))); }
   }
   /** Kiln mouth: a rectangular flash x±halfW, z..z+reach (a box hit, not a circle), and a fire source while it burns. */
-  updateKiln(world) {
+  updateKiln(world: HazardWorld): void {
     const cz = this.z + this.reach / 2;
     if ((this.t & 1) === 0) particles.burst('ember', this.x + rng.range(-this.halfW, this.halfW), 6, this.z + rng.range(0, this.reach), 1, { speed: 1.4, up: 2, color: LIME });
     if (world.frame - this.lastHit >= this.info.every) { this.lastHit = world.frame; this.arm(world, this.boxHit(world, this.x, cz, this.halfW, this.reach / 2, this.hitFrom(this.x))); }
@@ -457,7 +706,7 @@ export class Hazard extends Entity {
    * Gas seep: event-driven, not periodic. 'tell' = seeping (harmless rose gas, the warning that fire will light it),
    * 'active' = the burst, 'idle' = recharging for `period` frames before it seeps again.
    */
-  updateSeep(world) {
+  updateSeep(world: HazardWorld): void {
     this.t++;
     if (this.phase === 'idle') { if (this.t >= this.period) { this.phase = 'tell'; this.t = 0; if (world.camera.isVisible(this.x, 120)) audio.play(this.info.tellSfx, { volume: 0.4 }); } return; }
     if (!world.camera.isVisible(this.x, 120)) return;
@@ -480,24 +729,24 @@ export class Hazard extends Entity {
    * A rectangular ownerless hit: x±r, z±zTol, tall enough for a standing body (world.areaHit forces hit.z = r, so the
    * cannon's lane and the kiln's cone build their Projectile here).
    */
-  boxHit(world, x, z, r, zTol, hit) {
+  boxHit(world: HazardWorld, x: number, z: number, r: number, zTol: number, hit: HazardHit): HazardProjectile {
     return world.add(new Projectile({ owner: null, team: TEAM.NONE, x, y: r * 0.5, z, r, life: 2, style: 'explosion', hit: { ...hit, friendly: true, z: zTol }, pierce: 99 }));
   }
   /** The hit this hazard deals, tagged with where it came from so the knockback throws the body clear (fighter.takeHit). */
-  hitFrom(x) { return { ...this.info.hit, fromX: x }; }
+  hitFrom(x: number): HazardHit { return { ...this.info.hit, fromX: x }; }
   /**
    * Gate one of this hazard's area hits by the per-body grace window: anyone it caught recently is skipped, and
    * whoever it catches now is off-limits for `grace` frames. An active window therefore lands ONE hit per body
    * instead of re-hitting every `every` frames while the victim is still airborne and cannot act.
    */
-  arm(world, p) {
+  arm(world: HazardWorld, p: HazardProjectile): HazardProjectile {
     const grace = this.info.grace || HAZARD_GRACE;
     for (const [id, until] of this.immune) { if (world.frame >= until) this.immune.delete(id); else p.hitTargets.add(id); }
     p.onHit = (t) => { if (t.kind !== 'prop') this.immune.set(t.id, world.frame + grace); };
     return p;
   }
   /** Swinging hook: a moving area hit along its arc. */
-  hitSweep(world) {
+  hitSweep(world: HazardWorld): void {
     if (world.frame - this.lastHit < this.info.every) return;
     this.lastHit = world.frame;
     const hx = this.x + this.swingX;
@@ -505,12 +754,12 @@ export class Hazard extends Entity {
     p.y = 30;
   }
   /** Pylon crossbar: sweeps the back lane (z < lane) across the whole screen. */
-  laneHit(world) {
+  laneHit(world: HazardWorld): void {
     const cam = world.camera;
     // no `fromX`: the bar spans the screen, so there is no side to be thrown clear of — you step forward in z instead
     this.arm(world, world.add(new Projectile({ owner: null, team: TEAM.NONE, x: cam.x + VIEW_W / 2, y: 30, z: 0, r: this.r, life: 2, style: 'explosion', hit: this.info.hit, pierce: 99 })));
   }
-  draw(ctx, cam) {
+  override draw(ctx: CanvasRenderingContext2D, cam: CameraView): void {
     const st = this.world && this.world.stage;
     if (st && st.transition && st.transition.kind === 'lift') return; // the dock hazards stay behind while the lift descends
     const sx = cam.toScreenX(this.x), sy = Math.round(FLOOR_TOP + this.z + cam.shakeY);
@@ -630,7 +879,7 @@ export class Hazard extends Entity {
     }
   }
   /** The vent eruption column (shared by the vents and the lime pit): a translucent outer jet with a hot white core. */
-  drawPlume(ctx, sx, sy, f, color, core) {
+  drawPlume(ctx: CanvasRenderingContext2D, sx: number, sy: number, f: number, color: string, core: string): void {
     const k = Math.min(1, this.activeT / 6), h = (58 + Math.sin(f * 0.5) * 8) * k;
     ctx.globalAlpha = 0.6; ctx.fillStyle = color;
     pathPoly(ctx, [sx - 12, sy - 2, sx + 12, sy - 2, sx + 20, sy - h, sx - 20, sy - h]); ctx.fill();
@@ -638,12 +887,12 @@ export class Hazard extends Entity {
     ctx.globalAlpha = 1;
   }
   /** The piston-style tell on the floor: a shadow that fills in, ringed red on alternate frames. */
-  drawTellShadow(ctx, sx, sy, f, k, rx, ry) {
+  drawTellShadow(ctx: CanvasRenderingContext2D, sx: number, sy: number, f: number, k: number, rx: number, ry: number): void {
     ctx.globalAlpha = k; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(sx, sy, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
     if (this.phase === 'tell' && (f & 4)) { ctx.strokeStyle = TELL_RED; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(sx, sy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke(); }
   }
   /** Run-out gun: a carriage on the deck, the barrel running out over the tell, the lane lit on the planks, then the shot. */
-  drawCannon(ctx, cam, sx, sy, f) {
+  drawCannon(ctx: CanvasRenderingContext2D, cam: CameraView, sx: number, sy: number, f: number): void {
     const ph = this.phase, dir = this.dir, k = ph === 'tell' ? (this.t - this.tellStart) / this.tellFrames : 0;
     const y0 = FLOOR_TOP + cam.shakeY, half = this.lane / 2;
     // the lane: a violet band on the deck that fills in over the tell, red edge lines flashing (the crossbar's language)
@@ -680,7 +929,7 @@ export class Hazard extends Entity {
     }
   }
   /** Gas cell: a riveted gas main junction on the floor; it swells and glows as it tells, and the cloud drifts off it. */
-  drawGasCell(ctx, cam, sx, sy, f) {
+  drawGasCell(ctx: CanvasRenderingContext2D, cam: CameraView, sx: number, sy: number, f: number): void {
     const ph = this.phase, k = ph === 'tell' ? (this.t - this.tellStart) / this.tellFrames : 0;
     const iron = tones(this.spent ? '#2e3038' : '#4a4e58'), brass = tones('#C9963A');
     const sw = Math.round(k * 3);   // the swell
@@ -706,7 +955,7 @@ export class Hazard extends Entity {
     }
   }
   /** Lime pit: a stone-rimmed pit of quicklime with rite-lime seams; the rim rattles on the tell and it blows a white plume. */
-  drawLimePit(ctx, sx, sy, f) {
+  drawLimePit(ctx: CanvasRenderingContext2D, sx: number, sy: number, f: number): void {
     const ph = this.phase, rattle = ph === 'tell' ? ((this.t >> 1) & 1 ? 1 : -1) : 0;
     const stone = tones('#6e6a5e'), lime = tones(QUICKLIME);
     rrect(ctx, sx - 28 + rattle, sy - 11, 56, 22, 3, stone.base, OL, 1);
@@ -719,7 +968,7 @@ export class Hazard extends Entity {
     if (ph === 'active') this.drawPlume(ctx, sx, sy, f, QUICKLIME, '#ffffff');
   }
   /** Runaway wagon: a wooden dray of tallow casks on iron wheels; chocked while parked, rocking on the tell, rolling when live. */
-  drawWagon(ctx, cam, sy, f) {
+  drawWagon(ctx: CanvasRenderingContext2D, cam: CameraView, sy: number, f: number): void {
     const ph = this.phase, wx = cam.toScreenX(ph === 'active' ? this.wagonX : this.x), dir = this.wagonDir;
     const rock = ph === 'tell' ? ((this.t >> 2) & 1 ? 1 : 0) : 0;
     const wood = tones(this.info.color), iron = tones('#3A3F4B'), cask = tones(TALLOW), brass = tones('#C9963A');
@@ -746,7 +995,7 @@ export class Hazard extends Entity {
     } else if (f & 1) particles.burst('dust', this.wagonX - dir * 22, 2, this.z + 6, 1, { speed: 1, up: 0.6 });
   }
   /** Tallow vat: an iron cauldron over a grate fire; the fat rises and bubbles on the tell and pours over the lip when live. */
-  drawTallowVat(ctx, sx, sy, f) {
+  drawTallowVat(ctx: CanvasRenderingContext2D, sx: number, sy: number, f: number): void {
     const ph = this.phase, k = ph === 'tell' ? (this.t - this.tellStart) / this.tellFrames : 0;
     const iron = tones('#3A3F4B'), fat = tones(TALLOW), brass = tones('#C9963A');
     // grate fire (always lit: it is what boils the vat) - flat glow triangles with a hot core
@@ -773,7 +1022,7 @@ export class Hazard extends Entity {
     if (ph === 'active') { ctx.fillStyle = fat.base; ctx.fillRect(sx - 24, sy - 44, 5, 30 + ((f >> 1) % 8)); ctx.fillRect(sx + 14, sy - 44, 4, 24 + ((f >> 1) % 6)); ctx.fillStyle = fat.hi; ctx.fillRect(sx - 23, sy - 44, 2, 20); }
   }
   /** Kiln mouth: a brick arch in the back wall; the throat glows rite-lime through the tell and flashes a cone down the floor. */
-  drawKiln(ctx, sx, sy, f) {
+  drawKiln(ctx: CanvasRenderingContext2D, sx: number, sy: number, f: number): void {
     const ph = this.phase, k = ph === 'tell' ? (this.t - this.tellStart) / this.tellFrames : ph === 'active' ? 1 : 0;
     const brick = tones('#6b3b2a'), dark = tones('#2a1a18'), hw = this.halfW;
     if (ph === 'active') {
@@ -794,7 +1043,7 @@ export class Hazard extends Entity {
     rrect(ctx, sx - 36, sy - 80, 72, 8, 2, tones('#3A3F4B').base, OL, 1); ctx.fillStyle = tones('#C9963A').base; ctx.fillRect(sx - 8, sy - 78, 16, 4); ctx.fillStyle = tones('#C9963A').hi; ctx.fillRect(sx - 8, sy - 78, 16, 1);
   }
   /** Drops: the shadow grows over the tell, the load appears and falls in the last DROP_FALL frames, lands, and fades out. */
-  drawDrop(ctx, sx, sy, f) {
+  drawDrop(ctx: CanvasRenderingContext2D, sx: number, sy: number, f: number): void {
     const ph = this.phase, ballast = this.type === 'ballastDrop';
     const tk = ph === 'tell' ? (this.t - this.tellStart) / this.tellFrames : 0;
     const falling = ph === 'tell' && this.t >= this.activeStart - DROP_FALL;
@@ -830,7 +1079,7 @@ export class Hazard extends Entity {
     ctx.globalAlpha = 1;
   }
   /** Gas seep: a fissure in the tailings floor breathing rose haze; dark while it recharges, a rose-white blast while it burns. */
-  drawSeep(ctx, sx, sy, f) {
+  drawSeep(ctx: CanvasRenderingContext2D, sx: number, sy: number, f: number): void {
     const ph = this.phase, r = this.r;
     if (ph === 'tell') { ctx.globalAlpha = 0.16 + 0.08 * Math.sin(f * 0.08); ctx.fillStyle = ROSE; ctx.beginPath(); ctx.ellipse(sx, sy - 4, r, r * 0.4, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
     if (ph === 'active') {
@@ -848,4 +1097,4 @@ export class Hazard extends Entity {
 }
 
 /** Build the Hazard entities for a section's `hazards` list. */
-export function createHazards(list = []) { return list.map((h) => new Hazard(h)); }
+export function createHazards(list: HazardSpec[] = []): Hazard[] { return list.map((h) => new Hazard(h)); }

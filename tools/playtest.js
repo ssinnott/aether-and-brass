@@ -9,7 +9,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './server.js';
-import { loadPlaywright } from './browser.js';
+import { loadPlaywright, launch } from './browser.js';
 import { options as optionsScenario } from './playtest-options.js';
 import { sourceLink as sourceLinkScenario } from './playtest-link.js';
 import { weaponScenarios } from './scenarios/weapons.js';
@@ -46,7 +46,7 @@ function assert(cond, msg) {
 }
 
 async function withPage(server, params, fn, { viewport = { width: 1280, height: 720 } } = {}) {
-  const browser = await chromium.launch();
+  const browser = await launch();
   const page = await browser.newPage({ viewport });
   const consoleErrors = [];
   page.on('pageerror', (e) => consoleErrors.push('pageerror: ' + e.message));
@@ -80,7 +80,7 @@ async function withPage(server, params, fn, { viewport = { width: 1280, height: 
  * @param {(pages: object[], apis: object[]) => Promise<void>} fn
  */
 async function withPeers(server, paramsList, fn, { viewport = { width: 1280, height: 720 } } = {}) {
-  const browser = await chromium.launch();
+  const browser = await launch();
   const ctx = await browser.newContext({ viewport });
   const errs = [];
   const pages = [];
@@ -640,7 +640,7 @@ const scenarios = {
 
   // 7. Audio: every canonical SFX and music track renders non-silently through an OfflineAudioContext.
   async audio(server) {
-    const browser = await chromium.launch();
+    const browser = await launch();
     const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
     const errs = [];
     page.on('pageerror', (e) => errs.push(e.message));

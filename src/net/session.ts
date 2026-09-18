@@ -36,6 +36,10 @@ import { createLockstep } from '../lib/net/lockstep.ts';
 import { worldChecksum } from './checksum.ts';
 import { broadcastSignal, mqttSignal, makeRoomCode, createSignalMux } from './signal.ts';
 import { MSG, PROTOCOL_VERSION, packActions, unpackActions, encodeInput, encodeChecksum, encodeStart, encodeJson, encodePing, encodeRelay, encodeDrop, decodeMessage } from './protocol.ts';
+import type { Lockstep } from '../lib/net/lockstep.ts';
+import type { Peer } from '../lib/net/peer.ts';
+import type { Game } from '../game/game.ts';
+import type { World } from '../game/world.ts';
 
 /**
  * Wall-clock milliseconds without remote input before a silent player is given up on. Counted in
@@ -68,10 +72,196 @@ export function delayForRtt(rttMs) {
 }
 
 /**
- * @param {{ game: object, input: object, isHost: boolean, room?: string, transport?: 'mqtt'|'broadcast',
- *           onState?: (s: string) => void }} o
+ * Where a session is in its life. A room runs signalling -> connecting -> lobby -> playing and back
+ * to lobby (see matchOver); 'ended' is reachable from any of them and is final.
  */
-export function createNetSession({ game, input, isHost, room = '', transport = 'mqtt', onState }) {
+export type NetState = 'idle' | 'signalling' | 'connecting' | 'lobby' | 'playing' | 'ended';
+
+/** Which rendezvous a room uses. 'broadcast' reaches the tabs of one origin, and is the e2e test's. */
+export type NetTransport = 'mqtt' | 'broadcast';
+
+/** Told the new state every time it changes. Re-pointed by onStateChange as screens come and go. */
+export type NetStateListener = (s: NetState) => void;
+
+/**
+ * One object on the rendezvous. `from` is stamped by the transport; `to` addresses one peer, and its
+ * absence is what makes a message an announcement to the whole room. The rest is open on purpose:
+ * peer.ts puts SDP and ICE here, the lobby puts `{ ann, host, open }`.
+ */
+export interface SignalEnvelope {
+  from?: string;
+  to?: string;
+  [key: string]: any;
+}
+
+/**
+ * The rendezvous itself, as broadcastSignal / mqttSignal hand it over (net/signal.ts). `onDown` is
+ * installed by us rather than offered by them: a broker that drops the socket has no other way to
+ * say so, and publishing into a closed one throws nothing.
+ */
+export interface NetSignal {
+  send(obj: SignalEnvelope): void;
+  onMessage(fn: (m: SignalEnvelope | null) => void): void;
+  close(): void;
+  onDown?: (why?: string) => void;
+}
+
+/** The per-pairing demultiplexer over that one rendezvous (net/signal.ts createSignalMux). */
+export type NetMux = ReturnType<typeof createSignalMux>;
+
+/**
+ * One seat in the party, as the host's roster carries it. Slots stay dense - a party of three is
+ * slots 0-2, never 0, 2 and 3 - so `slot` is also the index into `lobby.members`.
+ */
+export interface NetMember {
+  /** Their id on the rendezvous: unique per page load, and nothing but an address. */
+  pid: string;
+  slot: number;
+  /** Index into game.characters. No two seats may hold the same one (see takeRequest). */
+  char: number;
+  ready: boolean;
+  /** Their player id, which names the co-op progress scope (game/progress.ts). */
+  id: string;
+  /** True for our own seat. */
+  local: boolean;
+  /** The request counter this entry answers, so a stale roster cannot rubber-band a pick. */
+  seq: number;
+  /** Their worst round-trip time in ms, or null until they have measured one. */
+  rtt: number | null;
+  /** Set by applyDrop: the bot played the rest of the board for this seat. */
+  gone?: boolean;
+}
+
+/**
+ * Lobby state. `members` is the host's roster, indexed by slot; `stage` is the HOST's board, since
+ * unlocks are per-player localStorage and the party does not agree on what is playable.
+ */
+export interface NetLobby {
+  myChar: number;
+  myReady: boolean;
+  stage: number;
+  members: NetMember[];
+}
+
+/** One link of the mesh: one WebRTC connection to one other peer (see linkTo). */
+export interface NetLink {
+  pid: string;
+  /** The link every guest must have. Losing it ends the session; losing a guest-to-guest link only moves that traffic onto the host's relay. */
+  isHost: boolean;
+  open: boolean;
+  peer: Peer;
+  /** When it was created, for the LINK_FORM_MS sweep. */
+  since: number;
+  /** Swept by us and about to be built again, so onLinkClosed must not read it as a disconnect. */
+  retiring?: boolean;
+}
+
+/** The last seat the bot took over mid-match. `at` is wall-clock and display only (the gameplay banner). */
+export interface NetDrop {
+  slot: number;
+  at: number;
+}
+
+/** What a screen asks boot for: `game.createNet(o)` fills in the services and passes the rest through. */
+export interface NetSessionRequest {
+  isHost: boolean;
+  /** Empty on a host, who makes its own room code. */
+  room?: string;
+  transport?: NetTransport;
+  onState?: NetStateListener;
+}
+
+/** What createNetSession itself takes: a request plus the two services boot holds. */
+export interface NetSessionOptions extends NetSessionRequest {
+  game: Game;
+  input: Game['input'];
+}
+
+/**
+ * The live session. The fields and the two getters are the object literal below; the methods after
+ * `onStateChange` are installed on it further down, because they close over locals the literal
+ * cannot see yet, and every one of them is in place before createNetSession returns.
+ */
+export interface NetSession {
+  isHost: boolean;
+  room: string;
+  transport: NetTransport;
+  /** This peer's id on the rendezvous. Unique per page load, and nothing but an address. */
+  pid: string;
+  state: NetState;
+  error: string;
+  endReason: string;
+  /** Our seat in the party. The host is always 0; a guest has -1 until the host seats them. */
+  localSlot: number;
+  /** Party size, which is simply how many people are in the room until the match starts. */
+  players: number;
+  delay: number;
+  /** Worst round-trip time to anyone in the party, which is what the delay has to cover. */
+  rtt: number | null;
+  /** True once a ping measurement exists; the match will not start before this. */
+  rttReady: boolean;
+  /** Set when a peer reports a different protocol version. */
+  versionMismatch: boolean;
+  /** The progress scope this party plays in (game/progress.ts), set once ids are exchanged. */
+  groupScope: string;
+  lobby: NetLobby;
+  /** The frame bookkeeping for the match in progress, or null between matches. */
+  ls: Lockstep | null;
+  /** pid -> link record, one per pairing (see linkTo). */
+  links: Map<string, NetLink>;
+  signal: NetSignal | null;
+  mux: NetMux | null;
+  /** True while the simulation is under lockstep control. */
+  readonly active: boolean;
+  /** True while waiting on somebody (the gameplay screen draws an overlay on this). */
+  waiting: boolean;
+  /** Slots the current frame is waiting for, for that overlay. */
+  missing: number[];
+  lastDrop: NetDrop | null;
+  /** The first slot that is not ours. Kept for the screens, which say "player N" to the player. */
+  readonly remoteSlot: number;
+  /** Everyone but us, by slot, in seat order. */
+  remoteSlots(): number[];
+  /** The roster entry for a slot, or null. */
+  memberAt(slot: number): NetMember | null;
+  /** Re-point the state callback; a null or non-function clears it. */
+  onStateChange(fn: NetStateListener | null): void;
+
+  /** Begin connecting. Resolves once signalling is up; the other players arrive asynchronously. */
+  connect(): Promise<boolean>;
+  /** True when somebody else is holding hero `i`, so this player may not take it. */
+  charTaken(i: number): boolean;
+  /** The hero `dir` steps away that is actually available: the lobby cursor skips taken cards. */
+  nextChar(dir?: number): number;
+  /** Pick a hero. False when the pick collided with somebody else's and was refused. */
+  setChar(i: number): boolean;
+  /** Host only: choose the board this session plays, from the boards the HOST has unlocked. */
+  setStage(n: number): void;
+  setReady(v: boolean): void;
+  /** True when a live match was handed back to the lobby. */
+  matchOver(): boolean;
+  /** Gate for createLoop's canUpdate: false means somebody's input for this frame has not arrived. */
+  canStep(): boolean;
+  /** Runs every rAF, gated or not. */
+  pump(): void;
+  /** Before each simulated frame. False when the frame must not be simulated after all. */
+  beforeStep(): boolean;
+  /** After each simulated frame: advance the clock and exchange a checksum periodically. */
+  afterStep(world: World | null): void;
+  /** Tear the session down and hand every other slot to the bot so the run survives. */
+  end(reason?: string): void;
+  /** Give the local slot back to the real devices once the match screen is gone. */
+  release(): void;
+  /** Set by end(): the pump is still feeding the local slot from the real devices. Absent until then. */
+  endedPump?: boolean;
+}
+
+/**
+ * @param o see NetSessionOptions
+ */
+export function createNetSession({ game, input, isHost, room = '', transport = 'mqtt', onState }: NetSessionOptions) {
+  // The methods installed after this literal are not in it, which is what the assertion is for; a
+  // field that is here is still checked against NetSession, so a misspelt one is a missing property.
   const net = {
     isHost,
     room: room || (isHost ? makeRoomCode() : ''),
@@ -127,7 +317,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
      * left the stack must not be the one still being told that the room has ended.
      */
     onStateChange(fn) { onState = typeof fn === 'function' ? fn : null; },
-  };
+  } as NetSession;
 
   const setState = (s) => { if (net.state !== s) { net.state = s; if (onState) onState(s); } };
   let resendTick = 0;
@@ -160,11 +350,14 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
 
   // ---- transport -------------------------------------------------------------------------------
 
-  async function makeSignal() {
+  async function makeSignal(): Promise<NetSignal> {
     // Room codes are the only way in from the UI. BroadcastChannel reaches the tabs of one origin
     // and nothing else, so it stays as `?transport=broadcast` for the end-to-end test to drive.
     if (transport === 'broadcast') return broadcastSignal(net.room, net.pid);
-    return mqttSignal(net.room, net.pid);
+    // mqttSignal builds its channel inside a bare `new Promise`, which carries no type argument, so
+    // what it resolves reaches us as `unknown`. The object it resolves IS this shape (net/signal.ts
+    // `chan`: send / onMessage / close / onDown), and naming it here is what every reader below sees.
+    return mqttSignal(net.room, net.pid) as Promise<NetSignal>;
   }
 
   /** Begin connecting. Resolves once signalling is up; the other players arrive asynchronously. */
@@ -234,7 +427,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     // ?netrelay=1 stands in for a pair of players who cannot see each other directly: no link is
     // made, so everything for them goes through the host's relay instead (see sendToSlot).
     if (!toHost && !isHost && game.options && game.options.netrelay) return null;
-    const link = { pid, isHost: !!toHost, open: false, peer: null, since: Date.now() };
+    const link: NetLink = { pid, isHost: !!toHost, open: false, peer: null, since: Date.now() };
     net.links.set(pid, link);
     link.peer = createPeer({
       // Both ends compute the same answer from ids they both hold, so exactly one of them offers.

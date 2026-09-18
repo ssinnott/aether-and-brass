@@ -9,10 +9,8 @@
 /**
  * localStorage or null when it is unavailable / throws (private mode, file://, blocked embeds).
  * `namespace` names the probe key (`namespace + '.probe'`) so callers with different save keys don't collide.
- * @param {string} namespace
- * @returns {Storage|null}
  */
-export function store(namespace) {
+export function store(namespace: string): Storage | null {
   try {
     const s = window.localStorage;
     if (!s) return null;

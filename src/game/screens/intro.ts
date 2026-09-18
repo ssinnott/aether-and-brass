@@ -3,6 +3,9 @@
 // The lines and the number come from the stage data (`introLines`, `number`), so every board gets its own card.
 import { VIEW_W, VIEW_H, UI, MAX_PLAYERS, PLAYER_COLORS } from '../../constants.ts';
 import { Screen } from '../game.ts';
+import type { Game, RegistryEntry, ScreenParams } from '../game.ts';
+import type { Rig } from '../../lib/art/rig.ts';
+import type { PartialPose } from '../../lib/art/poses.ts';
 import { confirmPressed } from '../menuinput.ts';
 import { drawText, drawTextOutlined } from '../../engine/text.ts';
 import { rrect, rivetLine } from '../../lib/art/shapes.ts';
@@ -21,10 +24,57 @@ const FAR = [[0, 214, 50], [56, 196, 36], [98, 224, 70], [176, 184, 30], [212, 2
 const NEAR = [[0, 250, 80], [90, 238, 50], [150, 258, 90], [250, 244, 60], [320, 262, 70], [400, 240, 50], [460, 256, 90], [560, 246, 80]];
 const STACKS = [[110, 224], [232, 204], [376, 176], [540, 216]];
 
+/**
+ * A board as the INTRO CARD reads one: a name, the card's own text lines, and the stage number printed over
+ * them. Everything else a board carries rides along under the index signature.
+ *
+ * Deliberately not game/stage.ts's `StageData`, for the reason screens/boardselect.ts's `BoardStage` sets out
+ * at length: a content stage literal is not assignable to `StageData` today (a section's `hazards[].type` is
+ * authored as a plain `string`), and pinning it here would report that widening against the `getStage()` call
+ * below rather than against the board that widened it, which is where it belongs.
+ */
+export interface IntroStage {
+  name?: string;
+  /** The card's text, one line per fade-in step. A board carrying none falls back to stage 1's LINES. */
+  introLines?: string[];
+  /** 1-based stage number for the STAGE N label; a board carrying none falls back to its index + 1. */
+  number?: number;
+  [key: string]: any;
+}
+
+/** One hero's portrait on the card, or null for a slot nobody is in. */
+export interface IntroPortrait {
+  /** The character registry entry, read for the name under the portrait. */
+  def: RegistryEntry;
+  rig: Rig;
+  /** The first keyframe of the hero's idle -- a partial pose, which is what drawHeadPortrait takes. */
+  pose: PartialPose | null;
+}
+
 /** Stage name card. Attack/start skips; auto-advances after INTRO_FRAMES. */
 export class IntroScreen extends Screen {
-  constructor(game) { super(game, 'intro'); }
-  enter(params) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022
+  // defines them before the constructor body runs), which is a runtime change. Same reasoning, and the
+  // same wording, as game/entity.ts's Entity.
+  /** Character index per player slot, as CHOOSE YOUR FIGHTER left them: null (or a negative index) for a
+   *  slot nobody joined, which is what the guard in the `portraits` map below reads. */
+  declare chars: Array<number | null>;
+  /** The board this card announces. Passed straight on to the gameplay screen when the card is done. */
+  declare stage: IntroStage;
+  /** The big name under STAGE N. */
+  declare stageName: string;
+  /** The card's text lines (the board's own `introLines`, or stage 1's LINES). */
+  declare lines: string[];
+  /** 'STAGE N', built once from the board's `number` or its index. */
+  declare stageLabel: string;
+  /** The skip / auto-advance has fired: update() stops reading input and the fade owns the screen. */
+  declare done: boolean;
+  /** One entry per player slot (MAX_PLAYERS long), null where that slot is empty. */
+  declare portraits: Array<IntroPortrait | null>;
+
+  constructor(game: Game) { super(game, 'intro'); }
+  override enter(params: ScreenParams): void {
     super.enter(params);
     this.chars = params.chars || this.game.options.chars;
     this.stage = params.stage || getStage(this.game.options.stage);
@@ -36,7 +86,7 @@ export class IntroScreen extends Screen {
     particles.clear();
     this.game.audio.music.stop();
   }
-  update() {
+  override update(): void {
     super.update();
     const inp = this.game.input;
     if (this.frame % 5 === 0) { const s = STACKS[(this.frame / 5) % STACKS.length | 0]; particles.spawn('steam', s[0] + 4, s[1] - 4, 0, { screen: true, vx: 0.15, vy: -0.55, size: 3, life: 70 }); }
@@ -47,7 +97,7 @@ export class IntroScreen extends Screen {
     for (let p = 0; p < inp.playerCount && !skip; p++) if (this.frame > 10 && confirmPressed(inp, p)) skip = true;
     if (skip) { this.done = true; this.game.audio.play('menu_confirm'); this.game.fadeTo(() => this.game.replace('gameplay', { chars: this.chars, stage: this.stage }), 0.08); }
   }
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     const f = this.frame;
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     // city: far terraces, cyan summit glow, near terraces, window dots

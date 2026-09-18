@@ -15,6 +15,52 @@ import { clamp } from '../../lib/engine/math.ts';
 import { WeaponPickup } from '../items.ts';
 import { dropInChar, dupTint } from '../party.ts';
 import { bestiary, entryOf } from '../bestiary.ts';
+// Type-only, every one of them: this screen sits at the top of the game layer and reaches DOWN for the shapes it
+// works in, the same arrangement (and for the same reason) as the block at the top of game/stage.ts. `import type`
+// is erased by tsc, esbuild and node alike, so none of these adds an edge to the module graph the browser loads.
+import type { Game, ScreenParams, ScreenSummary } from '../game.ts';
+import type { Backdrop } from '../world.ts';
+import type { Fighter, FighterDef } from '../fighter.ts';
+import type { EnemyOpts } from '../enemy.ts';
+import type { StageData, StageUnit, StageWorld, PendingSpawn } from '../stage.ts';
+import type { HudBoss } from '../hud.ts';
+
+/**
+ * Five members hung on the World from outside it. game/world.ts declares that category itself -- the block headed
+ * "installed from outside, and so never assigned here", which holds `platform`, `spawnEnemy` and `onEnemyKilled`
+ * -- and these five are the rest of it. They are merged in from here rather than named there, which is the
+ * arrangement game/entity.ts's note on `EntityWorld` describes; either way each is checked against the real World
+ * the first time one is assigned.
+ *
+ * The first two are this screen's own, installed beside `onEnemyKilled` in the three-hook bestiary block in
+ * enter(). The last three are the stage runner's, installed in ITS constructor (game/stage.ts) -- which is why
+ * they are required rather than optional and why their types are taken from `StageWorld`, the interface that
+ * asks a world for them: a world that is handed a runner always ends up with all three, and `new StageRunner`
+ * below would not take a world that might not.
+ */
+declare module '../world.ts' {
+  interface World {
+    /** A ring-out: game/items.ts sets `dead` without calling die(), so `onEnemyKilled` never fires for one. */
+    onEnemyRungOut?: ((f: Fighter, killer: Fighter | null) => void) | null;
+    /** A boss phase fell (game/boss.ts). Not a defeat at all, but what gates that phase's codex block. */
+    onBossPhase?: ((b: Fighter, i: number) => void) | null;
+    /** The runner's banner slot, so the AI and the content layer can raise one through the world. */
+    announce: StageWorld['announce'];
+    onBossSpawn: StageWorld['onBossSpawn'];
+    bossLine: StageWorld['bossLine'];
+  }
+}
+
+/**
+ * The abandoned-seat watchdog's own flag (update()): this seat was handed to the bot by the idle timer rather
+ * than by `?bot=1`, so a single press takes it straight back. Written and read only here, which is why it is
+ * merged in from this file rather than declared on the Player -- see game/entity.ts's note on `EntityWorld`.
+ */
+declare module '../player.ts' {
+  interface Player {
+    abandoned?: boolean;
+  }
+}
 
 const GAME_OVER_DELAY = 150;
 // How often the bestiary is written during a run (issue #26). exit() flushes too, but a browser tab closed or
@@ -25,17 +71,102 @@ const BESTIARY_FLUSH_EVERY = 300;
 const START_X = 100;
 /** Player z spread (issue #23): slot 3 lands at 70 + 3*16 = 118, inside Z_MAX 140 (today's slot*24 would hit 142). */
 const PLAYER_START_Z = 70, PLAYER_Z_PITCH = 16;
+/** One row of DIFFICULTY: what `?difficulty=` is worth (GDD 7). */
+export interface DifficultyTuning {
+  /** Enemy max HP multiplier, applied once at spawn (spawnEnemyAt). Bosses are exempt. */
+  hpMult: number;
+  /** Enemy damage multiplier, folded into the spawned body's own `damageMult`. */
+  dmgMult: number;
+  /** Wind-up length multiplier, handed to the content layer through `options.tellScale`. */
+  tellScale: number;
+  /** Continues a run starts with. */
+  continues: number;
+}
 /** Difficulty tuning (GDD 7): enemy HP / damage multipliers, tell speed, continues. */
-const DIFFICULTY = {
+const DIFFICULTY: Record<string, DifficultyTuning> = {
   easy: { hpMult: 0.75, dmgMult: 0.6, tellScale: 1.3, continues: 5 },
   normal: { hpMult: 1, dmgMult: 1, tellScale: 1, continues: 3 },
   hard: { hpMult: 1.25, dmgMult: 1.4, tellScale: 0.85, continues: 2 },
 };
 
+/**
+ * A defeated body as `noteDefeat` reads one. `phaseIndex` is game/boss.ts's, which has not declared its own fields
+ * yet; optional for the reason game/world.ts's `WorldEntity` gives, and honestly so here -- the three hooks that
+ * call this hand over wave enemies, bosses and ring-outs alike, and only a boss is ever in a phase.
+ */
+export interface DefeatedBody extends Fighter {
+  /** 0-based boss phase; -1 in the book for anything that is not a boss. */
+  phaseIndex?: number;
+}
+
+/**
+ * The boss as `summary()` reports it: game/hud.ts's `HudBoss` -- the phase fields game/boss.ts assigns without
+ * declaring them -- plus the two more the readout adds. Optional for the same reason HudBoss's own are.
+ */
+export interface SummaryBoss extends HudBoss {
+  /** Which trigger spawned it. */
+  bossKind?: 'midboss' | 'boss';
+  /** 1-based phase number (`phaseIndex + 1`). */
+  phase?: number;
+}
+
+/**
+ * What `spawnEnemyAt` takes on top of where the body wakes up: the training room hands over its own derived def
+ * (traits.dummy, `drops: 'none'`) so the registry lookup is skipped.
+ */
+export interface SpawnEnemyAtOpts extends EnemyOpts {
+  def?: FighterDef;
+}
+
+/**
+ * What `spawnEntrance` takes. `z` and `delay` are the queue's; everything else is patched over the row
+ * game/entrances.ts resolves `kind` against, so the vocabulary is left open exactly as `SpawnSpec.entrance`
+ * leaves it -- that file owns it, and nothing here may pin it down.
+ */
+export interface SpawnEntranceOpts {
+  /** Floor depth; 70 when absent. */
+  z?: number;
+  /** Frames the queue holds the spawn before it is placed. */
+  delay?: number;
+  [key: string]: any;
+}
+
 /** The main in-game screen. */
 export class GameplayScreen extends Screen {
-  constructor(game) { super(game, 'gameplay'); this.pauseScreenId = 'pause'; }
-  enter(params) {
+  // The fields, for the checker only, in constructor order and then in the order enter() first writes them.
+  // `declare` because these are assignments and nothing else: a plain field declaration would emit a class field
+  // per name (es2022 defines them before the constructor body runs), which is a runtime change -- and the training
+  // room below subclasses this, where a re-declared field would reset what its own enter() had already set.
+  // Same reasoning, and the same wording, as game/entity.ts's Entity.
+  /** Which screen the START button raises; the training room swaps it for its own plate. */
+  declare pauseScreenId: string;
+  declare stage: StageData;
+  declare backdrop: Backdrop | null;
+  declare difficulty: DifficultyTuning;
+  declare world: World;
+  declare enemiesDefeated: number;
+  /** Whether this run is an online one, and which co-op group it belongs to -- see enter(). */
+  declare netRun: boolean;
+  declare netScope: string;
+  /** Set by showResults: the match ended in the plaque, so the room survives it (see exit()). */
+  declare toResults: boolean;
+  /** Entries this run opened for the first time, in the order they were beaten (the results plaque lists them). */
+  declare newEntries: string[];
+  /** Players by SLOT, so a drop-in fills its own seat; a free slot is a hole in the array. */
+  declare players: Player[];
+  declare continues: number;
+  declare continuesUsed: number;
+  declare hud: Hud;
+  declare gameOverTimer: number;
+  declare gameOverShown: boolean;
+  /** Frames the board has been running (the HUD's centre timer and the results plaque read it). */
+  declare time: number;
+  declare runner: StageRunner;
+  /** The frame the session's own end banner started on; latched by drawNetStatus the first time it draws. */
+  declare netEndedAt: number;
+
+  constructor(game: Game) { super(game, 'gameplay'); this.pauseScreenId = 'pause'; }
+  override enter(params: ScreenParams): void {
     super.enter(params);
     const game = this.game, opt = game.options;
     const chars = (params.chars && params.chars.length ? params.chars : opt.chars) || [0];
@@ -84,7 +215,15 @@ export class GameplayScreen extends Screen {
     // Dropped under netplay (main.js parseOptions, ARCHITECTURE 12): the START packet does not carry the id,
     // so a peer without the flag would arm a different section -- the same reason ?enemythrow is forced off.
     const event = this.netRun ? '' : (params.event != null ? params.event : (opt.event || ''));
-    this.runner = new StageRunner(this.world, this.stage, { game, hud: this.hud, screen: this, nowaves, startSection: section, startEvent: event });
+    // `as World & StageWorld`, type-only and no wider than this line: game/world.ts types the `spawnEnemy` hook it
+    // holds as returning a `Fighter`, while game/stage.ts asks the world it is handed for one returning a
+    // `StageUnit`. It is ONE function -- the runner installs it two lines into its own constructor, forwarding to
+    // `spawnEnemyAt` below, which does return a StageUnit -- and the two files describe it a subtype apart (world.ts
+    // says `Enemy` in the prose right above the alias and `Fighter` in the alias itself). The intersection asserts
+    // only that this World is also the StageWorld the runner is about to finish furnishing; every other member of
+    // both is still checked. Same arrangement, and the same wording, as the `as WorldCamera` in game/world.ts:
+    // it comes out the day those two declarations agree.
+    this.runner = new StageRunner(this.world as World & StageWorld, this.stage, { game, hud: this.hud, screen: this, nowaves, startSection: section, startEvent: event });
     this.runner.start();
     for (const s of opt.spawn || []) this.spawnEnemy(s.type, s.variant, s.dx, s.dz);
     // The opening banner. Its subtitle is normally the first section's name — but when story beats are on that name
@@ -102,7 +241,7 @@ export class GameplayScreen extends Screen {
    * of a larger party drops out mid-match, and the banner shown when the session itself ends and
    * the bots take over every seat but this one.
    */
-  drawNetStatus(ctx) {
+  drawNetStatus(ctx: CanvasRenderingContext2D): void {
     const net = this.game.net;
     if (!net) return;
     if (net.active && net.waiting) {
@@ -127,18 +266,18 @@ export class GameplayScreen extends Screen {
     }
   }
   /** Swap the backdrop (StageRunner calls this on section changes). */
-  setBackdrop(b) { this.backdrop = b; this.world.backdrop = b; }
+  setBackdrop(b: Backdrop | null): void { this.backdrop = b; this.world.backdrop = b; }
   /** Slots a DROP-IN may still fill: the party the lockstep session seated under netplay (two to
    *  four), LOCAL_PLAYERS on the couch. A method (not a constant) so #22's training arena can cap
    *  the run at one. The party a run ARRIVES with is a separate thing (see enter()): online the
    *  lobby has already seated it, and couch play cannot produce more than two anyway. */
-  maxPlayers() {
+  maxPlayers(): number {
     if (!this.game.options.netplay) return LOCAL_PLAYERS;
     const net = this.game.net;
     return Math.min(NET_PLAYERS, (net && net.players) || NET_PLAYERS);
   }
   /** Add a player for character index `ci` in slot `slot`. */
-  addPlayer(ci, slot) {
+  addPlayer(ci: number, slot: number): Player | null {
     const def = this.game.characters[ci] || this.game.characters[0];
     if (!def) return null;
     const opt = this.game.options, cam = this.world.camera;
@@ -153,7 +292,7 @@ export class GameplayScreen extends Screen {
     this.players[slot] = p;
     return p;
   }
-  update() {
+  override update(): void {
     super.update();
     if (this.frame % BESTIARY_FLUSH_EVERY === 0) bestiary.flush();
     const inp = this.game.input, world = this.world;
@@ -225,7 +364,7 @@ export class GameplayScreen extends Screen {
     }
   }
   /** Spend a continue: every player back with fresh lives and full HP at the current spot (GDD 7). */
-  continueRun() {
+  continueRun(): boolean {
     if (this.continues <= 0) return false;
     this.continues--; this.continuesUsed++;
     const cam = this.world.camera;
@@ -245,12 +384,12 @@ export class GameplayScreen extends Screen {
     return true;
   }
   /** Stage cleared: results screen with the run statistics. */
-  onVictory() {
+  onVictory(): void {
     this.game.audio.music.stop();
     this.game.fadeTo(() => this.showResults(false), 0.04);
   }
   /** Replace this screen with the results plaque (`defeat` = continue countdown expired: GDD 9, D-rank ceiling). */
-  showResults(defeat = false) {
+  showResults(defeat: boolean = false): void {
     const stats = this.players.filter(Boolean).map((p) => ({
       name: p.def.name, kills: p.kills, maxCombo: p.maxCombo, damageTaken: Math.round(p.damageTakenTotal), continues: p.continuesUsed, score: p.score, lives: p.lives, index: p.index,
     }));
@@ -260,7 +399,7 @@ export class GameplayScreen extends Screen {
     // so by then the session has already let go of the group whose clear this is.
     this.game.replace('results', { stats, defeat, stage: this.stage, time: this.time, enemiesDefeated: this.enemiesDefeated, newEntries: this.newEntries.slice(), continuesUsed: this.continuesUsed, sectionIndex: this.world.sectionIndex, wavesCleared: this.world.wavesCleared, cameraX: this.world.camera.x, online: this.netRun, scope: this.netScope });
   }
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     this.world.draw(ctx);
     this.runner.draw(ctx);
     this.hud.draw(ctx);
@@ -276,7 +415,7 @@ export class GameplayScreen extends Screen {
    * 45-frame timer and can be set to any variant from a menu, so counting them would fill the bestiary from a plate
    * rather than from the campaign. Bot runs and `?nowaves=1` debug spawns DO count -- they are real defeats.
    */
-  countsForBestiary() { return true; }
+  countsForBestiary(): boolean { return true; }
   /**
    * Record one defeat in the bestiary, from whichever of the three hooks saw it. Derived bookkeeping only: it reads
    * state the sim has already settled and writes nothing the sim reads back, so it cannot desync a lockstep match.
@@ -284,7 +423,7 @@ export class GameplayScreen extends Screen {
    * @param {object} killer whoever landed the last hit (may be null: a hazard, or a bomb from its own side)
    * @param {boolean} ringOut true when it went over a rail or into the molten channel
    */
-  noteDefeat(f, killer, ringOut) {
+  noteDefeat(f: DefeatedBody, killer: Fighter | null, ringOut: boolean): void {
     if (!f || !f.def || !this.countsForBestiary()) return;
     const hero = killer && killer.kind === 'player' && killer.def ? killer.def.name : '';
     // GDD 7's throw-kill rule, reused verbatim: the thrown body itself, or anything killed by a thrown body or a
@@ -299,7 +438,7 @@ export class GameplayScreen extends Screen {
     this.newEntries.push(name);
     this.hud.showNewEntry(name);
   }
-  exit() {
+  override exit(): void {
     // The book is written on the way out of every match, whichever way the match ended: the results plaque, a quit
     // to the title, a game over, a reset. bestiary.record() only touches memory, so without this a run's kills would
     // be lost -- and flushing per kill would stringify the whole book in the middle of a fight.
@@ -322,8 +461,8 @@ export class GameplayScreen extends Screen {
   }
 
   // ---------- window.__game hooks ----------
-  summary() {
-    const w = this.world, b = w.boss;
+  override summary(): ScreenSummary {
+    const w = this.world, b: SummaryBoss = w.boss;
     const rs = this.runner && this.runner.summary ? this.runner.summary() : {};
     return {
       ...rs,
@@ -335,7 +474,7 @@ export class GameplayScreen extends Screen {
     };
   }
   /** Spawn an enemy at P1.x + dx, P1.z + dz (bosses too: type 'midboss' | 'boss'). */
-  spawnEnemy(type = 'brassbound', variant = 'footman', dx = 80, dz = 0) {
+  spawnEnemy(type: string = 'brassbound', variant: string = 'footman', dx: number = 80, dz: number = 0): StageUnit {
     const p1 = this.players[0] || { x: this.world.camera.x + 200, z: 70 };
     const x = p1.x + (Number(dx) || 0), z = clamp(p1.z + (Number(dz) || 0), 0, Z_MAX);
     return this.spawnEnemyAt(type, variant, x, z, { facing: x < p1.x ? 1 : -1 });
@@ -345,13 +484,13 @@ export class GameplayScreen extends Screen {
    * scenario can watch a `teleport` / `flyIn` / `descend` / `ropeDrop` tell, arrival and punish window on an
    * otherwise empty `?nowaves=1` arena. Returns the queued pending entry, or null with no runner.
    */
-  spawnEntrance(type = 'brassbound', variant = 'warden', kind = 'teleport', opts = {}) {
+  spawnEntrance(type: string = 'brassbound', variant: string = 'warden', kind: string = 'teleport', opts: SpawnEntranceOpts = {}): PendingSpawn | null {
     if (!this.runner) return null;
     const { z, delay, ...entrance } = opts || {};
     return this.runner.spawnEntrance(type, variant, { kind, ...entrance }, { z, delay });
   }
   /** Spawn an enemy from the content registry at absolute world coords. `opts.def` (training room) skips the lookup. */
-  spawnEnemyAt(type, variant, x, z, opts = {}) {
+  spawnEnemyAt(type: string, variant: string, x: number, z: number, opts: SpawnEnemyAtOpts = {}): StageUnit {
     const def = opts.def || getEnemyDef(type, variant);
     const e = def.boss ? new Boss(def, { x, z, facing: opts.facing != null ? opts.facing : -1 }) : new Enemy(def, { x, z, ...opts });
     const d = this.difficulty || DIFFICULTY.normal;
@@ -361,14 +500,14 @@ export class GameplayScreen extends Screen {
     return e;
   }
   /** Test hook: lay a pickup weapon at P1.x + dx, P1.z + dz (settled, no pop, no grace). */
-  spawnWeapon(id = 'halberd', dx = 0, dz = 0) {
+  spawnWeapon(id: string = 'halberd', dx: number = 0, dz: number = 0): string {
     const p1 = this.players[0] || { x: this.world.camera.x + 200, z: 70 };
     const wp = new WeaponPickup(id, p1.x + (Number(dx) || 0), clamp(p1.z + (Number(dz) || 0), 0, Z_MAX), { pop: false });
     this.world.add(wp);
     return wp.weaponId;
   }
   /** Remove every enemy (and boss) immediately. */
-  killAllEnemies() {
+  killAllEnemies(): void {
     for (const e of this.world.entities.slice()) {
       if ((e.kind === 'enemy' || e.kind === 'boss') || (e.kind === 'projectile' && e.team === TEAM.ENEMY)) this.world.remove(e);
     }
@@ -383,8 +522,8 @@ export class GameplayScreen extends Screen {
     this.world._refreshLists();
   }
   /** Fill a player's meter to the max (super ready). */
-  fillMeter(pi = 0) { const p = this.players[pi]; if (p) p.meter = METER.max; }
+  fillMeter(pi: number = 0): void { const p = this.players[pi]; if (p) p.meter = METER.max; }
   /** Turn a player toward (and step toward) the nearest enemy. */
-  facePlayerToNearestEnemy(pi = 0) { const p = this.players[pi]; if (p) p.faceNearestEnemy(this.world); }
+  facePlayerToNearestEnemy(pi: number = 0): void { const p = this.players[pi]; if (p) p.faceNearestEnemy(this.world); }
 }
 

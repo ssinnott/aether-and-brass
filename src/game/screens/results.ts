@@ -23,10 +23,19 @@ import { getStage, stageIndex } from '../../content/stage/index.ts';
 import { CHARACTERS } from '../../content/characters/index.ts';
 import { BANTER, SOLO } from '../../content/characters/lines.ts';
 import { drawSpeechPlate, pairKey } from '../dialogue.ts';
+// Type-only, every one of them: the plaque is built AFTER the match screen has left the stack, so it reaches down
+// for the shapes the run was described in rather than holding on to any of it -- the same arrangement (and for the
+// same reason) as the block at the top of game/screens/gameplay.ts. `import type` is erased by tsc, esbuild and
+// node alike, so none of these adds an edge to the module graph the browser loads.
+import type { Game, ScreenParams, ScreenSummary, RegistryEntry } from '../game.ts';
+import type { StageData } from '../stage.ts';
+import type { Rig } from '../../lib/art/rig.ts';
 
 const ROWS = [['ENEMIES DEFEATED', 'kills'], ['MAX COMBO', 'maxCombo'], ['DAMAGE TAKEN', 'damageTaken'], ['CONTINUES USED', 'continues'], ['TIME', 'time'], ['SCORE', 'score']];
 const ROW_FRAMES = 20, ROLL_FRAMES = 16;
-const RANKS = [[120000, 'S', '#ffffff'], [90000, 'A', '#4DF0E0'], [60000, 'B', '#ffe45a'], [30000, 'C', '#ff9a30'], [0, 'D', '#c8c8c8']];
+// [minimum total, letter, stamp colour], highest first. Annotated as a tuple rather than left to inference: a
+// mixed array literal widens to `(string | number)[]`, and the letter and the colour are read as strings.
+const RANKS: Array<[number, string, string]> = [[120000, 'S', '#ffffff'], [90000, 'A', '#4DF0E0'], [60000, 'B', '#ffe45a'], [30000, 'C', '#ff9a30'], [0, 'D', '#c8c8c8']];
 const AUTO_RETURN = 600, BOT_HOLD = 900;
 const RANK_STAMP_SHAKE = 3;
 const LABEL_X = 64, COL_X = 250, COL_W = 120, ROW_Y = 104;
@@ -53,11 +62,71 @@ const ENTRY_NAMES_MAX = 50;
 const ENTRY_Y = 262, ENTRY_Y_UNDER_UNLOCK = 302;
 
 /**
+ * One player's column on the plaque. The first six fields are what game/screens/gameplay.ts's `showResults` builds
+ * from each seated Player; `time` and `finalScore` are written HERE, by enter(), once the run's time bonus is known.
+ *
+ * Everything past `score` is optional because the plaque also stands up with no run behind it: the fallback row
+ * enter() substitutes when `params.stats` arrives empty carries the first six and nothing else.
+ */
+export interface ResultsStat {
+  name: string;
+  kills: number;
+  maxCombo: number;
+  damageTaken: number;
+  /** Continues this player SPENT (the CONTINUES USED row), not the run's remaining allowance. */
+  continues: number;
+  score: number;
+  lives?: number;
+  /** The seat this player sat in, so P3's column is headed P3 and wears P3's colour even in a party of two. */
+  index?: number;
+  /** m:ss, written by enter(). */
+  time?: string;
+  /** `score` plus this player's share of the run's time bonus, written by enter(). */
+  finalScore?: number;
+}
+
+/** A rank letter and the colour it is stamped in (RANKS). */
+export interface Rank {
+  letter: string;
+  color: string;
+}
+
+/** One hero's victory pose: the rig, the win (or `lying`) animation playing on it, and the def both came from. */
+export interface ResultsHero {
+  rig: Rig;
+  anim: AnimPlayer;
+  def: RegistryEntry;
+}
+
+/** One plate of the run's last exchange: which column's hero speaks it, and what they say. */
+export interface ResultsLine {
+  /** Index into `heroes` / `HERO_X`, so the plate lands over the hero who is speaking. */
+  i: number;
+  text: string;
+}
+
+/** The run's last companion exchange: one line alone, or an opening line and the reply that follows it. */
+export interface ResultsExchange {
+  lines: ResultsLine[];
+}
+
+/**
+ * The run bookkeeping the plaque keeps alive for window.__game.summary() (ARCHITECTURE.md section 12). All three
+ * ride in on `params`: the gameplay screen has left the stack by the time this is built, so there is no world left
+ * to read them off.
+ */
+export interface ResultsSummaryExtra {
+  sectionIndex: number;
+  wavesCleared: number;
+  cameraX: number;
+}
+
+/**
  * The names this run added, as many as fit on one line and a `+N` for the rest — or, when a board unlock is already
  * using the plate rows, just how many there were.
  * @returns {string[]} zero, one or two lines
  */
-function entryLines(names, compact) {
+function entryLines(names: string[] | null | undefined, compact: boolean): string[] {
   if (!names || !names.length) return [];
   if (compact) return [`NEW BESTIARY ENTRIES  x${names.length}`];
   const shown = [];
@@ -71,13 +140,48 @@ function entryLines(names, compact) {
 }
 
 /** Rank letter for a total score. */
-export function rankFor(score) { for (const r of RANKS) if (score >= r[0]) return { letter: r[1], color: r[2] }; return { letter: 'D', color: '#c8c8c8' }; }
-function fmtTime(frames) { const s = Math.floor(frames / 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
+export function rankFor(score: number): Rank { for (const r of RANKS) if (score >= r[0]) return { letter: r[1], color: r[2] }; return { letter: 'D', color: '#c8c8c8' }; }
+function fmtTime(frames: number): string { const s = Math.floor(frames / 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
 
 /** Stage results. */
 export class ResultsScreen extends Screen {
-  constructor(game) { super(game, 'results'); }
-  enter(params) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are assignments and
+  // nothing else: a plain field declaration would emit a class field per name (es2022 defines them before the
+  // constructor body runs), which is a runtime change. Same reasoning, and the same wording, as game/entity.ts.
+  declare stats: ResultsStat[];
+  /** Frames the run took; the TIME row and the time bonus both read it. */
+  declare time: number;
+  /** True when the run ended on an expired continue countdown (GDD 9): no time bonus, rank capped at D. */
+  declare defeat: boolean;
+  declare timeBonus: number;
+  /** Every column's `finalScore` added up: the number the rank is read off. */
+  declare total: number;
+  declare summaryExtra: ResultsSummaryExtra;
+  /** Bestiary entries this run opened, in the order they were beaten. */
+  declare newEntries: string[];
+  declare rank: Rank;
+  /** Which board this was. */
+  declare stage: StageData;
+  /** The co-op group this run belonged to ('' for a solo run); see enter(). */
+  declare scope: string;
+  /** True when this run was played online: the party has a room to go back to (see backToLobby). */
+  declare online: boolean;
+  /** The board this clear opened, or null when it opened nothing. */
+  declare unlocked: StageData | null;
+  /** The NEW BESTIARY ENTRIES rows: zero, one or two lines. */
+  declare entryLines: string[];
+  declare rowsShown: number;
+  declare rowTimer: number;
+  /** Frames since the rank stamp landed; -1 until the last stat row has rolled in. */
+  declare stamp: number;
+  declare leaving: boolean;
+  /** One victory pose per column, with a hole where no character def could be resolved. */
+  declare heroes: Array<ResultsHero | null>;
+  /** The run's last companion exchange, picked once on entry (see pickExchange). */
+  declare exchange: ResultsExchange | null;
+
+  constructor(game: Game) { super(game, 'results'); }
+  override enter(params: ScreenParams): void {
     super.enter(params);
     this.stats = (params.stats && params.stats.length ? params.stats : [{ name: 'P1', kills: 0, maxCombo: 0, damageTaken: 0, continues: 0, score: 0 }]).slice(0, MAX_PLAYERS);
     this.time = params.time || 0;
@@ -131,7 +235,7 @@ export class ResultsScreen extends Screen {
    *
    * @returns {{ lines: Array<{ i: number, text: string }> }|null}
    */
-  pickExchange() {
+  pickExchange(): ResultsExchange | null {
     if (this.defeat || this.game.options.bot) return null;
     const live = this.heroes.map((h, i) => (h && h.def ? { i, id: h.def.id } : null)).filter(Boolean);
     if (!live.length) return null;
@@ -150,9 +254,9 @@ export class ResultsScreen extends Screen {
   }
 
   /** Keep the stage bookkeeping visible to window.__game.summary() after the run. */
-  summary() { return { ...this.summaryExtra, stageId: this.stage ? this.stage.id : '', unlockedStageId: this.unlocked ? this.unlocked.id : '',
+  override summary(): ScreenSummary { return { ...this.summaryExtra, stageId: this.stage ? this.stage.id : '', unlockedStageId: this.unlocked ? this.unlocked.id : '',
     resultsLines: this.exchange ? this.exchange.lines.map((l) => l.text) : [] }; }
-  update() {
+  override update(): void {
     super.update();
     for (const h of this.heroes) if (h) { h.anim.tick(); if (h.anim.done) h.anim.play(this.defeat ? 'lying' : 'win', { restart: true, fallback: 'idle' }); }
     if (this.leaving) return;
@@ -190,12 +294,12 @@ export class ResultsScreen extends Screen {
    * matches (net/session.js matchOver). A session that ended mid-match - a disconnect, a desync -
    * has no room left to return to, so that run leaves the way a solo one does.
    */
-  backToLobby() {
+  backToLobby(): boolean {
     const net = this.game.net;
     return !!(this.online && net && net.state === 'lobby' && this.game.factories.lobby);
   }
   /** "NEW BOARD OPEN" plate: what this clear unlocked, and where to find it. */
-  drawUnlock(ctx, f) {
+  drawUnlock(ctx: CanvasRenderingContext2D, f: number): void {
     const stage = this.unlocked, n = stage.number || stageIndex(stage) + 1;
     const x = 56, y = 262, w = 344, h = 34;
     rrect(ctx, x, y, w, h, 4, 'rgba(20,44,44,0.85)', UI.teal, (f % 40) < 20 ? 2 : 1);
@@ -203,14 +307,14 @@ export class ResultsScreen extends Screen {
     drawText(ctx, stage.name, x + w / 2, y + 18, { size: 1, color: UI.brassLight, align: 'center' });
   }
   /** Value of a row as shown while it rolls in (numbers count up over ROLL_FRAMES). */
-  rowValue(s, key, r) {
+  rowValue(s: ResultsStat, key: string, r: number): string {
     const raw = s[key];
     if (key === 'time') return raw;
     const k = r === this.rowsShown - 1 ? Math.min(1, this.rowTimer / ROLL_FRAMES) : 1;
     const v = Math.round((Number(raw) || 0) * k);
     return key === 'score' ? String(v).padStart(7, '0') : String(v);
   }
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     const f = this.frame;
     ctx.fillStyle = '#1a1420'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.globalAlpha = 0.2; gear(ctx, 80, 300, 100, 14, '#3a2a48', null, 0, f * 0.003, 30); gear(ctx, 590, 60, 70, 12, '#3a2a48', null, 0, -f * 0.005, 22); ctx.globalAlpha = 1;

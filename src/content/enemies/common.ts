@@ -2,7 +2,10 @@
 // builder and the def assembly helper. Pure data + small draw hooks (ARCHITECTURE.md section 14). No game logic.
 import { makeBaseAnims, strike, frontBox, areaBox, STYLES } from '../../art/animLib.ts';
 import { P } from '../../lib/art/poses.ts';
+import type { PoseSpec } from '../../lib/art/poses.ts';
 import { rrect, circle, pathPoly, paint, line, gear } from '../../lib/art/shapes.ts';
+import type { FighterDef, FighterMoves } from '../../game/fighter.ts';
+import type { AiConfig } from '../../game/enemy.ts';
 
 export { strike, frontBox, areaBox, STYLES, P };
 
@@ -174,18 +177,18 @@ export function drawCollar(ctx, rig) {
  *   event, projectile, armor, invuln, hitboxes, extraActive, rehit, once, fx, aimEvent } }
  */
 /** One telegraphed enemy attack: tell (wind-up, `tell:true` frames light the lens red) -> active -> recovery -> return. */
-export function enemyAttack(o, carry = {}) {
+export function enemyAttack(o, carry = {}): Anim {
   const st = STYLES[o.style] || STYLES.swing;
   // `sfx` here is the IMPACT sound: combat.js playHitSfx reads hit.sfx and falls back to hit_<type>. It is not
   // the frame's `sfx`, which is the swing. This used to be written to the frame as `hitSfx`, which nothing reads.
   const hit = { damage: o.dmg != null ? o.dmg : 6, type: o.type || 'light', kbX: o.kbX != null ? o.kbX : 3, kbY: o.kbY || 0, hitstun: o.hitstun || 16, once: o.once !== false, rehit: o.rehit, sfx: o.hitSfx };
   const hb = o.hitboxes ? null : (o.hitbox || (o.area ? areaBox(o.area, hit) : frontBox(o.reach || 40, hit, { low: o.low, high: o.high, behind: o.behind })));
-  const frames = [];
+  const frames: Frame[] = [];
   const tellFrames = o.tell || 20;
-  const w = { dur: Math.max(1, Math.round(tellFrames * 0.6)), pose: st.w, tell: true, sfx: o.tellSfx, armor: o.armor || undefined, event: o.aimEvent };
+  const w: Frame = { dur: Math.max(1, Math.round(tellFrames * 0.6)), pose: st.w, tell: true, sfx: o.tellSfx, armor: o.armor || undefined, event: o.aimEvent };
   frames.push(w);
   frames.push({ dur: Math.max(1, tellFrames - w.dur), pose: P({ ...st.w, root: [(st.w.root ? st.w.root.x : 0) - 2, st.w.root ? st.w.root.y : 0] }), tell: true, armor: o.armor || undefined, interp: true });
-  const h = { dur: o.active || 8, pose: st.h, sfx: o.sfx, fx: o.fx, move: o.move, armor: o.armor || undefined, invuln: o.invuln || undefined, event: o.event, projectile: o.projectile, summon: o.summon, radius: o.radius, hit: o.hit, shake: o.shake, offset: o.offset };
+  const h: Frame = { dur: o.active || 8, pose: st.h, sfx: o.sfx, fx: o.fx, move: o.move, armor: o.armor || undefined, invuln: o.invuln || undefined, event: o.event, projectile: o.projectile, summon: o.summon, radius: o.radius, hit: o.hit, shake: o.shake, offset: o.offset };
   if (o.hitboxes) h.hitboxes = o.hitboxes; else if (!o.noHitbox) h.hitbox = hb;
   frames.push(h);
   if (o.extraActive) for (const ex of o.extraActive) frames.push({ dur: ex.dur || 4, pose: ex.pose || st.h, hitbox: ex.hitbox, hitboxes: ex.hitboxes, event: ex.event, projectile: ex.projectile, move: ex.move, fx: ex.fx, sfx: ex.sfx, radius: ex.radius, hit: ex.hit, summon: ex.summon });
@@ -194,12 +197,69 @@ export function enemyAttack(o, carry = {}) {
   return { loop: false, frames };
 }
 
+/** One bestiary block (content/enemies/codex.ts CODEX); index.ts merges it onto the def under its id. */
+export interface CodexEntry {
+  /** The entry proper, one unwrapped string, held to CODEX_MAX_CHARS. */
+  text: string;
+  /** What the player watches for, phrased as the thing on screen. */
+  tells: string;
+  /** The counterplay, in the multipliers the sim actually applies. */
+  weakness: string;
+}
+
+/**
+ * An assembled enemy def: every key makeEnemyDef writes, on top of the core's own FighterDef (game/fighter.ts), which
+ * is where `build`, `anims`, `hooks`, `traits`, `hurtParts`, `projectiles`, `grabOffset` and `grabHoldFrames` are
+ * declared — the faction wrappers attach those AFTER makeEnemyDef returns, which is why they are optional there and
+ * why this interface extends rather than restates them.
+ *
+ * The fields below are the ENEMY layer's own: game/enemy.ts and the wave/bestiary screens read them off a def that
+ * the combat core never looks at.
+ */
+export interface EnemyDef extends FighterDef {
+  /** `${type}:${variant}` — the registry key, and the key CODEX and BOSS_LINES are merged under. */
+  id: string;
+  /** Faction slug ('brassbound', 'sootborn', 'stormcrow', 'gleaning', 'chandler', a boss's own). */
+  type: string;
+  variant: string;
+  name: string;
+  /** ARCHITECTURE 8 role, which is also what ROLE_DEFAULTS layers its ai under. */
+  role: string;
+  faction: string;
+  hp: number;
+  maxHp: number;
+  damageMult: number;
+  walkSpeed: number;
+  runSpeed: number;
+  score: number;
+  /** Drop table name ('none' when it drops nothing). */
+  drops: string;
+  elite: boolean;
+  armor: boolean;
+  unlaunchable: boolean;
+  /**
+   * These three are written unconditionally but may come out undefined, and undefined is not false here: game/traits.ts
+   * `pick` reads an absent value as "take the default" (grabbable / grabbableByGrappler default TRUE, throwDamageMult 1),
+   * so a variant that says nothing is grabbable rather than ungrabbable.
+   */
+  grabbable?: boolean;
+  grabbableByGrappler?: boolean;
+  throwDamageMult?: number;
+  damageTaken: number;
+  lyingFrames: number;
+  /** Content overrides for AI_DEFAULTS; game/enemy.ts normalizeAi folds the aliases in. */
+  ai: Partial<AiConfig>;
+  moves: FighterMoves | null;
+  /** Bestiary text: inline here wins, otherwise index.ts merges the codex.ts block keyed by `id`. */
+  codex: CodexEntry | null;
+}
+
 /**
  * Assemble an enemy def from a base and a variant patch. Numbers follow ARCHITECTURE section 8.
  * @param {object} base { type, build, anims, walkSpeed, sfx, ai }
  * @param {object} v { variant, name, role, hp, damage, speed, score, drops, build, anims, ai, ...flags }
  */
-export function makeEnemyDef(base, v) {
+export function makeEnemyDef(base, v): EnemyDef {
   const walk = (base.walkSpeed || 1.6) * (v.speed || 1);
   return {
     id: `${base.type}:${v.variant}`, type: base.type, variant: v.variant, name: v.name, role: v.role || 'fodder', faction: base.faction,
@@ -254,7 +314,7 @@ export const BRASS_PAL = { skin: '#6E7A88', hair: '#4A5563', primary: BRASS.stee
 /** GDD rig sizes x1.4: 17px head, 22x26 torso, 8px limbs, 12px plate feet (~74px tall at scale 1). */
 export const BRASS_PROPS = { headR: 8.5, neck: 3, neckR: 3, torsoW: 22, torsoH: 26, hip: 18, upperArm: 13, lowerArm: 12, armR: 4, handR: 4.5, upperLeg: 14, lowerLeg: 13, legR: 4.5, footL: 12, footH: 5, bulge: 0, shoulderX: 3, hipX: 4 };
 /** Keyframe shorthand: FK(dur, poseSpec, extraFrameFields). */
-export const FK = (dur, spec, extra) => ({ dur, pose: P(spec), ...(extra || {}) });
+export const FK = (dur: number, spec: PoseSpec, extra?: Partial<Frame>): Frame => ({ dur, pose: P(spec), ...(extra || {}) });
 
 /** Boxy automaton head (head space): rounded 17px plate, dark brow band, brass jaw plate, hinge bolt at the back. */
 function brassHeadB(ctx, rig, pose, inf) {
@@ -398,17 +458,26 @@ const AD = (a, du, dl) => [a[0] + du, a[1] + dl];
 /** Body face-down on the floor (root rot +88: the back and the wind-up key face up; body-space +y runs along the ground toward the feet). */
 const FLOOR_POSE = { armR: [-24, -4], weapon: -24, armL: [25, 20], torso: 4, head: -10, legR: [10, 8], legL: [-4, 6], root: [-30, -9, 88] };
 
+/** The three per-variant knobs makeBrassBase takes (see the block below for what each one buys). */
+export interface BrassBaseOpts {
+  /** Merged into the four gear-slip (stagger) keys. */
+  stagger?: PoseSpec;
+  /** `weapon.rot` on the lying / getup / dead keys; default -24. */
+  weaponFloor?: number;
+  /** The off arm stays in its carry through walk and run. */
+  holdOffArm?: boolean;
+}
 /**
  * Shared Brassbound base animation set (idle 4 / walk 8 / run 8 / jump / fall / land / hurt 3 / stagger 4 / hurtAir / knockdown /
  * lying 2 / getup 3 / dead), parameterised by the rest carry `c` ({ armR, armL, weapon, legR?, legL? }).
  * o.stagger: partial pose merged into the gear-slip keys (e.g. the Warden lowers his shield); o.weaponFloor: weapon.rot while lying;
  * o.holdOffArm: the off arm stays in its carry during walk / run (a strapped shield must not wave about).
  */
-export function makeBrassBase(c, o = {}) {
+export function makeBrassBase(c, o: BrassBaseOpts = {}): AnimSet {
   const st = o.stagger || {}, wf = o.weaponFloor != null ? o.weaponFloor : -24, hold = !!o.holdOffArm;
   const floor = { ...FLOOR_POSE, weapon: wf };
-  const walk = (lr, ll, al, ty, sq, fr, fl) => ({ ...c, legR: lr, legL: ll, armL: hold ? c.armL : al, torso: 5, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, footR: fr || 0, footL: fl || 0 });
-  const run = (lr, ll, al, ty, sq) => ({ ...c, armR: AD(c.armR, 10, -6), legR: lr, legL: ll, armL: hold ? AD(c.armL, 20, -20) : al, torso: 20, head: -4, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
+  const walk = (lr: number[], ll: number[], al: number[], ty: number, sq?: number, fr?: number, fl?: number) => ({ ...c, legR: lr, legL: ll, armL: hold ? c.armL : al, torso: 5, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1, footR: fr || 0, footL: fl || 0 });
+  const run = (lr: number[], ll: number[], al: number[], ty: number, sq?: number) => ({ ...c, armR: AD(c.armR, 10, -6), legR: lr, legL: ll, armL: hold ? AD(c.armL, 20, -20) : al, torso: 20, head: -4, root: [0, ty], squash: sq || 1, stretch: sq ? 2 - sq : 1 });
   return {
     idle: { loop: true, frames: [
       FK(14, { ...c, torso: 1, root: [0, 0] }, { ease: 'inout' }),

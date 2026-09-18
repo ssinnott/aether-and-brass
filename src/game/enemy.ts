@@ -46,6 +46,336 @@ import { laneAroundHazards, solidBetween } from './hazards.ts';
 import { tryEnemyPropThrow, thinkEnemyHeld, dropHeldProp } from './throwables.ts';
 import { applyMods } from './traits.ts';
 import { startArrival, stepArrival, finishArrival, isHanging } from './entrances.ts';
+import type { Entrance } from './entrances.ts';
+import type { FighterDef, FighterWorld } from './fighter.ts';
+import type { CameraView, Entity, EntityKind } from './entity.ts';
+import type { PlayerFrame } from '../lib/art/animation.ts';
+
+// ================================ DECLARED SHAPES ===================================================================
+// This file's half of the AI FLAG REFERENCE above: the `def.ai` table as normalizeAi leaves it, the world services the
+// AI framework reaches for, and the per-instance state the state machine keeps. Shapes that already exist elsewhere
+// are used BY NAME rather than described a second time — Hit / Frame and friends from types/content.d.ts, Fighter /
+// FighterWorld / FighterDef from game/fighter.ts, Entity / CameraView from game/entity.ts, Rig from lib/art/rig.ts.
+
+/**
+ * The rig fields the AI drives, merged into the vendored library's `Rig` (lib/art/rig.ts declares no index signature
+ * on purpose, and asks a consumer to add its own fields by declaration merging — the same way game/fighter.ts adds the
+ * core's frame fields to the player's `Frame`). Every one of them is read by an enemy part hook in content/enemies:
+ * a lens that goes red on a wind-up, goggles that track the nearest player, a wind-up key that spins while the body
+ * acts. All optional: a rig that nothing drives (a hero's, a gallery's) simply never carries them.
+ */
+declare module '../lib/art/rig.ts' {
+  interface Rig {
+    /** Wind-up key angle, advanced while the automaton walks / runs / swings (content/enemies/common.ts). */
+    keyAngle?: number;
+    /** A wind-up is running: the faction tell (red lens, violet static) is drawn while it is set. */
+    tell?: boolean;
+    /** The tell is about to land (the last `ai.tellWarnFrames` of it): the tell blinks hot. */
+    tellWarn?: boolean;
+    /** Where this body is looking, -1..1 toward its target; null / absent on a rig with no eyes to move. */
+    look?: RigLook | null;
+    /** A launcher stripped the shield for good: the plate is not drawn again (stormcrowKit.ts, common.ts). */
+    shieldStripped?: boolean;
+  }
+}
+
+/** `rig.look`: a direction toward the target, each component -1..1 (x along facing, y by relative z). */
+export interface RigLook { x: number; y: number; }
+
+/**
+ * The one frame field this layer honours that the shared combat core does not: game/fighter.ts's block covers the
+ * fields Fighter reads, and this is read by the `timeStop` event handled here. Merged into the player's `Frame` the
+ * same way (lib/art/animation.ts declares no index signature, and asks each game to add its own fields).
+ */
+declare module '../lib/art/animation.ts' {
+  interface Frame {
+    /** Frames players are frozen for by a `timeStop` event; 60 when absent (GDD 5.2, the Regent Engine). */
+    freeze?: number;
+  }
+}
+
+/** One entry of a `summon` event's list (`frame.summon`): an escort spawned just outside the camera lock. */
+export interface SummonSpec { type: string; variant?: string; }
+
+/**
+ * A `crateDrop` event's spec (`frame.projectile`, GDD 5.1 the Hoister): the fields the landing itself reads, over a
+ * projectile spec — that vocabulary is game/projectile.ts's and rides along under the index signature rather than
+ * being described a second time here.
+ */
+export interface CrateDropSpec {
+  /** The area hit the crate lands with (defaults: 24 damage, a knockdown, kbX 4 / kbY 5, 24 frames of hitstun). */
+  damage?: number;
+  type?: HitType;
+  kbX?: number;
+  kbY?: number;
+  hitstun?: number;
+  /** Radius of that hit in px (default 60). */
+  radius?: number;
+  /** What the crate left behind drops; a coin flip between a meat pie and an aether vial when absent. */
+  drops?: string;
+  /** The projectile spec the crate falls as. */
+  [key: string]: any;
+}
+
+/** One entry of `ai.attacks`: an animation the AI may choose at a distance. */
+export interface AiAttack {
+  anim: string;
+  /** Max distance in x it may be chosen at. Absent on the entries the core synthesises (a ranged shot, a riposte). */
+  range?: number;
+  minRange?: number;
+  /** Relative weight in the random pick (default 1). */
+  weight?: number;
+  /** Uses per body, ever (a boss's summon). */
+  maxUses?: number;
+  /** Wind-up animation played first; `anim` follows it (pendingAttack). */
+  tell?: string;
+  /** Follow-up animation started when this one finishes. */
+  chain?: string;
+  /** Stretch this attack's tell frames to this many, whatever `ai.tellScale` says. */
+  tellFrames?: number;
+  /** Set on the entry startRanged synthesises, so the rest of the AI can tell a shot from a swing. */
+  ranged?: boolean;
+}
+
+/** `ai.ranged`: the ranged attack and the KEEP_DISTANCE stand-off it buys room for. */
+export interface RangedAi {
+  anim: string;
+  minRange: number;
+  maxRange: number;
+  /** Frames between shots (default 150). */
+  cooldown?: number;
+  /** Preferred distance; the midpoint of [minRange, maxRange] when absent. Also written by the `keepDistance` alias. */
+  keep?: number;
+  /** Line up in z before shooting. */
+  zAlign?: boolean;
+  /** Lob at where the target was this many frames ago (Copper Sapper 24). */
+  aimDelay?: number;
+}
+
+/**
+ * `ai.shield` after normalizeAi: super armor and no launch until a launcher strips it. Content authors `shield: true`
+ * or any subset of these fields; normalizeAi always rebuilds the whole table from it, so every field is present by
+ * the time anything reads one.
+ */
+export interface ShieldAi {
+  /** Nth hit taken staggers the body (gear slip). */
+  hitsToStagger: number;
+  staggerFrames: number;
+  /** A launcher during that stagger strips the shield for good. */
+  stripOnLauncher: boolean;
+  /** Armor only from the front. */
+  frontOnly: boolean;
+  /** Prop type left on the floor when the shield goes (null = nothing drops). */
+  dropProp: string | null;
+}
+
+/** `ai.backstepAfterWhiffs`: hop back with i-frames after N of the player's swings miss nearby (Gutter Wrangler). */
+export interface BackstepAi {
+  /** Whiffs needed (default 2). */
+  whiffs?: number;
+  /** Backstep distance in px (default 40). */
+  dist?: number;
+  /** I-frames granted (default 8). */
+  iframes?: number;
+  /** Frames before it may happen again (default 60). */
+  cooldown?: number;
+  /** How close the player's swing must be to count as a whiff at us (default 110). */
+  range?: number;
+}
+
+/** `ai.riposteStance`: the deterministic Chrome Duelist stance — parry the next melee and answer it. */
+export interface RiposteStanceAi {
+  /** Player attacks in a row nearby before the stance is taken (default 3). */
+  afterPlayerAttacks?: number;
+  /** Frames the stance is held (default 30). */
+  frames?: number;
+  /** The answer to a parried hit (falls back to `ai.riposteAnim`). */
+  flurryAnim?: string;
+  /** The stance pose itself (default 'riposteStance'). */
+  stanceAnim?: string;
+  /** How close a player attack must be to count (default 120). */
+  range?: number;
+  /** Frames before another stance (default 150). */
+  cooldown?: number;
+}
+
+/** How `pickTarget` chooses between the players. */
+export type TargetBy = 'nearest' | 'highestCombo' | 'lowestHp';
+
+/**
+ * A normalised `def.ai` table: AI_DEFAULTS, the role defaults, and the def's own, with the aliases resolved
+ * (normalizeAi). The fields AI_DEFAULTS carries are always present; the rest are per-faction. See the AI FLAG
+ * REFERENCE at the top of this file, which is what this interface is derived from.
+ */
+export interface AiConfig {
+  /** Distance in x at which an attack may start. */
+  attackRange: number;
+  /** How closely the lanes must line up in z first. */
+  zTolerance: number;
+  /** Chance of backing off into RECOVER after an attack. */
+  retreatChance: number;
+  /** [min, max] frames between attacks. */
+  attackCooldown: number[];
+  attacks: AiAttack[];
+  ranged?: RangedAi;
+  /** Every Nth hit taken staggers (Brassbound gear slip); 0 = never. */
+  staggerEvery: number;
+  staggerFrames: number;
+  /** Grace frames before the first attack of this body's life. */
+  firstAttackDelay: number;
+  /** Approach down either z lane rather than the target's. */
+  flank: boolean;
+  /** Orbit the target while hovering (the `circle` alias sets it). */
+  hoverCircle: boolean;
+  /** The last enemy of a locked wave may run off-screen (traits.fleeHpFrac / fleeChance set it). */
+  fleeLast: boolean;
+  /** Run away below this hp (the `flee` alias sets it); 0 = never. */
+  fleeHp: number;
+  /** How far that run goes, in px. */
+  fleeDistance: number;
+  /** Cap on the stand-off's retreat budget: `Enemy.retreatBudget` starts here, and a landed attack tops it back up to it. */
+  retreatBudget: number;
+  /** Chance of dodging a player's swing; 0 = never. */
+  evadeChance: number;
+  evadeCooldown: number;
+  /** Chance of parrying a melee hit and answering it; 0 = never. */
+  riposteChance: number;
+  riposteCooldown: number;
+  riposteAnim: string;
+  /** A player this close panics the body into a stagger then a run (Slinger); 0 = never (the `panicWhenClose` alias). */
+  panicRange: number;
+  panicFrames: number;
+  /** Attack without waiting for a token (elites, grabbers, bosses). */
+  ignoresTokens: boolean;
+  /**
+   * Super armor + no launch until a launcher strips it. Optional rather than `ShieldAi | false` because that is the
+   * shape every READ sees: AI_DEFAULTS carries the `false` and normalizeAi replaces it with the whole table the
+   * moment anything is authored, so a shieldless body is indistinguishable from one that never had the field.
+   */
+  shield?: ShieldAi;
+  /** An armored brute is stunned for this many frames by a launcher instead of launched; 0 = launch normally. */
+  launchStun: number;
+  /** Every Nth attack ends in a punishable stall (Hoister overheat); 0 = never. */
+  stallEvery: number;
+  stallFrames: number;
+  stallDamageMult: number;
+  stallGrabbable: boolean;
+  /** Hold hits before a grab auto-throws, and frames between them. */
+  grabHoldHits: number;
+  grabHitEvery: number;
+  /** Teleport away after this much damage in one combo (bosses); 0 = never. */
+  blinkOnDamage: number;
+  blinkAnim: string;
+  blinkChain: string;
+  backstepAfterWhiffs?: BackstepAi;
+  riposteStance?: RiposteStanceAi;
+  /** Damage multiplier and grabbability while the current frame is `punish: true`. */
+  punishDamageMult: number;
+  punishGrabbable: boolean;
+  /** Tell frames play at 1 / (tellScale * options.tellScale) speed; active frames at attackSpeed. */
+  tellScale: number;
+  attackSpeed: number;
+  /** Frames before the end of a tell at which `rig.tellWarn` lights. */
+  tellWarnFrames: number;
+  targetBy: TargetBy;
+  /** Cap on simultaneous attackers from this faction / `tokenGroup` (game/world.ts requestToken). */
+  maxAttackers?: number;
+  /** Custom attack-token pool name; the def's faction otherwise. */
+  tokenGroup?: string;
+  /** Boss stun windows (game/world.ts stunBoss, game/boss.ts stun). */
+  valveStun?: boolean;
+  stunDamageMult?: number;
+  stunGrabbable?: boolean;
+  /** Aliases normalizeAi folds into the canonical fields above; content may author either spelling. */
+  circle?: boolean;
+  panicWhenClose?: number;
+  flee?: number | { hp?: number; distance?: number };
+  keepDistance?: number;
+}
+
+/**
+ * The AI state machine's states (ARCHITECTURE.md section 8). ARRIVING is issue #30's authored entrance; DUMMY is the
+ * training room's. They are STRINGS for the same reason fighter.ts's FighterState is: net/checksum.ts hashes the
+ * state through mixAny, and the gameplay screen's summary() prints it.
+ */
+export type AiState = 'ARRIVING' | 'ENTER' | 'APPROACH' | 'HOVER' | 'RECOVER' | 'KEEP_DISTANCE' | 'STAGGER' | 'FLEE' | 'DUMMY';
+
+/** What a training dummy does (screens/training.ts); read only when `traits.dummy` is set. */
+export type DummyMode = 'stand' | 'block' | 'cpu';
+
+/**
+ * A resolved entrance (issue #30): one row of game/entrances.ts's ENTRANCES table patched with the spawn's own
+ * fields. Only `kind` WAS named here, because that module owned the vocabulary (tell / approach / arrive budgets,
+ * hang, from, x, dx, speed, the look and the sfx) and did not yet declare it. It does now, so this is the
+ * re-export rather than a second declaration of the same thing — and the Enemy still reads nothing but `kind`:
+ * it hands the object straight back.
+ */
+export type { Entrance };
+
+/**
+ * The body the AI is fighting. A Fighter, plus the two game/player.ts members the framework reads off one: both are
+ * optional because an Enemy's target is only ever a player today, but nothing in the core says it has to be.
+ */
+export interface AiTarget extends Fighter {
+  /** Out of lives: still in world.players so the HUD can show them, but never a target again. */
+  out?: boolean;
+  /** Did this player dodge within the last `frames` frames? Time Stop (GDD 5.2) spares one that did. */
+  dodgedRecently?(frames?: number): boolean;
+}
+
+/** The camera with the lock bounds a wave is fought inside (engine/camera.ts `Camera` satisfies it). */
+export interface ArenaCamera extends CameraView {
+  left: number;
+  right: number;
+}
+
+/**
+ * The part of game/world.ts's `World` the AI framework reaches for, on top of what the combat core already asks of
+ * it. Structural for the reason given in game/entity.ts: world.ts depends on this file, so the dependency must not
+ * run back the other way. `World` satisfies it.
+ */
+export interface EnemyWorld extends FighterWorld {
+  camera: ArenaCamera;
+  /** Player fighters, dead or out included: pickTarget is what filters them. */
+  players: AiTarget[];
+  /** Living enemies + bosses, as of the last update (separation). */
+  enemies: Fighter[];
+  /** Living wave enemies: no boss, nothing fleeing or dead — what `ai.fleeLast` asks whether it is the last of. */
+  waveEnemies: Fighter[];
+  /** The z band every body is clamped to; a boss arena shrinks it. */
+  floorBand: { z0: number; z1: number };
+  /** Total stage width in px (a flee off the end of the board). */
+  stageLength: number;
+  /** The run options; the AI reads the difficulty's `tellScale` off it. Left as an open bag rather than game/game.ts's
+   *  `GameOptions`, which is itself open (`parseOptions` carries whatever the query string named) and which this
+   *  file may not import: game.ts reaches the world, not the other way about. */
+  options?: Record<string, any>;
+  /** Add an entity (a dropped shield plate, a crate). */
+  add(e: Entity): Entity;
+  /** Attack tokens (ARCHITECTURE.md section 8): at most `max` enemies swing at once. */
+  requestToken(e: Fighter): boolean;
+  releaseToken(e: Fighter): void;
+  /** Installed by the gameplay screen; null in a world that cannot spawn (the gallery, a test bed). The `opts` values
+   *  are `any` because that bag belongs to the spawner (screens/gameplay.ts spawnEnemyAt) and nothing here reads it —
+   *  the same reasoning as `SpawnEnemyFn` in game/world.ts and `ItemWorld.spawnEnemy` in game/items.ts. */
+  spawnEnemy: ((type: string, variant: string, x: number, z: number, opts?: Record<string, any>) => Fighter) | null;
+}
+
+/** Where an Enemy wakes up, on top of `def`. */
+export interface EnemyOpts {
+  x?: number;
+  z?: number;
+  facing?: number;
+  /** false = still walking in from outside the arena (ENTER); the wave lock counts on it. */
+  entered?: boolean;
+  kind?: EntityKind;
+  /** Arrive from above rather than from a side. */
+  fromSky?: boolean;
+  /** Spawn modifiers (traits.ts SPAWN_MODS) applied to the def before the rig is built. */
+  mods?: SpawnModName[] | null;
+  /** A resolved entrance (entrances.ts entranceFor): an authored arrival that replaces the walk-on. */
+  entrance?: Entrance | null;
+}
 
 /** Defaults for `def.ai` (content overrides per type / variant). */
 export const AI_DEFAULTS = Object.freeze({
@@ -67,8 +397,14 @@ const OFFSCREEN_MARGIN = 200, OFFSCREEN_FRAMES = 300, SEP_X = 18, SEP_Z = 10, RE
 const JUMP_OVER_RANGE = 30, JUMP_OVER_VY = 8, JUMP_OVER_VX = 2.6, STUCK_FRAMES = 90, STUCK_EPS = 6;
 const SPD_Z = Z_SPEED_FACTOR;
 
-/** Resolve the alias flags of an ai table into the canonical names. */
-export function normalizeAi(def) {
+/**
+ * Resolve the alias flags of an ai table into the canonical names.
+ *
+ * The local `ai` is deliberately left to inference: it starts as the RAW vocabulary a content author may write
+ * (`circle`, `panicWhenClose`, `flee`, `keepDistance`, `shield: true`) and this is the one function that turns it
+ * into the canonical table the rest of the file reads. `AiConfig` describes what comes OUT.
+ */
+export function normalizeAi(def: FighterDef): AiConfig {
   const ai = { ...AI_DEFAULTS, ...(ROLE_DEFAULTS[def.role] || {}), ...(def.ai || {}) };
   if (ai.circle) ai.hoverCircle = true;
   if (ai.panicWhenClose) ai.panicRange = ai.panicWhenClose;
@@ -88,6 +424,124 @@ export function normalizeAi(def) {
 
 /** AI-controlled fighter. `def` comes from content/enemies (see the header table for the fields). */
 export class Enemy extends Fighter {
+  // The fields, for the checker only, in constructor order. `declare` because these are the constructor's own
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022 defines them
+  // before the constructor body runs), which is a runtime change — `backstepDist` below is a field no constructor
+  // ever assigns, read as `this.backstepDist || 42`, and the base classes read `this.shield !== undefined` /
+  // `t.hitPart !== undefined` to ask whether a field has been assigned at all. `declare` erases under tsc, esbuild
+  // and node --experimental-strip-types alike. Same reasoning (and wording) as game/entity.ts and game/fighter.ts.
+
+  /** Narrower than Fighter's: the AI reads the wave, the token pool and the floor band off it. */
+  declare world: EnemyWorld | null;
+  /** Narrower than Fighter's: the AI only ever fights a body it picked out of `world.players`. */
+  declare target: AiTarget | null;
+
+  /** Spawn modifiers this enemy carries (names), [] when plain. */
+  declare mods: SpawnModName[];
+  /** The normalised `def.ai` table (see the AI FLAG REFERENCE at the top of this file). */
+  declare ai: AiConfig;
+  /** Training room only, read when `traits.dummy` is set. */
+  declare dummyMode: DummyMode;
+  declare dummyFaceLock: boolean;
+  /** This body is inside the arena: false while it walks in / arrives, which is what the wave lock counts. */
+  declare entered: boolean;
+  declare aiState: AiState;
+  /** Frames left in the current AI state (HOVER counts up, STAGGER / RECOVER count down). */
+  declare aiTimer: number;
+  /** Frames before `pickTarget` may switch targets again. */
+  declare retargetTimer: number;
+  declare attackCooldown: number;
+  declare rangedCooldown: number;
+
+  // HOVER / flank geometry: which side of the target to circle on, at what distance, and the z offsets.
+  declare hoverSide: number;
+  declare hoverDist: number;
+  declare hoverZ: number;
+  declare flankZ: number;
+
+  /** Frames spent off-screen / outside the arena, before the teleport rescue in checkOffscreen. */
+  declare offscreenTimer: number;
+  declare enterTimer: number;
+  /** Frames of gear-slip stagger left: armor is off while it runs. */
+  declare staggerTimer: number;
+  /** A launcher took the shield for good. */
+  declare shieldStripped: boolean;
+
+  // Fleeing: `fled` is the one-shot hp flee (ai.fleeHp), `fleeOff` the last-enemy run off the board (ai.fleeLast).
+  declare fled: boolean;
+  declare fleeTimer: number;
+  declare fleeing: boolean;
+  declare fleeOff: boolean;
+  declare fleeDir: number;
+  declare fleeChecked: boolean;
+
+  /** Animation name to play when the current tell finishes (AiAttack.tell), or null. */
+  declare pendingAttack: string | null;
+  /** The attack being performed, including the ones the core synthesises (a ranged shot, a riposte, a chain). */
+  declare currentAttack: AiAttack | null;
+  /** Uses so far per attack animation (AiAttack.maxUses). */
+  declare attackUses: Map<string, number>;
+  /** This body holds one of the world's attack tokens. */
+  declare hasToken: boolean;
+  /** Attacks finished, for ai.stallEvery. */
+  declare attackCount: number;
+  /** Frames of backing away left in the stand-off budget (ai.retreatBudget). */
+  declare retreatBudget: number;
+  declare panicCooldown: number;
+  /** The panic stagger ends in a run rather than back into APPROACH. */
+  declare panicFlee: boolean;
+  declare evadeTimer: number;
+  /** `anim.instance` of the player swing this body last reacted to (-1 = none yet). */
+  declare lastSeenAttack: number;
+  declare riposteTimer: number;
+  declare propThrowCooldown: number;
+  /** RECOVER is being spent backing away rather than standing. */
+  declare retreating: boolean;
+  /** Frames since the last hold squeeze (ai.grabHitEvery). */
+  declare grabHitTimer: number;
+  /** In a punishable stall window (ai.stallEvery, a boss valve). */
+  declare stalled: boolean;
+  /** Anti-stall (StageRunner.checkWaveStall): this unit has been told to stop keeping its distance. */
+  declare pressed: boolean;
+  /** Frames spent failing to close on the target with a solid in the way, and the x it last made progress from. */
+  declare stuckT: number;
+  declare lastGapX: number | null;
+
+  // Whiff backsteps / riposte stance bookkeeping. The `Inst` fields are `anim.instance` ids, -1 before the first one.
+  declare watchInst: number;
+  /** The swing being watched started close enough to us to count as a whiff at us. */
+  declare watchNear: boolean;
+  declare hitByInst: number;
+  declare whiffs: number;
+  declare backstepCooldown: number;
+  /** How far the next DODGE backsteps (tryEvade 42, ai.backstepAfterWhiffs.dist otherwise). Unset until one runs. */
+  declare backstepDist: number;
+  /** Holding the riposte stance: any melee into it is parried and answered. */
+  declare inStance: boolean;
+  declare stanceTimer: number;
+  declare stanceCooldown: number;
+  declare playerAttacks: number;
+  declare lastPlayerAttack: number;
+  /** Frames since the target last swung; 90 of them resets the stance count. */
+  declare noAttackTimer: number;
+
+  // Target position history (ranged.aimDelay), a ring buffer of the last HIST frames.
+  declare histX: Float32Array;
+  declare histZ: Float32Array;
+  declare histI: number;
+  declare histN: number;
+
+  /** The authored entrance being run (issue #30), or null for a unit that walks on from a side. */
+  declare entrance: Entrance | null;
+  /** Frames into that entrance, the length of its scripted path, and the frame it touched down on. */
+  declare arriveT: number;
+  declare arrivePath: number;
+  declare arriveLand: number;
+  /** The x the entrance delivers to. */
+  declare arriveX: number;
+  /** A hit cut a rope drop's line: it falls the rest of the way (game/entrances.ts). */
+  declare cutLine: boolean;
+
   /**
    * @param {object} def enemy definition
    * @param {{ x?: number, z?: number, facing?: number, entered?: boolean, kind?: string, fromSky?: boolean, mods?: string[],
@@ -95,7 +549,7 @@ export class Enemy extends Fighter {
    *   mods = spawn modifiers (traits.js SPAWN_MODS: holdout / crusted / scrip / winged / salvaged) applied to the def before the rig is built
    *   entrance = a resolved entrance (game/entrances.js entranceFor): an authored arrival that replaces the walk-on
    */
-  constructor(def, { x = 0, z = 70, facing = -1, entered = true, kind = 'enemy', fromSky = false, mods = null, entrance = null } = {}) {
+  constructor(def: FighterDef, { x = 0, z = 70, facing = -1, entered = true, kind = 'enemy', fromSky = false, mods = null, entrance = null }: EnemyOpts = {}) {
     // the derived def is computed BEFORE super() (no `this` needed): the rig, traits and stats all come from the patched def
     const d = mods && mods.length ? applyMods(def, mods) : def;
     super(d, { team: TEAM.ENEMY, kind, x, z, facing });
@@ -138,16 +592,16 @@ export class Enemy extends Fighter {
     if (entrance) startArrival(this, entrance);
   }
   /** Shield / role flags that live in the traits the core reads. */
-  applyAiTraits() {
+  applyAiTraits(): void {
     const ai = this.ai;
     if (ai.shield) { this.traits.superArmor = true; this.traits.noLaunch = true; this.unlaunchable = true; if (ai.shield.frontOnly) this.traits.armorFrontOnly = true; }
     this.armor = this.traits.superArmor;
   }
   /** traits.dummy (training room) and not put into CPU mode: never attacks, takes no token, never flees or ripostes. */
-  get passiveDummy() { return !!this.traits.dummy && this.dummyMode !== 'cpu'; }
+  get passiveDummy(): boolean { return !!this.traits.dummy && this.dummyMode !== 'cpu'; }
 
   // ---------- per-step ----------
-  update(world) {
+  override update(world: EnemyWorld): void {
     this.armorSuppressed = this.staggerTimer > 0 || this.shieldStripped || !!this.status.stunned;
     super.update(world);
     // dynamic armor: staggered (gear slip), stunned or shield-stripped automatons lose their armor
@@ -155,7 +609,7 @@ export class Enemy extends Fighter {
     else this.unlaunchable = this.traits.noLaunch;
   }
 
-  think(world) {
+  override think(world: EnemyWorld): void {
     // A passive training dummy (STAND / BLOCK-STAGGER) must never act on its own, but Fighter.update calls a
     // content onUpdate hook BEFORE think() runs (chandler.js tallyman's rite is the one offender today), so
     // the hook can already have pushed this dummy into ATTACK/SPECIAL by the time we get here. Bounce it
@@ -223,7 +677,7 @@ export class Enemy extends Fighter {
     }
   }
   /** Tell frames play at 1 / (ai.tellScale * options.tellScale) speed (or stretch to attack.tellFrames); active frames at ai.attackSpeed. */
-  updateTellSpeed(world, f) {
+  updateTellSpeed(world: EnemyWorld, f: PlayerFrame | null): void {
     const ai = this.ai, a = this.anim;
     if (f && f.tell && this.state === ST.ATTACK) {
       let k = ai.tellScale * ((world.options && world.options.tellScale) || 1);
@@ -234,12 +688,12 @@ export class Enemy extends Fighter {
       this.rig.tellWarn = !(next && next.tell) && remaining <= ai.tellWarnFrames;
     } else { a.speed = this.state === ST.ATTACK ? ai.attackSpeed : 1; this.rig.tellWarn = false; }
   }
-  recordHistory(t) { this.histX[this.histI] = t.x; this.histZ[this.histI] = t.z; this.histI = (this.histI + 1) % HIST; if (this.histN < HIST) this.histN++; }
+  recordHistory(t: AiTarget): void { this.histX[this.histI] = t.x; this.histZ[this.histI] = t.z; this.histI = (this.histI + 1) % HIST; if (this.histN < HIST) this.histN++; }
   /** Target position `delay` frames ago (clamped to what has been recorded). */
-  historyAt(delay) { const d = Math.min(delay | 0, Math.max(0, this.histN - 1)); const i = (this.histI - 1 - d + HIST * 2) % HIST; return { x: this.histX[i], z: this.histZ[i] }; }
+  historyAt(delay: number): { x: number; z: number } { const d = Math.min(delay | 0, Math.max(0, this.histN - 1)); const i = (this.histI - 1 - d + HIST * 2) % HIST; return { x: this.histX[i], z: this.histZ[i] }; }
 
   // ---------- targeting & movement helpers ----------
-  pickTarget(world) {
+  pickTarget(world: EnemyWorld): void {
     const t = this.target;
     const valid = t && t.alive && !t.dead && !t.removeMe && !t.out;
     if (valid && this.retargetTimer > 0) return;
@@ -254,9 +708,9 @@ export class Enemy extends Fighter {
     }
     this.target = best; this.retargetTimer = RETARGET;
   }
-  face(t) { const d = t.x - this.x; if (Math.abs(d) > 4) this.facing = sign(d); }
+  face(t: AiTarget): void { const d = t.x - this.x; if (Math.abs(d) > 4) this.facing = sign(d); }
   /** Walk toward a local offset (dx, dz). `back` keeps the current facing (backpedal). */
-  moveToward(dx, dz, mult = 1, back = false, run = false) {
+  moveToward(dx: number, dz: number, mult: number = 1, back: boolean = false, run: boolean = false): void {
     const spd = (run ? this.runSpeed : this.walkSpeed) * mult;
     const mx = clamp(dx, -spd, spd), mz = clamp(dz, -spd * SPD_Z, spd * SPD_Z);
     const zb = this.world ? this.world.zBounds(this) : { z0: 0, z1: 140 };
@@ -265,18 +719,18 @@ export class Enemy extends Fighter {
     const st = run ? ST.RUN : ST.WALK, an = run ? 'run' : 'walk';
     if (this.state !== st || (this.anim.name !== an && this.anim.name !== 'flee')) { this.state = st; this.stateTimer = 0; this.play(an, { restart: false }); }
   }
-  stand() {
+  stand(): void {
     if (this.state !== ST.IDLE) this.setState(ST.IDLE, 'idle', { restart: false });
     else if (this.anim.name !== 'idle' && this.anim.name !== 'land' && this.anim.name !== 'riposteStance' && (this.anim.done || (this.anim.def && this.anim.def.loop))) this.play('idle');
   }
-  separate(world) {
+  separate(world: EnemyWorld): void {
     for (const e of world.enemies) {
       if (e === this || e.dead) continue;
       const dx = this.x - e.x, dz = this.z - e.z;
       if (Math.abs(dx) < SEP_X && Math.abs(dz) < SEP_Z) { this.x += (sign(dx) || (this.id > e.id ? 1 : -1)) * 0.5; this.z = clamp(this.z + (sign(dz) || 1) * 0.3, world.floorBand.z0, world.floorBand.z1); }
     }
   }
-  checkOffscreen(world) {
+  checkOffscreen(world: EnemyWorld): void {
     const cam = world.camera;
     if (this.fleeOff) return;
     // an arrival is a bounded, authored path (game/entrances.js): never yank it to a lock edge part-way through
@@ -302,22 +756,22 @@ export class Enemy extends Fighter {
       }
     } else this.offscreenTimer = 0;
   }
-  acquireToken(world) {
+  acquireToken(world: EnemyWorld): boolean {
     if (this.ai.ignoresTokens) return true;
     this.hasToken = world.requestToken(this);
     return this.hasToken;
   }
-  releaseToken(world) { if (this.hasToken) { (world || this.world).releaseToken(this); this.hasToken = false; } }
-  get maxAttackRange() { let m = 0; for (const a of this.ai.attacks) if (a.range > m) m = a.range; return m; }
+  releaseToken(world?: EnemyWorld | null): void { if (this.hasToken) { (world || this.world).releaseToken(this); this.hasToken = false; } }
+  get maxAttackRange(): number { let m = 0; for (const a of this.ai.attacks) if (a.range > m) m = a.range; return m; }
 
   // ---------- AI states ----------
-  thinkEnter(world) {
+  thinkEnter(world: EnemyWorld): void {
     const cam = world.camera;
     const lo = cam.locked ? cam.left : cam.x, hi = cam.locked ? cam.right : cam.x + VIEW_W;
     if (this.x > lo + 30 && this.x < hi - 30) { this.entered = true; this.aiState = 'APPROACH'; return; }
     this.moveToward((lo + hi) / 2 - this.x, 0, 1);
   }
-  thinkApproach(world, t) {
+  thinkApproach(world: EnemyWorld, t: AiTarget): void {
     const ai = this.ai;
     const dx = t.x - this.x, adx = Math.abs(dx), adz = Math.abs(t.z - this.z);
     if (ai.ranged && !this.pressed && this.retreatBudget > 0 && adx <= ai.ranged.maxRange + 40 && adx > ai.attackRange + 10) { this.aiState = 'KEEP_DISTANCE'; return; }
@@ -357,7 +811,7 @@ export class Enemy extends Fighter {
    * airborne, which is the same rule the player gets.
    * @returns {boolean} true when a jump was started this frame
    */
-  tryJumpOver(world, laneZ) {
+  tryJumpOver(world: EnemyWorld, laneZ: number): boolean {
     if (this.airborne || this.grabbedBy || this.state === ST.ATTACK) return false;
     const t = this.target;
     if (!t) { this.stuckT = 0; return false; }
@@ -379,7 +833,7 @@ export class Enemy extends Fighter {
     audio.play('jump');
     return true;
   }
-  thinkHover(world, t) {
+  thinkHover(world: EnemyWorld, t: AiTarget): void {
     this.face(t);
     this.aiTimer++;
     if (this.aiTimer % 30 === 0 && this.attackCooldown <= 0 && this.acquireToken(world)) { this.aiState = 'APPROACH'; return; }
@@ -393,12 +847,12 @@ export class Enemy extends Fighter {
     if (Math.abs(mx) > 4 || Math.abs(mz) > 4) this.moveToward(mx, mz, 0.7, Math.abs(mx) < 30); else this.stand();
     if (this.aiTimer > HOVER_MAX) this.aiState = 'APPROACH';
   }
-  thinkRecover(world, t) {
+  thinkRecover(world: EnemyWorld, t: AiTarget): void {
     this.face(t);
     if (--this.aiTimer <= 0) { this.aiState = 'APPROACH'; this.retreating = false; return; }
     if (this.retreating) this.moveToward(-sign(t.x - this.x || this.facing) * 40, 0, 0.7, true); else this.stand();
   }
-  thinkRanged(world, t) {
+  thinkRanged(world: EnemyWorld, t: AiTarget): void {
     const ai = this.ai, r = ai.ranged, cam = world.camera;
     const dx = t.x - this.x, adx = Math.abs(dx), adz = Math.abs(t.z - this.z);
     this.face(t);
@@ -428,13 +882,13 @@ export class Enemy extends Fighter {
    * gives up the stand-off and approaches like anything else — it keeps its ranged attack, it just stops backing away
    * to buy room for it. Nothing un-presses it: the stand-off is what stalled, and a wave only gets told once.
    */
-  pressIn() {
+  pressIn(): void {
     if (this.pressed) return;
     this.pressed = true;
     this.retreatBudget = 0;
     if (this.aiState === 'KEEP_DISTANCE' || this.aiState === 'HOVER') this.aiState = 'APPROACH';
   }
-  thinkFlee(world) {
+  thinkFlee(world: EnemyWorld): void {
     const cam = world.camera;
     this.facing = this.fleeDir;
     this.moveToward(this.fleeDir * 100, 0, 1.15, false, true);
@@ -445,7 +899,7 @@ export class Enemy extends Fighter {
     if (--this.fleeTimer <= 0) { this.aiState = 'APPROACH'; this.fleeing = false; }
   }
   /** traits.dummy (training room): never attacks, never takes a token; faces the nearest player (unless dummyFaceLock) and stands. CPU mode never gets here. */
-  thinkDummy(world) {
+  thinkDummy(world: EnemyWorld): void {
     this.aiState = 'DUMMY';
     const t = this.target;
     if (t) {
@@ -455,29 +909,29 @@ export class Enemy extends Fighter {
     }
     this.stand();
   }
-  thinkGrab(world) {
+  thinkGrab(world: EnemyWorld): void {
     if (this.heldProp) { thinkEnemyHeld(this, world); return; } // step 21.6 stretch
     if (!this.grabTarget || this.throwPending) return;
     if (this.anim.name === 'grab' && !this.anim.done) return;
     if (++this.grabHitTimer >= this.ai.grabHitEvery) { this.grabHitTimer = 0; this.grabHit(); }
   }
-  endStagger() {
+  endStagger(): void {
     this.stalled = false; this.punishable = false; this.punishMult = 1; this.punishGrab = false;
     if (this.panicFlee) { this.panicFlee = false; this.aiState = 'FLEE'; this.fleeTimer = 50; this.fleeDir = this.target ? -(sign(this.target.x - this.x) || this.facing) : -this.facing; audio.play('soot_flee'); }
     else this.aiState = 'APPROACH';
   }
   /** Stagger / stall for `frames` (AI state STAGGER, armor off). */
-  enterStagger(frames, anim = 'stagger') {
+  enterStagger(frames: number, anim: string = 'stagger'): void {
     this.aiState = 'STAGGER'; this.aiTimer = frames; this.staggerTimer = Math.max(this.staggerTimer, frames);
     this.pendingAttack = null; this.inStance = false; this.releaseToken();
     this.setState(ST.IDLE, anim, { fallback: 'hurt' });
   }
   /** Punishable stall window: damage x mult, grabbable (Hoister overheat, boss valve stuns). */
-  enterStall(frames, mult, grabbable) {
+  enterStall(frames: number, mult: number, grabbable: boolean): void {
     this.enterStagger(frames);
     this.stalled = true; this.punishable = true; this.punishMult = mult; this.punishGrab = grabbable;
   }
-  tryEvade(world, t) {
+  tryEvade(world: EnemyWorld, t: AiTarget): boolean {
     const ai = this.ai;
     if (!ai.evadeChance || this.evadeTimer > 0 || !t.anim) return false;
     const attacking = t.state === ST.ATTACK || t.state === ST.DASH_ATTACK || t.state === ST.JUMP_ATTACK;
@@ -488,7 +942,7 @@ export class Enemy extends Fighter {
     this.setState(ST.DODGE, 'dodge'); this.invuln = Math.max(this.invuln, 10); this.releaseToken(world);
     return true;
   }
-  tryPanic(world, t) {
+  tryPanic(world: EnemyWorld, t: AiTarget): boolean {
     const ai = this.ai;
     if (!ai.panicRange || this.panicCooldown > 0) return false;
     if (Math.abs(t.x - this.x) > ai.panicRange || Math.abs(t.z - this.z) > 30) return false;
@@ -497,7 +951,7 @@ export class Enemy extends Fighter {
     return true;
   }
   /** ai.backstepAfterWhiffs: after N player attacks in a row that missed us nearby, hop back with i-frames (Gutter Wrangler). */
-  tryBackstep(world, t) {
+  tryBackstep(world: EnemyWorld, t: AiTarget): boolean {
     const bs = this.ai.backstepAfterWhiffs;
     if (!bs || !t.anim) return false;
     const attacking = t.state === ST.ATTACK || t.state === ST.DASH_ATTACK || t.state === ST.JUMP_ATTACK, inst = t.anim.instance;
@@ -511,7 +965,7 @@ export class Enemy extends Fighter {
     return true;
   }
   /** ai.riposteStance: after the player presses Attack N times in a row nearby, hold a parry stance for `frames` (Chrome Duelist). */
-  tryStance(world, t) {
+  tryStance(world: EnemyWorld, t: AiTarget): boolean {
     const rs = this.ai.riposteStance;
     if (!rs || !t.anim) return false;
     const attacking = t.state === ST.ATTACK || t.state === ST.DASH_ATTACK || t.state === ST.JUMP_ATTACK, inst = t.anim.instance;
@@ -526,7 +980,7 @@ export class Enemy extends Fighter {
   }
 
   // ---------- attacks ----------
-  chooseAttack(adx) {
+  chooseAttack(adx: number): AiAttack | null {
     const list = this.ai.attacks;
     let total = 0; const cands = [];
     for (const a of list) {
@@ -540,24 +994,24 @@ export class Enemy extends Fighter {
     for (const a of cands) { r -= a.weight || 1; if (r <= 0) return a; }
     return cands[cands.length - 1];
   }
-  startAttack(atk, t) {
+  startAttack(atk: AiAttack, t: AiTarget | null): void {
     if (t) { this.face(t); this.aimX = t.x; this.aimZ = t.z; }
     this.currentAttack = atk; this.attackUses.set(atk.anim, (this.attackUses.get(atk.anim) || 0) + 1);
     this.attackCooldown = 0; this.retreating = false; this.inStance = false;
     if (atk.tell && this.anim.has(atk.tell)) { this.pendingAttack = atk.anim; this.setState(ST.ATTACK, atk.tell); }
     else this.setState(ST.ATTACK, atk.anim);
   }
-  startRanged(r, t) {
+  startRanged(r: RangedAi, t: AiTarget): void {
     this.face(t); this.aimAtTarget(t);
     this.currentAttack = { anim: r.anim, ranged: true }; this.rangedCooldown = r.cooldown || 150;
     this.setState(ST.ATTACK, r.anim);
   }
   /** Aim at the target (or where it was `ranged.aimDelay` frames ago: Copper Sapper lobs at 0.4s-old positions). */
-  aimAtTarget(t) {
+  aimAtTarget(t: AiTarget): void {
     const d = this.ai.ranged && this.ai.ranged.aimDelay;
     if (d && this.histN > 0) { const h = this.historyAt(d); this.aimX = h.x; this.aimZ = h.z; } else { this.aimX = t.x; this.aimZ = t.z; }
   }
-  onActionDone(world) {
+  override onActionDone(world: EnemyWorld): void {
     if (this.pendingAttack) { const a = this.pendingAttack; this.pendingAttack = null; this.setState(ST.ATTACK, a); return; }
     if (this.state === ST.ATTACK) {
       const atk = this.currentAttack; this.currentAttack = null;
@@ -566,7 +1020,7 @@ export class Enemy extends Fighter {
     }
     super.onActionDone(world);
   }
-  finishAttack(world) {
+  finishAttack(world: EnemyWorld): void {
     const ai = this.ai, cd = ai.attackCooldown;
     this.attackCooldown = rng.int(cd[0], cd[1]);
     if (!this.pressed) this.retreatBudget = Math.min(ai.retreatBudget, this.retreatBudget + 40);
@@ -576,7 +1030,7 @@ export class Enemy extends Fighter {
     if (ai.retreatChance > 0 && rng.chance(ai.retreatChance)) { this.aiState = 'RECOVER'; this.aiTimer = rng.int(20, 40); this.retreating = true; }
     else { this.aiState = ai.ranged && !this.pressed && this.retreatBudget > 0 ? 'KEEP_DISTANCE' : 'APPROACH'; }
   }
-  onAnimEvent(name, frame, world) {
+  override onAnimEvent(name: string, frame: PlayerFrame | null, world: EnemyWorld): void {
     if (name === 'aim') { const t = this.target; if (t) this.aimAtTarget(t); return; }
     if (name === 'summon') { this.summon(frame && frame.summon, world); return; }
     if (name === 'crateDrop') { this.crateDrop(frame && frame.projectile, world); return; }
@@ -584,7 +1038,7 @@ export class Enemy extends Fighter {
     super.onAnimEvent(name, frame, world);
   }
   /** Time Stop (GDD 5.2): players freeze for `frames` unless they pressed Dodge in the last tellWarnFrames of the tell. */
-  timeStop(frames, world) {
+  timeStop(frames: number, world: EnemyWorld): void {
     for (const p of world.players) {
       if (!p.alive || p.dead || p.out) continue;
       if (p.dodgedRecently && p.dodgedRecently(this.ai.tellWarnFrames)) { floatText(p.x, p.y + p.h + 10, p.z, 'DODGED!', UI.meter, 1); if (p.addMeter) p.addMeter(10); continue; }
@@ -593,7 +1047,7 @@ export class Enemy extends Fighter {
     world.addFx('flash', this.x, 0, this.z, { color: '#4DF0E0' }); audio.play('time_stop_tick');
   }
   /** Hoister crate drop (GDD 5.1): a crate falls on the aimed spot, lands as an area knockdown and leaves a breakable crate with food. */
-  crateDrop(spec, world) {
+  crateDrop(spec: CrateDropSpec | null, world: EnemyWorld): void {
     if (!spec) return;
     const hit = { damage: spec.damage || 24, type: spec.type || 'knockdown', kbX: spec.kbX != null ? spec.kbX : 4, kbY: spec.kbY || 5, hitstun: spec.hitstun || 24 };
     const r = spec.radius || 60;
@@ -606,7 +1060,7 @@ export class Enemy extends Fighter {
     } }, world);
   }
   /** Summon escorts just outside the lock (frame.summon = [{ type, variant }]). */
-  summon(list, world) {
+  summon(list: SummonSpec[] | null, world: EnemyWorld): void {
     if (!list || !world.spawnEnemy) return;
     const cam = world.camera;
     list.forEach((s, i) => {
@@ -618,7 +1072,7 @@ export class Enemy extends Fighter {
   }
 
   // ---------- reactions ----------
-  takeHit(hit, attacker) {
+  override takeHit(hit: Hit, attacker: Fighter | null): boolean {
     const ai = this.ai;
     const melee = attacker && attacker.kind === 'player' && attacker.state !== ST.SUPER && !hit.projectile && hit.type !== 'grab';
     // Riposte stance (GDD 3 A5): any melee into the stance is parried and answered with the flurry
@@ -638,7 +1092,7 @@ export class Enemy extends Fighter {
     }
     return super.takeHit(hit, attacker);
   }
-  riposte(attacker, anim) {
+  riposte(attacker: Fighter, anim: string): void {
     this.face(attacker); this.pendingAttack = null; this.inStance = false; this.stanceTimer = 0;
     this.parried = { by: attacker, instance: attacker.anim.instance };
     this.currentAttack = { anim, range: 999 };
@@ -647,7 +1101,7 @@ export class Enemy extends Fighter {
     if (this.world) this.world.addFx('spark', this.x + this.facing * 14, this.y + this.h * 0.6, this.z, { type: 'heavy' });
     audio.play('parry');
   }
-  onHurt(hit, attacker) {
+  override onHurt(hit: Hit, attacker: Fighter | null): void {
     // A STAND/BLOCK dummy is pinned by traits.weight (every knockback path above divides by it), except the
     // armored branch (Fighter.takeHit), which applies a flat `face * 0.5` nudge with no weight divisor at all --
     // over a drill of absorbed hits that walks a BLOCK dummy out of the attack band (review finding).
@@ -685,7 +1139,7 @@ export class Enemy extends Fighter {
     }
   }
 
-  drawDebug(ctx, cam, labels = true) {
+  override drawDebug(ctx: CanvasRenderingContext2D, cam: CameraView, labels: boolean = true): void {
     super.drawDebug(ctx, cam, labels);
     if (!labels) return;
     drawText(ctx, this.aiState + (this.hasToken ? '*' : '') + (this.inStance ? ' RIPOSTE' : '') + (this.punishable ? ' PUNISH' : ''), cam.toScreenX(this.x), FLOOR_TOP + this.z + 12, { size: 1, color: '#ff9', align: 'center' });

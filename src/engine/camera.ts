@@ -6,15 +6,48 @@ import { clamp } from '../lib/engine/math.ts';
  *  than the party's mean (see `follow`). 0.75 puts the hard stop 160px from the right edge. */
 const LEAD_LIMIT = 0.75;
 
+/**
+ * What `follow` reads off each party member. Declared structurally rather than importing
+ * game/player.ts: engine/ is below game/ and the dependency must not run back the other way
+ * (game/entity.ts declares its `CameraView` the same way, for the same reason). `Player` satisfies it.
+ */
+export interface CameraTarget {
+  x: number;
+  alive?: boolean;
+  dead?: boolean;
+}
+
 /** Camera along x; `left`/`right` are the current world bounds entities are clamped to. */
 export class Camera {
   /** Visual-only multiplier on every shake() (options SCREEN SHAKE: 0 off, 0.5 low, 1 full). Never hashed: camera shake is excluded from net/checksum.js. */
   static shakeScale = 1;
 
+  /** Camera x in world px: the left edge of the VIEW_W-wide window. */
+  declare x: number;
+  /** Total stage width in px — the right bound once `unlock`ed. */
+  declare stageLength: number;
+  /** Current world bounds the camera (and, through it, entities) are clamped to. */
+  declare left: number;
+  declare right: number;
+  /** Locked to a section's bounds (an arena) rather than following the party. */
+  declare locked: boolean;
+  /** Current shake offset in px, added by `toScreenX` and read by the entity draw paths. */
+  declare shakeX: number;
+  declare shakeY: number;
+  /** Frames of shake left, and its peak pixel intensity while they last. */
+  declare shakeFrames: number;
+  declare shakeIntensity: number;
+  /** Camera never scrolls back past this x (classic beat-em-up). */
+  declare minX: number;
+  /** Easing factor toward the follow target. */
+  declare ease: number;
+  /** Where `follow` wants to be; `x` eases toward it. */
+  declare target: number;
+
   /**
    * @param {number} stageLength total stage width in px (right bound when unlocked)
    */
-  constructor(stageLength = VIEW_W) {
+  constructor(stageLength: number = VIEW_W) {
     this.x = 0;
     this.stageLength = stageLength;
     this.left = 0;
@@ -51,7 +84,7 @@ export class Camera {
    * along by the same left-edge clamp that used to strand everybody.
    * @param {Array<{x:number, alive?:boolean, dead?:boolean}>} players
    */
-  follow(players) {
+  follow(players: CameraTarget[]) {
     let sum = 0, n = 0, lead = -Infinity;
     for (const p of players) {
       if (!p || p.alive === false || p.dead) continue;
@@ -68,7 +101,7 @@ export class Camera {
   }
 
   /** Lock the camera to world bounds [x0, x1] (usually one screen wide). Players are clamped inside. */
-  lock(x0, x1) {
+  lock(x0: number, x1: number) {
     this.locked = true;
     this.left = x0;
     this.right = Math.max(x1, x0 + VIEW_W);
@@ -83,13 +116,13 @@ export class Camera {
   }
 
   /** Snap immediately to x (used on section skips). */
-  snapTo(x) {
+  snapTo(x: number) {
     this.x = this.target = clamp(x, this.left, Math.max(this.left, this.right - VIEW_W));
     this.minX = Math.min(this.minX, this.x);
   }
 
   /** Shake for `frames` frames with pixel intensity, scaled by the SCREEN SHAKE option. */
-  shake(intensity = 4, frames = 10) {
+  shake(intensity: number = 4, frames: number = 10) {
     const k = intensity * Camera.shakeScale;
     if (k <= 0) return;
     this.shakeIntensity = Math.max(this.shakeIntensity, k);
@@ -108,8 +141,8 @@ export class Camera {
   }
 
   /** World x -> screen x (integer, includes shake). */
-  toScreenX(x) { return Math.round(x - this.x + this.shakeX); }
+  toScreenX(x: number): number { return Math.round(x - this.x + this.shakeX); }
 
   /** True if world x is within the visible range (+ margin). */
-  isVisible(x, margin = 40) { return x >= this.x - margin && x <= this.x + VIEW_W + margin; }
+  isVisible(x: number, margin: number = 40): boolean { return x >= this.x - margin && x <= this.x + VIEW_W + margin; }
 }

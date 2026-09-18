@@ -22,8 +22,10 @@
 // dark posts and a back rail — a window around her head, nothing across her face. Ground keys use G(): root.y is solved
 // so the lowest foot plate sits on the floor (spec.root[1] is an extra sink), so the long piston legs never float.
 import { speedFor, hpFor, areaBox, frontBox, P, F, hit } from './common.ts';
+import type { FrameExtra, GroundSpec } from './common.ts';
 import { JUMP_VY, METER, ST } from '../../constants.ts';
 import { buildRig, computeJoints, jointScreen } from '../../lib/art/rig.ts';
+import type { Rig } from '../../lib/art/rig.ts';
 import { makePose } from '../../lib/art/poses.ts';
 import { drawHeadPortrait } from '../../art/portraits.ts';
 import { audio } from '../../engine/audio.ts';
@@ -35,8 +37,16 @@ import { PAL, INK, R, build } from './pipRig.ts';
 // Animation authoring
 // ---------------------------------------------------------------------------------------------------------------
 const auditRig = buildRig(build);
+/**
+ * Pip's keyframe extras: every `Frame` field, plus the one her own hooks read back off the frame. `vent` is not a
+ * core frame field and is deliberately not in types/content.d.ts — only the `vent` anim event below reads it.
+ */
+export interface PipFrameExtra extends FrameExtra {
+  /** Frames the exhaust stacks keep puffing after the `vent` event (default 30). */
+  vent?: number;
+}
 /** Ground key: like F() but root.y is solved so the lowest foot plate sits on the floor; spec.root[1] is an extra sink. */
-function G(dur, spec, extra) {
+function G(dur: number, spec: GroundSpec, extra?: PipFrameExtra): Frame & PipFrameExtra {
   const pose = P(spec), full = makePose(pose), J = computeJoints(auditRig, full), fh = 2;
   const rr = rad(full.root.rot), c = Math.cos(rr), s = Math.sin(rr);
   const boot = Math.max(J.ankleN.x * s + (J.ankleN.y + fh) * c, J.ankleF.x * s + (J.ankleF.y + fh) * c);
@@ -50,9 +60,9 @@ const CARRY = { armR: [16, 34], armL: [-26, 6], legR: [8, 0], legL: [-8, 0] };
 /** Guard: claws up in front of the chest, knees soft (run / recovery keys). */
 const READY = { armR: [70, 60], armL: [40, 70], legR: [14, 4], legL: [-14, 6] };
 /** Butt-stomp hit data (shared id = one hit per target across the hit + held frames). */
-const STOMP_HIT = { id: 'jumpAttack', x: -14, y: -44, w: 56, h: 72, z: 24, once: true, damage: 16, type: 'knockdown', kbX: 3, kbY: 4, hitstun: 20 };
+const STOMP_HIT: Hitbox = { id: 'jumpAttack', x: -14, y: -44, w: 56, h: 72, z: 24, once: true, damage: 16, type: 'knockdown', kbX: 3, kbY: 4, hitstun: 20 };
 /** On its back on the floor (root rot -88: body-space +y runs toward the feet along the ground). */
-const FLOORED = { armR: [-30, -10], armL: [20, 20], torso: 4, head: -10, legR: [10, 8], legL: [-4, 6], root: [32, -13, -88], face: 'dazed' };
+const FLOORED: GroundSpec = { armR: [-30, -10], armL: [20, 20], torso: 4, head: -10, legR: [10, 8], legL: [-4, 6], root: [32, -13, -88], face: 'dazed' };
 const CLAW = 'claw', PISTON = 'piston';
 /** Steam Vent hit: light, 6 dmg, snuffs fire puddles the box touches. Ground friction is 0.82, so a kbX of 3.6
  *  slides a light enemy 3.6 / (1 - 0.82) = 20 px, the pushback per hit the GDD asks for. */
@@ -410,7 +420,7 @@ const hooks = {
  * Select / HUD bust: the pilot, not the scaffold. The framing is tight enough on her 18 px head that the cage posts land at
  * the edges of the 24 px HUD square and read as the window they are, with the red hat and her face filling the middle.
  */
-let portraitRig = null;
+let portraitRig: Rig | null = null;
 const PORTRAIT_POSE = P({ armR: [24, 40], armL: [-30, 20], legR: [8, 0], legL: [-8, 0], torso: 2, head: -2, face: 'angry' });
 function portrait(ctx, x, y, s) {
   if (!portraitRig) portraitRig = buildRig(build);

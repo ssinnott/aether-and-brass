@@ -12,6 +12,7 @@
 // packet's sender and its courier are not always the same peer.
 
 import { ACTIONS } from '../engine/input.ts';
+import type { RawActions, VirtualActions } from '../engine/input.ts';
 
 /**
  * Bumped whenever ACTIONS, the message layout or a simulation rule changes. Peers compare this in
@@ -35,7 +36,7 @@ export const REDUNDANCY = 8;
 export const MSG = { HELLO: 1, LOBBY: 2, START: 3, INPUT: 4, CHECKSUM: 5, PING: 6, PONG: 7, BYE: 8, RELAY: 9, DROP: 10 };
 
 /** Pack an action map ({attack:true, run:true, ...}) into a uint16. */
-export function packActions(a) {
+export function packActions(a: RawActions) {
   let m = 0;
   for (let i = 0; i < ACTIONS.length; i++) if (a[ACTIONS[i]]) m |= 1 << i;
   if (a.run) m |= 1 << RUN_BIT;
@@ -43,8 +44,10 @@ export function packActions(a) {
 }
 
 /** Unpack a uint16 into an action map suitable for input.setVirtual(). */
-export function unpackActions(m) {
-  const a = {};
+export function unpackActions(m: number): VirtualActions {
+  // Partial, not RawActions: the loop below fills every key, but it fills them one computed index at
+  // a time, and `{}` is only a RawActions once it has. `VirtualActions` is the type setVirtual takes.
+  const a: VirtualActions = {};
   for (let i = 0; i < ACTIONS.length; i++) a[ACTIONS[i]] = (m & (1 << i)) !== 0;
   a.run = (m & (1 << RUN_BIT)) !== 0;
   return a;

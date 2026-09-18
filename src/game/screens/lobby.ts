@@ -30,6 +30,76 @@ import { STAGES } from '../../content/stage/index.ts';
 import { buildCharSlots, tickCharSlots, drawCharCard, cardX, CURSOR_COLORS, P1_CURSOR, P2_CURSOR } from './charcards.ts';
 import { drawBoardPlaque, rowMetrics, PLAQUE_H } from './boardcards.ts';
 import { confirmPressed, cancelPressed, escapePressed, confirmPressedOffKeys, cancelPressedOffKeys, confirmKey, backKey } from '../menuinput.ts';
+// Type-only, every one of them: `import type` is erased by tsc, esbuild and node alike, so none of these adds an
+// edge to the module graph the browser loads. Same arrangement as the block at the top of game/stage.ts.
+import type { Game, ScreenParams, ScreenSummary } from '../game.ts';
+import type { PlayOpts } from '../../lib/art/animation.ts';
+
+/** Which plate is up. `role` -> `code` -> `connecting` -> `lobby`, with `error` reachable from any of them. */
+export type LobbyPhase = 'role' | 'code' | 'connecting' | 'lobby' | 'error';
+
+/**
+ * The live co-op session, as this screen drives it.
+ *
+ * `any`, and deliberately: game/game.ts declares `Game.net` the same way and for the same reason, which is that
+ * the object belongs to net/session.ts and GROWS `connect` / `end` / `run` after `createNetSession` has returned
+ * -- so naming its shape from out here would be declaring another module's API from the outside. The two shapes
+ * this screen actually reads off it ARE written down, below and in `PartyMember`: what is unknown is the session
+ * object, not the party. It comes out the day net/session.ts declares its own.
+ */
+export type NetSession = any;
+
+/**
+ * One seat of the host's roster (`net.lobby.members`) as this screen reads one. net/session.ts owns the record and
+ * carries more on it than this; these are the four members the cards, the status line and the start gate are
+ * written against. `local` / `char` / `ready` are optional because our OWN seat does not answer them -- the live
+ * values for it are `lobby.myChar` / `lobby.myReady`, so the ring moves on the keypress and not on the packet
+ * that echoes it back.
+ */
+export interface PartyMember {
+  /** Seat number, 0-based; the host is always 0. */
+  slot: number;
+  local?: boolean;
+  char?: number;
+  ready?: boolean;
+}
+
+/**
+ * One seat's cursor on the hero row, in the shape screens/charcards.ts drawCharCard takes. Built fresh per draw
+ * and indexed by SLOT, not by who is looking at the screen: a ring's colour means the same thing here as it does
+ * in the match.
+ */
+export interface SeatCursor {
+  /** This seat has readied up, so the card takes the READY stamp. */
+  confirmed: boolean;
+  /** What the stamp calls them: 'P1'..'P4'. 'YOU' / 'THEM' would read wrong on a shared screen. */
+  label: string;
+  /** The character index this seat is holding. */
+  char: number;
+  local: boolean;
+}
+
+/**
+ * One board of the row under the heroes, in the shape screens/boardcards.ts drawBoardPlaque takes -- which is the
+ * same shape BOARD SELECT builds, as that file's own header says.
+ */
+export interface BoardEntry {
+  stage: typeof STAGES[number];
+  index: number;
+  /** Open to THIS GROUP (game/progress.ts's scope), not to whoever happens to be at the keyboard. */
+  unlocked: boolean;
+  /** The group's clear record for it, or null. */
+  record: ReturnType<typeof progress.record>;
+  /** The board that has to be cleared to open this one; null for board 1. */
+  prev: typeof STAGES[number] | null;
+}
+
+/**
+ * The tap target over the drawn invite address, in internal 640x360 px: the rect half of the engine/links.ts
+ * `LinkZone` this screen claims (the url / share / title / onShare half is filled in beside it at the call).
+ * `summary()` hands it to tools/playtest.js, which is what aims a synthetic tap at it.
+ */
+export interface InviteZone { x: number; y: number; w: number; h: number; }
 
 const ROLES = [['HOST A GAME', 'YOU ARE PLAYER 1'], ['JOIN A GAME', 'UP TO FOUR PLAY TOGETHER']];
 const CODE_CHARS = /^[A-Z0-9]$/;
@@ -57,9 +127,62 @@ const NOTICE_FRAMES = 150;
 
 /** Netplay lobby. Phases: role -> code -> connecting -> lobby -> (handed to the match). */
 export class LobbyScreen extends Screen {
-  constructor(game) { super(game, 'lobby'); }
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are assignments
+  // and nothing else: a plain field declaration would emit a class field per name (es2022 defines them before the
+  // constructor body runs), which is a runtime change. Same reasoning, and the same wording, as game/entity.ts.
+  declare phase: LobbyPhase;
+  /** The role rows: 0 = HOST A GAME, 1 = JOIN A GAME. */
+  declare cursor: number;
+  declare isHost: boolean;
+  /** The room code: typed on a keyboard (handleKey) or built a cell at a time on the picker. Capped at 8. */
+  declare typed: string;
+  /** The line over the room code while connecting ('WAITING FOR PLAYER 2', ...). */
+  declare status: string;
+  /** Why the session ended, on the CONNECTION FAILED plate. */
+  declare error: string;
+  declare net: NetSession;
+  /** The guest-facing invite address, the line of it this screen can draw, and whether folding it to the
+   *  5x7 font's capitals lost anything (setInvite). */
+  declare inviteUrl: string;
+  declare inviteLabel: string;
+  declare inviteLowercase: boolean;
+  /** The address engine/links.ts currently holds a rect for, and the rect itself in internal px. */
+  declare zoneUrl: string;
+  declare inviteZone: InviteZone | null;
+  /** 'LINK SENT' / 'LINK COPIED' and how many frames it has left. */
+  declare notice: string;
+  declare noticeTimer: number;
+  /** The picker's cursor. `pickWant` is the column to come back to when a short row has clamped it. */
+  declare pickRow: number;
+  declare pickCol: number;
+  declare pickWant: number;
+  /** One hero card per registered character. `ReturnType` rather than a shape of its own: screens/charcards.ts
+   *  owns what a slot is, and this tightens by itself the day that file declares it. */
+  declare slots: ReturnType<typeof buildCharSlots>;
+  /** The group's boards, and the `scope:count` key they were built for (syncBoards). */
+  declare boards: BoardEntry[];
+  declare boardsKey: string;
+  /** Last drawn hero per seat, so a change can taunt on the newly hovered card. -1 = nothing drawn yet. */
+  declare shownChars: number[];
+  /** 'mqtt' or 'broadcast' (`?transport=`); the session is opened on it and a resumed one hands its own back. */
+  declare transport: string;
+  /** The raw keydown listener, kept so exit() can take it off the window again. */
+  declare onKey: (e: KeyboardEvent) => void;
+  // The hint lines, built once in enter() because every one of them names a key and key names are rebindable.
+  declare hintRole: string;
+  declare hintCodeKeys: string;
+  declare hintCodePick: string;
+  declare hintCancel: string;
+  declare hintError: string;
+  declare hintUnready: string;
+  declare hintLeave: string;
+  declare hintReadyHost: string;
+  declare hintReadyHost1: string;
+  declare hintReadyGuest: string;
 
-  enter(params) {
+  constructor(game: Game) { super(game, 'lobby'); }
+
+  override enter(params: ScreenParams): void {
     super.enter(params);
     // Couch pad claims are meaningless in the lobby: any pad should drive the local menu (readUnboundPads
     // covers slot 0 while claiming is off), and claims come back with the next visit to the title screen.
@@ -130,7 +253,7 @@ export class LobbyScreen extends Screen {
    * @param {object} net the live session, already back in its lobby state
    * @param {{ reveal?: string }} params `reveal` is the board this party's clear just opened
    */
-  resume(net, params) {
+  resume(net: NetSession, params: ScreenParams): void {
     this.net = net;
     this.isHost = net.isHost;
     this.typed = net.room;
@@ -160,7 +283,7 @@ export class LobbyScreen extends Screen {
    * screen can say so to anyone about to copy it down by hand.
    * @param {string} url
    */
-  setInvite(url) {
+  setInvite(url: string): void {
     this.inviteUrl = url || '';
     const plain = this.inviteUrl.replace(/^https?:\/\//, '');
     this.inviteLowercase = /[a-z]/.test(plain);
@@ -176,7 +299,7 @@ export class LobbyScreen extends Screen {
    * the link anywhere at all; in a browser tab it saves a trip to the address bar. The share sheet
    * and the clipboard both need a real gesture, which is why this is a rect and not a menu row.
    */
-  syncInviteZone() {
+  syncInviteZone(): void {
     const live = this.phase === 'connecting' && this.isHost && !!this.inviteUrl;
     if (!live) { if (this.zoneUrl) { links.clearZone(); this.zoneUrl = ''; this.inviteZone = null; } return; }
     if (this.zoneUrl === this.inviteUrl) return;
@@ -194,10 +317,10 @@ export class LobbyScreen extends Screen {
   }
 
   /** How many cells that row of the picker has (the action row holds DELETE and CONNECT). */
-  pickRowLen(row) { return row < PICK_ROWS ? Math.min(PICK_COLS, ROOM_ALPHABET.length - row * PICK_COLS) : 2; }
+  pickRowLen(row: number): number { return row < PICK_ROWS ? Math.min(PICK_COLS, ROOM_ALPHABET.length - row * PICK_COLS) : 2; }
 
   /** Move the picker's cursor. Both axes wrap, like every other menu in the game. */
-  movePick(dx, dy) {
+  movePick(dx: number, dy: number): void {
     if (dy) {
       this.pickRow = (this.pickRow + dy + ACTION_ROW + 1) % (ACTION_ROW + 1);
       this.pickCol = Math.min(this.pickWant, this.pickRowLen(this.pickRow) - 1);
@@ -210,7 +333,7 @@ export class LobbyScreen extends Screen {
   }
 
   /** CONFIRM on the picker: add that character, delete the last one, or dial the code. */
-  pickCell() {
+  pickCell(): void {
     const audio = this.game.audio;
     if (this.pickRow < ACTION_ROW) {
       const ch = ROOM_ALPHABET[this.pickRow * PICK_COLS + this.pickCol];
@@ -228,7 +351,7 @@ export class LobbyScreen extends Screen {
     this.begin();
   }
 
-  exit() {
+  override exit(): void {
     links.clearZone();
     window.removeEventListener('keydown', this.onKey);
     // Leaving the lobby without starting must tear the session down, or the peer waits forever.
@@ -242,7 +365,7 @@ export class LobbyScreen extends Screen {
    * room-code alphabet is also a game key - C X Z are P1's dodge, jump and attack and V B N are P2's -
    * so a code with a C in it used to bounce the player straight back out of the screen mid-typing.
    */
-  handleKey(e) {
+  handleKey(e: KeyboardEvent): void {
     if (this.phase !== 'code') return;
     const k = (e.key || '').toUpperCase();
     if (k === 'BACKSPACE') { this.typed = this.typed.slice(0, -1); e.preventDefault(); }
@@ -255,7 +378,7 @@ export class LobbyScreen extends Screen {
   }
 
   /** Create the session and start connecting. */
-  async begin() {
+  async begin(): Promise<void> {
     this.phase = 'connecting';
     this.status = 'CONTACTING RENDEZVOUS';
     const net = this.game.createNet({
@@ -287,7 +410,7 @@ export class LobbyScreen extends Screen {
    * The group's boards, in BOARD SELECT's shape. Rebuilt when the pairing's unlocks change: the
    * scope only switches once the peer's HELLO has landed, a frame or two after this screen opens.
    */
-  syncBoards() {
+  syncBoards(): void {
     const key = `${progress.scope}:${progress.unlockedCount()}`;
     if (this.boardsKey === key) return;
     this.boardsKey = key;
@@ -300,9 +423,9 @@ export class LobbyScreen extends Screen {
   }
 
   /** Board indices this GROUP has unlocked. The host picks; the guest follows. */
-  boardOptions() { this.syncBoards(); return this.boards.filter((b) => b.unlocked).map((b) => b.index); }
+  boardOptions(): number[] { this.syncBoards(); return this.boards.filter((b) => b.unlocked).map((b) => b.index); }
 
-  cycleBoard(dir) {
+  cycleBoard(dir: number): void {
     const opts = this.boardOptions();
     if (opts.length < 2) return;
     const at = opts.indexOf((this.net.lobby.stage || 1) - 1);
@@ -311,16 +434,16 @@ export class LobbyScreen extends Screen {
   }
 
   /** Move the local cursor `dir` cards, stepping over the hero the peer is holding. */
-  moveChar(dir) {
+  moveChar(dir: number): void {
     const to = this.net.nextChar(dir);
     if (to === this.net.lobby.myChar || !this.net.setChar(to)) return;
     this.game.audio.play('menu_move');
   }
 
   /** True once there is somebody to play with; until then the host is still showing its room code. */
-  party() { return (this.net && this.net.lobby.members) || []; }
+  party(): PartyMember[] { return (this.net && this.net.lobby.members) || []; }
 
-  onNetState(s) {
+  onNetState(s: string): void {
     if (s === 'lobby') {
       this.status = '';
       // The host reaches 'lobby' the moment its own seat exists, which is before anyone has joined:
@@ -339,7 +462,7 @@ export class LobbyScreen extends Screen {
     else if (s === 'ended') { this.phase = 'error'; this.error = (this.net && (this.net.error || this.net.endReason)) || 'disconnected'; }
   }
 
-  update() {
+  override update(): void {
     super.update();
     const inp = this.game.input, audio = this.game.audio;
     tickCharSlots(this.slots);
@@ -421,7 +544,7 @@ export class LobbyScreen extends Screen {
    * A pick changing - anyone's, and everyone else's arrives in a packet rather than a keypress -
    * taunts on the newly hovered card, so the row reacts to the whole room.
    */
-  syncCardAnims() {
+  syncCardAnims(): void {
     const lobby = this.net.lobby;
     for (const m of this.party()) {
       const char = m.local ? lobby.myChar : m.char | 0;
@@ -433,9 +556,9 @@ export class LobbyScreen extends Screen {
   }
 
   /** Play an animation on one card, if that character exists. */
-  playOn(i, name, o = {}) { const s = this.slots[i]; if (s) s.anim.play(name, { restart: true, ...o }); }
+  playOn(i: number, name: string, o: PlayOpts = {}): void { const s = this.slots[i]; if (s) s.anim.play(name, { restart: true, ...o }); }
 
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     const f = this.frame;
     ctx.fillStyle = '#1c1420'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.globalAlpha = 0.22;
@@ -446,7 +569,7 @@ export class LobbyScreen extends Screen {
     if (this.phase === 'lobby') { this.drawLobby(ctx, f); return; }
 
     drawTextOutlined(ctx, 'ONLINE CO-OP', 320, 24, { size: 2, color: UI.brass, outline: '#3a2010', align: 'center' });
-    const plate = (y, h) => {
+    const plate = (y: number, h: number) => {
       rrect(ctx, 120, y, 400, h, 8, 'rgba(30,20,26,0.9)', UI.brass, 2);
       rivetLine(ctx, 132, y + 8, 508, y + 8, 14, 2, UI.brass);
     };
@@ -454,7 +577,7 @@ export class LobbyScreen extends Screen {
     if (this.phase === 'role') {
       plate(70, 116);
       drawText(ctx, 'HOST OR JOIN?', 320, 88, { size: 1, color: UI.steel, align: 'center' });
-      ROLES.forEach(([label, blurb], i) => {
+      ROLES.forEach(([label, blurb]: string[], i: number) => {
         const sel = i === this.cursor, y = 110 + i * 34;
         if (sel) gear(ctx, 150, y + 6, 6, 6, UI.brass, '#3a2010', 1, f * 0.05, 2);
         drawText(ctx, label, 168, y, { size: 2, color: sel ? UI.white : UI.steel });
@@ -512,8 +635,8 @@ export class LobbyScreen extends Screen {
    * keyboard player can ignore it - their keys still go straight into the code through handleKey,
    * and the cursor below never moves for them.
    */
-  drawPicker(ctx) {
-    const cell = (x, y, w, h, sel, label, color) => {
+  drawPicker(ctx: CanvasRenderingContext2D): void {
+    const cell = (x: number, y: number, w: number, h: number, sel: boolean, label: string, color: string) => {
       if (sel) rrect(ctx, x, y, w, h, 4, 'rgba(78,54,32,0.9)', UI.brass, 2);
       drawText(ctx, label, x + w / 2, y + (h - 14) / 2, { size: 2, color: sel ? UI.white : color, align: 'center' });
     };
@@ -529,8 +652,8 @@ export class LobbyScreen extends Screen {
   }
 
   /** Screen state for tools/playtest.js (window.__game.summary(), ARCHITECTURE.md section 12). */
-  summary() {
-    const cellAt = (row, col) => (row < ACTION_ROW ? ROOM_ALPHABET[row * PICK_COLS + col] : ['DELETE', 'CONNECT'][col]);
+  override summary(): ScreenSummary {
+    const cellAt = (row: number, col: number) => (row < ACTION_ROW ? ROOM_ALPHABET[row * PICK_COLS + col] : ['DELETE', 'CONNECT'][col]);
     return {
       lobbyPhase: this.phase,
       isHost: this.isHost,
@@ -547,7 +670,7 @@ export class LobbyScreen extends Screen {
    * The pick screen: the hero cards on top - the same cards as the couch screen, with the rest of
    * the room driving the other cursors - and the group's boards underneath as BOARD SELECT plaques.
    */
-  drawLobby(ctx, f) {
+  drawLobby(ctx: CanvasRenderingContext2D, f: number): void {
     const chars = this.game.characters || [], n = this.slots.length;
     const lobby = this.net.lobby, party = this.party();
 
@@ -556,7 +679,7 @@ export class LobbyScreen extends Screen {
     // A seat's ring colour means the same thing here as it does in the match, so the cursors are
     // indexed by SLOT and not by who is looking at the screen. Our own pick is drawn from the local
     // value rather than the roster's, so the cursor moves the instant the key is pressed.
-    const cur = new Array(MAX_PLAYERS).fill(null);
+    const cur: (SeatCursor | null)[] = new Array(MAX_PLAYERS).fill(null);
     for (const m of party) {
       cur[m.slot] = {
         confirmed: m.local ? lobby.myReady : !!m.ready,
@@ -610,14 +733,14 @@ export class LobbyScreen extends Screen {
   }
 
   /** The line under the boards while this player is ready: who the match is still waiting for. */
-  waitingOn() {
+  waitingOn(): string {
     const late = this.party().filter((m) => !m.local && !m.ready).map((m) => `P${m.slot + 1}`);
     if (!late.length) return this.hintUnready;
     return `WAITING FOR ${late.join(' AND ')}    ${this.hintUnready}`;
   }
 
   /** ...and while they are still choosing: what the keys do, plus the invitation if seats are free. */
-  readyHint(open) {
+  readyHint(open: number): string {
     const base = this.isHost ? (open > 1 ? this.hintReadyHost : this.hintReadyHost1) : this.hintReadyGuest;
     const seats = this.party().length < NET_PLAYERS ? `${base}    MORE CAN STILL JOIN` : base;
     return `${seats}    ${this.hintLeave}`;

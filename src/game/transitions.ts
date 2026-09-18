@@ -13,30 +13,131 @@ import { rrect, rivetLine, pathPoly, paint, circle } from '../lib/art/shapes.ts'
 import { buildRig, drawRig } from '../lib/art/rig.ts';
 import { tones } from '../art/props.ts';
 import { boss as vaneDef } from '../content/enemies/index.ts';
+// Type-only, every one of them, and they have to stay that way: `import type` is erased by tsc, esbuild and node
+// alike, so none of these adds an edge to the module graph the browser loads. That matters most for `./stage.ts`,
+// which imports THIS file for its value exports — the shapes below travel up, the modules still only travel down.
+// game/world.ts reaches for StageRunner the same way.
+import type { Aabb, CameraView } from './entity.ts';
+import type { BossPlate, StageRunner, StageWorld, Vignette } from './stage.ts';
+import type { DrawPose, Rig, RigBuild } from '../lib/art/rig.ts';
+
+// ------------------------------------------------------------------------------------------------------------------
+// The shapes this file works in.
+//
+// The vocabulary a stage AUTHORS — `kind`, `look` — is declared here rather than in game/stage.ts because it is this
+// file that honours it: PHASES below is the whole of what a `kind` means, and DOCK_LOOKS the whole of what a `look`
+// does. stage.ts's TransitionSpec names the same two unions inline, and they agree member for member.
+// ------------------------------------------------------------------------------------------------------------------
+
+/** The four scripted transitions, each one a phase list in PHASES. A kind PHASES does not name gets the plain fade. */
+export type TransitionKind = 'lift' | 'board' | 'dock' | 'descent';
+
+/** What a `dock` arrival stands on, by `spec.look`. 'none' has no entry in DOCK_LOOKS: the party arrives on bare floor. */
+export type DockLook = 'stairs' | 'ladder' | 'door' | 'hoist' | 'none';
+
+/**
+ * The phases a transition steps through. Not every kind uses every one: 'gate' / 'ride' belong to the lift, 'dock' to
+ * the docking, 'descend' to Vane's stair, and the fade / switch trio to everything that changes section.
+ */
+export type PhaseName = 'gate' | 'ride' | 'dock' | 'descend' | 'fadeOut' | 'switch' | 'fadeIn';
+
+/**
+ * One phase: its name and how long it lasts, in frames at 60fps. A TUPLE rather than a two-element array, so that
+ * `dur` is a number the arithmetic in `k` can use instead of the `string | number` a mixed array literal widens to.
+ */
+export type Phase = [name: PhaseName, frames: number];
+
+/**
+ * A SceneLayer's draw callback. The layer itself is the third argument because that is where the callback's own state
+ * lives: `t` is its frame counter and `alpha` its fade, and both belong to the layer rather than to the closure.
+ */
+export type SceneDraw = (ctx: CanvasRenderingContext2D, cam: CameraView, layer: SceneLayer) => void;
+
+/**
+ * One dock arrival's art, as DOCK_LOOKS holds it: the same callback as a SceneDraw with the section's `x0` threaded
+ * through. The two looks that settle (`door`, `hoist`) read the layer's `t`; the two that simply stand there
+ * (`stairs`, `ladder`) declare three parameters and ignore the fourth.
+ */
+export type DockDraw = (ctx: CanvasRenderingContext2D, cam: CameraView, x0: number, layer: SceneLayer) => void;
+
+/**
+ * What a Transition is staged with — `this.spec`. This is the RUNTIME spec the StageRunner assembles, not the one an
+ * author writes: `nextSection` is filled in from the runner's own index, `boss` / `stairX` come from the boss trigger
+ * rather than from stage data, and `atX` / `_done` (which are the runner's business) never reach this far.
+ */
+export interface TransitionOpts {
+  /** Where the gate stands; the section's own `x1` when absent. */
+  gateX?: number;
+  /** Section to switch to on the 'switch' phase; the next one along when absent. */
+  nextSection?: number;
+  /** 'descent': the body Vane leaps into at the foot of the helix (the Regent Engine). */
+  boss?: Entity | null;
+  /** 'descent': world x the stair column stands at; 46px in from the end of the board when absent. */
+  stairX?: number;
+  /** 'dock': the arrival banner. Read by the runner, never by the Transition itself. */
+  banner?: string;
+  /** 'dock': what the party arrives on (default 'stairs'). */
+  look?: DockLook;
+  /** 'dock': Meat Pies laid on at the far end (default 2; 0 allowed). */
+  pies?: number;
+  /** 'lift': ride the shaft upward instead of down. */
+  up?: boolean;
+  /** issue #25: the between-section moment played over the transition, fired cue by cue by `cues`. */
+  vignette?: Vignette | null;
+  /**
+   * `startTransition`'s own `extra` is spread in over the named keys above, so a caller may carry anything through to
+   * a kind that reads it. Nothing in the game layer may pin those down — the same reasoning as FighterDef's index
+   * signature in game/fighter.ts.
+   */
+  [key: string]: any;
+}
+
+/**
+ * The band the defeat spectacle's six valves are spaced across: the boss arena, or — when the board named none — the
+ * camera lock that stood in for it (game/stage.ts). Only the two edges; nothing here reads a height.
+ */
+export interface VictoryArena { x0: number; x1: number; }
 
 const OL = '#2B2B30', BRASS = '#C9963A', IRON = '#3A3F4B', WOOD = '#6A4A2A', HEMP = '#9C893F', PLANK = '#8A6A3A';
 const FADE = 30;
 /** Frames a dock `look` takes to settle after the switch (the door swings open, the hoist pulley spins down). */
 const LOOK_SETTLE = 40;
 /** Dock arrivals by `spec.look`; 'stairs' is board 1's summit landing and the default. */
-const DOCK_LOOKS = { stairs: drawStairs, ladder: drawLadder, door: drawDoor, hoist: drawHoist };
-const PHASES = {
+const DOCK_LOOKS: Partial<Record<DockLook, DockDraw>> = { stairs: drawStairs, ladder: drawLadder, door: drawDoor, hoist: drawHoist };
+const PHASES: Record<TransitionKind, Phase[]> = {
   lift: [['gate', 50], ['ride', 180], ['fadeOut', FADE], ['switch', 1], ['fadeIn', FADE]],
   board: [['gate', 50], ['fadeOut', FADE], ['switch', 1], ['fadeIn', FADE]],
   dock: [['dock', 40], ['fadeOut', FADE], ['switch', 1], ['fadeIn', FADE]],
   descent: [['descend', 120]],
 };
 
-/** A z-sortable draw callback (stage art behind or in front of the fighters). */
+/**
+ * A z-sortable draw callback (stage art behind or in front of the fighters).
+ *
+ * It is `kind: 'fx'`, which is what keeps it out of the simulation: net/checksum.ts's KIND table has no entry for
+ * 'fx', so a SceneLayer is never hashed and a peer that drew one the other did not cannot desync a match on it.
+ * Nothing below may imply otherwise — this is stage art with a frame counter, not a body.
+ */
 export class SceneLayer extends Entity {
-  constructor(z, drawFn, x = 0) { super('fx'); this.z = z; this.x = x; this.shadowW = 0; this.drawFn = drawFn; this.t = 0; this.alpha = 1; }
-  hurtbox() { return null; }
-  update() { this.t++; }
-  draw(ctx, cam) { this.drawFn(ctx, cam, this); }
+  // The fields, for the checker only, in constructor order. `declare` because these are the constructor's own
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022 defines them
+  // before the constructor body runs), which is a runtime change. `declare` erases under tsc, esbuild and
+  // node --experimental-strip-types alike. Same reasoning (and the same wording) as game/entity.ts's Entity.
+  /** What the layer draws; it is handed the layer itself, so the art can read `t` and `alpha` off it. */
+  declare drawFn: SceneDraw;
+  /** Frames since the layer was added. Presentation only — the shaft scroll, a door swinging open, a sheave spinning down. */
+  declare t: number;
+  /** Fade, 0..1; the art multiplies its own alpha by it (the lift shaft ramps in as the cage starts moving). */
+  declare alpha: number;
+
+  constructor(z: number, drawFn: SceneDraw, x: number = 0) { super('fx'); this.z = z; this.x = x; this.shadowW = 0; this.drawFn = drawFn; this.t = 0; this.alpha = 1; }
+  override hurtbox(): Aabb | null { return null; }
+  override update(): void { this.t++; }
+  override draw(ctx: CanvasRenderingContext2D, cam: CameraView): void { this.drawFn(ctx, cam, this); }
 }
 
 /** Iron gate leaf / slat block used by both gates. */
-function ironPanel(ctx, x, y, w, h) {
+function ironPanel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
   const t = tones(IRON);
   rrect(ctx, x, y, w, h, 2, t.base, OL, 1);
   ctx.fillStyle = t.sh; ctx.fillRect(x + 2, y + h - Math.round(h * 0.3), w - 4, Math.round(h * 0.3) - 2);
@@ -46,6 +147,39 @@ function ironPanel(ctx, x, y, w, h) {
 
 /** One scripted transition; the StageRunner holds the players and forwards update()/draw() while it runs. */
 export class Transition {
+  // The fields, for the checker only, in constructor order and then in the order the rest of the class first writes
+  // them. `declare` because these are assignments and nothing else: a plain field declaration would emit a class
+  // field per name (es2022 defines them before the constructor body runs), which is a runtime change. `declare`
+  // erases under tsc, esbuild and node --experimental-strip-types alike. Same reasoning, and the same wording, as
+  // game/entity.ts's Entity.
+  declare runner: StageRunner;
+  declare kind: TransitionKind;
+  declare spec: TransitionOpts;
+  /** The phase list this kind runs, out of PHASES. */
+  declare phases: Phase[];
+  /** Index into `phases`. */
+  declare index: number;
+  /** Frames into the CURRENT phase; `k` is it as a 0..1 fraction of `dur`. */
+  declare t: number;
+  /** Frames since the transition began — the clock a vignette cue's `at` is measured on (see `cues`). */
+  declare frame: number;
+  declare done: boolean;
+  /** Alpha of the black overlay `draw` lays over everything, 0..1. */
+  declare fade: number;
+  /** The scene layers this transition put in the world, dropped together by `dropLayers`. */
+  declare layers: SceneLayer[];
+  declare world: StageWorld;
+  /** World x the gate stands at. */
+  declare gateX: number;
+
+  // ---------- written by `begin` / `switchSection`, and only for the kind that has them ----------
+  /** 'descent': Vane's rig, built from the boss def's phase-2 build. */
+  declare vaneRig: Rig;
+  /** 'descent': the idle pose Vane holds the whole way down the helix (the world is frozen under him). */
+  declare vanePose: DrawPose | null;
+  /** 'dock': the arrival landing, added to the world by `switchSection`. */
+  declare stairs: SceneLayer;
+
   /**
    * @param {import('./stage.ts').StageRunner} runner
    * @param {'lift'|'board'|'dock'|'descent'} kind
@@ -53,7 +187,7 @@ export class Transition {
    *           vignette?: { cues: Array<{ at: number, actor?: object, walk?: object, caption?: string, sub?: string, life?: number, sfx?: string, camera?: object, say?: string }> } }} spec
    *   dock: look (default 'stairs') + pies (default 2; 0 allowed); the runner shows `banner`. lift: up = the shaft scrolls the other way (the party rises).
    */
-  constructor(runner, kind, spec = {}) {
+  constructor(runner: StageRunner, kind: TransitionKind, spec: TransitionOpts = {}) {
     this.runner = runner; this.kind = kind; this.spec = spec;
     this.phases = PHASES[kind] || [['fadeOut', FADE], ['switch', 1], ['fadeIn', FADE]];
     this.index = 0; this.t = 0; this.frame = 0; this.done = false;
@@ -62,13 +196,13 @@ export class Transition {
     this.gateX = spec.gateX != null ? spec.gateX : runner.section.x1;
     this.begin();
   }
-  get phase() { return this.phases[this.index][0]; }
-  get dur() { return this.phases[this.index][1]; }
-  get k() { return Math.min(1, this.t / this.dur); }
-  addLayer(z, fn, x = 0) { const l = new SceneLayer(z, fn, x); this.world.add(l); this.layers.push(l); return l; }
-  dropLayers() { for (const l of this.layers) l.removeMe = true; this.layers.length = 0; }
+  get phase(): PhaseName { return this.phases[this.index][0]; }
+  get dur(): number { return this.phases[this.index][1]; }
+  get k(): number { return Math.min(1, this.t / this.dur); }
+  addLayer(z: number, fn: SceneDraw, x: number = 0): SceneLayer { const l = new SceneLayer(z, fn, x); this.world.add(l); this.layers.push(l); return l; }
+  dropLayers(): void { for (const l of this.layers) l.removeMe = true; this.layers.length = 0; }
 
-  begin() {
+  begin(): void {
     const w = this.world, cam = w.camera;
     if (this.kind === 'lift' || this.kind === 'board' || this.kind === 'dock') {
       if (!cam.locked) { const x0 = Math.max(0, Math.min(Math.round(cam.x), w.stageLength - VIEW_W)); cam.lock(x0, x0 + VIEW_W); }
@@ -83,7 +217,10 @@ export class Transition {
     }
     if (this.kind === 'dock') { cam.shake(10, 40); audio.play('land_heavy'); }
     if (this.kind === 'descent') {
-      this.vaneRig = buildRig(vaneDef.phases[2].build);
+      // `as RigBuild` is type-only, and it is the seam game/fighter.ts's FighterDef describes: content authors a rig
+      // build wider than the vendored library declares it (an accessory's `attach` is a plain string, not the
+      // library's AccessoryAttach union), so the gap belongs to the def that widened it, not to this call.
+      this.vaneRig = buildRig(vaneDef.phases[2].build as RigBuild);
       const idle = vaneDef.phases[2].anims.idle; this.vanePose = idle && idle.frames[0].pose;
       audio.play('chime');
     }
@@ -96,14 +233,14 @@ export class Transition {
    * Note for authors on `descent`: the boss descent runs under `world.cutscene`, which early-returns the entire
    * world update, so an ACTOR staged there will not walk. Captions and camera work fine; choreography does not.
    */
-  cues() {
+  cues(): void {
     const v = this.spec.vignette;
     if (!v || !v.cues) return;
     for (const c of v.cues) if ((c.at | 0) === this.frame) this.runner.vignetteCue(c);
   }
 
   /** Advance one frame; returns true when the transition finished. */
-  update() {
+  update(): boolean {
     if (this.done) return true;
     this.frame++; this.t++;
     this.cues();
@@ -120,7 +257,7 @@ export class Transition {
     }
     return false;
   }
-  ride() {
+  ride(): void {
     const cam = this.world.camera;
     for (const l of this.layers) l.alpha = Math.min(1, this.t / 30);
     if (this.t % 20 === 0) cam.shake(1, 6);
@@ -128,12 +265,12 @@ export class Transition {
     if (this.t === 150) { audio.play('steam'); cam.shake(4, 12); }
   }
   /** Vane walks down the helix at the arena's right wall, then leaps into the cockpit of the waiting Regent Engine. */
-  descend() {
+  descend(): void {
     const b = this.spec.boss;
     if (this.t === 90) { audio.play('aether_step'); }
     if (this.t === 100 && b) { this.world.addFx('ring', b.x, b.h - 10, b.z, { r0: 4, r1: 40, color: '#4DF0E0' }); this.world.addFx('steam', b.x, b.h - 10, b.z, { count: 8 }); }
   }
-  switchSection() {
+  switchSection(): void {
     const r = this.runner, w = this.world, cam = w.camera;
     this.dropLayers();
     const next = this.spec.nextSection != null ? this.spec.nextSection : r.sectionIndex + 1;
@@ -155,10 +292,10 @@ export class Transition {
     }
     if (this.kind === 'board') audio.play('go_arrow');
   }
-  finish() { this.done = true; this.dropLayers(); this.fade = 0; }
+  finish(): void { this.done = true; this.dropLayers(); this.fade = 0; }
 
   /** Overlays drawn after the world (gates, lift cage, fades, Vane's descent). */
-  draw(ctx) {
+  draw(ctx: CanvasRenderingContext2D): void {
     const cam = this.world.camera, ph = this.phase, k = this.k;
     if (this.kind === 'lift' && (ph === 'gate' || ph === 'ride')) this.drawLiftFront(ctx, cam, ph, k);
     if (this.kind === 'board' && ph === 'gate') this.drawCargoGate(ctx, cam, k);
@@ -166,7 +303,7 @@ export class Transition {
     if (this.fade > 0) { ctx.fillStyle = '#000'; ctx.globalAlpha = this.fade; ctx.fillRect(0, 0, VIEW_W, VIEW_H); ctx.globalAlpha = 1; }
   }
   /** Dock gate: two riveted leaves hinged on the posts, swinging open (foreshortened) during the gate phase; then the lift cage. */
-  drawLiftFront(ctx, cam, ph, k) {
+  drawLiftFront(ctx: CanvasRenderingContext2D, cam: CameraView, ph: PhaseName, k: number): void {
     const gx = cam.toScreenX(this.gateX), top = 40, h = FLOOR_TOP + Z_MAX - top;
     if (ph === 'gate') {
       const e = 1 - (1 - k) * (1 - k), open = Math.max(0.08, 1 - e);
@@ -189,7 +326,7 @@ export class Transition {
     ctx.globalAlpha = 1;
   }
   /** Cargo gate: horizontal iron slats rolling up into a brass housing. */
-  drawCargoGate(ctx, cam, k) {
+  drawCargoGate(ctx: CanvasRenderingContext2D, cam: CameraView, k: number): void {
     const gx = cam.toScreenX(this.gateX), top = 30, bottom = FLOOR_TOP + Z_MAX, e = k * k;
     const lift = Math.round((bottom - top - 20) * e);
     ironPost(ctx, gx - 24, top - 6, bottom - top + 6); ironPost(ctx, gx + 16, top - 6, bottom - top + 6);
@@ -201,7 +338,7 @@ export class Transition {
     if ((this.t & 4) === 0) { ctx.fillStyle = '#ff5c5c'; ctx.fillRect(gx - 34, top - 2, 3, 3); ctx.fillRect(gx + 31, top - 2, 3, 3); }
   }
   /** Vane: helix stair at the right wall, spiral descent (2 turns), then a leap into the cockpit dome. */
-  drawDescent(ctx, cam) {
+  drawDescent(ctx: CanvasRenderingContext2D, cam: CameraView): void {
     const b = this.spec.boss, t = this.t;
     const colX = cam.toScreenX(this.spec.stairX != null ? this.spec.stairX : this.world.stageLength - 46), topY = 6, botY = FLOOR_TOP + 40;
     // the stair column + helix treads (drawn as brass arcs around the column)
@@ -213,7 +350,7 @@ export class Transition {
     }
     ctx.globalAlpha = 1;
     if (!this.vaneRig || !b) return;
-    let x, y, facing = -1, alpha = 1;
+    let x: number, y: number, facing = -1, alpha = 1;
     if (t < 90) {
       const p = t / 90, ph = p * Math.PI * 4;
       x = colX + Math.cos(ph) * 26; y = topY + 10 + (botY - topY - 30) * p;
@@ -230,13 +367,13 @@ export class Transition {
   }
 }
 
-function ironPost(ctx, x, y, h) {
+function ironPost(ctx: CanvasRenderingContext2D, x: number, y: number, h: number): void {
   rrect(ctx, x, y, 8, h, 2, tones(IRON).base, OL, 1);
   ctx.fillStyle = tones(IRON).hi; ctx.fillRect(x + 1, y + 1, 1, h - 2);
   ctx.fillStyle = tones(BRASS).hi; for (let yy = y + 6; yy < y + h - 4; yy += 16) ctx.fillRect(x + 3, yy, 2, 2);
 }
 /** Lift shaft: dark rock + iron ribs scrolling upward behind the sky rows (downward when the party rides UP); alpha ramps in as the lift moves. */
-function drawShaft(ctx, cam, l, up = false) {
+function drawShaft(ctx: CanvasRenderingContext2D, cam: CameraView, l: SceneLayer, up: boolean = false): void {
   const a = l.alpha == null ? 1 : l.alpha;
   if (a <= 0) return;
   ctx.globalAlpha = a; ctx.fillStyle = '#17141c'; ctx.fillRect(0, 0, VIEW_W, FLOOR_TOP + cam.shakeY);
@@ -258,7 +395,7 @@ function drawShaft(ctx, cam, l, up = false) {
  * Dock look 'ladder': a ship's companion ladder rising off the right edge of the arrival landing and out of the top of the
  * frame — the party has come up from below decks. Two wooden rails, brass-tipped rungs, a hemp hand-rope, a hatch lip at the foot.
  */
-function drawLadder(ctx, cam, x0) {
+function drawLadder(ctx: CanvasRenderingContext2D, cam: CameraView, x0: number): void {
   const sx = cam.toScreenX(x0 + 104), y0 = FLOOR_TOP + cam.shakeY;
   if (sx > VIEW_W || sx + 40 < 0) return;
   const wood = tones(WOOD), brass = tones(BRASS), hemp = tones(HEMP);
@@ -274,7 +411,7 @@ function drawLadder(ctx, cam, x0) {
  * Dock look 'door': the counting-house double door the party has just been shown through. A brass lintel over two tall
  * panelled leaves that swing open (foreshortened) over LOOK_SETTLE frames after the switch and then stand open.
  */
-function drawDoor(ctx, cam, x0, l) {
+function drawDoor(ctx: CanvasRenderingContext2D, cam: CameraView, x0: number, l: SceneLayer): void {
   const sx = cam.toScreenX(x0 + 10), y0 = FLOOR_TOP + cam.shakeY, top = y0 - 96, h = 100, W = 80;
   if (sx > VIEW_W || sx + W < 0) return;
   const k = Math.min(1, (l.t || 0) / LOOK_SETTLE), e = 1 - (1 - k) * (1 - k), open = Math.max(0.12, 1 - e);
@@ -298,7 +435,7 @@ function drawDoor(ctx, cam, x0, l) {
  * Dock look 'hoist': the hemp hoist platform the party rode up on — planks over the landing with a brass lip, four hemp lines
  * rising to a pulley block at the top of the frame; the sheave spins down over LOOK_SETTLE frames as the load settles.
  */
-function drawHoist(ctx, cam, x0, l) {
+function drawHoist(ctx: CanvasRenderingContext2D, cam: CameraView, x0: number, l: SceneLayer): void {
   const sx = cam.toScreenX(x0), y0 = FLOOR_TOP + cam.shakeY;
   if (sx > VIEW_W || sx + 120 < 0) return;
   const plank = tones(PLANK), brass = tones(BRASS), hemp = tones(HEMP), iron = tones(IRON);
@@ -324,7 +461,7 @@ function drawHoist(ctx, cam, x0, l) {
   ctx.fillStyle = hemp.base; ctx.fillRect(bx - 1, 0, 3, by - 6);
 }
 /** Summit landing: three brass-edged marble steps rising out of the funicular dock onto the Heart-Engine floor. */
-function drawStairs(ctx, cam, x0) {
+function drawStairs(ctx: CanvasRenderingContext2D, cam: CameraView, x0: number): void {
   const sx = cam.toScreenX(x0), y0 = FLOOR_TOP + cam.shakeY;
   if (sx > VIEW_W || sx + 120 < 0) return;
   const marble = tones('#B9B2A5'), brass = tones(BRASS), dark = tones('#6a6660');
@@ -339,7 +476,7 @@ function drawStairs(ctx, cam, x0) {
   ctx.fillStyle = brass.base; ctx.fillRect(sx, y0, 110, 3); ctx.fillStyle = brass.hi; ctx.fillRect(sx, y0, 110, 1);
 }
 /** Boss name plate: a riveted brass plaque behind the HUD banner text. */
-export function drawNamePlate(ctx, plate) {
+export function drawNamePlate(ctx: CanvasRenderingContext2D, plate: BossPlate): void {
   const t = plate.timer / plate.life, a = t < 0.1 ? t / 0.1 : t > 0.85 ? (1 - t) / 0.15 : 1;
   const w = 420, x = VIEW_W / 2 - w / 2, y = 104, h = plate.sub ? 62 : 44;
   ctx.globalAlpha = a;
@@ -350,7 +487,7 @@ export function drawNamePlate(ctx, plate) {
   ctx.globalAlpha = 1;
 }
 /** Mid-boss intro spotlight: everything dims except a cone from the gantry lights down to the boss. */
-export function drawSpotlight(ctx, cam, b, t) {
+export function drawSpotlight(ctx: CanvasRenderingContext2D, cam: CameraView, b: Entity, t: number): void {
   const a = Math.min(0.5, t / 20 * 0.5), sx = cam.toScreenX(b.x), sy = FLOOR_TOP + b.z + cam.shakeY;
   ctx.save();
   ctx.beginPath(); ctx.rect(0, 0, VIEW_W, VIEW_H);
@@ -367,12 +504,24 @@ export function drawSpotlight(ctx, cam, b, t) {
  * cream over 120f, the heroes hold their poses. `update(t)` is called every frame of the 240f victory hold.
  */
 export class VictorySpectacle {
-  constructor(world, arena) {
+  // The fields, for the checker only, in constructor order. `declare` for the same reason as everywhere else in this
+  // file: a plain field declaration would emit a class field per name (es2022 defines them before the constructor
+  // body runs), which is a runtime change. Same wording as game/entity.ts's Entity.
+  declare world: StageWorld;
+  declare arena: VictoryArena;
+  /** Frames since the spectacle began; `update` is called once per frame of the 240f victory hold. */
+  declare t: number;
+  /** Valves blown so far, 0..6. */
+  declare jets: number;
+  /** The dawn wash, behind the fighters. Visual only, like every SceneLayer. */
+  declare layer: SceneLayer;
+
+  constructor(world: StageWorld, arena: VictoryArena) {
     this.world = world; this.arena = arena; this.t = 0; this.jets = 0;
     this.layer = new SceneLayer(-4, (ctx, cam, l) => this.drawDawn(ctx, cam, l), (arena.x0 + arena.x1) / 2);
     world.add(this.layer);
   }
-  update() {
+  update(): void {
     const w = this.world, t = ++this.t;
     if (t % 30 === 0 && this.jets < 6) {
       const x = this.arena.x0 + 40 + this.jets * ((this.arena.x1 - this.arena.x0 - 80) / 5);
@@ -383,7 +532,12 @@ export class VictorySpectacle {
     }
     if (t > 200 && t % 12 === 0) particles.burst('spark', w.camera.x + (t * 37) % VIEW_W, 100 + (t * 13) % 80, 20, 2, { speed: 1, up: 1, color: '#fff4c0', gravity: 0.02 });
   }
-  drawDawn(ctx, cam) {
+  /**
+   * The dawn wash, as the layer's own SceneDraw. A SceneDraw is handed the layer as its third argument and this one
+   * has no use for it — it reads its clock off the spectacle, which is what `update` advances — so the parameter is
+   * declared and ignored rather than dropped: the callback in the constructor passes it either way.
+   */
+  drawDawn(ctx: CanvasRenderingContext2D, cam: CameraView, _layer?: SceneLayer): void {
     const k = Math.max(0, Math.min(1, (this.t - 60) / 120));
     if (k <= 0) return;
     ctx.globalAlpha = 0.5 * k; ctx.fillStyle = '#F4E8C8'; ctx.fillRect(0, 0, VIEW_W, FLOOR_TOP + cam.shakeY);
@@ -393,5 +547,5 @@ export class VictorySpectacle {
     for (let i = 0; i < lit; i++) for (let x = 20 + i * 7; x < VIEW_W; x += 46) ctx.fillRect(x, 150 - i * 40 + ((x >> 4) & 7), 2, 2);
     ctx.globalAlpha = 1;
   }
-  dispose() { this.layer.removeMe = true; }
+  dispose(): void { this.layer.removeMe = true; }
 }

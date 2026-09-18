@@ -19,6 +19,9 @@ import { PROP_TYPES, getPropType, drawProp, drawPieces, tones } from '../art/pro
 import { entranceFor } from './entrances.ts';
 import { WEAPONS } from './weapons.ts';
 import { drawWeaponFloor } from '../art/weapons.ts';
+import type { Aabb, CameraView, EntityWorld } from './entity.ts';
+import type { Fighter } from './fighter.ts';
+import type { DangerBox } from './hazards.ts';
 
 /** Pickup catalogue (GDD 7). hp = fraction of max HP, meter = points, score = points, life = extra lives. */
 export const PICKUPS = Object.freeze({
@@ -46,11 +49,265 @@ const FIRE_R = 40;
 /** Rite lime (docs/STAGE3.md): the ring a released enemy climbs out of — the Chandlery's carts are how the Brassbound come back. */
 const RELEASE_COLOR = '#D8FF6E';
 
+// ================================ DECLARED SHAPES ===================================================================
+// The catalogue entries, the stage-data contract and the world services this file reads. Shapes that already have a
+// name elsewhere are used BY NAME -- Hit / Hitbox and friends from types/content.d.ts, Entity / Aabb / CameraView /
+// EntityWorld from game/entity.ts, Fighter from game/fighter.ts, DangerBox from game/hazards.ts -- rather than being
+// described a second time. art/props.ts and game/weapons.ts own their tables; what is declared of them here is only
+// the half this file consumes.
+
+/** One entry of `PICKUPS`: what walking over it is worth. A pickup may carry more than one (the Golden Sprocket is
+ *  meter AND score), which is why every field but the name is optional. */
+export interface PickupInfo {
+  name: string;
+  /** Healed fraction of the collector's max HP. */
+  hp?: number;
+  /** Meter points (METER.bar = one bar). */
+  meter?: number;
+  score?: number;
+  /** Extra lives. */
+  life?: number;
+  sfx?: string;
+}
+
+/** A key of `PICKUPS`: what a `drops` entry names once DROP_ALIASES has been resolved. */
+export type PickupId = keyof typeof PICKUPS;
+
+/** A key of `WEAPONS` (game/weapons.ts). */
+export type WeaponId = keyof typeof WEAPONS;
+
+/** One entry of `WEAPONS`, derived from the table rather than described again: game/weapons.ts owns that shape, and
+ *  a floor pickup only reads its durability (`hits`) and its `rig` (art/weapons.ts drawWeaponFloor). */
+export type WeaponInfo = typeof WEAPONS[keyof typeof WEAPONS];
+
+/** A key of `PROP_TYPES` (art/props.ts). */
+export type PropTypeName = keyof typeof PROP_TYPES;
+
+/** What a `drops` field may name: a pickup id, a weapon id, an alias ('meter', 'food_small', ...), several of
+ *  those, or nothing. `spawnDrops` resolves every form. */
+export type DropSpec = string | string[] | null;
+
+/** `explode`: the blast a broken prop leaves behind after `delay` frames (oil drums, powder kegs, powder tubs). */
+export interface PropExplode { delay: number; radius: number; damage: number; }
+/** `fall`: the floor slam a falling prop lands with (the chandelier). */
+export interface PropFall { radius: number; damage: number; }
+/** `puff`: a coloured cloud on break (quicklime, rose gas) beside the splinters. */
+export interface PropPuff { color: string; count: number; }
+/** `pieces`: a type's own break drawing, replacing the split-quads animation (the cut salvage line). `t` is 0..1
+ *  through BREAK_FRAMES. Both parameters of the catalogue's own renderers are untyped, so this is the shape this
+ *  file calls one with, not a constraint on art/props.ts. */
+export type PropPiecesDraw = (ctx: CanvasRenderingContext2D, sx: number, sy: number, p: Prop, t: number) => void;
+/** `draw`: the type's renderer (art/props.ts drawProp calls it; nothing here does). */
+export type PropDraw = (ctx: CanvasRenderingContext2D, sx: number, sy: number, p: Prop, frame: number) => void;
+
+/**
+ * A unit a prop lets out: `release` (one, on break) and every `cargo` entry (issue #34) are the same shape, which is
+ * also what `world.spawnEnemy` takes. `mods` are SPAWN_MODS names (game/traits.ts `SpawnModName`); unknown names are
+ * skipped there, which is why this stays the wider `string[]` the stage data is authored in.
+ */
+export interface SpawnSpec {
+  type: string;
+  variant?: string;
+  mods?: string[] | null;
+  /** Per-entry overrides merged over the climb-out's own fields (`releaseCargo`). The values are `any` because
+   *  game/entrances.ts owns the entrance spec and exports no type for it yet; this file only spreads them. */
+  entrance?: Record<string, any>;
+}
+
+/**
+ * One entry of the PROP_TYPES catalogue (art/props.ts) as this file reads it: the size and health, plus the
+ * behaviour fields listed in that file's own comment. Every behaviour is optional -- a plain crate carries none of
+ * them -- and a stage row may override `release` / `dump` / `fire` per instance (see `PropOpts`).
+ */
+export interface PropTypeInfo {
+  /** Hurtbox size in px (rigs stand ~72px). */
+  w: number;
+  h: number;
+  hp: number;
+  drops: DropSpec;
+  color?: string;
+  /** How high off the floor the body sits (the chandelier and the cargo net hang at 70). */
+  yOff?: number;
+  /** Shoved this many px by a hit instead of just taking it (barrels, coal carts). */
+  roll?: number;
+  /** Damage the rolling body deals on the way. */
+  rollHit?: number;
+  explode?: PropExplode;
+  fall?: PropFall;
+  puff?: PropPuff;
+  pieces?: PropPiecesDraw;
+  /** Only a jump attack may break it (chandelier, cargo net). */
+  jumpOnly?: boolean;
+  /** Boss-arena pressure valve (GDD 5.2). */
+  valve?: boolean;
+  /** 0 = breaking it scores nothing. */
+  score?: number;
+  /** Breaking it is a fire source (world.addFire); explosions are regardless. */
+  fire?: boolean;
+  /** A live enemy tips out on break (the Chandlery's handcart). */
+  release?: SpawnSpec | null;
+  /** Prop type an overhead net dumps on the floor, rolling, when a jump attack opens it. */
+  dump?: string | null;
+  /**
+   * Throwable clutter (issue #21, GDD 7): the flying feel, exactly WEAPONS[id].throw's shape (ThrowSpec,
+   * game/throwables.ts, which owns every field). The values are `any` because that file owns them and this one
+   * only asks WHETHER a type carries one.
+   */
+  throw?: Record<string, any>;
+  draw?: PropDraw;
+}
+
+/** `Pickup`'s option bag. `pop` gives it the little toss a drop has; a placed pickup starts flat on the floor. */
+export interface PickupOpts {
+  pop?: boolean;
+  /** Frames before it vanishes (GDD: 10s). */
+  life?: number;
+}
+
+/** `WeaponPickup`'s option bag: a dropped weapon keeps the durability it had left. */
+export interface WeaponPickupOpts extends PickupOpts {
+  /** Swings left; null = the weapon's full `hits`. */
+  hits?: number | null;
+  /** Frames before anyone may collect it, so a dropper does not instantly re-collect his own weapon. */
+  grace?: number;
+}
+
+/**
+ * `Prop`'s option bag: the stage-data contract, since stage entries forward every extra field of a prop entry into
+ * it. `release` / `dump` / `fire` are absent rather than defaulted so the constructor can tell "not authored" (keep
+ * the catalogue's own) from "authored off" (null / false on this one instance).
+ */
+export interface PropOpts {
+  drops?: DropSpec;
+  hp?: number;
+  solid?: boolean;
+  /** Travels on the cargo-bay conveyor. */
+  rider?: boolean;
+  /** Issue #21 (GDD 7): this instance may be lifted, when the type also carries a `throw` spec. */
+  throwable?: boolean;
+  release?: SpawnSpec | null;
+  dump?: string | null;
+  fire?: boolean;
+  /** Issue #31: this prop is what holds a breakable `solid` zone up. */
+  barricade?: boolean;
+  /** Author key an `entrance: { kind: 'cargo', prop: name }` spawn spec addresses this prop by (issue #34). */
+  name?: string;
+  cargo?: SpawnSpec[] | null;
+  cargoOn?: 'break' | 'timer';
+  cargoEvery?: number;
+}
+
+/**
+ * Prop states. 'held' (issue #21) joins the five break-and-roll states; a thrown prop is removed outright and flies
+ * as a plain Projectile, so there is no 'thrown'.
+ */
+export type PropState = 'idle' | 'rolling' | 'breaking' | 'fuse' | 'falling' | 'held';
+
+/**
+ * A party member, as the pickups and the score credit reach one: game/player.ts's `Player` satisfies it. Structural
+ * for the reason game/entity.ts gives -- player.ts imports this file, so the dependency must not run back the other
+ * way -- and every player-only member is optional because this file tests for each before calling it, exactly as
+ * game/fighter.ts declares its own `addMeter`.
+ */
+export interface ItemPlayer extends Fighter {
+  /** Lives in hand; a Brass Heart adds one. */
+  lives?: number;
+  /** Score credit; `applyMult` false = the flat value, no combo multiplier. */
+  addScore?(n: number, applyMult?: boolean): void;
+  /** Wield a weapon off the floor. False when already armed. */
+  pickUpWeapon?(pickup: WeaponPickup): boolean;
+  /** The weapon being carried, '' when empty-handed: an armed player walks over a floor weapon. */
+  weaponId?: string;
+  /** This slot has run out of lives. */
+  out?: boolean;
+}
+
+/**
+ * The body a ring-out kills: an enemy, as game/zones.ts hands it over. Only `lastHitBy` is narrower than the core's
+ * -- the +200 goes to whoever hit it last, and only a player scores -- and since `ItemPlayer` adds nothing but
+ * optional members, any `Fighter` still satisfies it.
+ */
+export interface RingOutVictim extends Fighter {
+  lastHitBy: ItemPlayer | null;
+}
+
+/**
+ * What hit a prop. game/combat.ts already unwraps a projectile to its `owner` before delivering
+ * (`deliver(t, p.hit, p.owner, ob)`), so in this codebase a striker IS a fighter; `owner` is declared for the two
+ * `kind === 'projectile'` branches below, which are the second line of defence for a caller that hands the
+ * projectile itself. `addScore` is the player-only credit, tested for before it is called.
+ */
+export interface PropAttacker extends Fighter {
+  /** A projectile's own `owner` (game/projectile.ts); absent on a fighter, which is already the striker. */
+  owner?: Fighter | null;
+  addScore?(n: number, applyMult?: boolean): void;
+}
+
+/**
+ * The boss a pressure valve asks about (GDD 5.2): game/boss.ts's `Boss`. Everything past the body is optional --
+ * `stun` is the Boss's own (world._checkValves does the work when it is there), `enterStagger` is the Enemy
+ * fallback this file uses when it is not, and neither is on a plain fighter.
+ */
+export interface BossLike extends Fighter {
+  /** 'boss' for the board's own; a midboss carries something else and never spends a valve. */
+  bossKind?: string;
+  defeated?: boolean;
+  phaseIndex?: number;
+  /** The stun, the ring, the text and the shake in one (game/boss.ts). */
+  stun?(frames?: number, source?: Fighter | null): void;
+  /** The gear-slip stagger the valve falls back to (game/enemy.ts). */
+  enterStagger?(frames: number, anim?: string): void;
+}
+
+/**
+ * The one world service `spawnDrops` needs. Narrower than `ItemWorld` on purpose: game/world.ts calls it with its
+ * own `World`, whose methods are declared but whose constructor-assigned fields are not typed yet, so asking for
+ * anything but a method here would report that call against a shape that file has not grown.
+ */
+export interface DropWorld {
+  /** Put an entity in the playfield and hand it back. */
+  add<T extends Entity>(e: T): T;
+}
+
+/** What `ringOut` needs off the world: the bestiary's defeat hook, when the screen installed one (issue #26). */
+export interface RingOutWorld {
+  onEnemyRungOut?(e: Fighter, killer: ItemPlayer | null): void;
+}
+
+/**
+ * The part of game/world.ts's `World` this file reaches for, on top of what every entity uses. Structural for the
+ * reason game/entity.ts gives: world.ts depends on this file, so the dependency must not run back the other way.
+ * `World` satisfies it.
+ */
+export interface ItemWorld extends EntityWorld, DropWorld, RingOutWorld {
+  /** Narrower than the entity core's: a timer container only runs while it is on camera. */
+  camera: CameraView & { isVisible(x: number, margin?: number): boolean };
+  /** Where this body may stand along x (camera / arena bounds). */
+  boundsFor(e: Entity): { x0: number; x1: number };
+  /** The band of z the floor occupies: a released unit arrives inside it. */
+  floorBand: { z0: number; z1: number };
+  /** The party, in slot order. */
+  players: ItemPlayer[];
+  /** Living fighters as of the last update (world.ts's `fighters` getter). */
+  fighters: Fighter[];
+  /** The boss while the board has one; the valves' target. */
+  boss: BossLike | null;
+  /** Installed by game/stage.ts; null on a world that spawns nothing (the gallery, the trials), which is why every
+   *  caller here tests it first. The `opts` values are `any` because that bag belongs to the spawner
+   *  (screens/gameplay.ts spawnEnemyAt) -- this file only fills in `entered` / `facing` / `mods` / `entrance`. */
+  spawnEnemy: ((type: string, variant: string, x: number, z: number, opts?: Record<string, any>) => Fighter | null) | null;
+  /** Register a fire at (x, z) with radius r for this frame. Optional: a world without hazards need not carry one,
+   *  and every call here tests for it. */
+  addFire?(x: number, z: number, r?: number): void;
+  /** Legacy alias of areaHit(x, z, r, hit, owner, { exclude, y }) (world.ts). */
+  spawnAreaHit(owner: Fighter | null, x: number, z: number, r: number, hit: Hit, exclude?: Entity | null, y?: number): void;
+}
+
 /**
  * Shared pop-physics tick for walk-over pickups (`Pickup`, `WeaponPickup`): life countdown, bounce, ground friction
  * and the world-bounds clamp. Returns false when the caller should stop (the pickup expired this frame).
  */
-export function tickPickupBody(p, world) {
+export function tickPickupBody(p: Pickup | WeaponPickup, world: ItemWorld): boolean {
   p.world = world;
   if (--p.life <= 0) { p.removeMe = true; return false; }
   if (p.y > 0 || p.vy > 0) { p.y += p.vy; p.vy -= GRAVITY; if (p.y <= 0) { p.y = 0; p.vy = p.vy < -1.5 ? -p.vy * 0.4 : 0; p.vx *= 0.5; } }
@@ -61,22 +318,34 @@ export function tickPickupBody(p, world) {
 
 /** Walk-over pickup. `life` in frames (GDD: vanish at 10s). */
 export class Pickup extends Entity {
-  constructor(type, x, z, { pop = true, life = PICKUP_LIFE } = {}) {
+  // The fields, for the checker only, in constructor order. `declare` because these are the constructor's own
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022 defines them
+  // before the constructor body runs), which is a runtime change -- game/combat.ts tells a fighter from a prop by
+  // `t.hitPart !== undefined`, so what an entity carries is load-bearing. `declare` erases under tsc, esbuild and
+  // node --experimental-strip-types alike. Same reasoning (and the same wording) as game/entity.ts's Entity.
+  /** Which PICKUPS entry this is. */
+  declare type: PickupId;
+  declare info: PickupInfo;
+  /** Frames left before it vanishes; the blink, the bob and the cog spin are all keyed off it. */
+  declare life: number;
+
+  constructor(type: string, x: number, z: number, { pop = true, life = PICKUP_LIFE }: PickupOpts = {}) {
     super('item');
-    this.type = PICKUPS[type] ? type : 'brassCog';
+    // The cast is the test on this line restated: `type` is a PICKUPS key exactly when the lookup found an entry.
+    this.type = PICKUPS[type] ? (type as PickupId) : 'brassCog';
     this.info = PICKUPS[this.type];
     this.x = x; this.z = z; this.y = pop ? 1 : 0;
     this.vy = pop ? 4 : 0; this.vx = pop ? rng.range(-1.2, 1.2) : 0;
     this.life = life; this.w = 16; this.h = 14; this.zSize = 24; this.shadowW = 16;
   }
-  update(world) {
+  override update(world: ItemWorld): void {
     if (!tickPickupBody(this, world)) return;
     for (const p of world.players) {
       if (!p.alive || p.dead || p.removeMe || p.y > 24) continue;
       if (Math.abs(p.x - this.x) < PICKUP_DX && Math.abs(p.z - this.z) < PICKUP_DZ) { this.collect(p, world); return; }
     }
   }
-  collect(p, world) {
+  collect(p: ItemPlayer, world: ItemWorld): void {
     const i = this.info;
     let label = i.name;
     if (i.hp) { const heal = Math.round(p.maxHp * i.hp); p.hp = Math.min(p.maxHp, p.hp + heal); label = '+' + heal; }
@@ -88,8 +357,8 @@ export class Pickup extends Entity {
     audio.play(i.sfx || 'pickup_score');
     this.removeMe = true;
   }
-  hurtbox() { return null; }
-  draw(ctx, cam) {
+  override hurtbox(): Aabb | null { return null; }
+  override draw(ctx: CanvasRenderingContext2D, cam: CameraView): void {
     if (this.life < PICKUP_BLINK && (this.life % 8) < 4) return;
     const bob = Math.round(Math.sin(this.life * 0.15) * 1.5);
     const sx = cam.toScreenX(this.x), sy = Math.round(FLOOR_TOP + this.z - this.y + cam.shakeY) - 8 + bob;
@@ -132,9 +401,22 @@ export class Pickup extends Entity {
  * `weaponHits` and `grace` are hashed by net/checksum.js.
  */
 export class WeaponPickup extends Entity {
-  constructor(weaponId, x, z, { hits = null, pop = true, life = PICKUP_LIFE, grace = 0 } = {}) {
+  // `declare` for the reason given on `Pickup` above: these are the constructor's own assignments, and a class
+  // field per name would be a runtime change.
+  /** Which WEAPONS entry this is. Hashed by net/checksum.ts. */
+  declare weaponId: WeaponId;
+  declare info: WeaponInfo;
+  /** Durability left: swings before it shatters. Hashed by net/checksum.ts. */
+  declare weaponHits: number;
+  /** Frames left of the dropper's collection block. Hashed by net/checksum.ts. */
+  declare grace: number;
+  /** Frames left before it vanishes. */
+  declare life: number;
+
+  constructor(weaponId: string, x: number, z: number, { hits = null, pop = true, life = PICKUP_LIFE, grace = 0 }: WeaponPickupOpts = {}) {
     super('item');
-    this.weaponId = WEAPONS[weaponId] ? weaponId : 'halberd';
+    // The cast is the test on this line restated: `weaponId` is a WEAPONS key exactly when the lookup found an entry.
+    this.weaponId = WEAPONS[weaponId] ? (weaponId as WeaponId) : 'halberd';
     this.info = WEAPONS[this.weaponId];
     this.weaponHits = hits != null ? hits : this.info.hits;
     this.grace = grace;
@@ -142,7 +424,7 @@ export class WeaponPickup extends Entity {
     this.vy = pop ? 4 : 0; this.vx = pop ? rng.range(-1.2, 1.2) : 0;
     this.life = life; this.w = 24; this.h = 10; this.zSize = 24; this.shadowW = 22;
   }
-  update(world) {
+  override update(world: ItemWorld): void {
     if (!tickPickupBody(this, world)) return;
     if (this.grace > 0) { this.grace--; return; }
     for (const p of world.players) {
@@ -152,8 +434,8 @@ export class WeaponPickup extends Entity {
       }
     }
   }
-  hurtbox() { return null; }
-  draw(ctx, cam) {
+  override hurtbox(): Aabb | null { return null; }
+  override draw(ctx: CanvasRenderingContext2D, cam: CameraView): void {
     if (this.life < PICKUP_BLINK && (this.life % 8) < 4) return;
     drawWeaponFloor(ctx, cam.toScreenX(this.x), Math.round(FLOOR_TOP + this.z - this.y + cam.shakeY), this.info.rig);
   }
@@ -161,21 +443,87 @@ export class WeaponPickup extends Entity {
 
 /** Breakable (or static) stage prop from the art/props.js catalogue. Takes hits from any team, drops items. */
 export class Prop extends Entity {
+  // The fields, for the checker only, in constructor order (`rollHit` is startRoll's). `declare` because these are
+  // the constructor's own assignments and nothing else: a plain field declaration would emit a class field per name
+  // (es2022 defines them before the constructor body runs), and that is a runtime change this file cannot make --
+  // game/combat.ts tells a fighter from a prop by `t.hitPart !== undefined`, and game/throwables.js tells a liftable
+  // prop from anything else by reading `throwable` / `holder` straight off the instance. `declare` erases under tsc,
+  // esbuild and node --experimental-strip-types alike. Same reasoning as game/entity.ts's Entity.
+  /** Which PROP_TYPES entry this is. */
+  declare type: PropTypeName;
+  declare info: PropTypeInfo;
+  /** Narrower than Entity's: a prop reaches the drops, the cargo and the valves' boss through it. */
+  declare world: ItemWorld | null;
+  declare maxHp: number;
+  /** Hashed by net/checksum.ts. */
+  declare hp: number;
+  /** Blocks movement and takes hits; false once broken (and on a 0-hp decorative entry). */
+  declare solid: boolean;
+  /** What it drops when it breaks; the entry's own, or the catalogue's when the entry does not say. */
+  declare drops: DropSpec;
+  /** How high off the floor the body sits (the catalogue's `yOff`). */
+  declare yOff: number;
+  /** Chandelier: current height of the body, counting down from `yOff` while it falls. */
+  declare hangY: number;
+  declare flashTimer: number;
+  declare wobble: number;
+  declare hitstop: number;
+  declare state: PropState;
+  /** Frames in the current state. */
+  declare t: number;
+  /** Roll angle in radians (drawn), snapped back to a whole turn when the roll stops. */
+  declare angle: number;
+  /** Px of roll left to travel. */
+  declare rollLeft: number;
+  /** Who shoved or broke it: the fighter credited with the roll, the drops and the score. */
+  declare breaker: Fighter | null;
+  /** Travels on the cargo-bay conveyor. */
+  declare rider: boolean;
+  /** A dumped cargo net: still hanging (drawn empty), never solid again. */
+  declare spent: boolean;
+  /** Liftable: the stage row said `throwable` AND the type carries a `throw` spec. Hashed by net/checksum.ts. */
+  declare throwable: boolean;
+  /** The fighter carrying it, if any. Hashed by net/checksum.ts. */
+  declare holder: Fighter | null;
+  /** Live enemy that tips out on break. */
+  declare release: SpawnSpec | null;
+  /** Prop type an overhead net dumps on the floor, rolling. */
+  declare dump: string | null;
+  /** Fire source on break (lanterns). */
+  declare fire: boolean;
+  /** Radius re-reported to world.addFire while the pieces fly (0 = not burning). */
+  declare fireR: number;
+  /** Issue #31: this prop is what holds a breakable `solid` zone up. */
+  declare barricade: boolean;
+  /** Author key (issue #34) a cargo spawn spec addresses this prop by. */
+  declare name: string;
+  /** Spawn specs it is carrying, or null. */
+  declare cargo: SpawnSpec[] | null;
+  declare cargoOn: 'break' | 'timer';
+  declare cargoEvery: number;
+  /** Frames since the last timer release. */
+  declare cargoT: number;
+  /** Frames the hatch is being stood on and cannot open (issue #34). */
+  declare cargoHeld: number;
+  /** A timer container answers `dangerBox()` while it rattles (game/hazards.ts `Obstacle`). */
+  declare isHazard: boolean;
+  /** Entity ids the current roll has already hit (startRoll, not the constructor: a prop that never rolls has none). */
+  declare rollHit: Set<number>;
+
   /**
-   * Stage entries forward every extra field of a prop entry here, so these names are the stage-data contract.
-   * @param {string} type PROP_TYPES key
-   * @param {{ drops?: string|string[]|null, hp?: number, solid?: boolean, rider?: boolean, throwable?: boolean,
-   *   release?: { type: string, variant?: string, mods?: string[] }|null, dump?: string|null, fire?: boolean,
-   *   barricade?: boolean, name?: string, cargo?: object[]|null, cargoOn?: 'break'|'timer', cargoEvery?: number }} o
-   *   rider = travels on the cargo-bay conveyor; release / dump / fire override the type's catalogue defaults
+   * Stage entries forward every extra field of a prop entry here, so these names are the stage-data contract
+   * (`PropOpts` above, which carries a line per field).
+   * @param type PROP_TYPES key
+   * @param o rider = travels on the cargo-bay conveyor; release / dump / fire override the type's catalogue defaults
    *   (leave them out to keep the type's own, pass null / false to switch the behaviour off on one entry);
    *   throwable (issue #21, GDD 7) = the stage row allows lifting this instance, which only actually applies when the
    *   type also carries a `throw` spec (game/throwables.js findLiftProp).
    */
-  constructor(type, x, z, { drops = null, hp = 0, solid = true, rider = false, throwable = false, release, dump, fire,
-    barricade = false, name = '', cargo = null, cargoOn = 'break', cargoEvery = 180 } = {}) {
+  constructor(type: string, x: number, z: number, { drops = null, hp = 0, solid = true, rider = false, throwable = false, release, dump, fire,
+    barricade = false, name = '', cargo = null, cargoOn = 'break', cargoEvery = 180 }: PropOpts = {}) {
     super('prop');
-    this.type = PROP_TYPES[type] ? type : 'crate';
+    // The cast is the test on this line restated: `type` is a PROP_TYPES key exactly when the lookup found an entry.
+    this.type = PROP_TYPES[type] ? (type as PropTypeName) : 'crate';
     this.info = getPropType(this.type);
     this.team = TEAM.NONE;
     this.x = x; this.z = z;
@@ -235,13 +583,13 @@ export class Prop extends Entity {
     this.isHazard = !!(this.cargo && this.cargoOn === 'timer');
   }
   /** The patch a timer container is about to put somebody in, or null while it is quiet (issue #34). */
-  dangerBox() {
+  dangerBox(): DangerBox | null {
     if (!this.isHazard || !this.alive || !this.cargo || !this.cargo.length) return null;
     if (this.cargoT < this.cargoEvery - CARGO_RATTLE) return null;
     const r = this.w / 2 + 14;
     return { x0: this.x - r, x1: this.x + r, z0: this.z - 20, z1: this.z + 20 };
   }
-  update(world) {
+  override update(world: ItemWorld): void {
     this.world = world;
     if (this.flashTimer > 0) this.flashTimer--;
     if (this.wobble > 0) this.wobble--;
@@ -278,7 +626,7 @@ export class Prop extends Entity {
    * waits -- which is the small job the second player gets on a hatch. It is deliberately not a lock: step off and
    * the timer picks up where it left off rather than resetting, so holding it buys time, it does not cancel the wave.
    */
-  updateCargoTimer(world) {
+  updateCargoTimer(world: ItemWorld): void {
     if (!world || !world.camera || !world.camera.isVisible(this.x, 120)) return;
     const stander = this.standingOn(world);
     if (stander) {
@@ -299,7 +647,7 @@ export class Prop extends Entity {
     this.releaseCargo(world, 1);
   }
   /** A living fighter standing on this prop's footprint (issue #34: holding a hatch shut). */
-  standingOn(world) {
+  standingOn(world: ItemWorld): Fighter | null {
     for (const f of world.fighters) {
       if (f.dead || f.y > 6 || f.grabbedBy || f.kind === 'boss') continue;
       if (Math.abs(f.x - this.x) <= this.w / 2 + 6 && Math.abs(f.z - this.z) <= this.zSize / 2 + 8) return f;
@@ -309,9 +657,9 @@ export class Prop extends Entity {
   /**
    * Let `n` cargo entries out (or all of them). Each one arrives through the `climbOut` entrance, so it stands up
    * out of the container into a recovery that can be hit and grabbed -- the same deal a teleport arrival gets.
-   * @returns {number} how many actually came out
+   * @returns how many actually came out
    */
-  releaseCargo(world, n = Infinity) {
+  releaseCargo(world: ItemWorld, n: number = Infinity): number {
     if (!this.cargo || !this.cargo.length || !world.spawnEnemy) return 0;
     let out = 0;
     while (this.cargo.length && out < n) {
@@ -342,7 +690,7 @@ export class Prop extends Entity {
   /** Guard only (issue #21 decision 6): the real per-frame position comes from the HOLDER's own updateGrab
    *  (game/grabs.js -> throwables.js updateHeldProp) every frame while held. This just notices a holder that
    *  let go without going through dropHeldProp (dead, out, or otherwise reset) and settles back to idle in place. */
-  updateHeld() {
+  updateHeld(): void {
     const h = this.holder;
     // Also self-heals a holder that stopped holding without going through dropHeldProp: grabbed out of ST.GRAB
     // (grabs.js startGrab drops it explicitly, but this is a second line of defence) or removed/killed by a path
@@ -352,13 +700,13 @@ export class Prop extends Entity {
       this.holder = null; this.state = 'idle'; this.y = 0;
     }
   }
-  hurtbox() {
+  override hurtbox(): Aabb | null {
     if (!this.alive || !this.solid || (this.state !== 'idle' && this.state !== 'rolling')) return null;
     const y0 = this.yOff;
     return { x0: this.x - this.w / 2, x1: this.x + this.w / 2, y0, y1: y0 + this.h, z0: this.z - this.zSize / 2, z1: this.z + this.zSize / 2 };
   }
   /** Can `attacker` damage this prop right now (chandelier: jump attacks only; valves: only while the Regent Engine is in phase 1/2). */
-  canBeHitBy(attacker) {
+  canBeHitBy(attacker: PropAttacker | null): boolean {
     const info = this.info;
     if (info.jumpOnly && !(attacker && (attacker.state === ST.JUMP_ATTACK || (attacker.kind === 'projectile' && attacker.owner && attacker.owner.state === ST.JUMP_ATTACK)))) return false;
     if (info.valve) {
@@ -369,7 +717,7 @@ export class Prop extends Entity {
     return true;
   }
   /** Damage the prop. Returns true when the hit counted. */
-  takeHit(hit, attacker) {
+  takeHit(hit: Hit, attacker: PropAttacker | null): boolean {
     if (!this.alive || !this.solid || this.state === 'breaking' || this.state === 'fuse' || this.state === 'falling'
       || this.state === 'held') return false;
     if (!this.canBeHitBy(attacker)) return false;
@@ -387,14 +735,14 @@ export class Prop extends Entity {
     return true;
   }
   // ---------- rolling props (barrels, coal carts): shoved `info.roll` px, hitting enemies on the way ----------
-  startRoll(striker) {
+  startRoll(striker: Fighter): void {
     const dir = Math.sign(this.x - striker.x) || striker.facing || 1;
     this.state = 'rolling'; this.t = 0; this.breaker = striker;
     this.rollLeft = this.info.roll; this.vx = dir * this.info.roll / ROLL_FRAMES;
     this.rollHit = new Set([this.id]);
     audio.play('throw');
   }
-  updateRoll(world) {
+  updateRoll(world: ItemWorld): void {
     this.x += this.vx; this.rollLeft -= Math.abs(this.vx); this.angle += this.vx * 0.12;
     const b = world.boundsFor(this);
     if (this.x < b.x0 + this.w / 2) { this.x = b.x0 + this.w / 2; this.rollLeft = 0; }
@@ -410,7 +758,7 @@ export class Prop extends Entity {
     if (this.rollLeft <= 0) { this.state = 'idle'; this.vx = 0; this.angle = Math.round(this.angle / (Math.PI * 2)) * Math.PI * 2; }
   }
   // ---------- breaking ----------
-  break(attacker) {
+  break(attacker: PropAttacker | null): void {
     this.solid = false;
     burstBreak(this.x, this.yOff + this.h * 0.5, this.z, this.info.color || '#8a6a40', 8);
     audio.play('prop_break');
@@ -436,8 +784,8 @@ export class Prop extends Entity {
     if (this.info.valve && world) this.blowValve(world);
     this.finish();
   }
-  finish() { this.alive = false; this.state = 'breaking'; this.t = 0; }
-  explode(world, ex) {
+  finish(): void { this.alive = false; this.state = 'breaking'; this.t = 0; }
+  explode(world: ItemWorld, ex: PropExplode): void {
     world.spawnAreaHit(null, this.x, this.z, ex.radius, { damage: ex.damage, type: 'knockdown', kbX: 5, kbY: 5, friendly: true, hitstun: 24 });
     world.addFx('ring', this.x, 0, this.z, { r1: ex.radius, flat: true, color: '#ffb060' });
     world.addFx('flash', this.x, 0, this.z, { color: '#ffb060', life: 4 });
@@ -448,7 +796,7 @@ export class Prop extends Entity {
     this.finish();
   }
   /** Become a fire source of radius r: tell the world now (guarded — the hook is optional) and keep telling it while breaking. */
-  lightFire(world, r) {
+  lightFire(world: ItemWorld, r: number): void {
     this.fireR = r;
     if (world && world.addFire) world.addFire(this.x, this.z, r);
   }
@@ -457,7 +805,7 @@ export class Prop extends Entity {
    * knocked down so it climbs to its feet out of the wreck (the player gets the same beat a spawn gives). Spawn modifiers ride
    * through as opts.mods (traits.js SPAWN_MODS). A rite-lime ring + chime mark it: on board 3 this is a rite, not a spawn.
    */
-  releaseEnemy(world) {
+  releaseEnemy(world: ItemWorld): Fighter | null {
     const r = this.release;
     let near = null;
     for (const p of world.players) if (p.alive && !p.dead && !p.removeMe && (!near || Math.abs(p.x - this.x) < Math.abs(near.x - this.x))) near = p;
@@ -475,7 +823,7 @@ export class Prop extends Entity {
    * striker at once so it is a live hazard the moment it lands (credited to the striker like any shoved barrel). The emptied
    * net stays hanging, non-solid and `spent`, and drops nothing itself — the score and the pickups are on the load.
    */
-  dumpLoad(world, striker) {
+  dumpLoad(world: ItemWorld, striker: PropAttacker | null): void {
     const load = new Prop(this.dump, this.x, clamp(this.z, world.floorBand.z0, world.floorBand.z1));
     world.add(load);
     if (striker && load.info.roll) load.startRoll(striker);
@@ -488,7 +836,7 @@ export class Prop extends Entity {
     this.spent = true; this.drops = null; this.shadowW = 0;
   }
   /** Chandelier hits the floor: 30 knockdown to enemies within 90px (credited to the jumper), once. */
-  land(world) {
+  land(world: ItemWorld): void {
     const f = this.info.fall, owner = this.breaker;
     const p = new Projectile({ owner, team: owner ? owner.team : TEAM.PLAYER, x: this.x, y: 20, z: this.z, r: f.radius, life: 2, style: 'explosion', pierce: 99,
       hit: { damage: f.damage, type: 'knockdown', kbX: 5, kbY: 5, hitstun: 24, z: f.radius, sfx: 'hit_heavy' } });
@@ -503,7 +851,7 @@ export class Prop extends Entity {
   }
   /** Pressure valve: a jet of steam and a 60f stun on the Regent Engine (GDD 5.2). The world's valve hook (`stunBoss`) does the
    *  stun when the boss implements `stun`; otherwise the gear-slip stagger is used directly. */
-  blowValve(world) {
+  blowValve(world: ItemWorld): void {
     const b = world.boss;
     audio.play('valve_blow');
     particles.burst('steam', this.x, this.h, this.z, 24, { speed: 3, up: 4, spread: 1.2, sizeJitter: 2 });
@@ -514,7 +862,7 @@ export class Prop extends Entity {
     floatText(b.x, b.y + b.h + 10, b.z, 'STUNNED!', '#4DF0E0', 2);
     if (world.camera) world.camera.shake(6, 12);
   }
-  draw(ctx, cam) {
+  override draw(ctx: CanvasRenderingContext2D, cam: CameraView): void {
     const sx = cam.toScreenX(this.x), sy = Math.round(FLOOR_TOP + this.z - this.y + cam.shakeY);
     const frame = this.world ? this.world.frame : 0;
     if (this.state === 'breaking') { (this.info.pieces || drawPieces)(ctx, sx, sy - this.yOff, this, this.t / BREAK_FRAMES); return; }
@@ -523,13 +871,13 @@ export class Prop extends Entity {
     drawProp(ctx, sx, sy, this, frame);
     ctx.restore();
   }
-  drawShadow(ctx, cam) { if (this.alive && this.state !== 'breaking') super.drawShadow(ctx, cam); }
+  override drawShadow(ctx: CanvasRenderingContext2D, cam: CameraView): void { if (this.alive && this.state !== 'breaking') super.drawShadow(ctx, cam); }
 }
 
 /**
  * Spawn drops at (x, z). `drops` may be a pickup id, an alias ('meter', 'food_small', ...), an array of those, or null.
  */
-export function spawnDrops(world, x, z, drops) {
+export function spawnDrops(world: DropWorld, x: number, z: number, drops: DropSpec): void {
   if (!drops) return;
   const list = Array.isArray(drops) ? drops : [drops];
   let i = 0;
@@ -547,9 +895,9 @@ export function spawnDrops(world, x, z, drops) {
 
 /**
  * Ring-out: an enemy knocked into the molten channel / over the funicular railings dies instantly (+200 to the last hitter).
- * @param {'molten'|'rail'} kind
+ * @param kind
  */
-export function ringOut(world, e, kind, dir = 0) {
+export function ringOut(world: RingOutWorld, e: RingOutVictim, kind: 'molten' | 'rail', dir: number = 0): boolean {
   if (!e || e.dead || e.kind === 'boss' || !e.alive) return false;
   const killer = e.lastHitBy;
   e.hp = 0; e.dead = true; e.invuln = 0;

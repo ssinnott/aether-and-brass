@@ -33,6 +33,10 @@ import { wrapText } from './boardcards.ts';
 import { bestiary, entriesOf, FACTIONS } from '../bestiary.ts';
 import { input } from '../../engine/input.ts';
 import { confirmPressed, cancelPressed, escapePressed, backKey, confirmKey } from '../menuinput.ts';
+// Type-only: `import type` is erased by tsc, esbuild and node alike, so neither adds an edge to the
+// module graph the browser loads (the note at the top of screens/gameplay.ts).
+import type { Game, ScreenParams } from '../game.ts';
+import type { Rig, FullPose } from '../../lib/art/rig.ts';
 
 const HEADER_H = 22;
 const TAB_Y = 26, TAB_H = 15;
@@ -51,10 +55,165 @@ const LOOP = ['idle', 'walk', 'attack1', 'hurt'];
 /** Frames a completed animation holds before the loop moves on. */
 const LOOP_HOLD = 24;
 
+/**
+ * One codex block, as content/enemies/codex.js authors them and game/bestiary.js merges them onto a def.
+ * The three fields are the contract that file's header states; all three are wrapped once per selection
+ * by buildDetail() and never re-wrapped in draw().
+ */
+export interface CodexBlock {
+  /** The entry proper, one unbroken string: a line break is never authored, it is wrapped at panel width. */
+  text: string;
+  /** What the player watches for, phrased as the thing on screen. */
+  tells: string;
+  /** The counterplay, in the multipliers the sim actually applies. */
+  weakness: string;
+}
+
+/** Where an entry first appears in the campaign, derived from the stage data (game/bestiary.js FIRST_SEEN). */
+export interface FirstSeen {
+  /** 1-based. */
+  board: number;
+  boardName: string;
+  /** 1-based. */
+  section: number;
+  sectionName: string;
+}
+
+/**
+ * One later boss silhouette (game/bestiary.js phaseBlocks): a phase that carries a build or anims of its own,
+ * and so is a separate rig rather than the same machine angrier.
+ */
+export interface BestiaryPhase {
+  /** Index into the boss def's own `phases`, which is what `bestiary.phaseSeen` is keyed by. */
+  index: number;
+  name: string;
+  codex: CodexBlock | null;
+  /**
+   * Rig build and animation table. `any`, not RigBuild / AnimSet, for the reason game/fighter.ts's FighterDef
+   * gives for its own `build` / `anims`: content authors both wider than the vendored library declares them.
+   */
+  build?: any;
+  anims?: any;
+}
+
+/**
+ * One book entry, as game/bestiary.js's ENTRIES builds them: a registered enemy variant or a boss, with the
+ * codex prose and first appearance already merged on. That module is still untyped, so the shape it hands
+ * back is described here, where the screen that reads every field of it lives.
+ */
+export interface BestiaryEntry {
+  /** `${type}:${variant}`, which is what every book lookup is keyed by. */
+  id: string;
+  type: string;
+  variant: string;
+  name: string;
+  subtitle: string;
+  /** Tab this entry sits under; 'boss' is the catch-all for every mid-boss and final boss. */
+  faction: string;
+  role: string;
+  boss: boolean;
+  codex: CodexBlock | null;
+  firstSeen: FirstSeen | null;
+  /** See BestiaryPhase.build for why these two are `any`. */
+  build?: any;
+  anims?: any;
+  /** Empty for anything that is not a boss. */
+  phases: BestiaryPhase[];
+}
+
+/** What the book records per entry (game/bestiary.js `blank()`); a zeroed record when it has never been beaten. */
+export interface BestiaryStats {
+  /** Defeats. */
+  n: number;
+  thrown: number;
+  ring: number;
+  /** Defeats per hero NAME, which is what `topHero` reads. */
+  by: Record<string, number>;
+  /** Boss phases reached, indexed by phase index. */
+  phases: boolean[];
+}
+
+/** One faction tab, counted once in refreshCounts() because nothing on this screen writes to the book. */
+export interface BestiaryTab {
+  name: string;
+  /** `seen/total`, already formatted. */
+  count: string;
+  /** Every entry of this faction has been beaten. */
+  done: boolean;
+}
+
+/** One card in the grid: a beaten entry, its rig, the still pose it is drawn in, and its kill columns. */
+export interface BestiaryCard {
+  entry: BestiaryEntry;
+  rig: Rig;
+  /** First frame of `idle`, never ticked: cards are a still row. */
+  pose: FullPose;
+  stats: BestiaryStats;
+}
+
+/** Row 0 is the entry itself; the rest are the boss's later silhouettes. Both labels are built once. */
+export interface BestiaryPhaseRow {
+  /** Phase index, NOT the position in the strip: 0 is the entry itself. */
+  index: number;
+  label: string;
+  /** What an unreached phase prints instead. */
+  hidden: string;
+}
+
+/** The selected entry, large: everything the detail panel draws, built once per selection or phase change. */
+export interface BestiaryDetail {
+  entry: BestiaryEntry;
+  /** The phase being shown; 0 is the entry itself. */
+  phase: number;
+  /** The phase block, or null when `phase` is 0. */
+  block: BestiaryPhase | null;
+  /** Phase indices the player has reached, always starting with 0. */
+  reached: number[];
+  stats: BestiaryStats;
+  /** The hero who has beaten this entry most often, or ''. */
+  top: string;
+  rig: Rig;
+  anim: AnimPlayer;
+  /** Step of LOOP being played, and the frames it has been held. */
+  loop: number;
+  hold: number;
+  name: string;
+  codex: CodexBlock | null;
+  /** The codex, wrapped ONCE here rather than per frame in draw(). */
+  lines: { text: string[]; tells: string[]; weakness: string[] };
+  /** `B<board> S<section>`, or '' for an entry the campaign never spawns. */
+  first: string;
+  phaseRows: BestiaryPhaseRow[];
+}
+
 /** The bestiary. Read-only: it shows the book game/bestiary.js keeps, and never records anything itself. */
 export class BestiaryScreen extends Screen {
-  constructor(game) { super(game, 'bestiary'); }
-  enter(params) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022
+  // defines them before the constructor body runs), which is a runtime change. Same reasoning, and the
+  // same wording, as game/entity.ts's Entity.
+  /** Index into FACTIONS. */
+  declare tab: number;
+  /** Index into `cards` -- the card grid of the open tab, not the faction's whole entry list. */
+  declare cursor: number;
+  declare cards: BestiaryCard[];
+  declare detail: BestiaryDetail | null;
+  // Header and tab counts, built once by refreshCounts(): nothing here writes to the book, so they
+  // cannot change while the screen is open.
+  /** `<seen> / <total> ENTRIES`. */
+  declare total: string;
+  /** The completion percentage, already formatted. */
+  declare pct: string;
+  /** The book is finished, and the header says so on its own cover. */
+  declare full: boolean;
+  declare tabs: BestiaryTab[];
+  // The control hints, and the `input.bindingsVersion` they were built from (never per frame in draw).
+  declare hints: string[];
+  declare phaseHint: string;
+  declare hintVersion: number;
+
+  constructor(game: Game) { super(game, 'bestiary'); }
+  override enter(params: ScreenParams): void {
     super.enter(params);
     this.tab = 0;
     this.cursor = 0;
@@ -72,7 +231,7 @@ export class BestiaryScreen extends Screen {
    * open -- and `completion()` walks all 39 entries while `entriesOf()` allocates an array per tab, neither of which
    * belongs in a draw that runs 60 times a second.
    */
-  refreshCounts() {
+  refreshCounts(): void {
     const c = bestiary.completion();
     this.total = `${c.seen} / ${c.total} ENTRIES`;
     this.pct = `${c.pct}%`;
@@ -89,7 +248,7 @@ export class BestiaryScreen extends Screen {
    * rather than one long one: the hint sits under the CARD COLUMN, which is 304px wide, and a single line naming
    * all three controls runs on under the detail panel.
    */
-  setHints(inp) {
+  setHints(inp: typeof input): void {
     this.hints = [
       'LEFT / RIGHT  ENTRY     UP / DOWN  FACTION',
       `${backKey(inp)}  BACK     ${confirmKey(inp)}  BOSS PHASE`,
@@ -98,16 +257,16 @@ export class BestiaryScreen extends Screen {
     this.hintVersion = inp.bindingsVersion;
   }
   /** Entries of the tab currently open. */
-  get entries() { return this.cards.map((c) => c.entry); }
+  get entries(): BestiaryEntry[] { return this.cards.map((c) => c.entry); }
   /** The selected entry, or null when a tab is somehow empty. */
-  get entry() { const c = this.cards[this.cursor]; return c ? c.entry : null; }
+  get entry(): BestiaryEntry | null { const c = this.cards[this.cursor]; return c ? c.entry : null; }
 
   /**
    * Build the cards for the visible tab: one per entry in it the player HAS BEATEN, and nothing for the rest. A tab
    * with nothing beaten in it builds no rigs at all, which is also why a fresh book costs nothing to open.
    */
-  buildTab() {
-    const list = entriesOf(FACTIONS[this.tab].id).filter((e) => bestiary.isSeen(e.id));
+  buildTab(): void {
+    const list: BestiaryEntry[] = entriesOf(FACTIONS[this.tab].id).filter((e) => bestiary.isSeen(e.id));
     this.cards = list.map((entry) => {
       // One AnimPlayer per card, parked on the first frame of `idle` and never ticked: cards are a still row and
       // `anim.pose` is always a full pose, where a def whose idle has no frames would hand back a null one.
@@ -122,7 +281,7 @@ export class BestiaryScreen extends Screen {
    * Build the animated rig for the selected entry at phase `phase`. A boss phase that has not been REACHED is never
    * built: the book shows the machine the player has actually fought, not the man inside it.
    */
-  buildDetail(phase) {
+  buildDetail(phase: number): void {
     const e = this.entry;
     if (!e) { this.detail = null; return; }
     const reached = this.reachedPhases(e);
@@ -155,33 +314,33 @@ export class BestiaryScreen extends Screen {
     this.playLoop(true);
   }
   /** Phase indices the player has reached for this entry: always 0, plus every boss phase the book has marked. */
-  reachedPhases(e) {
+  reachedPhases(e: BestiaryEntry): number[] {
     const out = [0];
     for (const p of e.phases || []) if (bestiary.phaseSeen(e.id, p.index)) out.push(p.index);
     return out;
   }
   /** Start (or restart) the current step of the idle -> walk -> attack -> hurt loop. */
-  playLoop(restart) {
+  playLoop(restart: boolean): void {
     const d = this.detail;
     if (!d) return;
     d.anim.play(LOOP[d.loop % LOOP.length], { restart, fallback: 'idle' });
     d.hold = 0;
   }
   /** Move the card cursor by `n`, wrapping inside the tab. */
-  moveCursor(n) {
+  moveCursor(n: number): void {
     if (!this.cards.length) return;
     this.cursor = (this.cursor + n + this.cards.length) % this.cards.length;
     this.buildDetail(0);
     this.game.audio.play('menu_move');
   }
   /** Move the faction tab by `n`, wrapping, and rebuild that tab's rigs. */
-  moveTab(n) {
+  moveTab(n: number): void {
     this.tab = (this.tab + n + FACTIONS.length) % FACTIONS.length;
     this.cursor = 0;
     this.buildTab();
     this.game.audio.play('menu_move');
   }
-  update() {
+  override update(): void {
     super.update();
     const inp = this.game.input;
     if (this.hintVersion !== inp.bindingsVersion) this.setHints(inp);
@@ -204,7 +363,7 @@ export class BestiaryScreen extends Screen {
     }
   }
   /** CONFIRM on a boss with more than one phase reached: show the next one. @returns {boolean} true when it cycled */
-  cyclePhase() {
+  cyclePhase(): boolean {
     const d = this.detail;
     if (!d || d.reached.length < 2) return false;
     const i = d.reached.indexOf(d.phase);
@@ -212,10 +371,10 @@ export class BestiaryScreen extends Screen {
     this.game.audio.play('menu_confirm');
     return true;
   }
-  close() { this.game.audio.play('menu_back'); this.game.fadeTo(() => this.game.replace('title'), 0.08); }
+  close(): void { this.game.audio.play('menu_back'); this.game.fadeTo(() => this.game.replace('title'), 0.08); }
 
   // ---------------------------------------------------------------- draw
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     const f = this.frame;
     ctx.fillStyle = '#1a1420'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.globalAlpha = 0.16; gear(ctx, 70, 320, 90, 13, '#3a2a48', null, 0, f * 0.003, 28); gear(ctx, 600, 300, 60, 11, '#3a2a48', null, 0, -f * 0.004, 20); ctx.globalAlpha = 1;
@@ -227,7 +386,7 @@ export class BestiaryScreen extends Screen {
     } else this.drawEmptyTab(ctx, f);   // no cards means no entry to detail either: one plate, not two empty frames
     for (let i = 0; i < this.hints.length; i++) drawText(ctx, this.hints[i], GRID_X, VIEW_H - 26 + i * 11, { size: 1, color: UI.brassDark });
   }
-  drawHeader(ctx, f) {
+  drawHeader(ctx: CanvasRenderingContext2D, f: number): void {
     ctx.fillStyle = '#120c14'; ctx.fillRect(0, 0, VIEW_W, HEADER_H);
     ctx.fillStyle = UI.brassDark; ctx.fillRect(0, HEADER_H - 1, VIEW_W, 1);
     drawTextOutlined(ctx, 'BESTIARY', GRID_X, 6, { size: 1, color: UI.brassLight, outline: '#3a2010', thickness: 1 });
@@ -239,7 +398,7 @@ export class BestiaryScreen extends Screen {
       drawText(ctx, 'THE BOOK IS FULL', VIEW_W - 70, 7, { size: 1, color: (f % 60) < 40 ? UI.teal : UI.brassLight, align: 'center' });
     }
   }
-  drawTabs(ctx) {
+  drawTabs(ctx: CanvasRenderingContext2D): void {
     const w = Math.floor((VIEW_W - GRID_X * 2) / FACTIONS.length);
     for (let i = 0; i < this.tabs.length; i++) {
       const t = this.tabs[i], x = GRID_X + i * w, on = i === this.tab;
@@ -251,7 +410,7 @@ export class BestiaryScreen extends Screen {
     }
   }
   /** One card: a small rig, the name, the role and the defeat count. Only beaten entries ever get one. */
-  drawCard(ctx, card, i) {
+  drawCard(ctx: CanvasRenderingContext2D, card: BestiaryCard, i: number): void {
     const col = i % COLS, row = Math.floor(i / COLS);
     const x = GRID_X + col * (CARD_W + CARD_GAP_X), y = GRID_Y + row * CARD_PITCH_Y;
     const sel = i === this.cursor;
@@ -268,7 +427,7 @@ export class BestiaryScreen extends Screen {
     drawText(ctx, `BEATEN ${card.stats.n}`, tx, y + 34, { size: 1, color: UI.brass });
   }
   /** The selected entry, large. */
-  drawPanel(ctx, f) {
+  drawPanel(ctx: CanvasRenderingContext2D, f: number): void {
     rrect(ctx, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 5, 'rgba(60,40,24,0.55)', UI.brass, 2);
     rrect(ctx, PANEL_X + 4, PANEL_Y + 4, PANEL_W - 8, PANEL_H - 8, 3, null, UI.brassDark, 1);
     const d = this.detail;
@@ -291,7 +450,7 @@ export class BestiaryScreen extends Screen {
    * empty detail panel -- two empty frames read as a screen that failed to load, where one plate reads as an
    * answer. It names the faction and its total, so "nothing here yet" never looks like "nothing here ever".
    */
-  drawEmptyTab(ctx, f) {
+  drawEmptyTab(ctx: CanvasRenderingContext2D, f: number): void {
     const t = this.tabs[this.tab];
     const w = 400, h = 86, x = Math.round((VIEW_W - w) / 2), y = 132;
     rrect(ctx, x, y, w, h, 5, 'rgba(30,22,34,0.85)', UI.brassDark, 1);
@@ -302,9 +461,9 @@ export class BestiaryScreen extends Screen {
     drawText(ctx, `${t.count} ENTRIES IN THIS FACTION.`, cx, y + 58, { size: 1, color: UI.steel, align: 'center' });
   }
   /** The kill columns, beside the rig. */
-  drawStats(ctx, d) {
+  drawStats(ctx: CanvasRenderingContext2D, d: BestiaryDetail): void {
     let y = PANEL_Y + 44;
-    const row = (label, value, color) => { drawText(ctx, label, STAT_X, y, { size: 1, color: UI.steel }); drawText(ctx, value, PANEL_X + PANEL_W - PAD, y, { size: 1, color: color || UI.paper, align: 'right' }); y += LINE + 2; };
+    const row = (label: string, value: string, color?: string) => { drawText(ctx, label, STAT_X, y, { size: 1, color: UI.steel }); drawText(ctx, value, PANEL_X + PANEL_W - PAD, y, { size: 1, color: color || UI.paper, align: 'right' }); y += LINE + 2; };
     row('DEFEATED', String(d.stats.n));
     row('THROWN', String(d.stats.thrown));
     row('RING-OUTS', String(d.stats.ring));
@@ -312,7 +471,7 @@ export class BestiaryScreen extends Screen {
     if (d.top) { drawText(ctx, 'BEST HUNTER', STAT_X, y, { size: 1, color: UI.steel }); y += LINE; drawText(ctx, d.top, STAT_X, y, { size: 1, color: UI.brassLight }); }
   }
   /** Codex text, tells, weakness, and the phase strip on a boss. */
-  drawBody(ctx, d, f) {
+  drawBody(ctx: CanvasRenderingContext2D, d: BestiaryDetail, f: number): void {
     let y = RIG_FLOOR + 18;
     if (d.codex) {
       for (const line of d.lines.text) { drawText(ctx, line, TEXT_X, y, { size: 1, color: UI.paper }); y += LINE; }
@@ -323,14 +482,14 @@ export class BestiaryScreen extends Screen {
     if (d.entry.phases.length) this.drawPhases(ctx, d, y, f);
   }
   /** A labelled paragraph, from lines already wrapped by buildDetail. @returns {number} the y the next one starts at */
-  drawField(ctx, label, lines, y, color) {
+  drawField(ctx: CanvasRenderingContext2D, label: string, lines: string[], y: number, color?: string): number {
     if (!lines.length) return y;
     drawText(ctx, label, TEXT_X, y, { size: 1, color: UI.brass }); y += LINE;
     for (const line of lines) { drawText(ctx, line, TEXT_X, y, { size: 1, color: color || UI.paper }); y += LINE; }
     return y + 4;
   }
   /** Boss phases: the ones reached are named and selectable, the rest stay '? ? ?'. */
-  drawPhases(ctx, d, y, f) {
+  drawPhases(ctx: CanvasRenderingContext2D, d: BestiaryDetail, y: number, f: number): void {
     drawText(ctx, this.phaseHint, TEXT_X, y, { size: 1, color: UI.brass });
     y += LINE;
     for (const p of d.phaseRows) {
@@ -344,7 +503,7 @@ export class BestiaryScreen extends Screen {
 }
 
 /** Trim a name to the width a card has for it, so a long one never runs off the plate. */
-function fitName(name, maxW) {
+function fitName(name: string, maxW: number): string {
   const max = Math.floor(maxW / 6);          // 5px glyph + 1px spacing at size 1
   return name.length <= max ? name : name.slice(0, Math.max(1, max - 1)) + '.';
 }

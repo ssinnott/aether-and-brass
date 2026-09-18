@@ -5,13 +5,26 @@
 // YOU BOARD, THE MORE CLOCKWORK: `mods: ['holdout']` Brassbound are the Concordat machines the Wing never unbolted (sections
 // 1-2, dead-grey lens, slow, 1.3x hp), the un-modded ones are the machines the Wing re-wound for its boarding parties (3-4).
 // Enemy slugs come from content/enemies; spawn modifiers from game/traits.js SPAWN_MODS.
+import type { SpawnSpec } from '../../game/stage.ts';
 const C = 'stormcrow', B = 'brassbound';
+/**
+ * What `group()` takes beyond the enemy itself: which edge the wave walks in from ('alt' alternates by index),
+ * how it is spread over lanes and delays, and the spawn modifiers every entry in it carries.
+ */
+interface GroupOpts {
+  side?: SpawnSpec['side'] | 'alt';
+  z0?: number;
+  dz?: number;
+  delay0?: number;
+  ddelay?: number;
+  mods?: SpawnModName[] | null;
+}
 /** Helper: n spawns of one enemy, alternating sides, spread over z lanes and delays; `mods` rides every spawn. */
-function group(type, variant, n, { side = 'alt', z0 = 40, dz = 30, delay0 = 0, ddelay = 30, mods = null } = {}) {
-  const out = [];
+function group(type, variant, n, { side = 'alt', z0 = 40, dz = 30, delay0 = 0, ddelay = 30, mods = null }: GroupOpts = {}) {
+  const out: SpawnSpec[] = [];
   for (let i = 0; i < n; i++) {
     const s = side === 'alt' ? (i % 2 ? 'left' : 'right') : side;
-    const e = { type, variant, side: s, z: ((z0 + i * dz) % 120) + 10, delay: delay0 + i * ddelay };
+    const e: SpawnSpec = { type, variant, side: s, z: ((z0 + i * dz) % 120) + 10, delay: delay0 + i * ddelay };
     if (mods) e.mods = mods;
     out.push(e);
   }

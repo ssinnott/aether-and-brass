@@ -12,14 +12,23 @@ import { initShield } from '../shield.ts';
 import { animTiming } from '../../lib/art/animation.ts';
 import { drawText, measureText } from '../../engine/text.ts';
 import { TrialRunner, trialProgress } from '../trials.ts';
+// Type-only, every one of them: this screen reaches DOWN for the shapes it works in, the same arrangement (and for
+// the same reason) as the block at the top of game/stage.ts. `import type` is erased by tsc, esbuild and node alike,
+// so none of these adds an edge to the module graph the browser loads.
+import type { Game, ScreenParams, ScreenSummary } from '../game.ts';
+import type { Fighter, FighterState, FighterTraits } from '../fighter.ts';
+import type { DummyMode, Enemy } from '../enemy.ts';
+import type { StageData, StageSection, StageUnit } from '../stage.ts';
 
 /** Training room tuning (issue #22 decisions). */
 const TRAINING = Object.freeze({
   stage: 1, section: 2, playerX: 200, playerZOff: 20, dummyX: 330, dummySpacing: 100, z: 70,
   dummyHp: 600, dummyWeight: 1000, respawnFrames: 45, lives: 3, blockStaggerEvery: 4, blockStaggerFrames: 30,
 });
-export const DUMMY_MODES = ['stand', 'block', 'cpu'];
-export const METER_LOCKS = ['normal', 'full', 'empty'];
+export const DUMMY_MODES: DummyMode[] = ['stand', 'block', 'cpu'];
+/** How the room pins P1's meter: left alone, held full, or held empty. */
+export type MeterLock = 'normal' | 'full' | 'empty';
+export const METER_LOCKS: MeterLock[] = ['normal', 'full', 'empty'];
 /** Frame-data strip: the bottom edge (no boss bar ever exists in training) -- the HUD's own combo digit / grade
  *  word occupy y 50..85 (hud.js drawCombo), so the strip cannot sit directly under the 40px HUD strip without
  *  the two overlapping (review finding). */
@@ -27,7 +36,7 @@ const FD_Y = VIEW_H - 26, FD_H = 22;
 /** Trial panel: right-aligned column under the HUD; TRIAL_MARK_W reserves room for the '[X]'/'[ ]' mark. */
 const TRIAL_X = VIEW_W - 8, TRIAL_Y0 = 66, TRIAL_ROW_H = 9, TRIAL_MARK_W = 20;
 /** States whose current anim def carries meaningful frame data. */
-const ATTACK_STATES = new Set([ST.ATTACK, ST.JUMP_ATTACK, ST.DASH_ATTACK, ST.SPECIAL, ST.SUPER]);
+const ATTACK_STATES: Set<FighterState> = new Set([ST.ATTACK, ST.JUMP_ATTACK, ST.DASH_ATTACK, ST.SPECIAL, ST.SUPER]);
 /** Combat-log kinds that update the frame-data strip's last-hit fields. */
 const HIT_KINDS = new Set(['hit', 'projectile', 'body']);
 /** Pre-rendered 'F<n>' state-timer digits (0-255): the one field on the frame-data strip that changes every
@@ -36,22 +45,181 @@ const HIT_KINDS = new Set(['hit', 'projectile', 'body']);
  *  back to String() once. */
 const FD_TIMER = Array.from({ length: 256 }, (_, i) => String(i));
 
+/**
+ * The plate's own options: what the trainpause screen and `window.__game.setTraining` set, and what every dummy
+ * is (re)spawned from. One object, written in place by setDummy / setMeterLock / toggle.
+ */
+export interface TrainingOpts {
+  /** The DUMMY row. A running trial's own `dummyMode` overrides it -- see `effectiveMode`. */
+  mode: DummyMode;
+  /** The VARIANT row, as the `type:variant` pair spawnDummy splits. */
+  variant: string;
+  /** FACING: the dummy does not turn to follow the player. */
+  faceLock: boolean;
+  meterLock: MeterLock;
+  /** The hitbox / hurtbox overlay (world.drawDebug without the state labels). */
+  hitboxes: boolean;
+  /** The bottom frame-data strip. */
+  frameData: boolean;
+  /** So `toggle(key)` can name one of the two boolean rows by string. */
+  [key: string]: any;
+}
+
+/**
+ * The trial matcher as this screen reads one. `index` (steps matched so far — the rows before it are ticked, the
+ * row AT it is the one being worked on) and `done` (every step matched: the panel blinks its footer and TAUNT
+ * retries from here) WERE added here while game/trials.ts declared neither. It declares both now, so this is the
+ * day they come out, exactly as the note they carried said: re-declaring them optional is now the error.
+ */
+export interface TrialRun extends TrialRunner {}
+
+/** One dummy slot: the body standing in it (null between respawns), its respawn countdown and its x off `sec.x0`. */
+export interface DummySlot {
+  e: StageUnit | null;
+  /** Frames left before a dead / removed body is respawned (TRAINING.respawnFrames). */
+  timer: number;
+  x: number;
+}
+
+/**
+ * The P1 frame-data readout, in the shape the strip draws and `summary()` reports. Every field is written every
+ * frame by updateFrameData; `line1Pre` / `line1Post` / `timerStr` / `line2` are the cached strings the three
+ * drawText calls take, rebuilt only when the fields behind them change (contract: no allocation in per-frame paths).
+ */
+export interface FrameData {
+  /** P1's state-machine name and how many frames it has been in it. */
+  state: string;
+  stateTimer: number;
+  /** The attack animation the timings below were measured off; '' outside ATTACK_STATES. */
+  anim: string;
+  startup: number;
+  active: number;
+  recovery: number;
+  /** The last hit P1 landed, off the combat log. */
+  hitDamage: number;
+  hitStun: number;
+  hitType: string;
+  /** P1's dodge invulnerability window, in frames from the start of the roll. */
+  dodgeI0: number;
+  dodgeI1: number;
+  /** The last dodge passed THROUGH a body rather than round it. */
+  dodgeThrough: boolean;
+  /** line 1, split at the one field that changes every simulated frame. */
+  line1Pre: string;
+  line1Post: string;
+  timerStr: string;
+  line2: string;
+}
+
+/** The running trial, as `summary()` reports it. */
+export interface TrialSummary {
+  id: string;
+  name: string;
+  /** Steps matched so far; `total` is how many the trial has. */
+  step: number;
+  total: number;
+  done: boolean;
+}
+
+/**
+ * The `training` block of window.__game.summary() (ARCHITECTURE.md section 12), which is also exactly what
+ * `setTraining` hands back. `readout` is the frame-data strip's fields WITHOUT the four cached strings the
+ * drawing uses -- a test reads the numbers, never the line it would have drawn.
+ */
+export interface TrainingSummary {
+  /** The mode actually in force: a running trial's own `dummyMode` beats the plate's. */
+  mode: DummyMode;
+  /** ...and the plate's own choice, so a test can tell an override from a setting. */
+  userMode: DummyMode;
+  variant: string;
+  faceLock: boolean;
+  meterLock: MeterLock;
+  hitboxes: boolean;
+  frameData: boolean;
+  /** How many dummy slots have a living body standing in them. */
+  dummies: number;
+  trial: TrialSummary | null;
+  /** Trial ids this hero has already completed (game/trials.ts trialProgress). */
+  done: string[];
+  readout: Omit<FrameData, 'line1Pre' | 'line1Post' | 'timerStr' | 'line2'>;
+}
+
+/** What `setTraining` (window.__game) may set: any subset of the plate, plus the two one-shot actions. */
+export interface SetTrainingOpts {
+  mode?: DummyMode;
+  variant?: string;
+  faceLock?: boolean;
+  meterLock?: MeterLock;
+  hitboxes?: boolean;
+  frameData?: boolean;
+  /** Top every player up where they stand. */
+  refill?: boolean;
+  /** Put every player and every dummy back on its mark. */
+  reset?: boolean;
+  /** A trial id to run, or null to clear the one running. PRESENCE is what is tested, so null is meaningful. */
+  trial?: string | null;
+}
+
+/**
+ * The one member `sweepStrayEnemies` reads off the world's mixed entity list that game/world.ts's `WorldEntity`
+ * does not name. Merged in from here, which is the arrangement game/entity.ts's note on `EntityWorld` describes
+ * for one or two members, and optional for the reason every other `WorldEntity` addition is: the list is mixed,
+ * and the scan tests `kind` before it looks.
+ */
+declare module '../world.ts' {
+  interface WorldEntity {
+    /** Fighter: the resolved trait table. `traits.dummy` is what tells this room's own bodies from the ordinary
+     *  enemies a CPU dummy's own moves spawned through world.spawnEnemy. */
+    traits?: FighterTraits;
+  }
+}
+
 /** Stage 1 with every section stripped of props / hazards / zones / waves: the funicular roof as a bare arena. */
-function arenaStage() {
+function arenaStage(): StageData {
   const src = getStage(TRAINING.stage);
   return { ...src, sections: src.sections.map((s) => ({ ...s, props: [], hazards: [], zones: [], waves: [], timedWaves: [], events: [] })) };
 }
 
 /** The training room: dummy practice with frame data, hitbox overlay and combo trials (window.__game.setTraining). */
 export class TrainingScreen extends GameplayScreen {
-  constructor(game) { super(game); this.id = 'training'; this.pauseScreenId = 'trainpause'; }
+  // The room's own fields, for the checker only, in the order enter() writes them. `declare` for the reason
+  // GameplayScreen gives above: these are assignments and nothing else, and a class field per name (es2022
+  // defines them before the constructor body runs) would wipe what the base constructor has already set.
+  declare opts: TrainingOpts;
+  /** The trial being run and the matcher running it; both null when no trial is selected. */
+  declare trialDef: Trial | null;
+  declare trial: TrialRun | null;
+  /** One row per step of `trialDef`, in the panel's wording. */
+  declare trialRows: string[];
+  /** One or two dummy slots (a `bodies: 2` trial pops a second). */
+  declare dummies: DummySlot[];
+  /** The arena section itself (`stage.sections[TRAINING.section]`): everything is placed off its `x0`. */
+  declare sec: StageSection;
+  declare fd: FrameData;
+  /** The combat-log `seq` the readout has already taken its last hit from. */
+  declare fdSeq: number;
+  // The cached-string keys for line1 / line2. Declared as the live field's type ORed with null because null is
+  // what enter() seeds them with: null never equals a live value, so the first updateFrameData() always rebuilds.
+  declare fd1State: string | null;
+  declare fd1Anim: string | null;
+  declare fd1Startup: number | null;
+  declare fd1Active: number | null;
+  declare fd1Recovery: number | null;
+  declare fd2Dmg: number | null;
+  declare fd2Stun: number | null;
+  declare fd2Type: string | null;
+  declare fd2I0: number | null;
+  declare fd2I1: number | null;
+  declare fd2Through: boolean | null;
+
+  constructor(game: Game) { super(game); this.id = 'training'; this.pauseScreenId = 'trainpause'; }
   /** Single-player only (review finding): frame data, trials and the trainpause plate all read slot 0
    *  alone, so a second body in the room gets none of the room's own features. */
-  maxPlayers() { return 1; }
+  override maxPlayers(): number { return 1; }
   /** Training defeats stay out of the bestiary (issue #26): the dummy respawns on a 45-frame timer and its variant
    *  is picked from the trainpause plate, so counting it would fill the book from a menu instead of the campaign. */
-  countsForBestiary() { return false; }
-  enter(params) {
+  override countsForBestiary(): boolean { return false; }
+  override enter(params: ScreenParams): void {
     this.opts = { mode: 'stand', variant: 'brassbound:footman', faceLock: false, meterLock: 'normal', hitboxes: false, frameData: true };
     this.trialDef = null; this.trial = null;
     this.dummies = [{ e: null, timer: 0, x: TRAINING.dummyX }];
@@ -73,10 +241,10 @@ export class TrainingScreen extends GameplayScreen {
     this.resetPositions();
   }
   /** A running trial's dummyMode overrides the plate's own DUMMY choice; clearing the trial restores it. */
-  get effectiveMode() { return this.trialDef && this.trialDef.dummyMode ? this.trialDef.dummyMode : this.opts.mode; }
+  get effectiveMode(): DummyMode { return this.trialDef && this.trialDef.dummyMode ? this.trialDef.dummyMode : this.opts.mode; }
 
   /** Select (or clear, with `id === null`) a trial for the trials list / test hook (game/trials.js TrialRunner). */
-  setTrial(id) {
+  setTrial(id: string | null): void {
     const def = (this.players[0].def.trials || []).find((t) => t.id === id) || null;
     this.trialDef = def;
     this.trial = def ? new TrialRunner(def, 0, this.world) : null;
@@ -96,7 +264,7 @@ export class TrainingScreen extends GameplayScreen {
   /** Reset every player and every dummy to their training spot. A player still dead / out (a CPU dummy or
    *  a trial killed her) must be revived first: Fighter.think bails on `this.dead` and the only respawn path
    *  requires `state === ST.DEAD`, which forcing IDLE below would make unreachable forever (review finding). */
-  resetPositions() {
+  resetPositions(): void {
     const sec = this.sec;
     this.players.forEach((p, i) => {
       if (!p) return;
@@ -109,7 +277,7 @@ export class TrainingScreen extends GameplayScreen {
     this.respawnDummies();
   }
   /** Remove and respawn every dummy slot at its reset spot, from the current variant / mode / face-lock. */
-  respawnDummies() {
+  respawnDummies(): void {
     this.sweepStrayEnemies();
     for (const slot of this.dummies) {
       if (slot.e) { this.releasePlayersFrom(slot.e); this.world.remove(slot.e); }
@@ -122,7 +290,7 @@ export class TrainingScreen extends GameplayScreen {
    *  so every DUMMY / VARIANT / FACING change, RESET POSITIONS and trial selection would otherwise leave real
    *  attackers behind in a STAND room (review finding). Mirrors killAllEnemies (screens/gameplay.js) but keeps
    *  each slot's own dummy; training has nowaves, so no legitimate non-dummy enemy exists to lose here. */
-  sweepStrayEnemies() {
+  sweepStrayEnemies(): void {
     for (const e of this.world.entities.slice()) {
       if ((e.kind === 'enemy' && !e.traits.dummy) || e.kind === 'boss' || (e.kind === 'projectile' && e.team === TEAM.ENEMY)) this.world.remove(e);
     }
@@ -131,7 +299,7 @@ export class TrainingScreen extends GameplayScreen {
   /** Release any player holding / targeting `e` before it is removed out from under them (a DUMMY / VARIANT /
    *  FACING change mid-grab): mirrors killAllEnemies (screens/gameplay.js), which clears the same fields for
    *  exactly this reason -- otherwise the player is left in ST.GRAB holding (and later throwing) a ghost. */
-  releasePlayersFrom(e) {
+  releasePlayersFrom(e: Fighter): void {
     for (const p of this.players) {
       if (!p) continue;
       if (p.grabTarget === e) { p.grabTarget = null; p.hitstop = 0; if (p.state === ST.GRAB) p.setState(ST.IDLE, 'idle'); }
@@ -140,7 +308,7 @@ export class TrainingScreen extends GameplayScreen {
     }
   }
   /** Spawn (or respawn) one dummy slot: `opts.variant` is `type:variant`, spread into a fresh def with traits.dummy. */
-  spawnDummy(slot) {
+  spawnDummy(slot: DummySlot): void {
     const [type, variant] = String(this.opts.variant).split(':');
     const base = getEnemyDef(type, variant);
     const def = { ...base, drops: 'none', traits: { ...(base.traits || {}), dummy: true } };
@@ -152,7 +320,7 @@ export class TrainingScreen extends GameplayScreen {
   }
   /** STAND/BLOCK dummies are pinned (traits.weight ~ zero knockback); BLOCK also gets the Brassbound gear-slip
    *  stagger (super armor + Enemy.onHurt's staggerEvery path). CPU keeps the variant's own weight and AI. */
-  applyMode(e) {
+  applyMode(e: Enemy): void {
     if (e.dummyMode === 'cpu') return;
     e.traits.weight = TRAINING.dummyWeight;
     if (e.dummyMode === 'block') {
@@ -162,7 +330,7 @@ export class TrainingScreen extends GameplayScreen {
     }
   }
 
-  update() {
+  override update(): void {
     super.update();
     if (this.game.screen !== this) return; // a pause (or another screen) is now on top
     for (const slot of this.dummies) {
@@ -185,7 +353,7 @@ export class TrainingScreen extends GameplayScreen {
     if (this.trial && this.trial.done && this.game.input.pressed(0, 'taunt')) this.setTrial(this.trialDef.id);
   }
   /** Refresh the P1 frame-data readout (screens/training.js strip) from the fighter and the combat log. */
-  updateFrameData() {
+  updateFrameData(): void {
     const fd = this.fd, p = this.players[0];
     if (!p) return;
     fd.state = p.state; fd.stateTimer = p.stateTimer;
@@ -217,19 +385,19 @@ export class TrainingScreen extends GameplayScreen {
   }
 
   /** Change dummy mode / variant / face-lock and respawn every dummy slot. */
-  setDummy({ mode, variant, faceLock } = {}) {
+  setDummy({ mode, variant, faceLock }: SetTrainingOpts = {}): void {
     if (mode != null) this.opts.mode = mode;
     if (variant != null) this.opts.variant = variant;
     if (faceLock != null) this.opts.faceLock = !!faceLock;
     this.respawnDummies();
   }
   /** Top up every player's HP / shield without moving anyone. */
-  refill() { for (const p of this.players) { if (!p) continue; p.hp = p.maxHp; initShield(p); } }
-  setMeterLock(m) { this.opts.meterLock = m; }
-  toggle(key) { this.opts[key] = !this.opts[key]; }
+  refill(): void { for (const p of this.players) { if (!p) continue; p.hp = p.maxHp; initShield(p); } }
+  setMeterLock(m: MeterLock): void { this.opts.meterLock = m; }
+  toggle(key: string): void { this.opts[key] = !this.opts[key]; }
 
   /** Test hook (window.__game.setTraining): applies any given field, returns the resulting training summary. */
-  setTraining(o = {}) {
+  setTraining(o: SetTrainingOpts = {}): TrainingSummary {
     if (o.mode != null || o.variant != null || o.faceLock != null) this.setDummy(o);
     if (o.meterLock != null) this.setMeterLock(o.meterLock);
     if (o.hitboxes != null) this.opts.hitboxes = !!o.hitboxes;
@@ -240,7 +408,7 @@ export class TrainingScreen extends GameplayScreen {
     return this.summary().training;
   }
 
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     super.draw(ctx);
     if (this.opts.hitboxes) this.world.drawDebug(ctx, false);
     if (this.opts.frameData) {
@@ -256,7 +424,7 @@ export class TrainingScreen extends GameplayScreen {
     if (this.trial) this.drawTrialPanel(ctx);
   }
   /** The right-side trial panel: name / hint, one row per step (done/current/pending), a blinking footer when done. */
-  drawTrialPanel(ctx) {
+  drawTrialPanel(ctx: CanvasRenderingContext2D): void {
     const def = this.trialDef, run = this.trial;
     let y = TRIAL_Y0;
     drawText(ctx, def.name, TRIAL_X, y, { size: 1, color: UI.brass, align: 'right' }); y += TRIAL_ROW_H;
@@ -271,7 +439,7 @@ export class TrainingScreen extends GameplayScreen {
     if (run.done && (this.frame % 40) < 28) drawText(ctx, 'COMPLETE - TAUNT TO RETRY', TRIAL_X, y + 2, { size: 1, color: UI.brassLight, align: 'right' });
   }
 
-  summary() {
+  override summary(): ScreenSummary {
     const fd = this.fd;
     const readout = {
       state: fd.state, stateTimer: fd.stateTimer, anim: fd.anim, startup: fd.startup, active: fd.active, recovery: fd.recovery,

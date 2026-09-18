@@ -23,7 +23,7 @@
 //   --quiet                   summary tables only
 import fs from 'node:fs';
 import { createServer } from './server.js';
-import { loadPlaywright } from './browser.js';
+import { loadPlaywright, launch } from './browser.js';
 import { BOT_STYLES } from '../src/game/bot.ts';
 import { MAX_PLAYERS } from '../src/constants.ts';
 
@@ -170,7 +170,7 @@ async function main() {
   const server = createServer();
   await new Promise((r) => server.listen(0, r));
   const port = server.address().port;
-  const browser = await chromium.launch();
+  const browser = await launch();
   const ctx = await browser.newContext();
   console.log(`winrate: ${jobs.length} runs — boards [${opts.stages}] x styles [${opts.styles}] x party [${opts.party}]`
     + ` x heroes [${opts.chars}] x ${opts.difficulty} x ${opts.seeds} seeds, ${opts.conc} at a time`);

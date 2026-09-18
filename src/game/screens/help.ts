@@ -18,6 +18,7 @@
 // joinPressed), so draw() allocates nothing per frame.
 import { VIEW_W, VIEW_H, UI, MAX_PLAYERS } from '../../constants.ts';
 import { Screen } from '../game.ts';
+import type { Game, ScreenParams, ScreenSummary } from '../game.ts';
 import { drawText } from '../../engine/text.ts';
 import { rivetLine, gear } from '../../lib/art/shapes.ts';
 import { input, bindings } from '../../engine/input.ts';
@@ -54,6 +55,16 @@ const MUTE_VALUE = { on: '< ON >', off: '< OFF >' };
 const NO_BUTTON = '-';
 
 /**
+ * One command row's two middle columns, as `buildLabels` fills them: what the keyboard calls the
+ * command and what the pad calls it. Both are already display strings -- a row with no single
+ * binding behind it (RUN, THROW, PAUSE, MUTE) spells its own out rather than naming one action.
+ */
+export interface CommandLabels {
+  keys: string;
+  pad: string;
+}
+
+/**
  * Build the eleven [keys, pad] label pairs for `layout` (the local player's own block, which is the
  * same whether or not anybody else has joined). Reads every label through
  * `input.moveText()` / `input.keyText()` so a remapped key shows up here too (ARCHITECTURE.md 16 --
@@ -61,7 +72,7 @@ const NO_BUTTON = '-';
  * @param {string} layout
  * @returns {Array<{ keys: string, pad: string }>}
  */
-function buildLabels(layout) {
+function buildLabels(layout: string): CommandLabels[] {
   const key = (action) => input.keyText(layout, action) || '?';
   const pad = (action) => input.keyText('pad', action) || '?';
   return COMMANDS.map((cmd) => {
@@ -81,8 +92,29 @@ function buildLabels(layout) {
  * whichever pause plate pushed this (game/menuinput.js owns that scheme).
  */
 export class HelpScreen extends Screen {
-  constructor(game) { super(game, 'help'); this.transparent = true; }
-  enter(params) {
+  // The fields, for the checker only, in the order enter() writes them. `declare` because these are
+  // assignments and nothing else: a plain field declaration would emit a class field per name (es2022
+  // defines them before the constructor body runs), which is a runtime change. Same reasoning, and the
+  // same wording, as game/entity.ts's Entity.
+  /** A match is live: Escape is not read locally and navigation comes only from joined slots' edges. */
+  declare online: boolean;
+  /** Which SOUND row is highlighted (R_MUSIC / R_SFX / R_MUTE). */
+  declare cursor: number;
+  /** A second local player has joined: the KEYS column heads 'P1 KEYS' and the notes gain a line. */
+  declare coop: boolean;
+  /** The layout whose key labels fill the KEYS column. Always P1's -- its block never moves. */
+  declare layout: string;
+  /** One [keys, pad] pair per COMMANDS row, built once in enter() so draw() allocates nothing. */
+  declare labels: CommandLabels[];
+  /** Heading over the KEYS column: 'KEYS', or 'P1 KEYS' in co-op. */
+  declare keysHead: string;
+  /** The lines under the WHAT IT DOES column, built from the live bindings. */
+  declare notes: string[];
+  /** The one-line control hint along the bottom of the plate. */
+  declare hint: string;
+
+  constructor(game: Game) { super(game, 'help'); this.transparent = true; }
+  override enter(params: ScreenParams): void {
     super.enter(params);
     this.online = !!(this.game.net && this.game.net.active);
     this.cursor = 0;
@@ -96,7 +128,7 @@ export class HelpScreen extends Screen {
     if (this.coop) this.notes.push('P2 KEYS ARE LISTED THERE TOO');
     this.hint = `UP/DOWN: SOUND ROW   LEFT/RIGHT: CHANGE   ${backKey(input)}: BACK`;
   }
-  update() {
+  override update(): void {
     super.update();
     const inp = this.game.input, audio = this.game.audio;
     if (this.frame < 3) return; // the press that opened this plate must not act on it
@@ -115,12 +147,12 @@ export class HelpScreen extends Screen {
     if (back) { audio.play('menu_back'); consumeMenuBuffers(inp); this.game.pop(); }
   }
   /** Step the highlighted sound row by `dir` (MUTE toggles either way). */
-  change(dir) {
+  change(dir: number): void {
     const audio = this.game.audio;
     if (this.cursor === R_MUTE) { audio.setMuted(!audio.muted); audio.play('menu_move'); return; }
     if (options.adjust(this.cursor === R_MUSIC ? 'music' : 'sfx', dir)) audio.play('menu_move');
   }
-  draw(ctx) {
+  override draw(ctx: CanvasRenderingContext2D): void {
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     const f = this.frame;
     drawPlate(ctx, PLATE_X, PLATE_Y, PLATE_W, PLATE_H, f, 'COMMANDS & SOUND');
@@ -147,7 +179,7 @@ export class HelpScreen extends Screen {
     for (let i = 0; i < this.notes.length; i++) drawText(ctx, this.notes[i], DESC_X, NOTE_Y0 + i * NOTE_LINE_H, { size: 1, color: UI.brassDark });
     drawText(ctx, this.hint, VIEW_W / 2, PLATE_Y + PLATE_H - 22, { size: 1, color: UI.brassDark, align: 'center' });
   }
-  summary() {
+  override summary(): ScreenSummary {
     return {
       screen: 'help', cursor: this.cursor, commandRows: COMMANDS.length, layout: this.layout,
       commandKeys: this.labels.map((l) => l.keys), commandPads: this.labels.map((l) => l.pad),

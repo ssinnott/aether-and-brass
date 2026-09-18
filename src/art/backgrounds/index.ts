@@ -34,7 +34,13 @@ async function loadSectionModules() {
   sectionModules = {};
   const ids = ['section1', 'section2', 'section3', 'section4', 'storm1', 'storm2', 'storm3', 'works1', 'works2', 'works3', 'glean1', 'glean2', 'glean3'];
   await Promise.all(ids.map(async (id) => {
-    try { sectionModules[id] = await import(`./${id}.js`); } catch (e) { sectionModules[id] = null; }
+    // The specifier is built from `id`, so no import rewrite can see it: it survived the TypeScript
+    // rename pointing at .js files that no longer existed, every one of the thirteen 404ed, and the
+    // catch below turned that into thirteen silent placeholder backdrops rather than an error. Hence
+    // the console.error -- the fallback stays (a broken artist module must not break the game) but it
+    // is no longer quiet, and the headless playtest asserts on console errors.
+    try { sectionModules[id] = await import(`./${id}.ts`); }
+    catch (e) { sectionModules[id] = null; console.error(`backdrop ${id} failed to load, using the placeholder:`, e); }
   }));
   return sectionModules;
 }

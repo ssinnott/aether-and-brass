@@ -4,49 +4,130 @@
 // Brassbound = metallic/low (square + ring-mod, bandpassed noise clanks); aether = glassy (detuned sines, tremolo).
 import { osc, noise, ring, am, echo, bus, glass } from './synth.ts';
 
-const N = (m) => 440 * Math.pow(2, (m - 69) / 12); // midi -> Hz
+/**
+ * What every SFX entry is called with. `v` scales volume (already ducked for overlapping plays) and
+ * `p` scales pitch, including the +/-4% wobble the JITTERED names get.
+ *
+ * `vol` / `pitch` are the first audio.js's names for the same two numbers: engine/audio.ts still
+ * passes all four (`{ v, p, vol, pitch }`) on every play, so they are part of the contract even
+ * though nothing in this file reads them.
+ */
+export interface SfxOpts {
+  v: number;
+  p: number;
+  vol?: number;
+  pitch?: number;
+}
+
+/**
+ * One entry of SFX_DEFS: schedules its voices on `ctx` at absolute time `when` and returns the time
+ * it ends. Pure with respect to the context, so the same call drives the game and the
+ * OfflineAudioContext self-test.
+ */
+export type SfxDef = (ctx: BaseAudioContext, dest: AudioNode, when: number, o: SfxOpts) => number;
+
+const N = (m: number): number => 440 * Math.pow(2, (m - 69) / 12); // midi -> Hz
 const C5 = N(72), E5 = N(76), G5 = N(79), C6 = N(84), E6 = N(88), G6 = N(91);
 
 // ---- parameterized generators (shared by several names) ----
 /** Generic hit: bandpassed noise crack + short square body (+ optional sine kick). */
-function hit(c, d, t, { v, p, noiseDur = 0.04, bp = 1200, sq = 220, sqDur = 0.03, kick = 0, kickDur = 0.08, kvol = 0 }) {
+interface HitOpts extends SfxOpts {
+  noiseDur?: number;
+  /** Bandpass centre of the crack. */
+  bp?: number;
+  /** Square-body frequency; 0 omits the body. */
+  sq?: number;
+  sqDur?: number;
+  /** Sine kick start frequency; 0 omits the kick. */
+  kick?: number;
+  kickDur?: number;
+  kvol?: number;
+}
+function hit(c: BaseAudioContext, d: AudioNode, t: number, { v, p, noiseDur = 0.04, bp = 1200, sq = 220, sqDur = 0.03, kick = 0, kickDur = 0.08, kvol = 0 }: HitOpts): number {
   noise(c, d, t, { dur: noiseDur, vol: 0.5 * v, type: 'bandpass', f0: bp * p, f1: bp * 0.5 * p, q: 1.2, attack: 0.001 });
   if (sq) osc(c, d, t, { type: 'square', f0: sq * p, f1: sq * 0.7 * p, dur: sqDur, vol: 0.28 * v, attack: 0.001 });
   if (kick) osc(c, d, t, { type: 'sine', f0: kick * p, f1: 50 * p, dur: kickDur, vol: (kvol || 0.55) * v, attack: 0.002, hold: kickDur * 0.35 }); // hold so the sweep is still audible when it reaches 50Hz
   return t + Math.max(noiseDur, sqDur, kick ? kickDur : 0);
 }
 /** Brassbound clank: square carrier ring-modulated by a high sine + a noise tick. */
-function clank(c, d, t, { v, p, f = 180, mod = 1300, dur = 0.12, vol = 0.3, tick = 2500 }) {
+interface ClankOpts extends SfxOpts {
+  f?: number;
+  /** Ring modulator frequency. */
+  mod?: number;
+  dur?: number;
+  tick?: number;
+}
+function clank(c: BaseAudioContext, d: AudioNode, t: number, { v, p, f = 180, mod = 1300, dur = 0.12, vol = 0.3, tick = 2500 }: ClankOpts): number {
   ring(c, d, t, { type: 'square', f0: f * p, modF: mod * p, dur, vol: vol * v, attack: 0.002 });
   if (tick) noise(c, d, t, { dur: 0.015, vol: 0.25 * v, type: 'bandpass', f0: tick * p, q: 2, attack: 0.0005 });
   return t + dur;
 }
 /** Sootborn chirp: triangle glide with vibrato. */
-function chirp(c, d, t, { v, p, f0 = 600, f1 = 900, dur = 0.12, vol = 0.22, type = 'triangle', depth = 40 }) {
+interface ChirpOpts extends SfxOpts {
+  f0?: number;
+  f1?: number;
+  dur?: number;
+  type?: OscillatorType;
+  /** Vibrato depth in cents. */
+  depth?: number;
+}
+function chirp(c: BaseAudioContext, d: AudioNode, t: number, { v, p, f0 = 600, f1 = 900, dur = 0.12, vol = 0.22, type = 'triangle', depth = 40 }: ChirpOpts): number {
   return osc(c, d, t, { type, f0: f0 * p, f1: f1 * p, dur, vol: vol * v, attack: 0.008, vib: { rate: 28, depth } });
 }
 /** Rising noise whoosh. */
-function whoosh(c, d, t, { v, p, f0 = 300, f1 = 2500, dur = 0.25, vol = 0.45, q = 1.5 }) {
+interface WhooshOpts extends SfxOpts {
+  f0?: number;
+  f1?: number;
+  dur?: number;
+  q?: number;
+}
+function whoosh(c: BaseAudioContext, d: AudioNode, t: number, { v, p, f0 = 300, f1 = 2500, dur = 0.25, vol = 0.45, q = 1.5 }: WhooshOpts): number {
   return noise(c, d, t, { dur, vol: vol * v, type: 'bandpass', f0: f0 * p, f1: f1 * p, q, attack: dur * 0.5, curve: 'exp' });
 }
 /** Low boom: sine drop + lowpassed rumble. */
-function boom(c, d, t, { v, p, f0 = 60, f1 = 20, dur = 0.4, lp = 300, vol = 0.6, click = true }) {
+interface BoomOpts extends SfxOpts {
+  f0?: number;
+  f1?: number;
+  dur?: number;
+  lp?: number;
+  /** The leading transient tick; false for a boom that is already inside another hit. */
+  click?: boolean;
+}
+function boom(c: BaseAudioContext, d: AudioNode, t: number, { v, p, f0 = 60, f1 = 20, dur = 0.4, lp = 300, vol = 0.6, click = true }: BoomOpts): number {
   osc(c, d, t, { type: 'sine', f0: f0 * p, f1: f1 * p, dur, vol: vol * v, attack: 0.003 });
   noise(c, d, t, { dur, vol: vol * 0.9 * v, type: 'lowpass', f0: lp * 4 * p, f1: lp * 0.5 * p, attack: 0.002 });
   if (click) noise(c, d, t, { dur: 0.02, vol: 0.3 * v, type: 'bandpass', f0: 1500 * p, q: 1, attack: 0.0005 });
   return t + dur;
 }
 /** Music-box / fanfare arpeggio of midi notes. */
-function arp(c, d, t, { v, p, notes, gap = 0.06, dur = 0.14, type = 'sine', vol = 0.2, last = dur }) {
+interface ArpOpts extends SfxOpts {
+  /** Midi note numbers, played in order. */
+  notes: number[];
+  /** Seconds between note starts. */
+  gap?: number;
+  dur?: number;
+  type?: OscillatorType;
+  /** Length of the final note; defaults to `dur`. */
+  last?: number;
+}
+function arp(c: BaseAudioContext, d: AudioNode, t: number, { v, p, notes, gap = 0.06, dur = 0.14, type = 'sine', vol = 0.2, last = dur }: ArpOpts): number {
   notes.forEach((m, i) => osc(c, d, t + i * gap, { type, f0: N(m) * p, dur: i === notes.length - 1 ? last : dur, vol: vol * v, attack: 0.004 }));
   return t + (notes.length - 1) * gap + last;
 }
 /** Steam / hydraulic hiss (highpassed or bandpassed noise with a slow attack). */
-function hiss(c, d, t, { v, p, dur = 0.5, f0 = 1500, f1 = 3000, vol = 0.22, type = 'highpass', attack = 0.05, q = 1 }) {
+interface HissOpts extends SfxOpts {
+  dur?: number;
+  f0?: number;
+  f1?: number;
+  type?: BiquadFilterType;
+  attack?: number;
+  q?: number;
+}
+function hiss(c: BaseAudioContext, d: AudioNode, t: number, { v, p, dur = 0.5, f0 = 1500, f1 = 3000, vol = 0.22, type = 'highpass', attack = 0.05, q = 1 }: HissOpts): number {
   return noise(c, d, t, { dur, vol: vol * v, type, f0: f0 * p, f1: f1 * p, q, attack, curve: 'exp' });
 }
 /** Super activation: 8 frames of silence, a 30Hz swell with rising noise, then a crash on the freeze. */
-function superCharge(c, d, t, { v, p }) {
+function superCharge(c: BaseAudioContext, d: AudioNode, t: number, { v, p }: SfxOpts): number {
   const t0 = t + 8 / 60;
   osc(c, d, t0, { type: 'sine', f0: 30 * p, f1: 45 * p, dur: 0.3, vol: 0.5 * v, attack: 0.25, hold: 0.02 });
   noise(c, d, t0, { dur: 0.3, vol: 0.3 * v, type: 'lowpass', f0: 200 * p, f1: 6000 * p, attack: 0.28, curve: 'exp' });
@@ -55,8 +136,10 @@ function superCharge(c, d, t, { v, p }) {
   osc(c, d, tc, { type: 'sine', f0: 110 * p, f1: 40 * p, dur: 0.2, vol: 0.38 * v, attack: 0.002 });
   return tc + 0.25;
 }
+// Exact keys, rather than the `Record<string, SfxDef>` the library below uses: these four are
+// reached by property (`TAILS.boiler`), never by a runtime name lookup.
 /** Per-character super tails. */
-const TAILS = {
+const TAILS: Record<'boiler' | 'thunder' | 'cannons' | 'swing', SfxDef> = {
   boiler: (c, d, t, { v, p }) => { // boiler roar
     osc(c, d, t, { type: 'sawtooth', f0: 70 * p, f1: 48 * p, dur: 0.6, vol: 0.28 * v, attack: 0.04, lp: 400, vib: { rate: 9, depth: 30 } });
     noise(c, d, t, { dur: 0.6, vol: 0.35 * v, type: 'lowpass', f0: 500 * p, f1: 200 * p, attack: 0.05 });
@@ -81,19 +164,31 @@ const TAILS = {
   },
 };
 /** Parry / bell: two clean sines. */
-function bell(c, d, t, { v, p, f = [1760, 2640], dur = 0.25, vol = 0.18 }) {
+interface BellOpts extends SfxOpts {
+  /** The partials, in Hz; the first is the fundamental and the rest are quieter. */
+  f?: number[];
+  dur?: number;
+}
+function bell(c: BaseAudioContext, d: AudioNode, t: number, { v, p, f = [1760, 2640], dur = 0.25, vol = 0.18 }: BellOpts): number {
   f.forEach((h, i) => osc(c, d, t, { type: 'sine', f0: h * p, dur, vol: vol * (i ? 0.6 : 1) * v, attack: 0.002 }));
   return t + dur;
 }
 /** Revolver shot: click + low thump + short bandpassed tail. */
-function shot(c, d, t, { v, p }) {
+function shot(c: BaseAudioContext, d: AudioNode, t: number, { v, p }: SfxOpts): number {
   noise(c, d, t, { dur: 0.02, vol: 0.5 * v, type: 'bandpass', f0: 3500 * p, q: 0.8, attack: 0.0005 });
   osc(c, d, t, { type: 'sine', f0: 80 * p, f1: 45 * p, dur: 0.09, vol: 0.5 * v, attack: 0.002 });
   noise(c, d, t + 0.005, { dur: 0.07, vol: 0.22 * v, type: 'bandpass', f0: 900 * p, f1: 300 * p, q: 1, attack: 0.002 });
   return t + 0.09;
 }
 /** Grinding Brassbound wreck + core pop. */
-function brassDeath(c, d, t, { v, p, grind = 0.4, pop = 0.3, popF = 2400 }) {
+interface BrassDeathOpts extends SfxOpts {
+  /** Seconds of grinding wreck before the core pops. */
+  grind?: number;
+  pop?: number;
+  /** The pop's pitch. */
+  popF?: number;
+}
+function brassDeath(c: BaseAudioContext, d: AudioNode, t: number, { v, p, grind = 0.4, pop = 0.3, popF = 2400 }: BrassDeathOpts): number {
   noise(c, d, t, { dur: grind, vol: 0.3 * v, type: 'bandpass', f0: 400 * p, f1: 250 * p, q: 3, attack: 0.01, hold: grind * 0.5 });
   osc(c, d, t, { type: 'square', f0: 90 * p, f1: 55 * p, dur: grind, vol: 0.22 * v, attack: 0.01, hold: grind * 0.5, lp: 900, vib: { rate: 18, depth: 60 } });
   ring(c, d, t, { type: 'square', f0: 90 * p, modF: 700 * p, modF1: 300 * p, dur: grind, vol: 0.12 * v, attack: 0.01 });
@@ -104,7 +199,13 @@ function brassDeath(c, d, t, { v, p, grind = 0.4, pop = 0.3, popF = 2400 }) {
 }
 
 // ---- the library ----
-export const SFX_DEFS = {
+/**
+ * The library, keyed by name. `Record<string, SfxDef>` rather than the literal's own key set
+ * because the table is genuinely open at both ends: the seven legacy aliases below are assigned
+ * after it, and every read of it anywhere (engine/audio.ts, tools/simtest.js) is a runtime lookup
+ * by string. CANONICAL_SFX is what pins the names down, and simtest.js checks every one resolves.
+ */
+export const SFX_DEFS: Record<string, SfxDef> = {
   // UI
   menu_move: (c, d, t, o) => osc(c, d, t, { type: 'square', f0: 700 * o.p, f1: 1000 * o.p, dur: 0.05, vol: 0.12 * o.v, attack: 0.002 }),
   menu_confirm: (c, d, t, o) => { osc(c, d, t, { type: 'square', f0: 600 * o.p, dur: 0.07, vol: 0.14 * o.v }); osc(c, d, t + 0.07, { type: 'square', f0: 900 * o.p, dur: 0.14, vol: 0.14 * o.v }); return bell(c, d, t + 0.07, { v: o.v * 0.5, p: o.p, f: [1800], dur: 0.2 }); },

@@ -34,6 +34,7 @@ import { getChain } from '../../lib/art/secondary.ts';
 import { pathEllipse } from '../../lib/art/shapes.ts';
 import { drawFist, drawBoot, drawFace } from '../../lib/art/rigParts.ts';
 import { FACE } from '../../lib/art/poses.ts';
+import type { PoseSpec } from '../../lib/art/poses.ts';
 import { rad } from '../../lib/engine/math.ts';
 import { particles } from '../../engine/particles.ts';
 import { ST } from '../../constants.ts';
@@ -852,8 +853,37 @@ export function drawHipGear(ctx, rig, pose) {
 /** Body on its back, bag crushed under it, arms flung: root rot -88 puts body-space +y along the ground. */
 // root y -4 (not -8): the lying body is ON the deck, which also plants `getup` #0 — the one ground-classed key in the
 // faction that is authored as a lying pose (the audit's air regex covers lying/dead but not getup).
-const FLOOR = { armR: [-24, -8], armL: [28, 18], torso: 2, head: -10, legR: [12, 10], legL: [-4, 8], footR: 0, footL: 0, root: [16, -4, -88], face: 'dazed' };
+const FLOOR: PoseSpec = { armR: [-24, -8], armL: [28, 18], torso: 2, head: -10, legR: [12, 10], legL: [-4, 8], footR: 0, footL: 0, root: [16, -4, -88], face: 'dazed' };
 const AD = (a, du, dl) => [a[0] + du, a[1] + dl];
+
+/**
+ * The per-variant stance and gait makeGleanBase takes. THE STANCE IS PER VARIANT and it is the other half of the head
+ * fix: five hoods on five bodies standing in ONE pose still measured as one silhouette (see the block below).
+ */
+export interface GleanBaseOpts {
+  /** The neutral every base key inherits. */
+  stance?: GleanStance;
+  /** Scales the walk / run leg and arm swing; default 1. */
+  stride?: number;
+  /** Scales the walk / run weight drop; default 1. */
+  bob?: number;
+  /** Append the engine grab set (grabTell / grab / grabHold / grabHit / throw) for the Riggerman. */
+  grab?: boolean;
+  /** Extra named anims merged over the set once it is built. */
+  extra?: AnimSet;
+}
+
+/**
+ * One variant's neutral stance. A pose spec, narrowed in two places because this builder READS those keys rather than
+ * just forwarding them: `torso` and `head` are the angles the walk and run are authored as offsets from (T0 / H0),
+ * and `root` is the [x, y] array form, because only its y is read — the FLOOR OFFSET, which is ADDED to the keys that
+ * take the stance legs rather than replacing the root they author for themselves.
+ */
+export interface GleanStance extends Omit<PoseSpec, 'root' | 'torso' | 'head'> {
+  torso?: number;
+  head?: number;
+  root?: number[];
+}
 
 /**
  * Base Gleaning animation set for a rest carry `c` ({ armR, armL }): idle 4 / walk 8 / run 8 / flee 6 / jump / fall /
@@ -861,7 +891,7 @@ const AD = (a, du, dl) => [a[0] + du, a[1] + dl];
  * Sickle and Harvestman need for ai.evadeChance). Ground keys hang the feet with footR/footL rotation (toe down, heel
  * off) and keep root.y on the floor: window.__sheet.audit() must flag `run`, `flee` and airborne attack keys only.
  */
-export function makeGleanBase(c, o = {}) {
+export function makeGleanBase(c, o: GleanBaseOpts = {}): AnimSet {
   // root y 0 on the neutral, NOT -2: the old base lifted the whole body off the deck and printed 26-32 FLOOR flags a
   // variant (idle, every walk key, every attack hold). The hanging read is carried by footR/footL (toe down, heel off),
   // which costs nothing in the audit, and by the stance: legR/legL are splayed enough that the far leg clears the near
@@ -902,7 +932,7 @@ export function makeGleanBase(c, o = {}) {
       torso: T0 + tw + 3, head: H0 + hd - 6, root: [0, bb(ty)], squash: sq || 1, stretch: sq ? 2 - sq : 1, footR: fr, footL: fl });
   // lean 18, not 10: ART_STYLE 8 asks a run for a real lean and anim/locomotion-shape measures the cast at 20-33.
   // A Gleaner runs by pulling its own bag along, so the lean is what the arms are doing anyway.
-  const run = (lr, ll, ar, al, ty, sq) => K({ legR: [sw(lr[0]), sw(lr[1])], legL: [sw(ll[0]), sw(ll[1])], armR: ar, armL: al,
+  const run = (lr: number[], ll: number[], ar: number[], al: number[], ty: number, sq?: number) => K({ legR: [sw(lr[0]), sw(lr[1])], legL: [sw(ll[0]), sw(ll[1])], armR: ar, armL: al,
     torso: 18, head: -6, root: [0, bb(ty)], squash: sq || 1, stretch: sq ? 2 - sq : 1, face: 'angry' });
   const flee = (lr, ll, i, ty) => K({ legR: lr, legL: ll, armR: [-150 + i * 12, -24], armL: [-168 - i * 8, -20], torso: 4, head: -8 + i * 4, root: [0, ty], face: 'hurt' });
   const anims = {
@@ -1040,9 +1070,8 @@ export function makeGleanBase(c, o = {}) {
  * Shared hooks (every variant merges these first): the two-channel tell state the bladder reads, and the faction rule.
  * SHOT DOWN — this 1.25x on top of the core's own 1.2x air bonus (fighter.js) makes any hit on an airborne Gleaner 1.5x,
  * and the engine's juggle branch has already turned it into a juggle before the hook returns. Air time is the liability.
- * @type {Hooks}
  */
-export const BASE_HOOKS = {
+export const BASE_HOOKS: Hooks = {
   onUpdate(f) {
     const r = f.rig;
     r.swell = r.tell ? (r.tellWarn ? 1.18 : 1.12) : 1;
@@ -1083,9 +1112,9 @@ export const BASE_HOOKS = {
  *   pose specs.
  */
 const STANCE = Object.freeze({ legR: [14, 6], legL: [-16, 8], footR: -18, footL: -15 });
-export function gleanStrike(o) {
+export function gleanStrike(o): Anim {
   const tell = o.tell || 20, t0 = Math.max(1, Math.round(tell * 0.6));
-  const hit = { sfx: o.sfx, fx: o.fx, move: o.move, smear: o.smear, ease: 'overshoot',
+  const hit: Partial<Frame> = { sfx: o.sfx, fx: o.fx, move: o.move, smear: o.smear, ease: 'overshoot',
     armor: o.armor || undefined, invuln: o.invuln || undefined, event: o.event, projectile: o.projectile, summon: o.summon };
   if (o.hitboxes) hit.hitboxes = o.hitboxes; else if (o.hitbox) hit.hitbox = o.hitbox;
   return { loop: false, frames: [

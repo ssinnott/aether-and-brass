@@ -40,6 +40,7 @@
 // weapon: +x along the forearm; torso: origin at the hip centre, y up negative; head: origin at the head centre).
 // Far-side parts colour from `inf.pal` (module constants go through farTone once, at module level).
 import { P, FACE } from '../../lib/art/poses.ts';
+import type { PoseSpec } from '../../lib/art/poses.ts';
 import { celRect, celBall, celPoly, celCapsule, celTaper, tones, rimTop, band, flat } from '../../lib/art/shading.ts';
 import { drawFist, drawSkull, drawFace, drawBelt } from '../../lib/art/rigParts.ts';
 import { farShade } from '../../art/palettes.ts';
@@ -144,7 +145,7 @@ export const CROW_PROPS = {
   handR: 4.5, upperLeg: 16, lowerLeg: 15, legR: 5, footL: 12, footH: 5, bulge: 0.45, shoulderX: 3, hipX: 4,
 };
 /** Keyframe shorthand: FK(dur, poseSpec, extraFrameFields). */
-export const FK = (dur, spec, extra) => ({ dur, pose: P(spec), ...(extra || {}) });
+export const FK = (dur: number, spec: PoseSpec, extra?: Partial<Frame>): Frame => ({ dur, pose: P(spec), ...(extra || {}) });
 
 // ---------------------------------------------------------------- head, face, the faction tell
 /**
@@ -330,7 +331,7 @@ export function crowTell(ctx, rig, r, gx, gy) {
   }
 }
 /** Goggle pair on a strap (head space, `cy` above the brow line): two brass rims with sky-glass, the shared kit mark. */
-export function crowGoggles(ctx, rig, r, cy, glass) {
+export function crowGoggles(ctx, rig, r, cy, glass?: string) {
   if (!rig.override) { ctx.fillStyle = rig.col(CROW.leatherDark); ctx.fillRect(R(-r * 1.1), cy - 2, R(r * 2.2), 4); }
   const g = glass || CROW.glass;
   for (let i = 0; i < 2; i++) {
@@ -626,9 +627,31 @@ export function crowWings(ctx, rig) {
 
 // ---------------------------------------------------------------- shared animation set
 /** Body face-up on the deck (root rot -88: the coat spreads, the goggles point at the sky). */
-const FLOOR = { armR: [-22, -6], weapon: -14, armL: [28, 18], torso: 3, head: -12, legR: [12, 10], legL: [-4, 8], root: [26, -8, -88], grip: 0, face: 'dazed' };
+const FLOOR: PoseSpec = { armR: [-22, -6], weapon: -14, armL: [28, 18], torso: 3, head: -12, legR: [12, 10], legL: [-4, 8], root: [26, -8, -88], grip: 0, face: 'dazed' };
 /** Arm shorthand: nudge an [upper, lower] pair. */
 export const AD = (a, du, dl) => [a[0] + du, a[1] + dl];
+
+/**
+ * The stance and the two set switches makeCrowBase takes. The stance is half of what makes five aeronauts read as
+ * five people rather than one uniform (see the block below).
+ */
+export interface CrowBaseOpts {
+  /** Torso angle on every key; default 3. */
+  lean?: number;
+  /** Head angle on every key; default -2. */
+  head?: number;
+  /** Planted near / far leg, [upper, lower]; defaults [8, 4] and [-8, 6]. */
+  legR?: number[];
+  legL?: number[];
+  /** The off arm stays in its carry through walk and run (a strapped shield must not wave about). */
+  holdOffArm?: boolean;
+  /** Merged into the stagger keys. */
+  stagger?: PoseSpec;
+  /** No wing-pack: the dodge kicks off the deck instead of firing the vanes, with no violet spark. */
+  noWings?: boolean;
+  /** Append the grabber set (grabTell / grab / grabHold / grabHit / throw / throwBack). */
+  grab?: boolean;
+}
 
 /**
  * Shared Stormcrow base animation set, parameterised by the rest carry `c` ({ armR, armL, weapon, grip? }) and the
@@ -643,7 +666,7 @@ export const AD = (a, du, dl) => [a[0] + du, a[1] + dl];
  * grabHit / throw / throwBack) the way sootborn.js does for the Cinder Hulk - the Grapnel Mate's hands go on the
  * hero, the throwBack heaves over the shoulder BEHIND him (grabs.js dir -1: the rail is behind a Stormcrow).
  */
-export function makeCrowBase(c, o = {}) {
+export function makeCrowBase(c, o: CrowBaseOpts = {}): AnimSet {
   const hold = !!o.holdOffArm, st = o.stagger || EMPTY;
   const lean = o.lean != null ? o.lean : 3, hd = o.head != null ? o.head : -2;
   const LR = o.legR || [8, 4], LL = o.legL || [-8, 6];
@@ -802,22 +825,21 @@ function makeCrowSet(c, o, K, walk, run, lean, hd, st) {
  * not a tell: the goggles stay dark inside a combo) -> `h2` (`active2`, `hitbox2`, `smear2`, `fx2`, `sfx2`, `move2`)
  * -> `hold2` — for the two-hit swings; the two hitboxes are separate keys, so combat.js keys them apart on its own.
  */
-export function crowStrike(o) {
+export function crowStrike(o): Anim {
   const tell = o.tell || 20, t0 = Math.max(1, Math.round(tell * 0.55));
   const hold = o.hold || o.h, holdDur = o.holdDur || 3, rest = o.rest || EMPTY;
-  /** @type {Frame[]} */
-  const frames = [
+  const frames: Frame[] = [
     { dur: t0, pose: P(o.w1), tell: true, sfx: o.tellSfx, armor: o.armor || undefined, event: o.aimEvent, ease: 'in' },
     { dur: Math.max(1, tell - t0), pose: P(o.w2), tell: true, armor: o.armor || undefined, ease: 'out' },
   ];
-  const h = { dur: o.active || 8, pose: P(o.h), sfx: o.sfx, fx: o.fx, move: o.move, smear: o.smear, ease: 'overshoot',
+  const h: Frame = { dur: o.active || 8, pose: P(o.h), sfx: o.sfx, fx: o.fx, move: o.move, smear: o.smear, ease: 'overshoot',
     armor: o.armor || undefined, invuln: o.invuln || undefined, event: o.event, projectile: o.projectile, summon: o.summon };
   if (o.hitboxes) h.hitboxes = o.hitboxes; else if (o.hitbox) h.hitbox = o.hitbox;
   frames.push(h);
   frames.push({ dur: holdDur, pose: P(hold), ease: 'out' });
   if (o.h2) {
     if (o.w3) frames.push({ dur: o.tell2 || 5, pose: P(o.w3), ease: 'in' });
-    const h2 = { dur: o.active2 || o.active || 8, pose: P(o.h2), sfx: o.sfx2 || o.sfx, fx: o.fx2, move: o.move2, smear: o.smear2, ease: 'overshoot', armor: o.armor || undefined };
+    const h2: Frame = { dur: o.active2 || o.active || 8, pose: P(o.h2), sfx: o.sfx2 || o.sfx, fx: o.fx2, move: o.move2, smear: o.smear2, ease: 'overshoot', armor: o.armor || undefined };
     if (o.hitbox2) h2.hitbox = o.hitbox2;
     frames.push(h2);
     frames.push({ dur: holdDur, pose: P(o.hold2 || o.h2), ease: 'out' });
