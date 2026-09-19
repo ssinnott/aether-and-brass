@@ -27,7 +27,7 @@
 // must reach: they are also the authority for the roster, the board and the START parameters, and
 // the session ends for everyone if they leave.
 
-import { rng } from '../lib/engine/rng.ts';
+import { rng, freshSeed } from '../lib/engine/rng.ts';
 import { DIFFICULTIES, NET_PLAYERS, NET_MIN_PLAYERS } from '../constants.ts';
 import { Entity } from '../game/entity.ts';
 import { progress } from '../game/progress.ts';
@@ -705,7 +705,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     net.rtt = worst;
     net.delay = delayForRtt(worst);
     const params = {
-      seed: (Math.floor(Math.random() * 0x7fffffff) | 0) >>> 0 || 1,   // chosen once, before any simulation
+      seed: freshSeed(),   // chosen once, before any simulation
       stage: net.lobby.stage || game.options.stage || 1,
       difficulty: DIFFICULTIES.indexOf(game.options.difficulty || 'normal'),
       chars: members().map((m) => m.char | 0),

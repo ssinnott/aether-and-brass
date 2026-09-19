@@ -40,7 +40,9 @@ for stage 2 (its faction, bosses, sections and audio).
   clobber a base constructor's assignment. `npm run class-fields` fails on any instance field that is
   neither `declare` nor initialised.
 - **The shared half lives in `src/lib/`**, vendored from the `game-engine` repository with
-  `git subtree`. Do not edit it here: fix it there and `git subtree pull`. `art/palettes.ts` and
+  `git subtree`. Do not edit it here: fix it there and `git subtree pull`. `npm run lib-check` (part of
+  `npm run check`) fails on any difference between `src/lib/` and the engine commit it was pulled from,
+  committed or not, so an edit made here cannot reach main. `art/palettes.ts` and
   `engine/text.ts` are deliberate local shims — each re-exports the library and adds this game's own
   art direction (the palette tables, the ink).
 - **`game/fighter.js` is the authority on what content may contain.** Its two reference blocks —
