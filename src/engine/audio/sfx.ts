@@ -2,29 +2,10 @@
 // pure with respect to the context so the same code drives the game and the OfflineAudioContext self-test.
 // Faction conventions: Sootborn = pitchy/organic (triangle/saw, vibrato, upward squeaks);
 // Brassbound = metallic/low (square + ring-mod, bandpassed noise clanks); aether = glassy (detuned sines, tremolo).
-import { osc, noise, ring, am, echo, bus, glass } from './synth.ts';
+import { osc, noise, ring, am, echo, glass } from '../../lib/audio/synth.ts';
+import type { SfxOpts, SfxDef } from '../../lib/audio/sfx.ts';
 
-/**
- * What every SFX entry is called with. `v` scales volume (already ducked for overlapping plays) and
- * `p` scales pitch, including the +/-4% wobble the JITTERED names get.
- *
- * `vol` / `pitch` are the first audio.js's names for the same two numbers: engine/audio.ts still
- * passes all four (`{ v, p, vol, pitch }`) on every play, so they are part of the contract even
- * though nothing in this file reads them.
- */
-export interface SfxOpts {
-  v: number;
-  p: number;
-  vol?: number;
-  pitch?: number;
-}
-
-/**
- * One entry of SFX_DEFS: schedules its voices on `ctx` at absolute time `when` and returns the time
- * it ends. Pure with respect to the context, so the same call drives the game and the
- * OfflineAudioContext self-test.
- */
-export type SfxDef = (ctx: BaseAudioContext, dest: AudioNode, when: number, o: SfxOpts) => number;
+export type { SfxOpts, SfxDef };
 
 const N = (m: number): number => 440 * Math.pow(2, (m - 69) / 12); // midi -> Hz
 const C5 = N(72), E5 = N(76), G5 = N(79), C6 = N(84), E6 = N(88), G6 = N(91);
