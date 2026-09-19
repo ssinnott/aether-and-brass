@@ -18,11 +18,11 @@ operate.
 | Piece | Module | Notes |
 |---|---|---|
 | Deterministic trig | `src/engine/trig.js` | Matches `Math.sin`/`cos` to 5.6e-16 using only IEEE-exact ops |
-| Wire format | `src/net/protocol.js` | 11 actions + run in a uint16; a slot-tagged INPUT packet with 8 frames of redundancy is 23 bytes |
+| Wire format | `src/net/protocol.js` (framing in `lib/net/protocol.ts`) | 11 actions + run in a uint16; a slot-tagged INPUT packet with 8 frames of redundancy is 23 bytes |
 | Frame scheduler | `src/net/lockstep.js` | One ring per seat; delay applied at record time; `resend()` and tail-forwarding while stalled |
-| Desync canary | `src/net/checksum.js` | FNV-1a over `rng.state` + per-entity sim fields, compared against every peer |
+| Desync canary | `src/net/checksum.js` (kernel in `lib/net/checksum.ts`) | FNV-1a over `rng.state` + per-entity sim fields, compared against every peer |
 | Peer connection | `src/net/peer.js` | One link of the mesh: unreliable, unordered channel; queues early ICE candidates |
-| Signalling | `src/net/signal.js` | Room codes over MQTT/WSS, split into a channel per pairing by `createSignalMux`; BroadcastChannel for the e2e test |
+| Signalling | `src/net/signal.js` (strategies in `lib/net/signal.ts`, bound to `APP_ID`) | Room codes over MQTT/WSS, split into a channel per pairing by `createSignalMux`; BroadcastChannel for the e2e test |
 | MQTT subset | `src/net/mqtt-codec.js` | Streaming parser: a WebSocket frame does not align with an MQTT packet |
 | Session | `src/net/session.js` | Roster, mesh, relay, signalling → lobby → match → lobby again, and the per-frame pump |
 | UI | `src/game/screens/lobby.js` | Host/join by room code, a cursor and a status column per seat, host's board pick, ready; `?room=CODE` invite links; an on-screen code picker and a tap-to-share link for a copy with no keyboard or address bar |
