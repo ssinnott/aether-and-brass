@@ -21,6 +21,8 @@
 //   (d) no global key (Escape / M / F1) is bound anywhere;
 //   (e) gamepad: at least one button per action, no button under two actions, none of `gamepadRun`.
 
+import { keyLabel as labelForKey, padLabel as labelForPad } from '../lib/input/labels.ts';
+
 /**
  * @typedef {{ keyboard: Array<Record<string, string[]>>, gamepad: Record<string, number[]>,
  *   gamepadRun: number[], global: Record<string, string[]>, stickDeadzone: number }} Bindings
@@ -137,24 +139,25 @@ const KEY_NAMES = {
   NumpadMultiply: 'NUM *', NumpadDivide: 'NUM /', NumpadDecimal: 'NUM .',
 };
 
+/**
+ * How this game spells a key, handed to the library's label algorithm (lib/input/labels.js): the
+ * table above first, then KeyA -> A and Digit1 -> 1 and Numpad7 -> NUM7 and F5 -> F5, then this
+ * fallback. Eight characters is what a cell on the CONTROLS grid holds.
+ *
+ * The library checks the table BEFORE the patterns where this file used to check it after. That is
+ * the same function: no entry in KEY_NAMES matches any of those four patterns, so neither order can
+ * reach an entry the other would not.
+ */
+const KEY_LABEL_OPTS = { names: KEY_NAMES, fallback: (code) => code.toUpperCase().slice(0, 8) };
+
 /** Short on-screen label for a `KeyboardEvent.code`. @param {string} code @returns {string} */
-export function keyLabel(code) {
-  let m = /^Key([A-Z])$/.exec(code);
-  if (m) return m[1];
-  m = /^Digit(\d)$/.exec(code);
-  if (m) return m[1];
-  m = /^Numpad(\d)$/.exec(code);
-  if (m) return 'NUM' + m[1];
-  m = /^F(\d+)$/.exec(code);
-  if (m) return code;
-  if (KEY_NAMES[code]) return KEY_NAMES[code];
-  return code.toUpperCase().slice(0, 8);
-}
+export function keyLabel(code) { return labelForKey(code, KEY_LABEL_OPTS); }
 
 /** Standard-mapping gamepad button labels by index. */
 export const PAD_LABELS = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'SELECT', 'START', 'L3', 'R3', 'D-UP', 'D-DOWN', 'D-LEFT', 'D-RIGHT'];
+const PAD_LABEL_OPTS = { labels: PAD_LABELS, fallback: (i) => 'B' + i };
 /** Short on-screen label for a gamepad button index. @param {number} i @returns {string} */
-export function padLabel(i) { return PAD_LABELS[i] || 'B' + i; }
+export function padLabel(i) { return labelForPad(i, PAD_LABEL_OPTS); }
 
 /**
  * Codes that count as "player `slot` pressed one of their own keys" (drop-in). The single definition

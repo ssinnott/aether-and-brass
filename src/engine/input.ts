@@ -7,6 +7,7 @@ import {
   DEFAULT_BINDINGS, BINDINGS_LAYOUT, LAYOUTS, layoutMap, cloneBindings, sanitiseBindings, rebindKey,
   rebindPad, joinCodesFor, keyLabel, padLabel, legendFor, moveLabelFor, joinLabels,
 } from './bindings.ts';
+import { createPadSource, createPadSeats, DIR } from '../lib/input/pad.ts';
 
 /** All per-player actions. */
 export const ACTIONS: Action[] = ['left', 'right', 'up', 'down', 'attack', 'jump', 'special', 'super', 'dodge', 'taunt', 'start'];
@@ -67,8 +68,6 @@ export interface PlayerInput {
   /** Any button of this seat's pad is active, and the same last step (the join edge). */
   gpAny: boolean;
   gpAnyPrev: boolean;
-  /** Gamepad index claimed to this slot, or -1. */
-  pad: number;
   /** This seat's own keyboard half has been used, so a pad may no longer claim it. */
   kbSeen: boolean;
   idleFrames: number;
@@ -96,8 +95,7 @@ const joinHintCache = []; // slot -> string
 const joinKeysHintCache = []; // slot -> string
 const keyTextCache = new Map(); // layout -> Map(action -> string)
 const cellTextCache = new Map(); // layout -> Map(action -> string)
-let padSnapshot = null; // Set of "padIndex:button" held at beginPadCapture(), used to find the NEW press
-let virtualPads = null; // test hook: setPadVirtual() override for pollGamepads(), array indexed like navigator.getGamepads()
+let virtualPads = null; // test hook: setPadVirtual() override, array indexed like navigator.getGamepads()
 
 /**
  * A per-action map. Pressed states hold booleans; the buffer map holds frame ages, so `v` is
@@ -117,7 +115,7 @@ function makePlayer(): PlayerInput {
     // screen that reads the keyboard raw (the lobby's room code) drives its cursor off these, so
     // typing a C is not also a dodge. See offKeyPressed() below.
     offKey: makeActionMap(), offKeyPrev: makeActionMap(), offKeyPressed: makeActionMap(),
-    joined: false, joinNow: false, run: false, gpAny: false, gpAnyPrev: false, pad: -1, kbSeen: false, idleFrames: 0 };
+    joined: false, joinNow: false, run: false, gpAny: false, gpAnyPrev: false, kbSeen: false, idleFrames: 0 };
 }
 const players = Array.from({ length: MAX_PLAYERS }, makePlayer);
 players[0].joined = true;
@@ -153,12 +151,21 @@ function onKeyUp(e) {
 }
 function onBlur() { keysDown.clear(); }
 
-let pads = null;
-function pollGamepads() {
-  pads = null;
-  try { pads = virtualPads || (typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null); } catch { pads = null; }
-}
-function padButton(gp, b) { const btn = gp.buttons[b]; return !!btn && (btn.pressed || btn.value > 0.5); }
+/**
+ * The pads themselves (lib/input/pad.js): polling, held and pressed button masks, the stick past the
+ * deadzone, the capture the CONTROLS panel binds from, and the pad-to-slot table. What is NOT in
+ * there is which button is which action, because the eleven-action mask and its `run` bit are this
+ * game's wire format.
+ *
+ * Thirty-two buttons, because `rebindPad` accepts any index up to 31 and a pad that reports more
+ * than the standard sixteen must be bindable on all of them.
+ *
+ * The deadzone is read once, from the defaults, and that is exactly as live as it has ever been:
+ * `sanitiseBindings` builds every result from `cloneBindings(defaults)` and merges only action maps
+ * into it, so `bindings.stickDeadzone` can never hold anything but this number.
+ */
+const padSource = createPadSource({ buttons: 32, deadzone: DEFAULT_BINDINGS.stickDeadzone });
+const padSeats = createPadSeats();
 
 // --- Pad claiming (ARCHITECTURE.md section 3, docs/RECONCILIATION.md "Final controls"): an unbound
 // pad's first BUTTON edge (axes ignored -- stick drift must never drop a phantom hero in) claims the
@@ -173,44 +180,58 @@ function padButton(gp, b) { const btn = gp.buttons[b]; return !!btn && (btn.pres
 // setPadClaiming(false): update() then merges every unbound pad into slot 0 and pollRaw(player) reads
 // the pad bound to `player` plus every unbound pad, so a pad drives the local player online whether it
 // was pressed before or after the keyboard, and can never claim the peer's slot mid-match.
-/** pad index -> slot */
-const padSlot = new Map();
-/** @type {boolean[]} */
+/**
+ * Whether each pad had ANY button down last step. This is the join gesture and it is this game's own
+ * rule, not the library's: a pad claims a slot when it goes from holding nothing to holding
+ * something, so a player who is already holding attack and then presses jump does not claim a second
+ * time. (Axes are deliberately not in it -- stick drift must never drop a phantom hero in.)
+ * @type {boolean[]}
+ */
 let padActivePrev = [];
-let claiming = true;
 let unboundPads = 0;
 
-/** True if any button (not axis) of `gp` is currently pressed. */
-function padActive(gp) {
-  for (let b = 0; b < gp.buttons.length; b++) if (padButton(gp, b)) return true;
-  return false;
+/**
+ * OR-merge one pad's held buttons and stick into `out`; returns true if any of it was active. Takes
+ * masks rather than a gamepad so the same rule serves both the step's poll and pollRaw's live read.
+ * Sets pl.run for the RT "run" buttons, which are not one of ACTIONS.
+ */
+function applyPad(raw, dirs, out, pl) {
+  let any = false;
+  for (const a of ACTIONS) {
+    const btns = bindings.gamepad[a] || [];
+    for (const b of btns) if (raw & (1 << b)) { out[a] = true; any = true; }
+  }
+  for (const b of bindings.gamepadRun) if (raw & (1 << b)) { pl.run = true; any = true; }
+  if (dirs & DIR.left) { out.left = true; any = true; }
+  if (dirs & DIR.right) { out.right = true; any = true; }
+  if (dirs & DIR.up) { out.up = true; any = true; }
+  if (dirs & DIR.down) { out.down = true; any = true; }
+  return any;
 }
 
 /**
- * Release/claim pad->slot bindings for this step. Must run right after pollGamepads(), before the
+ * Release/claim pad->slot bindings for this step. Must run right after padSource.poll(), before the
  * per-slot loop. Returns the set of slots claimed THIS step (so their joinNow can be set).
  * @returns {Set<number>}
  */
 function claimPads() {
   const claimed = new Set();
   unboundPads = 0;
-  const n = pads ? pads.length : 0;
-  for (let k = 0; k < n; k++) {
-    const gp = pads[k];
-    if (!gp || !gp.connected) {
-      if (padSlot.has(k)) { players[padSlot.get(k)].pad = -1; padSlot.delete(k); }
-      padActivePrev[k] = false;
-      continue;
-    }
-    if (!padSlot.has(k)) unboundPads++;
-    const active = padActive(gp), rising = active && !padActivePrev[k];
+  // A pad that has been unplugged gives its slot back; the slot itself stays joined.
+  padSeats.dropDisconnected(padSource);
+  for (let k = 0; k < padSource.count(); k++) {
+    if (!padSource.pad(k)) { padActivePrev[k] = false; continue; }
+    const seated = padSeats.seatOf(k) >= 0;
+    if (!seated) unboundPads++;
+    const active = padSource.anyHeld(k), rising = active && !padActivePrev[k];
     padActivePrev[k] = active;
-    // A press while the CONTROLS panel is capturing a gamepad button (padSnapshot != null between
-    // beginPadCapture()/endPadCapture()) must rebind that pad, not silently claim a slot and drop an
-    // unwanted player in on the button's NEXT press.
-    if (rising && claiming && !padSnapshot && !padSlot.has(k)) {
-      const s = players.findIndex((pl, i) => i < LOCAL_PLAYERS && pl.pad < 0 && !pl.kbSeen && !pl.virtual);
-      if (s >= 0) { players[s].pad = k; padSlot.set(k, s); claimed.add(s); unboundPads--; }
+    // A press while the CONTROLS panel is capturing a gamepad button must rebind that pad, not
+    // silently claim a slot and drop an unwanted player in on the button's NEXT press.
+    if (rising && !padSource.capturing() && !seated) {
+      // The table and "the lowest free slot" are the library's; which slots this game will give away
+      // is the callback. (That the slot has no pad already is the library's own check.)
+      const s = padSeats.claim(k, LOCAL_PLAYERS, (i) => !players[i].kbSeen && !players[i].virtual);
+      if (s >= 0) { claimed.add(s); unboundPads--; }
     }
   }
   return claimed;
@@ -219,31 +240,16 @@ function claimPads() {
 /** OR-merge every CONNECTED pad whose index is not claimed to any slot into `out`. Returns true if any was active. */
 function readUnboundPads(out, pl) {
   let any = false;
-  const n = pads ? pads.length : 0;
-  for (let k = 0; k < n; k++) {
-    const gp = pads[k];
-    if (!gp || !gp.connected || padSlot.has(k)) continue;
+  for (let k = 0; k < padSource.count(); k++) {
+    if (!padSource.pad(k) || padSeats.seatOf(k) >= 0) continue;
     if (readGamepad(k, out, pl)) any = true;
   }
   return any;
 }
 /** OR-merge gamepad `index` into `out`; returns true if any button/axis is active. Sets pl.run for the RT "run" buttons. */
 function readGamepad(index, out, pl) {
-  const gp = pads && pads[index];
-  if (!gp || !gp.connected) return false;
-  const dz = bindings.stickDeadzone;
-  let any = false;
-  for (const a of ACTIONS) {
-    const btns = bindings.gamepad[a] || [];
-    for (const b of btns) if (padButton(gp, b)) { out[a] = true; any = true; }
-  }
-  for (const b of bindings.gamepadRun) if (padButton(gp, b)) { pl.run = true; any = true; }
-  const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
-  if (ax < -dz) { out.left = true; any = true; }
-  if (ax > dz) { out.right = true; any = true; }
-  if (ay < -dz) { out.up = true; any = true; }
-  if (ay > dz) { out.down = true; any = true; }
-  return any;
+  if (!padSource.pad(index)) return false;
+  return applyPad(padSource.rawMask(index), padSource.dirMask(index), out, pl);
 }
 function keyHeld(codes) {
   for (const c of codes) if (keysDown.has(c) || keysPressedPending.has(c)) return true;
@@ -283,7 +289,10 @@ export const input = {
       globalPressed[k] = false;
       for (const code of bindings.global[k]) if (keysPressedPending.has(code)) globalPressed[k] = true;
     }
-    pollGamepads();
+    // One device read a step, before anything else looks at a pad: this is what turns "held now"
+    // into "held last step", which is where the claim's rising edge and the panel's capture both
+    // come from.
+    padSource.poll();
     const claimed = claimPads();
     for (let p = 0; p < players.length; p++) {
       const pl = players[p];
@@ -309,7 +318,8 @@ export const input = {
         if (p === 0 && kb) pl.kbSeen = true;
         // Pad and touch land in `offKey` first and are OR-ed into `cur` after, so both reads stay
         // available: `cur` is every device at once, `offKey` only the ones with no letters on them.
-        pl.gpAny = pl.pad >= 0 ? readGamepad(pl.pad, pl.offKey, pl) : (p === 0 && !claiming ? readUnboundPads(pl.offKey, pl) : false);
+        const own = padSeats.padOf(p);
+        pl.gpAny = own >= 0 ? readGamepad(own, pl.offKey, pl) : (p === 0 && !padSeats.claiming() ? readUnboundPads(pl.offKey, pl) : false);
         let touched = false;
         if (p === 0 && touchActions) {
           for (const a of ACTIONS) if (touchActions[a]) { pl.offKey[a] = true; touched = true; }
@@ -408,7 +418,7 @@ export const input = {
   /** Has the player joined? (P1 is always joined.) */
   joined(player) { return player === 0 || !!players[player].joined; },
   /** Gamepad index claimed by `player`'s slot, or -1 if none. */
-  padOf(player) { return players[player].pad; },
+  padOf(player) { return padSeats.padOf(player); },
   /** Does this slot have a keyboard block at all? (Slots 2/3 have none: they are an online room's
    *  seats, so nobody is ever sat at this machine's keyboard on one.) */
   hasKeyboard(player) { return !!bindings.keyboard[player]; },
@@ -421,11 +431,11 @@ export const input = {
   },
   /** Connected pads not yet claimed by any slot. 0 while claiming is off (netplay): no press can
    *  claim a slot then, so hints must not advertise "ANY PAD BUTTON" during that window. */
-  get unboundPads() { return claiming ? unboundPads : 0; },
+  get unboundPads() { return padSeats.claiming() ? unboundPads : 0; },
   /** Slot a fresh unbound pad press would claim right now (mirrors claimPads()'s own rule: the lowest
    *  LOCAL slot with no pad, an unused keyboard half and not virtual), or -1 if none. Read-only --
    *  used to phrase join hints correctly when a keyboard slot (e.g. P2) is still poachable by a pad. */
-  nextPadSlot() { return players.findIndex((pl, i) => i < LOCAL_PLAYERS && pl.pad < 0 && !pl.kbSeen && !pl.virtual); },
+  nextPadSlot() { return players.findIndex((pl, i) => i < LOCAL_PLAYERS && padSeats.padOf(i) < 0 && !pl.kbSeen && !pl.virtual); },
   /** Small integer summarising joined slots (bit p) plus an unbound-pad bit (bit MAX_PLAYERS). No
    *  allocation -- screens compare this to a cached value and rebuild their hint strings on change. */
   joinState() {
@@ -438,12 +448,12 @@ export const input = {
    *  deliberately left alone: a button still held from before the reset must not read as a fresh
    *  rising edge and instantly re-claim slot 0 -- only a press that begins after the reset can claim. */
   resetClaims() {
-    padSlot.clear();
-    claiming = true;
-    for (const pl of players) { pl.pad = -1; pl.kbSeen = false; }
+    padSeats.releaseAll();
+    padSeats.setClaiming(true);
+    for (const pl of players) pl.kbSeen = false;
   },
   /** Turn pad claiming on/off. Netplay turns it off for the lobby and the match's lifetime. */
-  setPadClaiming(on) { claiming = !!on; },
+  setPadClaiming(on) { padSeats.setClaiming(!!on); },
   /** Global (non-player) key edge this step: 'pause' | 'mute' | 'debug'. */
   globalPressed(name) { return !!globalPressed[name]; },
   /**
@@ -463,15 +473,22 @@ export const input = {
    */
   pollRaw(player: number = 0): RawActions {
     if (!boundCodes) rebuildBoundCodes();
-    pollGamepads();
     const o = {} as RawActions;
     const map = bindings.keyboard[player];
     for (const a of ACTIONS) o[a] = map ? keyHeld(map[a]) : false;
-    // Reads the pad bound to `player` (if any) plus every unbound pad -- readUnboundPads keys off
-    // padSlot, not `claiming`, so this also covers the ended-session pump (claiming already back on).
-    const pl = players[player];
-    if (pl.pad >= 0) readGamepad(pl.pad, o, o);
-    readUnboundPads(o, o);
+    // Reads the pad bound to `player` (if any) plus every unbound pad -- it keys off the slot table,
+    // not the claiming flag, so this also covers the ended-session pump (claiming already back on).
+    //
+    // LIVE, not the step's poll: net/session.js samples this in beforeStep(), which runs BEFORE
+    // input.update() has polled for the step, and reading a snapshot there would put a frame of lag
+    // on everything the local player does.
+    const own = padSeats.padOf(player);
+    const list = padSource.readPads();
+    for (let k = 0; k < list.length; k++) {
+      const gp = list[k];
+      if (!gp || (k !== own && padSeats.seatOf(k) >= 0)) continue;
+      applyPad(padSource.maskOf(gp), padSource.dirMaskOf(gp), o, o);
+    }
     if (player === 0 && touchActions) {
       for (const a of ACTIONS) if (touchActions[a]) o[a] = true;
       if (touchActions.run) o.run = true;
@@ -605,38 +622,16 @@ export const input = {
 
   // --- Gamepad button capture (controls panel), test-driven via setPadVirtual(). ---
 
-  /** Snapshot every currently-held button of every connected pad, so capturePadButton() can find the new one. */
-  beginPadCapture() {
-    pollGamepads();
-    padSnapshot = new Set();
-    if (!pads) return;
-    for (let i = 0; i < pads.length; i++) {
-      const gp = pads[i];
-      if (!gp || !gp.connected) continue;
-      for (let b = 0; b < gp.buttons.length; b++) if (padButton(gp, b)) padSnapshot.add(`${i}:${b}`);
-    }
-  },
-  /** First button (any pad, index order) pressed now that was not held at beginPadCapture(), else -1. */
-  capturePadButton() {
-    if (!padSnapshot) return -1;
-    pollGamepads();
-    if (pads) {
-      for (let i = 0; i < pads.length; i++) {
-        const gp = pads[i];
-        if (!gp || !gp.connected) continue;
-        for (let b = 0; b < gp.buttons.length; b++) {
-          const k = `${i}:${b}`;
-          // A button that was held at beginPadCapture() but has since been released no longer
-          // blocks capture: forget it so pressing it again counts as a fresh press.
-          if (!padButton(gp, b)) { padSnapshot.delete(k); continue; }
-          if (!padSnapshot.has(k)) return b;
-        }
-      }
-    }
-    return -1;
-  },
+  /**
+   * Begin a capture: every button held right now is ignored until it is released, so only a fresh
+   * press can be bound. Reads the step's poll rather than the device -- update() has already polled
+   * for this step by the time a panel calls this, and polling again would spend the step's edges.
+   */
+  beginPadCapture() { padSource.beginCapture(); },
+  /** First button (any pad, index order) pressed since beginPadCapture(), else -1. */
+  capturePadButton() { return padSource.capturing() ? padSource.captureButton() : -1; },
   /** End a capture session. */
-  endPadCapture() { padSnapshot = null; },
+  endPadCapture() { padSource.endCapture(); },
   /**
    * Test hook: override `navigator.getGamepads()[index]` with a virtual pad reporting `buttons`
    * pressed (or remove the override with `buttons = null`), so the controls panel's gamepad column
@@ -652,5 +647,6 @@ export const input = {
       axes: [0, 0],
     };
     if (virtualPads.every((p) => !p)) virtualPads = null;
+    padSource.setPads(virtualPads);
   },
 };

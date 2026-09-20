@@ -14,6 +14,7 @@ import { rrect, rivetLine } from '../../lib/art/shapes.ts';
 import { options } from '../options.ts';
 import { ACTIONS } from '../../engine/input.ts';
 import { confirmPressed, cancelPressed, escapePressed, confirmKey, backKey } from '../menuinput.ts';
+import { createRebindGrid } from '../../lib/input/rebind.ts';
 
 const PLATE = { x: 20, y: 25, w: 600, h: 310 };
 const COLS = [['P1', 'p1'], ['P2', 'p2'], ['PAD', 'pad']];
@@ -34,72 +35,76 @@ const PROMPT_KEY = 'PRESS A KEY', PROMPT_PAD = 'PRESS A BUTTON';
  */
 export function createControlsPanel(screen) {
   const input = screen.game.input, audio = screen.game.audio;
-  const st = { row: 0, col: 0, capturing: false, notice: '', noticeBad: false, noticeTimer: 0, settle: 0,
-    hint: hintFor(confirmKey(input)), hintVersion: input.bindingsVersion };
+  /**
+   * The cursor, the capture, the CAPTURE_SETTLE window and the notice timer: lib/input/rebind.js
+   * owns all four, because the sibling game's CONTROLS ticket needed the same four and got the
+   * awkward parts right separately. It owns no words and no pixels -- every string below is still
+   * this game's. `captureFrames: 0` because this panel never gives up on its own: it sits inside the
+   * options overlay, where Escape is always to hand.
+   */
+  const grid = createRebindGrid({
+    rows: ACTIONS.length, cols: COLS.length,
+    noticeFrames: NOTICE_FRAMES, settleFrames: CAPTURE_SETTLE, captureFrames: 0,
+  });
+  const st = { hint: hintFor(confirmKey(input)), hintVersion: input.bindingsVersion };
   /** @type {((e: KeyboardEvent) => void)|null} */
   let onKey = null;
 
-  function notice(text, bad) { st.notice = text; st.noticeBad = bad; st.noticeTimer = NOTICE_FRAMES; }
-
   function startCapture() {
-    st.capturing = true;
-    if (COLS[st.col][1] === 'pad') input.beginPadCapture();
+    grid.beginCapture();
+    if (COLS[grid.col][1] === 'pad') input.beginPadCapture();
     audio.play('menu_confirm');
   }
   function cancel() {
-    st.capturing = false;
+    grid.cancelCapture();
     input.endPadCapture();
-    st.settle = CAPTURE_SETTLE;
     audio.play('menu_back');
   }
   /** @param {string|number} code */
   function apply(code) {
-    const layout = COLS[st.col][1], action = ACTIONS[st.row];
+    const layout = COLS[grid.col][1], action = ACTIONS[grid.row], label = ACTION_LABELS[grid.row];
     const r = input.rebind(layout, action, code);
-    st.capturing = false;
     input.endPadCapture();
-    st.settle = CAPTURE_SETTLE;
     if (r.ok) {
       options.saveBindings();
-      notice(r.swapped ? `${ACTION_LABELS[st.row]} SET - ${r.swapped.toUpperCase()} TAKES THE OLD KEY` : `${ACTION_LABELS[st.row]} SET`, false);
+      grid.finish(true, r.swapped ? `${label} SET - ${r.swapped.toUpperCase()} TAKES THE OLD KEY` : `${label} SET`);
       audio.play('menu_confirm');
     } else {
-      notice(r.reason, true);
+      grid.finish(false, r.reason);
       audio.play('menu_back');
     }
   }
   /** Raw keydown while capturing a keyboard cell (installed on open(), removed on close()). */
   function handleKey(e) {
-    if (!st.capturing) return;
+    if (!grid.capturing) return;
     if (e.repeat) return; // OS auto-repeat while the key that started capture is still held is not a new key
     e.preventDefault();
     input.swallowKey(e.code); // dropped for this step: fires no action / global and does not back out via Escape
     if (e.code === 'Escape') { cancel(); return; }
-    if (COLS[st.col][1] === 'pad') return; // pad column only accepts gamepad buttons, polled in update()
+    if (COLS[grid.col][1] === 'pad') return; // pad column only accepts gamepad buttons, polled in update()
     apply(e.code);
   }
 
   return {
     open() {
-      st.row = 0; st.col = 0; st.capturing = false;
-      st.notice = ''; st.noticeBad = false; st.noticeTimer = 0; st.settle = 0;
+      grid.reset();
       st.hint = hintFor(confirmKey(input)); st.hintVersion = input.bindingsVersion;
       if (!onKey) { onKey = (e) => handleKey(e); window.addEventListener('keydown', onKey); }
     },
     close() {
       if (onKey) { window.removeEventListener('keydown', onKey); onKey = null; }
       input.endPadCapture();
-      st.capturing = false;
+      grid.cancelCapture();
     },
     /** Safety net so a panel left mid-capture never leaks its keydown listener when options closes. */
     dispose() { this.close(); },
     update() {
       // A capture in this very panel can move `start`, so the hint follows the live bindings.
       if (st.hintVersion !== input.bindingsVersion) { st.hintVersion = input.bindingsVersion; st.hint = hintFor(confirmKey(input)); }
-      if (st.settle > 0) { st.settle--; return; }
-      if (st.noticeTimer > 0) st.noticeTimer--;
-      if (st.capturing) {
-        if (COLS[st.col][1] === 'pad') {
+      const phase = grid.tick();
+      if (phase === 'settling') return;
+      if (phase === 'capturing') {
+        if (COLS[grid.col][1] === 'pad') {
           const b = input.capturePadButton();
           if (b >= 0) apply(b);
         }
@@ -107,10 +112,10 @@ export function createControlsPanel(screen) {
       }
       for (let p = 0; p < input.playerCount; p++) {
         if (!input.joined(p)) continue;
-        if (input.pressed(p, 'up')) { st.row = (st.row + ACTIONS.length - 1) % ACTIONS.length; audio.play('menu_move'); }
-        if (input.pressed(p, 'down')) { st.row = (st.row + 1) % ACTIONS.length; audio.play('menu_move'); }
-        if (input.pressed(p, 'left')) { st.col = (st.col + COLS.length - 1) % COLS.length; audio.play('menu_move'); }
-        if (input.pressed(p, 'right')) { st.col = (st.col + 1) % COLS.length; audio.play('menu_move'); }
+        if (input.pressed(p, 'up')) { grid.moveRow(-1); audio.play('menu_move'); }
+        if (input.pressed(p, 'down')) { grid.moveRow(1); audio.play('menu_move'); }
+        if (input.pressed(p, 'left')) { grid.moveCol(-1); audio.play('menu_move'); }
+        if (input.pressed(p, 'right')) { grid.moveCol(1); audio.play('menu_move'); }
         if (confirmPressed(input, p)) { startCapture(); return; }
         if (cancelPressed(input, p) || escapePressed(input)) {
           audio.play('menu_back');
@@ -136,20 +141,20 @@ export function createControlsPanel(screen) {
         for (let c = 0; c < COLS.length; c++) {
           const layout = COLS[c][1], action = ACTIONS[r];
           const cx = x + COL_X0 + c * COL_W + COL_W / 2;
-          const isCursor = r === st.row && c === st.col;
+          const isCursor = r === grid.row && c === grid.col;
           if (isCursor) rrect(ctx, cx - COL_W / 2 + 6, yy - 3, COL_W - 12, ROW_H - 4, 3, null, UI.brass, 1);
-          if (isCursor && st.capturing && (f % BLINK) < BLINK_ON) {
+          if (isCursor && grid.capturing && (f % BLINK) < BLINK_ON) {
             drawText(ctx, layout === 'pad' ? PROMPT_PAD : PROMPT_KEY, cx, yy, { size: 1, color: UI.teal, align: 'center' });
           } else {
             drawText(ctx, input.cellText(layout, action), cx, yy, { size: 1, color: isCursor ? UI.white : UI.paper, align: 'center' });
           }
         }
       }
-      if (st.noticeTimer > 0) drawText(ctx, st.notice, VIEW_W / 2, y + h - 40, { size: 1, color: st.noticeBad ? UI.red : UI.teal, align: 'center' });
+      if (grid.notice) drawText(ctx, grid.notice, VIEW_W / 2, y + h - 40, { size: 1, color: grid.noticeBad ? UI.red : UI.teal, align: 'center' });
       drawText(ctx, st.hint, VIEW_W / 2, y + h - 24, { size: 1, color: UI.brassDark, align: 'center' });
     },
     summary() {
-      return { row: st.row, col: st.col, capturing: st.capturing, controlsNotice: st.notice, controlsBad: st.noticeBad };
+      return { row: grid.row, col: grid.col, capturing: grid.capturing, controlsNotice: grid.notice, controlsBad: grid.noticeBad };
     },
   };
 }

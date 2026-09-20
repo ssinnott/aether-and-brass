@@ -238,7 +238,7 @@ export const input = {
   globalPressed('pause'|'mute'|'debug') -> bool,
   setVirtual(player, actionsObject),  // test hook: { left:true, attack:true ... } overrides devices until cleared
   clearVirtual(player),
-  setPadVirtual(index, buttons),      // test hook: number[] of pressed button indices (or null to remove the fake pad); fakes navigator.getGamepads()[index] for pollGamepads()
+  setPadVirtual(index, buttons),      // test hook: number[] of pressed button indices (or null to remove the fake pad); fakes navigator.getGamepads()[index] for the pad source
   bindings,                           // mutable clone of engine/bindings.js DEFAULT_BINDINGS; edited in place by rebind/importBindings/resetBindings
   bindingsVersion,                    // bumps on every bindings change; screens diff it to know when to rebuild cached hint strings
   rebind(layout, action, code) -> { ok: true, swapped?: string } | { ok: false, reason: string },  // layout: 'p1'|'p2'|'pad'; code is a KeyboardEvent.code for p1/p2, a gamepad button index for pad
@@ -1318,6 +1318,8 @@ On a touchscreen the same actions come from `engine/touch.js` (section 3) instea
 before `input.update()`: a floating stick for the four directions and `run`, five fight buttons, and the
 `start` / `taunt` pair up the right-hand margin. Every action in the table above is reachable by thumb.
 `engine/input.js` implements that table verbatim (`bindings.keyboard[0|1]`, `bindings.gamepad`, `bindings.gamepadRun = [7]`, stick deadzone 0.25). Drop-in for any slot 1-3: poll `input.joinPressed(slot)` and call `input.setJoined(slot, true)`; the title screen resets every claim (`input.resetClaims()`).
+
+The DEVICE half sits in the library (`lib/input/pad.js`): polling `navigator.getGamepads()` in a `try`, the `pressed || value > 0.5` threshold, the held/pressed button masks, the stick past the deadzone, the swallow and capture the CONTROLS panel binds from, and the pad-to-slot table with its "lowest free slot" rule. What stays in `engine/input.js` is everything that knows what an ACTION is: which buttons are bound, the `run` bit, the `offKey` split, and the callback that says which slots this game will give away (no pad, no keyboard half used, not netplay-virtual). The join gesture — a pad going from holding NOTHING to holding something, axes excluded — stays here too, because the sibling game claims on a different trigger. See the library's `docs/EXTRACTION_CANDIDATES_3.md`.
 The table above is only the shipped default: `game/options.js` persists any remapping under
 `aetherAndBrass.options.v1` (same guarded-`localStorage` pattern as `game/progress.js`, via
 `game/storage.js`'s `store()`), loading it once at boot and re-sanitising it against the defaults. A
