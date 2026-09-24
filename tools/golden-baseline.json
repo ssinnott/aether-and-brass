@@ -1,6 +1,6 @@
 {
   "pure": "aad732ac",
-  "total": "317236ca",
+  "total": "c4164f2d",
   "subjects": {
     "character:brunhild": "3e6b8a79",
     "character:pip": "33dd328c",
@@ -36,6 +36,8 @@
     "enemy:gleaning:sickle": "0e2ba2d3",
     "enemy:gleaning:thresher": "333108c3",
     "enemy:gleaning:winnow": "38b4639b",
+    "enemy:megaking": "9efa7efb",
+    "enemy:megakingB": "30c0b870",
     "enemy:midboss": "c48ddea5",
     "enemy:midboss2": "7dc037f6",
     "enemy:midboss2B": "ae4c080f",
@@ -57,6 +59,7 @@
     "enemy:stormcrow:grapnel": "0a55d6f1",
     "enemy:stormcrow:marine": "2e2d877d",
     "enemy:tinman": "ddf0b774",
+    "enemy:tree": "8694edf3",
     "enemy:volcano": "09414b47"
   }
 }

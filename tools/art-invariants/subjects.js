@@ -6,7 +6,7 @@
 // distinct rig with its own animation table. Phases that only re-skin the AI (no build) are not rigs and are skipped.
 import { buildRig } from '../../src/lib/art/rig.ts';
 import { CHARACTERS } from '../../src/content/characters/index.ts';
-import { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4, KOOPA_TRIO, getEnemyDef } from '../../src/content/enemies/index.ts';
+import { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4, KOOPA_TRIO, livingTree, getEnemyDef } from '../../src/content/enemies/index.ts';
 import { applyMods } from '../../src/game/traits.ts';
 import { classOf } from './helpers.js';
 
@@ -57,7 +57,7 @@ function make(kind, id, name, def, build, anims, phase) {
 export function collectSubjects() {
   const out = [];
   for (const def of CHARACTERS) out.push(make('character', def.id, def.name, def, def.build, def.anims));
-  for (const def of [...BRASSBOUND, ...SOOTBORN, ...STORMCROWS, ...GLEANINGS, ...CHANDLERS]) {
+  for (const def of [...BRASSBOUND, ...SOOTBORN, ...STORMCROWS, ...GLEANINGS, ...CHANDLERS, livingTree]) {
     out.push(make('enemy', subjectId(def), def.name, def, def.build, def.anims));
   }
   for (const def of BOSS_DEFS) {

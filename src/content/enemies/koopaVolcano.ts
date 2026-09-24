@@ -34,7 +34,7 @@ function bombBurst(world, proj, byHit, owner) {
   if (owner && !owner.dead) world.spawnProjectile(LAVA_POOL, owner, proj.x, 0, proj.z);
 }
 /** The fire bomb: lobbed at where you are going to be. It bursts on landing, and you can bat it back for 24. */
-const FIRE_BOMB = { style: 'bomb', kind: 'lob', aimAt: true, flight: 40, gravity: 0.45, bounces: 0, rest: false, life: 120,
+export const FIRE_BOMB = { style: 'bomb', kind: 'lob', aimAt: true, flight: 40, gravity: 0.45, bounces: 0, rest: false, life: 120,
   noContactHit: true, onExpire: bombBurst, r: 7, muzzle: false, offsetX: 10, offsetY: 84, color: VOLC.lava, draw: drawFireBomb,
   reflectable: true, damageOnReflect: 24, reflectSpeed: 6 };
 /** Phase 2: three at once, fanned in depth. */

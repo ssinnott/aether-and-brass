@@ -24,7 +24,7 @@ const R = Math.round;
  * clod of earth.
  */
 export interface KoopaLook {
-  kind: 'volcano' | 'tin' | 'earth';
+  kind: 'volcano' | 'tin' | 'earth' | 'mega';
   /** The shell dome, and its rim band. */
   shell: string;
   rim: string;
@@ -45,6 +45,28 @@ export interface KoopaLook {
   jaw: string;
   funnel?: boolean;
   dirtHead?: boolean;
+  // ---- the Mega King is all three kings taken apart and put back together, so each part may name its own material
+  /** The head's scales, when they are not the palette's `skin` (the palette's skin then colours the arms). */
+  headSkin?: string;
+  /** The barrel body's scales, likewise. */
+  bodySkin?: string;
+  /** Which king's shell he wears ('tin' on the Mega King), when it is not `kind`'s. */
+  shellKind?: 'volcano' | 'tin' | 'earth';
+  /** Which king's belly plate, likewise. */
+  bellyKind?: 'volcano' | 'tin' | 'earth';
+  /** EARTH STONE JEWELRY, which only the Mega King wears: a jewelled circlet, a necklace of stones, gems on the cuffs. */
+  jewels?: boolean;
+}
+
+/** The earth stones: jade, amber, garnet, lapis — set in stone mounts. */
+export const EARTH_STONES = ['#3FBF7F', '#E0A030', '#C0304A', '#5A6ACF'];
+const MOUNT = '#8A8A82';
+/** One cut stone, `w` px across, in a stone mount: an inked mount, the stone, one glint top-left. */
+function gem(ctx, rig, x: number, y: number, w: number, hex: string) {
+  band(ctx, rig, x - 1, y - 1, w + 2, w + 2, MOUNT, 1);
+  if (rig.override) return;
+  ctx.fillStyle = rig.col(hex); ctx.fillRect(x, y, w, w);
+  ctx.fillStyle = rig.col('#FFFFFF'); ctx.fillRect(x, y, 1, 1);
 }
 
 /** An ellipse as a flat [x, y, ...] polygon (celPoly takes points, not arcs, so the cel ramp can clip it). */
@@ -80,7 +102,7 @@ export function koopaHead(ctx, rig, pose, inf) {
       -1.42, 0.18, -0.9, 0.24, -0.5, -0.22]), inf.pal.hair, 0.3, 0.3);
   }
   // cranium: a clod of dirt on the earth king (the palette's `dark`), scales on the other two
-  const crown = k.dirtHead ? inf.pal.dark : skin;
+  const crown = k.dirtHead ? inf.pal.dark : (k.headSkin || skin);
   celPoly(ctx, rig, ell(R(-0.12 * r), R(-0.12 * r), R(r), R(r * 0.94), 14), crown, 0.34, 0.3);
   // the snout: the broad, flat, forward muzzle that makes the silhouette a koopa's and not a man's
   celPoly(ctx, rig, S(r, [0.12, -0.58, 1.02, -0.52, 1.5, -0.28, 1.64, 0.04, 1.48, 0.32, 0.22, 0.36]), crown, 0.34, 0.28);
@@ -114,10 +136,10 @@ export function koopaHead(ctx, rig, pose, inf) {
  */
 export function koopaFace(ctx, rig, pose, inf) {
   if (rig.override) return;
-  const r = inf.r, k = K(rig), face = pose.face | 0;
+  const r = inf.r, k = K(rig), face = pose.face | 0, skinF = k.headSkin || inf.pal.skin;
   const ex = R(0.36 * r), ey = R(-0.44 * r), ew = Math.max(5, R(0.44 * r)), eh = Math.max(4, R(0.28 * r));
   if (face === FACE.closed || face === FACE.dazed) {
-    ctx.fillStyle = rig.col(tones(rig, inf.pal.skin).deep); ctx.fillRect(ex, ey + 2, ew, 2);
+    ctx.fillStyle = rig.col(tones(rig, skinF).deep); ctx.fillRect(ex, ey + 2, ew, 2);
     if (face === FACE.dazed) { ctx.fillRect(ex + 1, ey, 2, 2); ctx.fillRect(ex + ew - 3, ey + 4, 2, 2); }
   } else {
     band(ctx, rig, ex, ey, ew, eh, '#F4ECD8', 1);
@@ -125,26 +147,37 @@ export function koopaFace(ctx, rig, pose, inf) {
     const squint = face === FACE.hurt ? 2 : 0;
     ctx.fillStyle = rig.col(hot); ctx.fillRect(ex + ew - 3, ey + 1 + squint, 2, eh - 2 - squint);
     // the brow comes down over the white: angry and grit press it, hurt lifts it
-    ctx.fillStyle = rig.col(tones(rig, inf.pal.skin).deep);
+    ctx.fillStyle = rig.col(tones(rig, skinF).deep);
     if (face === FACE.angry || face === FACE.grit || face === FACE.shout) { ctx.fillRect(ex - 1, ey - 1, ew + 2, 2); ctx.fillRect(ex + ew - 2, ey + 1, 3, 1); }
     else ctx.fillRect(ex, ey - 2, ew, 1);
   }
   // nostril near the tip of the snout
-  ctx.fillStyle = rig.col(tones(rig, inf.pal.skin).deep); ctx.fillRect(R(1.3 * r), R(-0.24 * r), 2, 2);
+  ctx.fillStyle = rig.col(tones(rig, skinF).deep); ctx.fillRect(R(1.3 * r), R(-0.24 * r), 2, 2);
   // two fangs down over the jaw line (Bowser's overbite): claw-white on every king
   ctx.fillStyle = rig.col(k.claw);
   const fy = R(0.3 * r);
   ctx.fillRect(R(0.62 * r), fy, 2, 3); ctx.fillRect(R(1.08 * r), fy, 2, 3);
 }
 
-/** The Tin Man's funnel (hat hook): a tin cone standing up off the crown, tipped back, with a rolled rim. */
+/** Hat hook: the Tin Man's funnel, or the Mega King's jewelled circlet. */
 export function koopaFunnel(ctx, rig, pose, inf) {
+  if (K(rig).jewels) { koopaCirclet(ctx, rig, inf.r); return; }
   if (!K(rig).funnel) return;
   const r = inf.r, tin = inf.pal.metal;
   celPoly(ctx, rig, S(r, [-0.72, -0.78, 0.36, -0.9, 0.02, -1.44, -0.1, -2.02, -0.24, -2.02, -0.38, -1.42]), tin, 0.36, 0.3);
   band(ctx, rig, R(-0.8 * r), R(-0.96 * r), R(1.24 * r), 4, tin, 2);
   if (rig.override) return;
   ctx.fillStyle = tones(rig, tin).deep; ctx.fillRect(R(-0.16 * r), R(-1.9 * r), 2, R(0.4 * r));
+}
+
+/** The Mega King's circlet: a band of stone across the brow, between the horns, with a big stone set in the front. */
+function koopaCirclet(ctx, rig, r: number) {
+  celPoly(ctx, rig, S(r, [-0.7, -0.86, 0.5, -0.86, 0.46, -0.66, -0.66, -0.66]), MOUNT, 0.34, 0.2);
+  celPoly(ctx, rig, S(r, [-0.2, -0.86, 0.02, -1.24, 0.22, -0.86]), MOUNT, 0.34, 0.2);
+  if (rig.override) return;
+  gem(ctx, rig, R(-0.08 * r), R(-1.06 * r), 4, EARTH_STONES[2]);
+  ctx.fillStyle = rig.col(EARTH_STONES[0]); ctx.fillRect(R(-0.5 * r), R(-0.82 * r), 2, 2);
+  ctx.fillStyle = rig.col(EARTH_STONES[1]); ctx.fillRect(R(0.26 * r), R(-0.82 * r), 2, 2);
 }
 
 // ---------------------------------------------------------------- the body
@@ -154,8 +187,8 @@ export function koopaFunnel(ctx, rig, pose, inf) {
  * scaled plates on the volcano, a riveted plate with the heart behind it on the tin man, woven bark on the earth king.
  */
 export function koopaBody(ctx, rig, pose, inf) {
-  const W = inf.w, H = inf.h, hw = R(W / 2), pal = inf.pal, k = K(rig);
-  celPoly(ctx, rig, [-hw + 2, -H + 4, -hw + 8, -H, hw - 6, -H, hw + 1, -H + 6, hw + 5, R(-H * 0.45), hw + 3, -2, hw - 4, 4, -hw + 3, 4, -hw, R(-H * 0.4)], pal.skin, 0.32, 0.3);
+  const W = inf.w, H = inf.h, hw = R(W / 2), pal = inf.pal, k = K(rig), body = k.bodySkin || pal.skin, belly = k.bellyKind || k.kind;
+  celPoly(ctx, rig, [-hw + 2, -H + 4, -hw + 8, -H, hw - 6, -H, hw + 1, -H + 6, hw + 5, R(-H * 0.45), hw + 3, -2, hw - 4, 4, -hw + 3, 4, -hw, R(-H * 0.4)], body, 0.32, 0.3);
   // the plastron
   const px0 = R(-hw * 0.12);
   celPoly(ctx, rig, [px0, -H + 7, hw - 2, -H + 7, hw + 3, R(-H * 0.45), hw + 1, -3, R(hw * 0.2), 0, R(-hw * 0.2), R(-H * 0.45)], pal.primary, 0.3, 0.28);
@@ -170,25 +203,33 @@ export function koopaBody(ctx, rig, pose, inf) {
   // collar studs
   ctx.fillStyle = rig.col(k.spike);
   for (const sx of [-0.75, -0.3, 0.2, 0.7]) ctx.fillRect(R(sx * hw), -H + 1, 2, 2);
-  if (k.kind === 'tin') {
+  if (belly === 'tin') {
     // the heart: the thing the Tin Man was promised, riveted in behind a window in his belly plate
     const hx = R(hw * 0.42), hy = R(-H * 0.62);
     ctx.fillStyle = rig.col(pal.glow);
     ctx.fillRect(hx - 3, hy - 2, 3, 3); ctx.fillRect(hx + 1, hy - 2, 3, 3); ctx.fillRect(hx - 3, hy, 7, 2); ctx.fillRect(hx - 2, hy + 2, 5, 1); ctx.fillRect(hx - 1, hy + 3, 3, 1);
     ctx.fillStyle = rig.col(pal.metal);
     for (const [x, y] of [[0.1, 0.4], [0.9, 0.4], [0.1, 0.85], [0.9, 0.85]]) ctx.fillRect(R(x * hw), R(-H * y), 2, 2);
-  } else if (k.kind === 'earth') {
+  } else if (belly === 'earth') {
     // woven vine strands across the bark: the body IS vines, and this is where it shows
     ctx.fillStyle = rig.col(pal.secondary);
     for (let i = 0; i < 3; i++) { ctx.fillRect(-hw + 3, R(-H * (0.2 + i * 0.27)), R(hw * 0.7), 2); }
     ctx.fillStyle = rig.col(k.tip);
     ctx.fillRect(R(-hw * 0.5), R(-H * 0.36), 2, 2); ctx.fillRect(R(-hw * 0.2), R(-H * 0.64), 2, 2);
-  } else if (k.kind === 'volcano') {
+  } else if (belly === 'volcano') {
     // lava showing through the cracks between the side scales
     ctx.fillStyle = rig.col(pal.glow);
     ctx.fillRect(R(-hw * 0.7), R(-H * 0.5), 3, 1); ctx.fillRect(R(-hw * 0.45), R(-H * 0.28), 2, 1);
   }
-  rimTop(ctx, rig, -hw + 6, -H + 1, hw - 6, -H + 1, pal.skin);
+  if (k.jewels) {
+    // the necklace of earth stones, hung off the collar, the biggest stone in the middle
+    for (let i = 0; i < 5; i++) {
+      const gx = R(-hw * 0.6 + i * hw * 0.3), gy = -H + 5 + (i === 2 ? 2 : i === 1 || i === 3 ? 1 : 0);
+      if (i === 2) gem(ctx, rig, gx - 2, gy, 5, EARTH_STONES[i % 4]);
+      else { ctx.fillStyle = rig.col(EARTH_STONES[i % 4]); ctx.fillRect(gx, gy, 3, 3); }
+    }
+  }
+  rimTop(ctx, rig, -hw + 6, -H + 1, hw - 6, -H + 1, body);
 }
 
 /** Heavy hip block: a scaled pelvis in the leg colour with a darker lower band (hips hook). */
@@ -209,6 +250,7 @@ export function koopaHand(ctx, rig, pose, inf) {
   drawFist(ctx, rig, r, inf.pal.skin);
   // three claws off the knuckles
   for (const cy of [-0.7, 0, 0.7]) celPoly(ctx, rig, [R(r * 1.3), R(r * cy) - 2, R(r * 2.3), R(r * cy), R(r * 1.3), R(r * cy) + 2], claw, 0.3, 0);
+  if (k.jewels && !far && !rig.override) { ctx.fillStyle = rig.col(EARTH_STONES[1]); ctx.fillRect(R(-r * 1.1), -1, 3, 3); }
 }
 
 /** Clawed foot (foot hook, ankle space: +x toward the toe) — a broad scaled foot with three claws, no boot. */
@@ -226,7 +268,7 @@ export function koopaFoot(ctx, rig, pose, inf) {
  * tip on the volcano, a riveted cone on the tin man, a curved thorn of vine on the earth king's stone.
  */
 export function koopaShell(ctx, rig) {
-  const p = rig.p, k = K(rig), W = p.torsoW, H = p.torsoH;
+  const p = rig.p, k = K(rig), W = p.torsoW, H = p.torsoH, kind = k.shellKind || k.kind;
   const cx = R(-W * 0.46), cy = R(-H * 0.58), rx = R(W * 0.62), ry = R(H * 0.72);
   // spikes first (their bases are buried under the dome), angle measured from +x, y down
   const spikes = [155, 195, 235, 272];
@@ -234,7 +276,7 @@ export function koopaShell(ctx, rig) {
     const a = deg * Math.PI / 180, nx = Math.cos(a), ny = Math.sin(a);
     const bx = cx + nx * rx * 0.86, by = cy + ny * ry * 0.86, tx = cx + nx * (rx + 11), ty = cy + ny * (ry + 11);
     const sx = -ny * 5, sy = nx * 5;
-    if (k.kind === 'earth') {
+    if (kind === 'earth') {
       // a hooked thorn: the tip bends back along the shell, the way a bramble's does
       celPoly(ctx, rig, [R(bx + sx), R(by + sy), R(tx - sx * 0.5), R(ty - sy * 0.5), R(tx - sx * 1.2), R(ty - sy * 1.2), R(bx - sx), R(by - sy)], k.spike, 0.3, 0);
     } else celPoly(ctx, rig, [R(bx + sx), R(by + sy), R(tx), R(ty), R(bx - sx), R(by - sy)], k.spike, 0.3, 0);
@@ -251,12 +293,12 @@ export function koopaShell(ctx, rig) {
     const a = deg * Math.PI / 180, tx = cx + Math.cos(a) * (rx + 9), ty = cy + Math.sin(a) * (ry + 9);
     ctx.fillStyle = rig.col(k.tip); ctx.fillRect(R(tx) - 1, R(ty) - 1, 2, 2);
   }
-  if (k.kind === 'volcano') {
+  if (kind === 'volcano') {
     // lava in the plate seams, brighter on the tell
     ctx.fillStyle = rig.col(rig.tell ? rig.palette.glow : k.tip);
     ctx.fillRect(R(cx - rx * 0.4), R(cy + ry * 0.2), 5, 1); ctx.fillRect(R(cx + rx * 0.1), R(cy - ry * 0.35), 1, 4);
     if (rig.phaseIndex >= 1) { ctx.fillRect(R(cx - rx * 0.2), R(cy - ry * 0.1), 6, 1); ctx.fillRect(R(cx - rx * 0.6), R(cy - ry * 0.4), 1, 5); }
-  } else if (k.kind === 'tin') {
+  } else if (kind === 'tin') {
     ctx.fillStyle = rig.col(rig.palette.metal);
     for (let i = 0; i < 7; i++) { const a = (150 + i * 25) * Math.PI / 180; ctx.fillRect(R(cx + Math.cos(a) * (rx - 4)), R(cy + Math.sin(a) * (ry - 4)), 2, 2); }
     if (rig.rusted) { ctx.fillStyle = rig.col(TIN_RUST); ctx.fillRect(R(cx - rx * 0.3), R(cy + ry * 0.3), 4, 3); ctx.fillRect(R(cx + rx * 0.05), R(cy - ry * 0.5), 3, 3); }
@@ -267,6 +309,7 @@ export function koopaShell(ctx, rig) {
     ctx.fillStyle = rig.col(rig.palette.secondary);
     ctx.fillRect(R(cx - rx * 0.2), R(cy + ry * 0.1), 1, 6); ctx.fillRect(R(cx - rx * 0.2), R(cy + ry * 0.1), 5, 1);
   }
+  if (k.jewels) { gem(ctx, rig, R(cx - rx * 0.35), R(cy - ry * 0.3), 5, EARTH_STONES[0]); gem(ctx, rig, R(cx - rx * 0.05), R(cy + ry * 0.25), 4, EARTH_STONES[3]); }
   rimTop(ctx, rig, R(cx - rx * 0.6), R(cy - ry * 0.92), R(cx + rx * 0.2), R(cy - ry * 0.98), k.shell);
 }
 /** Rust bloom colour, shared with the Tin Man's own def (the RUSTED STIFF window paints it on the shell). */

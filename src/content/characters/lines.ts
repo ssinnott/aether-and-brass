@@ -337,6 +337,13 @@ export const BOSS_LINES = {
     ],
     defeat: 'TAKE THEM. THE AXE CUTS THE ROOTS.',
   },
+  megaking: {
+    phase: [
+      'KINGS! TREE MODE ON! GROW, DESTROYER!',
+      'I AM ALL THREE KINGS. AND THE STONES.',
+    ],
+    defeat: 'TAKE ME APART, THEN. THERE ARE THREE.',
+  },
   earthsaway: {
     phase: [
       'FISTS DO NOT MOVE A MOUNTAIN OF DIRT.',
