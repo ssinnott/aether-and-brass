@@ -6,6 +6,7 @@ import { strike } from '../art/animLib.ts';
 import { drawCorsairCutlass } from '../art/weapons.ts';
 import { drawHalberd, drawRapier } from '../content/enemies/brassbound.ts';
 import { drawShovel } from '../content/enemies/chandlerKit.ts';
+import { drawTinAxe, drawClawShovel } from '../content/enemies/koopaKit.ts';
 import { VIEW_W } from '../constants.ts';
 // The rig and animation shapes come from the vendored library rather than being restated here: `RigWeapon` is
 // exactly the `build.weapon` block lib/art/rig.ts draws in hand space, and `AnimSet` is the set lib/art/animation.ts's
@@ -31,21 +32,21 @@ const SM_LOW = { from: 200, to: 0, a: 0.5, r: 66 };
  * (art/animLib.js), so a swing carrying its own `smear` gets it patched onto the active frame (frames[1], the key
  * the hitbox lives on) here.
  */
-function swing(s: WeaponSwing, last: boolean) {
+function swing(s: WeaponSwing, last: boolean, chop: boolean) {
   const a = strike({
     style: s.style, startup: s.startup, active: s.active, recovery: s.recovery, ret: 4, carry: WEAPON_CARRY,
     reach: s.reach, low: s.low, sfx: s.sfx,
     fx: [{ kind: 'slash', x: s.reach - 12, y: s.low ? 14 : 40, radius: 30, angle: s.low ? 30 : 10 }],
-    hit: { damage: s.dmg, type: s.type, kbX: s.kbX, kbY: s.kbY || 0, hitstun: s.hitstun, status: s.status, weapon: true },
+    hit: { damage: s.dmg, type: s.type, kbX: s.kbX, kbY: s.kbY || 0, hitstun: s.hitstun, status: s.status, weapon: true, ...(chop ? { chop: true } : {}) },
     cancel: last ? 'any' : 'attack',
   });
   if (s.smear) a.frames[1].smear = s.smear;
   return a;
 }
 /** Build a weapon's { attack1..N } table from its `swings` list; the last swing chain-cancels into anything. */
-function anims(swings: WeaponSwing[]): AnimSet {
+function anims(swings: WeaponSwing[], chop: boolean): AnimSet {
   const t: AnimSet = {};
-  swings.forEach((s, i) => { t['attack' + (i + 1)] = swing(s, i === swings.length - 1); });
+  swings.forEach((s, i) => { t['attack' + (i + 1)] = swing(s, i === swings.length - 1, chop); });
   return t;
 }
 
@@ -118,6 +119,11 @@ export interface WeaponDef {
   swings: WeaponSwing[];
   throw: WeaponThrow;
   /**
+   * An axe or a shovel: its swings and its throw carry `hit.chop`, which is what cuts through Earth's Away's roots
+   * (content/enemies/koopaEarth.ts). Every other target ignores the flag.
+   */
+  chop?: boolean;
+  /**
    * The `{ attack1..N }` table built from `swings`, and the shortest reach in the chain. Both are filled in by the
    * loop under the table below, so both are always present by the time anything reads a weapon; they are optional
    * only because the table is AUTHORED without them.
@@ -132,7 +138,7 @@ const THROW_LIMERAKE: WeaponThrow = { speed: 6, vy: 5, gravity: 0.45, damage: 12
 
 const table: Record<string, WeaponDef> = {
   halberd: {
-    id: 'halberd', name: 'HALBERD', hits: 12, color: '#9EB5D3',
+    id: 'halberd', name: 'HALBERD', hits: 12, color: '#9EB5D3', chop: true,
     rig: { attach: 'handR', length: 58, draw: drawHalberd, headAt: 44 },
     swings: [
       { style: 'thrust', startup: 8, active: 4, recovery: 12, reach: 62, dmg: 12, type: 'medium', kbX: 3, hitstun: 20, sfx: 'whiff' },
@@ -152,7 +158,7 @@ const table: Record<string, WeaponDef> = {
     throw: THROW_CUTLASS,
   },
   limerake: {
-    id: 'limerake', name: 'LIME RAKE', hits: 10, color: '#B8C0C4',
+    id: 'limerake', name: 'LIME RAKE', hits: 10, color: '#B8C0C4', chop: true,
     rig: { attach: 'handR', length: 44, draw: drawShovel, headAt: 32 },
     swings: [
       { style: 'swing', startup: 6, active: 4, recovery: 10, reach: 46, dmg: 9, type: 'medium', kbX: 3, hitstun: 18, status: { burn: { frames: 40, every: 20, damage: 2 } }, sfx: 'whiff', smear: SM_SWING },
@@ -170,12 +176,32 @@ const table: Record<string, WeaponDef> = {
     ],
     throw: { ...THROW_CUTLASS, damage: 18 },
   },
+  // The Koopa Trio's Tin Man drops these two when he falls (content/enemies/koopaTin.ts): an axe and a shovel with
+  // claws on its lip, both `chop` — the heroes' way through Earth's Away.
+  tinaxe: {
+    id: 'tinaxe', name: 'TIN AXE', hits: 10, color: '#C9D3DA', chop: true,
+    rig: { attach: 'handR', length: 46, draw: drawTinAxe, headAt: 42 },
+    swings: [
+      { style: 'swing', startup: 7, active: 4, recovery: 12, reach: 52, dmg: 13, type: 'medium', kbX: 3, hitstun: 20, sfx: 'hammer_swing', smear: SM_SWING },
+      { style: 'slam', startup: 10, active: 4, recovery: 16, reach: 54, dmg: 19, type: 'knockdown', kbX: 4, kbY: 4, hitstun: 22, sfx: 'hammer_slam', smear: SM_SLAM },
+    ],
+    throw: { ...THROW_HALBERD, damage: 20, spin: 0.6, maxDist: 220 },
+  },
+  clawshovel: {
+    id: 'clawshovel', name: 'CLAW SHOVEL', hits: 10, color: '#C9D3DA', chop: true,
+    rig: { attach: 'handR', length: 44, draw: drawClawShovel, headAt: 38 },
+    swings: [
+      { style: 'thrust', startup: 6, active: 4, recovery: 10, reach: 50, dmg: 11, type: 'medium', kbX: 3, hitstun: 18, sfx: 'whiff' },
+      { style: 'swing', low: true, startup: 8, active: 5, recovery: 14, reach: 50, dmg: 15, type: 'launch', kbX: 3, kbY: 6, hitstun: 22, sfx: 'whip', smear: SM_LOW },
+    ],
+    throw: { ...THROW_LIMERAKE, damage: 14, patch: undefined },
+  },
 };
 for (const w of Object.values(table)) {
-  w.anims = anims(w.swings);
+  w.anims = anims(w.swings, !!w.chop);
   w.reach = Math.min(...w.swings.map((s) => s.reach));
 }
-/** The four pickup weapon defs, keyed by id (game/items.js WeaponPickup, game/player.js wield/drop/break). */
+/** The pickup weapon defs, keyed by id (game/items.js WeaponPickup, game/player.js wield/drop/break). */
 export const WEAPONS: Readonly<Record<string, WeaponDef>> = Object.freeze(table);
 
 /** Bot weapon-seeking tuning (game/bot.js) and player-drop behaviour (game/player.js). */

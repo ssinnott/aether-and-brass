@@ -6,7 +6,7 @@
 // distinct rig with its own animation table. Phases that only re-skin the AI (no build) are not rigs and are skipped.
 import { buildRig } from '../../src/lib/art/rig.ts';
 import { CHARACTERS } from '../../src/content/characters/index.ts';
-import { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4, getEnemyDef } from '../../src/content/enemies/index.ts';
+import { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4, KOOPA_TRIO, getEnemyDef } from '../../src/content/enemies/index.ts';
 import { applyMods } from '../../src/game/traits.ts';
 import { classOf } from './helpers.js';
 
@@ -29,8 +29,8 @@ const MOD_SUBJECTS = [
 /** Stable subject id for an enemy/boss def: always `${type}:${variant}` (the boss defs' own `id` is the short slug). */
 function subjectId(def) { return `${def.type}:${def.variant}`; }
 
-/** Every boss def, in stage order. */
-const BOSS_DEFS = [midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4];
+/** Every boss def, in stage order, then the Koopa Trio (built, not yet on a board). */
+const BOSS_DEFS = [midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4, ...KOOPA_TRIO];
 
 /** Stage-1 reference factions: these DEFINE the invariants and must never report an error. */
 export const REFERENCE_TYPES = Object.freeze(['brassbound', 'sootborn', 'midboss', 'boss']);

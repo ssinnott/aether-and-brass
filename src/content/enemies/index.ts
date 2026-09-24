@@ -21,6 +21,10 @@ import { midboss3 } from './midboss3.ts';
 import { boss3 } from './boss3.ts';
 import { midboss4 } from './midboss4.ts';
 import { boss4 } from './boss4.ts';
+// the Koopa Trio (three kings who fight as one group): built, registered and drawn, but on no board yet
+import { koopaVolcano } from './koopaVolcano.ts';
+import { koopaTin } from './koopaTin.ts';
+import { koopaEarth } from './koopaEarth.ts';
 // spawn-modifier art (issue #28 part 3): registers the bladder / scrip badge / salvage plate drawings in game/traits.js MOD_ART
 import './mods.ts';
 // bestiary codex text (issue #26): merged onto the defs below so `def.codex` reads as if it had been written inline
@@ -34,6 +38,8 @@ const TYPE_ALIASES = {
   grubbik: 'midboss', hoister: 'midboss', vane: 'boss', skree: 'midboss2', winch: 'midboss2', kestrel: 'boss2', admiral: 'boss2',
   marl: 'midboss3', yardmaster: 'midboss3', kiln: 'midboss3', hasp: 'boss3', factor: 'boss3', ledger: 'boss3',
   culm: 'midboss4', reeve: 'midboss4', baler: 'midboss4', oke: 'boss4', harvestlord: 'boss4', briar: 'boss4',
+  // the Koopa Trio
+  lava: 'volcano', volcanoking: 'volcano', tin: 'tinman', tinking: 'tinman', earth: 'earthsaway', earthking: 'earthsaway',
 };
 /** GDD display-name words -> variant slugs (so 'Tin Footman' / 'footman' / 'tin' all resolve). */
 const VARIANT_ALIASES = {
@@ -59,6 +65,9 @@ DEFS.set('midboss3:marl', midboss3);
 DEFS.set('boss3:hasp', boss3);
 DEFS.set('midboss4:culm', midboss4);
 DEFS.set('boss4:oke', boss4);
+DEFS.set('volcano:king', koopaVolcano);
+DEFS.set('tinman:king', koopaTin);
+DEFS.set('earthsaway:king', koopaEarth);
 
 // Attach the BESTIARY entry text (issue #26). A def that declares its own `codex` inline keeps it; everything else
 // takes the block content/enemies/codex.js keys under its id. Boss PHASE blocks stay in CODEX under `id#phase` and
@@ -78,7 +87,7 @@ export function resolveType(type) {
 }
 
 /** Boss types resolve to their single def whatever variant is asked for. */
-const BOSSES = { midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4 };
+const BOSSES = { midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4, volcano: koopaVolcano, tinman: koopaTin, earthsaway: koopaEarth };
 
 /**
  * Look up an enemy definition. Unknown variants fall back to the type's first variant; unknown types to the Tin Footman.
@@ -114,6 +123,15 @@ export const ENEMY_LIST = [
   { type: 'boss4', variant: 'oke', name: boss4.name, role: 'boss' },
 ];
 
+/**
+ * The Koopa Trio (content/enemies/koopaTrio.ts): the Volcano King, the Tin Man and Earth's Away, who are fought
+ * together as one group. Kept OUT of ENEMY_LIST on purpose — that list is the bestiary's, and a bestiary entry wants a
+ * board to first appear on. When their stage is built they join it; until then they are spawnable by type
+ * ('volcano' / 'tinman' / 'earthsaway') and drawn in the gallery.
+ */
+export const KOOPA_TRIO = [koopaVolcano, koopaTin, koopaEarth];
+export const KOOPA_TRIO_LIST = KOOPA_TRIO.map((d) => ({ type: d.type, variant: d.variant, name: d.name, role: 'boss' }));
+
 /** Gallery entries: every variant plus each boss phase rig. */
 const galleryEntry = (d) => ({ id: d.id, name: d.name, build: d.build, anims: d.anims });
 export const ENEMY_GALLERY = [
@@ -136,6 +154,9 @@ export const ENEMY_GALLERY = [
   { id: 'boss4', name: 'THE CANOPY', build: boss4.build, anims: boss4.anims },
   { id: 'boss4B', name: 'THE STOOP', build: boss4.phases[1].build, anims: boss4.phases[1].anims },
   { id: 'boss4C', name: 'THE GLEANER', build: boss4.phases[2].build, anims: boss4.phases[2].anims },
+  { id: 'volcano', name: 'THE VOLCANO KING', build: koopaVolcano.build, anims: koopaVolcano.phases[1].anims },
+  { id: 'tinman', name: 'THE TIN MAN', build: koopaTin.build, anims: koopaTin.phases[1].anims },
+  { id: 'earthsaway', name: "EARTH'S AWAY", build: koopaEarth.build, anims: koopaEarth.phases[1].anims },
 ];
 
-export { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4 };
+export { BRASSBOUND, SOOTBORN, STORMCROWS, GLEANINGS, CHANDLERS, midboss, boss, midboss2, boss2, midboss3, boss3, midboss4, boss4, koopaVolcano, koopaTin, koopaEarth };

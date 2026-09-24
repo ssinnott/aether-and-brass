@@ -1,6 +1,6 @@
 {
   "pure": "aad732ac",
-  "total": "1a47b1a0",
+  "total": "317236ca",
   "subjects": {
     "character:brunhild": "3e6b8a79",
     "character:pip": "33dd328c",
@@ -28,6 +28,7 @@
     "enemy:chandler:runner": "9a7d290b",
     "enemy:chandler:tallyman": "285a37ae",
     "enemy:chandler:wickboy": "15454da6",
+    "enemy:earthsaway": "57645840",
     "enemy:gleaning:chaff": "708d4595",
     "enemy:gleaning:harvestman": "0d9a6376",
     "enemy:gleaning:picker": "6d6d77ff",
@@ -54,6 +55,8 @@
     "enemy:stormcrow:deckhand": "6ad9e76f",
     "enemy:stormcrow:galewright": "672f5c83",
     "enemy:stormcrow:grapnel": "0a55d6f1",
-    "enemy:stormcrow:marine": "2e2d877d"
+    "enemy:stormcrow:marine": "2e2d877d",
+    "enemy:tinman": "ddf0b774",
+    "enemy:volcano": "09414b47"
   }
 }

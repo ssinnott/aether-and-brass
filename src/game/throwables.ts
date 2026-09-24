@@ -88,6 +88,7 @@ export function spawnThrownWeapon(world, owner, id, hits, vzDir) {
   o.vy = vy;
   o.vz = vzDir * THROW.vz;
   o.hit.body = true;
+  if (def.chop) o.hit.chop = true;   // a thrown axe or shovel still chops (content/enemies/koopaEarth.ts)
   o.onExpire = (w, proj) => landWeapon(w, proj);
   o.stopAtBounds = true;
   const proj = world.spawnProjectile(o);

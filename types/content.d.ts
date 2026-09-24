@@ -68,6 +68,11 @@ interface Hit {
   /** A held pickup weapon's swing: connecting spends one point of its durability (game/player.js). */
   weapon?: boolean;
   /**
+   * An axe or shovel's swing or throw (game/weapons.ts `WeaponDef.chop`). Only Earth's Away reads it
+   * (content/enemies/koopaEarth.ts): a chop is the one thing that cuts through his roots.
+   */
+  chop?: boolean;
+  /**
    * A thrown body / weapon / prop's own hit (game/throwables.js). `throwDamageTakenMult` applies to it and it sets
    * `f.lastHitWasThrow`, which is what earns the x1.5 throw-kill score bonus (GDD 3/7). Listed in the FRAME FIELDS
    * block at the top of game/fighter.ts but not in ARCHITECTURE.md section 4: the core wins.

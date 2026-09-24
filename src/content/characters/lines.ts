@@ -322,6 +322,28 @@ export const SOLO = {
  * @type {Record<string, { phase: string[], defeat: string }>}
  */
 export const BOSS_LINES = {
+  // the Koopa Trio: three kings, one fight (content/enemies/koopaTrio.ts)
+  volcano: {
+    phase: [
+      'EVERY BOMB I THROW IS MADE OF FIRE.',
+      'THE MOUNTAIN IS AWAKE NOW. RUN.',
+    ],
+    defeat: 'THE FIRE GOES BACK UNDER THE GROUND.',
+  },
+  tinman: {
+    phase: [
+      'AXE IN ONE HAND. SHOVEL IN THE OTHER.',
+      'I FOUND A HEART. IT IS VERY ANGRY.',
+    ],
+    defeat: 'TAKE THEM. THE AXE CUTS THE ROOTS.',
+  },
+  earthsaway: {
+    phase: [
+      'FISTS DO NOT MOVE A MOUNTAIN OF DIRT.',
+      'EVERYTHING I TOUCH GROWS BACK.',
+    ],
+    defeat: 'CUT DOWN. THE ROOTS WILL REMEMBER.',
+  },
   boss: {
     phase: [
       'THE VALVES STAY SHUT. THE CITY STAYS UP.',
