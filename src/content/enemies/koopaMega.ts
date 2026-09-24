@@ -225,6 +225,7 @@ export const koopaMega = {
     },
     /** The Mega Destroyer blows apart and the king climbs out of the wreck. */
     onPhase(f, i, world) {
+      if (i === 1) f.shield = f.shieldMax;   // he climbs out with the Earth Stones fully charged
       if (!world || i === 0) return;
       particles.burst('debris', f.x, 50, f.z, 30, { speed: 4, up: 4, color: TIN.shell, sizeJitter: 2 });
       particles.burst('ember', f.x, 60, f.z, 30, { speed: 3.4, up: 3.6, color: VOLC.lava, sizeJitter: 1.6 });
