@@ -52,7 +52,30 @@ export const WAVE_EXTRA_BY_PARTY = Object.freeze([0, 0, 0, 1, 2]);
 export const PARTY_EXTRA_DELAY = 30;
 
 /** Difficulty levels. The order is the wire index net/protocol.js encodeStart sends. */
-export const DIFFICULTIES = Object.freeze(['easy', 'normal', 'hard']);
+export const DIFFICULTIES = Object.freeze(['easy', 'medium', 'hard']);
+
+/** One row of DIFFICULTY_TUNING: what a difficulty is worth (GDD 7). */
+export interface DifficultyTuning {
+  /** Enemy max HP multiplier, applied once at spawn (screens/gameplay.js spawnEnemyAt). Bosses are exempt. */
+  hpMult: number;
+  /** Enemy damage multiplier, folded into the spawned body's own `damageMult` and kept across a boss's phases. */
+  dmgMult: number;
+  /** Enemy attack speed, handed to the AI through `options.attackSpeed` (game/enemy.js): the swing and recovery of
+   *  every enemy attack play at this rate, and the wait before its next attack or shot runs on the same clock.
+   *  Keep it a short binary fraction (0.75, not 0.8): the frame and cooldown clocks then add up exactly. */
+  attackSpeed: number;
+  /** Wind-up length multiplier, handed to the content layer through `options.tellScale`. */
+  tellScale: number;
+  /** Continues a run starts with. */
+  continues: number;
+}
+/** Difficulty tuning (GDD 7), keyed by DIFFICULTIES. The gameplay screen caches its row at enter(); the
+ *  DIFFICULTY select screen prints it, so the plaques always read the numbers the board will use. */
+export const DIFFICULTY_TUNING: Readonly<Record<string, DifficultyTuning>> = Object.freeze({
+  easy: { hpMult: 0.75, dmgMult: 0.6, attackSpeed: 0.75, tellScale: 1.3, continues: 5 },
+  medium: { hpMult: 1, dmgMult: 1, attackSpeed: 1, tellScale: 1, continues: 3 },
+  hard: { hpMult: 1.25, dmgMult: 1.4, attackSpeed: 1, tellScale: 0.85, continues: 2 },
+});
 
 /** Teams. Players never hurt players; enemies never hurt enemies unless hit.friendly. */
 export const TEAM = Object.freeze({ PLAYER: 0, ENEMY: 1, NONE: 2 });

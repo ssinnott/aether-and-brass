@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards select combat shields thrown entrances obstacles stall platforms events cargo hazards bestiary playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad netrematch roomcode audio gallery botstyles options sourcelink training weapons)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards difficulty select combat shields thrown entrances obstacles stall platforms events cargo hazards bestiary playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad netrematch roomcode audio gallery botstyles options sourcelink training weapons)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 // This file is already close to its ~700-line budget: further scenarios belong in their own sibling
@@ -25,6 +25,7 @@ import { events as eventScenario } from './scenarios/events.js';
 import { beats as beatScenario } from './scenarios/beats.js';
 import { cargo } from './scenarios/cargo.js';
 import { stall } from './scenarios/stall.js';
+import { difficulty as difficultyScenario } from './scenarios/difficulty.js';
 import { hazards } from './scenarios/hazards.js';
 import { bestiaryScenarios } from './scenarios/bestiary.js';
 import { roomCodeScenarios } from './scenarios/roomcode.js';
@@ -294,7 +295,10 @@ const scenarios = {
       assert((await g.screen()) === 'boardselect', 'attack on title goes to board select');
       await g.shot('02-boardselect');
       await g.press(0, { attack: true }, 2, 45);
-      assert((await g.screen()) === 'select', 'confirming the open board goes to character select');
+      assert((await g.screen()) === 'difficulty', 'confirming the open board goes to difficulty select');
+      await g.shot('02a-difficulty');
+      await g.press(0, { attack: true }, 2, 45);
+      assert((await g.screen()) === 'select', 'confirming a difficulty goes to character select');
       await g.shot('02b-select');
     });
   },
@@ -320,7 +324,7 @@ const scenarios = {
       // the open board still starts
       await g.press(0, { left: true }, 2, 10);
       await g.press(0, { attack: true }, 2, 45);
-      assert((await g.screen()) === 'select', 'confirming an open board goes to character select');
+      assert((await g.screen()) === 'difficulty', 'confirming an open board goes on to difficulty select');
       // record a clear the way the results screen does, then reload: the unlock has to be on disk, not in memory
       await page.evaluate(() => window.__game.progress.markCleared('stage1', { score: 12345, rank: 'B' }));
       await page.reload({ waitUntil: 'load' });
@@ -334,7 +338,7 @@ const scenarios = {
       await g.shot('06-boardselect-unlocked');
       await g.press(0, { right: true }, 2, 10);
       await g.press(0, { attack: true }, 2, 45);
-      assert((await g.screen()) === 'select', 'the newly opened board can be started');
+      assert((await g.screen()) === 'difficulty', 'the newly opened board can be started');
     });
     // the results screen names the board that was actually played and announces what the clear opened
     await withPage(server, 'seed=1&skipTo=results', async (g) => {
@@ -362,7 +366,7 @@ const scenarios = {
       assert(sum.revealing === false, 'the reveal finishes and hands back to normal selection');
       assert((await g.screen()) === 'boardselect', 'the selector stays up once the reveal is done');
       await g.press(0, { attack: true }, 2, 45);
-      assert((await g.screen()) === 'select', 'the board the reveal just opened starts a run');
+      assert((await g.screen()) === 'difficulty', 'the board the reveal just opened starts a run');
     });
     // the flourish is skippable
     await withPage(server, 'seed=1&skipTo=results', async (g) => {
@@ -399,7 +403,8 @@ const scenarios = {
       await withPage(server, 'seed=1', async (g) => {
         await g.step(60);
         await g.press(0, { attack: true }, 2, 20);           // title -> board select
-        await g.press(0, { attack: true }, 2, 45);           // board select -> character select
+        await g.press(0, { attack: true }, 2, 45);           // board select -> difficulty select
+        await g.press(0, { attack: true }, 2, 45);           // difficulty select -> character select
         for (let i = 0; i < c; i++) await g.press(0, { right: true }, 2, 10);
         await g.press(0, { attack: true }, 2, 20);           // confirm character
         // ready/confirm again if the select screen requires a second confirmation
@@ -745,6 +750,10 @@ const scenarios = {
 
   // 9. Options plate, key remapping and persistence (tools/playtest-options.js).
   async options(server) { await optionsScenario(server, { withPage, assert }); },
+
+  // 9a. DIFFICULTY select between board and character select, and the level it picks reaching the board
+  //     (tools/scenarios/difficulty.js).
+  difficulty: (server) => difficultyScenario(server, { withPage, assert }),
 
   // 9b. The title's SOURCE CODE row and the repository address under it (tools/playtest-link.js).
   async sourcelink(server) { await sourceLinkScenario(server, { withPage, assert }); },

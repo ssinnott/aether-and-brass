@@ -172,8 +172,9 @@ export class SelectScreen extends Screen {
       } else if (i === 0 && (cancelPressed(inp, i) || escapePressed(inp))) {
         audio.play('menu_back');
         this.starting = true;
-        // back out to wherever the board was chosen, so P1 can change board without restarting from the title
-        // (params.back = 'title' for the TRAINING route: there is no board to return to)
+        // back out a step toward where the board was chosen, so P1 can change difficulty or board without restarting
+        // from the title (params.back = 'difficulty' from DIFFICULTY select, which backs out to BOARD SELECT in turn;
+        // 'title' for the TRAINING route: there is no board to return to)
         const back = this.params.back || (this.game.factories.boardselect ? 'boardselect' : 'title');
         this.game.fadeTo(() => this.game.replace(back), 0.08);
         return;

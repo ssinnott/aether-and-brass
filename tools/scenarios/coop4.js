@@ -195,7 +195,8 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
       await withPage(server, 'seed=1', async (g) => {
         await g.step(60);
         await g.press(0, { attack: true }, 2, 20); // title -> board select
-        await g.press(0, { attack: true }, 2, 45); // board select -> character select
+        await g.press(0, { attack: true }, 2, 45); // board select -> difficulty select
+        await g.press(0, { attack: true }, 2, 45); // difficulty select -> character select
         await g.press(1, { attack: true }, 2, 6);  // P2 joins (their own keyboard block)
         await g.press(2, { attack: true }, 2, 6);  // a third seat cannot join here either
         await g.press(3, { attack: true }, 2, 6);
@@ -231,7 +232,8 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         // Drive P1 on REAL keys, not g.press(): a virtual slot never sets kbSeen, and kbSeen[0] is
         // what makes a pad claim slot 1 rather than settling on P1.
         await page.keyboard.press('KeyZ'); await g.step(25); // title -> board select
-        await page.keyboard.press('KeyZ'); await g.step(50); // board select -> character select
+        await page.keyboard.press('KeyZ'); await g.step(50); // board select -> difficulty select
+        await page.keyboard.press('KeyZ'); await g.step(50); // difficulty select -> character select
         assert((await g.screen()) === 'select', `P1's own keys reach character select (got ${await g.screen()})`);
         const sel = () => g.eval(() => ({
           joined: window.__game.game.screen.p.map((ps) => ps.joined),
@@ -380,7 +382,8 @@ export function coop4Scenarios({ withPage, withPair, assert, readyUp }) {
         const before = await g.eval(() => [0, 1, 2, 3].map((s) => window.__game.input.joined(s)));
         assert(before[2] && before[3], `the ghost seats are joined before select (${JSON.stringify(before)})`);
         await g.press(0, { attack: true }, 2, 20); // title -> board select
-        await g.press(0, { attack: true }, 2, 45); // board select -> character select
+        await g.press(0, { attack: true }, 2, 45); // board select -> difficulty select (any one seat confirms it)
+        await g.press(0, { attack: true }, 2, 45); // difficulty select -> character select
         assert((await g.screen()) === 'select', `reached character select (got ${await g.screen()})`);
         const seated = await g.eval(() => ({
           screen: window.__game.game.screen.p.map((ps) => ps.joined),

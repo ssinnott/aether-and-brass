@@ -3,7 +3,7 @@
 // sequencing mistake fails in a second rather than after six minutes of playthroughs.
 //
 //   node tools/simtest.js              run every suite
-//   node tools/simtest.js events       run selected suites (events entrances platforms audio bestiary bindings)
+//   node tools/simtest.js events       run selected suites (events entrances platforms audio bestiary bindings beats difficulty)
 //
 // These cover the parts whose CORRECTNESS IS ORDERING rather than rendering: which action of a script runs on which
 // frame, how long an arrival takes, where a platform is at a given frame, which audio nodes are still in the graph
@@ -25,7 +25,12 @@ import {
 } from '../src/engine/bindings.ts';
 import { Dialogue, pairKey, TRIGGERS, PLATE_LIFE, PLATE_COOLDOWN, REPLY_DELAY } from '../src/game/dialogue.ts';
 import { measureText } from '../src/engine/text.ts';
-import { VIEW_W } from '../src/constants.ts';
+import { VIEW_W, ST, DIFFICULTIES, DIFFICULTY_TUNING } from '../src/constants.ts';
+import { World } from '../src/game/world.ts';
+import { Enemy } from '../src/game/enemy.ts';
+import { Boss } from '../src/game/boss.ts';
+import { applyDifficulty } from '../src/game/screens/gameplay.ts';
+import { rng } from '../src/lib/engine/rng.ts';
 import { BANTER, SOLO, BOSS_LINES } from '../src/content/characters/lines.ts';
 import { CHARACTERS } from '../src/content/characters/index.ts';
 import { STAGES } from '../src/content/stage/index.ts';
@@ -752,8 +757,119 @@ function suiteBeats() {
   }
 }
 
+// ================================================================ difficulty
+/** A bare world on one difficulty's run options: the two fields screens/gameplay.js enter() hands the AI. */
+function difficultyWorld(id) {
+  const d = DIFFICULTY_TUNING[id];
+  return new World({ stageLength: 3000, game: null, backdrop: null, options: { tellScale: d.tellScale, attackSpeed: d.attackSpeed } });
+}
+
+/**
+ * Start one of a unit's own attacks by hand and run the world until it is over. Nobody else is in the room, so nothing
+ * interrupts it. Returns the frames it took, the ground it covered, and the speeds its tell and the rest of it played at.
+ */
+function swing(id, type, variant, anim) {
+  rng.seed(11);
+  const w = difficultyWorld(id);
+  const e = w.add(new Enemy(getEnemyDef(type, variant), { x: 320, z: 70, facing: -1 }));
+  e.startAttack(e.ai.attacks.find((a) => a.anim === anim), null);
+  const x0 = e.x, tell = new Set(), rest = new Set();
+  let frames = 0;
+  while (e.state === ST.ATTACK && frames < 600) {
+    const wasTell = !!e.anim.frame.tell;
+    w.update(); frames++;
+    if (e.state === ST.ATTACK) (wasTell ? tell : rest).add(e.anim.speed);
+  }
+  return { frames, dx: e.x - x0, tell: [...tell], rest: [...rest] };
+}
+
+/** Frames a unit standing in an empty room takes to run one of its cooldowns down from `n`. */
+function cooldownFrames(id, field, n) {
+  const w = difficultyWorld(id);
+  const e = w.add(new Enemy(getEnemyDef('sootborn', 'slinger'), { x: 320, z: 70, facing: -1 }));
+  e[field] = n;
+  let frames = 0;
+  while (e[field] > 0 && frames < 1000) { w.update(); frames++; }
+  return frames;
+}
+
+function suiteDifficulty() {
+  console.log('\n== difficulty ==');
+  const EASY = DIFFICULTY_TUNING.easy, MEDIUM = DIFFICULTY_TUNING.medium, HARD = DIFFICULTY_TUNING.hard;
+
+  // (a) the table: every level scales enemy damage, and EASY is the one that also slows the attacks down. MEDIUM is
+  //     the board as authored, so each of its multipliers is exactly 1 and nothing below changes a MEDIUM run.
+  {
+    ok(DIFFICULTIES.join(',') === 'easy,medium,hard', `the levels are EASY / MEDIUM / HARD, in wire order (${DIFFICULTIES.join(',')})`);
+    ok(DIFFICULTIES.every((id) => DIFFICULTY_TUNING[id]), 'every level has a tuning row');
+    ok(EASY.dmgMult < MEDIUM.dmgMult && MEDIUM.dmgMult < HARD.dmgMult, `enemy damage scales with the level (${EASY.dmgMult} / ${MEDIUM.dmgMult} / ${HARD.dmgMult})`);
+    ok(EASY.attackSpeed < 1, `EASY slows enemy attacks (attack speed ${EASY.attackSpeed})`);
+    ok(['hpMult', 'dmgMult', 'attackSpeed', 'tellScale'].every((k) => MEDIUM[k] === 1), 'MEDIUM leaves every multiplier at 1');
+  }
+
+  // (b) a whole attack: EASY plays the swing and recovery at its attack speed and the wind-up at 1 / tellScale, so the
+  //     lunge takes longer by exactly that much. MEDIUM plays every frame at 1 and takes the authored length. Either
+  //     way the state hands back one update after the last frame (Fighter.updateState sees the finished animation).
+  {
+    const frames = getEnemyDef('sootborn', 'cutthroat').anims.lunge.frames;
+    const tellLen = frames.filter((f) => f.tell).reduce((n, f) => n + (f.dur || 1), 0);
+    const restLen = frames.filter((f) => !f.tell).reduce((n, f) => n + (f.dur || 1), 0);
+    const med = swing('medium', 'sootborn', 'cutthroat', 'lunge');
+    ok(med.frames === tellLen + restLen + 1, `MEDIUM: the lunge runs its authored ${tellLen + restLen} frames (${med.frames - 1})`);
+    ok([...med.tell, ...med.rest].every((s) => s === 1), `MEDIUM: every frame of it plays at speed 1 (${med.tell} / ${med.rest})`);
+    const easy = swing('easy', 'sootborn', 'cutthroat', 'lunge');
+    ok(easy.rest.length === 1 && easy.rest[0] === EASY.attackSpeed, `EASY: the swing and recovery play at the attack speed (${easy.rest})`);
+    ok(easy.tell.length === 1 && Math.abs(easy.tell[0] - 1 / EASY.tellScale) < 1e-12, `EASY: the wind-up plays at 1 / tellScale (${easy.tell})`);
+    const ideal = tellLen * EASY.tellScale + restLen / EASY.attackSpeed;
+    ok(Math.abs(easy.frames - 1 - ideal) <= 1, `EASY: the lunge takes ${easy.frames - 1} frames (${ideal} expected)`);
+    const hard = swing('hard', 'sootborn', 'cutthroat', 'lunge');
+    ok(hard.rest.every((s) => s === 1), `HARD: the swing itself stays at full speed (${hard.rest})`);
+  }
+
+  // (c) root motion follows the animation: a slowed lunge covers the ground it was authored to over more frames,
+  //     rather than reaching a third further. A frame's last tick can straddle its end (a frame of 8 is 10.67 ticks at
+  //     0.75), so it may land one step either side of the authored reach -- never the 1 / attackSpeed overshoot.
+  {
+    const frames = getEnemyDef('sootborn', 'cutthroat').anims.lunge.frames;
+    const reach = frames.reduce((n, f) => n + (f.move && f.move.x ? f.move.x * (f.dur || 1) : 0), 0);
+    const step = Math.max(...frames.map((f) => (f.move && f.move.x) || 0)) * EASY.attackSpeed;
+    const med = swing('medium', 'sootborn', 'cutthroat', 'lunge'), easy = swing('easy', 'sootborn', 'cutthroat', 'lunge');
+    ok(med.dx === -reach, `MEDIUM: the lunge covers its authored ${reach}px (${-med.dx})`);
+    ok(Math.abs(easy.dx - med.dx) <= step + 1e-9, `EASY: the slowed lunge covers the same ground to within one ${step}px step (${-easy.dx}px, authored ${reach}px)`);
+  }
+
+  // (d) the attack clocks: on EASY the wait before the next swing, and before the next shot, runs at the attack speed
+  //     too, so it lasts a third longer. MEDIUM and HARD count down one a frame, as they always have.
+  for (const field of ['attackCooldown', 'rangedCooldown']) {
+    const med = cooldownFrames('medium', field, 60), hard = cooldownFrames('hard', field, 60), easy = cooldownFrames('easy', field, 60);
+    ok(med === 60 && hard === 60, `${field}: MEDIUM and HARD run 60 down in 60 frames (${med}, ${hard})`);
+    const ideal = 60 / EASY.attackSpeed;
+    ok(Math.abs(easy - ideal) <= 1, `${field}: EASY runs 60 down in ${easy} frames (${ideal} expected)`);
+  }
+
+  // (e) spawn scaling (screens/gameplay.js applyDifficulty): enemy health, which bosses are exempt from, and enemy
+  //     damage, which a boss must keep through every phase. Fighter.applyDef rebuilds damageMult from the def on each
+  //     phase change; before the factor was held on the body, every boss's second phase hit at MEDIUM strength.
+  {
+    const e = new Enemy(getEnemyDef('sootborn', 'cutthroat'), { x: 320, z: 70 });
+    const hp0 = e.maxHp;
+    applyDifficulty(e, EASY);
+    ok(e.maxHp === Math.round(hp0 * EASY.hpMult) && e.hp === e.maxHp, `EASY: a wave enemy's health is scaled (${hp0} -> ${e.maxHp})`);
+    ok(e.damageMult === EASY.dmgMult, `EASY: a wave enemy's damage is scaled (x${e.damageMult})`);
+    for (const [name, d] of [['EASY', EASY], ['MEDIUM', MEDIUM], ['HARD', HARD]]) {
+      const b = new Boss(getEnemyDef('boss', 'vane'), { x: 320, z: 70 });
+      const bossHp = b.maxHp;
+      applyDifficulty(b, d);
+      const seen = [b.damageMult];
+      for (let i = 1; i < b.phases; i++) { b.applyPhase(i); seen.push(b.damageMult); }
+      ok(b.phases > 1 && seen.every((m) => m === d.dmgMult), `${name}: the boss hits at x${d.dmgMult} in all ${b.phases} phases (${seen.join(' / ')})`);
+      if (name === 'EASY') ok(bossHp === b.phaseHps[0], `bosses keep their authored health (${bossHp})`);
+    }
+  }
+}
+
 const SUITES = { events: suiteEvents, entrances: suiteEntrances, platforms: suitePlatforms, audio: suiteAudio,
-  bestiary: suiteBestiary, beats: suiteBeats, bindings: suiteBindings };
+  bestiary: suiteBestiary, beats: suiteBeats, bindings: suiteBindings, difficulty: suiteDifficulty };
 const pick = process.argv.slice(2).filter((a) => !a.startsWith('-'));
 for (const name of (pick.length ? pick : Object.keys(SUITES))) {
   // Object.hasOwn, not truthiness: `simtest constructor` used to pass the filter, run nothing and still

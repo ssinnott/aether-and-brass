@@ -46,7 +46,7 @@ export async function options(server, { withPage, assert }) {
     // 2. DIFFICULTY / MUSIC / SFX / SHAKE rows.
     await rt();
     s = await g.summary();
-    assert(s.difficulty === 'hard', 'right on DIFFICULTY cycles normal -> hard');
+    assert(s.difficulty === 'hard', 'right on DIFFICULTY cycles medium -> hard');
     assert((await g.eval(() => window.__game.game.options.difficulty)) === 'hard', 'game.options.difficulty follows the row');
     await dn(); await lt(); await lt();
     s = await g.summary();
@@ -328,7 +328,7 @@ export async function options(server, { withPage, assert }) {
     await atk();
     await g.step(4);
     st = await g.eval(() => window.__game.optionsState());
-    assert(st.difficulty === 'normal', 'RESET restores the default difficulty');
+    assert(st.difficulty === 'medium', 'RESET restores the default difficulty (MEDIUM)');
     assert(st.music === 5 && st.sfx === 10, 'RESET restores the default volumes');
     assert(st.shake === 'full', 'RESET restores the default shake');
     assert(st.bindings.keyboard[0].attack[0] === 'KeyZ', 'RESET restores the default P1 attack');
@@ -347,7 +347,7 @@ export async function options(server, { withPage, assert }) {
       window.__game.userOptions.set('music', 4);
       return JSON.parse(window.__game.optionsState().saved);
     });
-    assert(saved.difficulty === 'normal', '?difficulty= is not written back even when another option is saved');
+    assert(saved.difficulty === 'medium', '?difficulty= is not written back even when another option is saved');
     assert((await g.eval(() => window.__game.game.options.difficulty)) === 'easy', 'the session override survives saving another option');
   });
 

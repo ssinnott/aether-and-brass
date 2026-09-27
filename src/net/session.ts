@@ -707,7 +707,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     const params = {
       seed: freshSeed(),   // chosen once, before any simulation
       stage: net.lobby.stage || game.options.stage || 1,
-      difficulty: DIFFICULTIES.indexOf(game.options.difficulty || 'normal'),
+      difficulty: DIFFICULTIES.indexOf(game.options.difficulty || 'medium'),
       chars: members().map((m) => m.char | 0),
       delay: net.delay,
     };
@@ -728,7 +728,7 @@ export function createNetSession({ game, input, isHost, room = '', transport = '
     // it cannot appear unlocked on their own solo BOARD SELECT. Nothing is written back, and
     // results.js records the clear into the GROUP scope on every peer.
     progress.allowSession((stage || 1) - 1, net.groupScope);
-    game.options.difficulty = DIFFICULTIES[difficulty] || 'normal';
+    game.options.difficulty = DIFFICULTIES[difficulty] || 'medium';
     game.options.chars = chars.slice(0, players);
     game.options.netplay = true;
     Entity.resetIds();          // ids must match: a host who played solo first would otherwise start higher

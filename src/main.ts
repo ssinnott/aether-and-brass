@@ -13,6 +13,7 @@ import type { Screen } from './game/game.ts';
 import type { World } from './game/world.ts';
 import { TitleScreen } from './game/screens/title.ts';
 import { BoardSelectScreen } from './game/screens/boardselect.ts';
+import { DifficultyScreen } from './game/screens/difficulty.ts';
 import { SelectScreen } from './game/screens/select.ts';
 import { GalleryScreen } from './game/screens/gallery.ts';
 import { GameplayScreen } from './game/screens/gameplay.ts';
@@ -145,6 +146,7 @@ function boot() {
   game.galleryRegistry = [...CHARACTERS.map((c) => ({ id: c.id, name: c.name, build: c.build, anims: c.anims })), ...ENEMY_GALLERY, ...weaponGalleryEntries(CHARACTERS)];
   game.registerScreen('title', (g) => new TitleScreen(g));
   game.registerScreen('boardselect', (g) => new BoardSelectScreen(g));
+  game.registerScreen('difficulty', (g) => new DifficultyScreen(g));
   game.registerScreen('select', (g) => new SelectScreen(g));
   game.registerScreen('intro', (g) => new IntroScreen(g));
   game.registerScreen('gallery', (g) => new GalleryScreen(g));
