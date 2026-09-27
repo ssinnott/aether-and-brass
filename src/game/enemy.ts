@@ -26,7 +26,7 @@
 //  riposteChance + riposteAnim + riposteCooldown   random riposte on a melee hit
 //  stallEvery N + stallFrames 70 + stallDamageMult 3 + stallGrabbable true   every Nth attack ends in a punishable stall (Hoister overheat)
 //  punishDamageMult 1 + punishGrabbable false   applied while the current frame has `punish: true` (recovery frames)
-//  tellScale 1 | attackSpeed 1   speed of tell / active frames (difficulty: world.options.tellScale) | tellWarnFrames 10 (rig.tellWarn)
+//  tellScale 1 | attackSpeed 1   speed of tell / active frames (difficulty: world.options.tellScale / attackSpeed) | tellWarnFrames 10 (rig.tellWarn)
 //  targetBy 'nearest'|'highestCombo'|'lowestHp' | grabHoldHits 3 + grabHitEvery 18 (frames between hold squeezes: Hook Yank crush 25)
 //  blinkOnDamage N + blinkAnim 'aetherStep' + blinkChain 'caneFlurry' (teleport away after N damage in one combo, bosses)
 //  rig.look = { x, y } (-1..1 toward the target) is refreshed every step for part hooks (Sootborn eyes track the nearest player)
@@ -272,7 +272,7 @@ export interface AiConfig {
   /** Damage multiplier and grabbability while the current frame is `punish: true`. */
   punishDamageMult: number;
   punishGrabbable: boolean;
-  /** Tell frames play at 1 / (tellScale * options.tellScale) speed; active frames at attackSpeed. */
+  /** Tell frames play at 1 / (tellScale * options.tellScale) speed; active frames at attackSpeed * options.attackSpeed. */
   tellScale: number;
   attackSpeed: number;
   /** Frames before the end of a tell at which `rig.tellWarn` lights. */
@@ -346,7 +346,7 @@ export interface EnemyWorld extends FighterWorld {
   floorBand: { z0: number; z1: number };
   /** Total stage width in px (a flee off the end of the board). */
   stageLength: number;
-  /** The run options; the AI reads the difficulty's `tellScale` off it. Left as an open bag rather than game/game.ts's
+  /** The run options; the AI reads the difficulty's `tellScale` and `attackSpeed` off it. Left as an open bag rather than game/game.ts's
    *  `GameOptions`, which is itself open (`parseOptions` carries whatever the query string named) and which this
    *  file may not import: game.ts reaches the world, not the other way about. */
   options?: Record<string, any>;
@@ -628,8 +628,11 @@ export class Enemy extends Fighter {
     // for, and that must not freeze the window under the hitstun early-return below. The STAGGER branch still
     // ends the state on the first frame the body can act again.
     if (this.aiState === 'STAGGER' && this.aiTimer > 0) this.aiTimer--;
-    if (this.attackCooldown > 0) this.attackCooldown--;
-    if (this.rangedCooldown > 0) this.rangedCooldown--;
+    // The difficulty's enemy attack speed runs the two attack clocks as well as the swing (updateTellSpeed): at 0.75
+    // the wait before the next attack or shot is a third longer. At 1 this is the plain decrement it always was.
+    const rate = (world.options && world.options.attackSpeed) || 1;
+    if (this.attackCooldown > 0) this.attackCooldown -= rate;
+    if (this.rangedCooldown > 0) this.rangedCooldown -= rate;
     if (this.panicCooldown > 0) this.panicCooldown--;
     if (this.evadeTimer > 0) this.evadeTimer--;
     if (this.riposteTimer > 0) this.riposteTimer--;
@@ -676,7 +679,8 @@ export class Enemy extends Fighter {
       default: this.thinkApproach(world, t);
     }
   }
-  /** Tell frames play at 1 / (ai.tellScale * options.tellScale) speed (or stretch to attack.tellFrames); active frames at ai.attackSpeed. */
+  /** Tell frames play at 1 / (ai.tellScale * options.tellScale) speed (or stretch to attack.tellFrames); the rest of
+   *  an attack (active and recovery frames) at ai.attackSpeed * options.attackSpeed, the difficulty's attack speed. */
   updateTellSpeed(world: EnemyWorld, f: PlayerFrame | null): void {
     const ai = this.ai, a = this.anim;
     if (f && f.tell && this.state === ST.ATTACK) {
@@ -686,7 +690,7 @@ export class Enemy extends Fighter {
       a.speed = 1 / Math.max(0.1, k);
       const remaining = ((f.dur || 1) - a.frameTime) * k, next = a.def ? a.def.frames[a.frameIndex + 1] : null;
       this.rig.tellWarn = !(next && next.tell) && remaining <= ai.tellWarnFrames;
-    } else { a.speed = this.state === ST.ATTACK ? ai.attackSpeed : 1; this.rig.tellWarn = false; }
+    } else { a.speed = this.state === ST.ATTACK ? ai.attackSpeed * ((world.options && world.options.attackSpeed) || 1) : 1; this.rig.tellWarn = false; }
   }
   recordHistory(t: AiTarget): void { this.histX[this.histI] = t.x; this.histZ[this.histI] = t.z; this.histI = (this.histI + 1) % HIST; if (this.histN < HIST) this.histN++; }
   /** Target position `delay` frames ago (clamped to what has been recorded). */

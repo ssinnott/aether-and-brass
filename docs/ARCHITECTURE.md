@@ -151,7 +151,7 @@ src/
     hud.js                 # in-game HUD
     menuinput.js           # the one menu control scheme (CONFIRM / BACK), read by every screen (section 16)
     screens/
-      title.js, boardselect.js, select.js, intro.js, gameplay.js, pause.js, gameover.js, results.js
+      title.js, boardselect.js, difficulty.js, select.js, intro.js, gameplay.js, pause.js, gameover.js, results.js
       gallery.js, lobby.js       # rig gallery; online co-op lobby (net/)
       charcards.js, boardcards.js  # hero cards / board plaques, shared by select+lobby and boardselect+lobby
       options.js, controls.js     # OPTIONS overlay (main plate) and its CONTROLS sub-plate
@@ -437,7 +437,8 @@ anims = {
 { dur: frames, pose, 
   interp: true,                   // lerp toward the NEXT frame's pose over dur (default true; false = step)
   hitbox: { x, y, w, h, z: 24, damage, kbX, kbY, hitstun, type:'light'|'heavy'|'launch'|'knockdown'|'grab', once: true },
-  move: { x: px/frame }           // root motion along facing (used by dash attacks, lunges)
+  move: { x: px/frame }           // root motion along facing (used by dash attacks, lunges); scaled by the anim's
+                                  // playback speed, so a slowed enemy swing covers the same ground over more frames
   fx: [ { kind:'slash'|'muzzle'|'ring'|'dust', x, y } ],
   sfx: 'name',
   cancel: 'attack'|'any'|null,    // during this frame, the input buffer may cancel into the next combo hit / jump
@@ -946,16 +947,24 @@ The test is hashed state on a deterministic frame counter, so every peer in a ne
 yanking it to a lock edge mid-flight would break it — so `game/entrances.js` carries its own watchdog instead: an
 arrival that outlives its own length by 180 frames ends as an ordinary enemy rather than holding the wave open.
 `StageRunner.queueSpawns(list, extraDelay)` appends `WAVE_EXTRA_BY_PARTY = [0, 0, 0, 1, 2]` non-sky clones (delay + `PARTY_EXTRA_DELAY`, side flipped) to every spawn list for parties of 3-4; bosses excluded, 1-2 unchanged.
+Difficulty (`DIFFICULTY_TUNING` in `constants.js`, keyed by `DIFFICULTIES`: `easy` / `medium` / `hard`) reaches the AI two
+ways. Per body, at spawn (`applyDifficulty` in `screens/gameplay.js`): max HP × `hpMult` (bosses exempt) and
+`damageMult` × `dmgMult` — the latter also held as `difficultyDamageMult`, which `Fighter.applyDef` folds back in, so
+a boss keeps it through every phase change. Per frame, off the run options `gameplay.enter()` hands the World:
+`options.tellScale` stretches tell frames, and `options.attackSpeed` plays the rest of every enemy attack (active
+and recovery frames, `Enemy.updateTellSpeed`) and runs the `attackCooldown` / `rangedCooldown` clocks at that rate,
+so EASY's 0.75 is a slower swing AND a longer wait before the next one. MEDIUM is 1 across the board and changes
+nothing; the multipliers stay short binary fractions so the fractional clocks add up exactly.
 
 ## 9. Screens (`game/screens/`)
 `Game` holds a stack `screens[]`; top screen gets `update()`, all screens draw bottom
 to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
 `update()`, `draw(ctx)`. No screen wires its own menu keys: **CONFIRM** and **BACK** come from
-`game/menuinput.js` (section 16), so the same two keys work on every plate in the game. Flow: `title → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`
+`game/menuinput.js` (section 16), so the same two keys work on every plate in the game. Flow: `title → boardselect → difficulty → select → intro → gameplay ⇄ pause; gameplay → gameover → (continue → gameplay | title); gameplay → results → title`
 (a clear that opened a board goes `results → boardselect` so the unlock plays out there; an ONLINE run goes
 `results → lobby`, back to the room it was played in — the session is handed back to its lobby rather than ended,
 docs/MULTIPLAYER.md).
-Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `BESTIARY` / `SOURCE CODE` / `OPTIONS`, "PRESS ATTACK", blinking; the BESTIARY row carries the book's completion percentage, read once in `enter()`; `SOURCE CODE` opens the repository in a new tab (`engine/links.js`) without leaving the title and says whether the tab actually opened, and the address itself is drawn along the credit line — lit while the row is highlighted or a mouse is on it, clickable there, and readable (typeable) either way; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
+Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `BESTIARY` / `SOURCE CODE` / `OPTIONS`, "PRESS ATTACK", blinking; the BESTIARY row carries the book's completion percentage, read once in `enter()`; `SOURCE CODE` opens the repository in a new tab (`engine/links.js`) without leaving the title and says whether the tab actually opened, and the address itself is drawn along the credit line — lit while the row is highlighted or a mouse is on it, clickable there, and readable (typeable) either way; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Difficulty (`difficulty.js`): one brass plaque per level — EASY / MEDIUM / HARD — each with a pressure gauge (needle in the green, amber or red) and the level's `DIFFICULTY_TUNING` printed as ENEMY DAMAGE / ATTACK SPEED / ENEMY HEALTH / WIND-UP TIME / CONTINUES, a row teal where it is easier than MEDIUM and red where harder; left/right choose (wrapping), CONFIRM goes on to select with `{ back: 'difficulty' }`, BACK returns to boardselect. It is a second door onto the OPTIONS row's setting, not a second setting: it opens on `options.difficulty()` and saves only a CHANGE through `options.set`, so confirming the level a `?difficulty=` link asked for writes nothing back. Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ back: 'difficulty' }` from DIFFICULTY select, `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
 (`boardcards.js`, compact) on one screen, with the room's other two to three players driving the
 P2-P4 cursors, a status column per seat, and no two players allowed on one hero
@@ -1043,7 +1052,7 @@ trial ticks under `aetherAndBrass.trials.v1`, and, issue #26, the bestiary under
 (built-in autopilot that walks right and attacks the nearest enemy — used for headless playthroughs),
 `?skipTo=bestiary&tab=<faction>` (issue #26: open the book straight onto a named tab — `brassbound`, `sootborn`,
 `stormcrow`, `chandler`, `gleaning` or `boss`),
-`?difficulty=easy|normal|hard` (session-only override of the saved difficulty: sets
+`?difficulty=easy|medium|hard` (session-only override of the saved difficulty: sets
 `game.options.difficulty` for this page load via `userOptions.setSessionDifficulty()`, never written
 back to `aetherAndBrass.options.v1`).
 
@@ -1101,17 +1110,28 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   The `bindings` suite holds the keyboard layout to its own rules (`engine/bindings.js` header): every action bound
   in every layout, no key under two actions or in two players' hands, no global key bound to a player action, nine
   distinct primary keys per block with taunt and start on the digits above it, the rebind refusals, and that a save
-  from an older default table is dropped rather than merged.
+  from an older default table is dropped rather than merged. The `difficulty` suite runs real enemies in a bare
+  World: every level scales enemy damage and EASY also slows attacks; a MEDIUM lunge runs its authored frames at
+  speed 1 and covers its authored reach exactly, while an EASY one plays its swing at 0.75, takes longer by exactly
+  that much and still covers the same ground to within one step; the attack and ranged cooldowns run a third longer
+  on EASY and one a frame otherwise; and `applyDifficulty` scales a wave enemy's health but not a boss's, whose
+  damage holds through all three phases at every level.
   It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
   after six minutes of playthroughs. `npm run simtest` runs it alone. The second:
   starts the server, launches headless Chromium
   via the globally installed Playwright (`NODE_PATH=/opt/node22/lib/node_modules` or
   local dep), runs scenarios and writes screenshots to `tools/screens/`:
-  1. `boot`: title screen renders, START reaches BOARD SELECT and then character select, zero errors.
+  1. `boot`: title screen renders, START reaches BOARD SELECT, then DIFFICULTY select, then character select, zero errors.
   1b. `boards`: BOARD SELECT lists every registered board, a locked board refuses to start, a recorded
      clear opens the next board and survives a page reload, the results screen names the board it cleared
      and reports the unlock, dismissing it hands off to the plaque reveal (which runs, is skippable, and
      leaves a startable board), and `?unlockall=1` / `?resetprogress=1` behave.
+  1c. `difficulty` (`tools/scenarios/difficulty.js`): DIFFICULTY select opens on MEDIUM on a fresh save, prints each
+     level's tuning, wraps left/right, saves nothing until CONFIRM and then saves the pick (which survives a reload
+     and reopens the screen on it); BACK walks select → difficulty → boardselect; a `?difficulty=` link opens on its
+     level and confirming it writes nothing back; and an EASY run spawns enemies at 75% health and 60% damage, keeps
+     a boss at 60% through a phase change, starts with five continues and swings at 0.75 — against a MEDIUM control
+     that swings at 1.
   2. `select`: navigate select, pick every character (4 runs), start gameplay, zero errors.
   3. `combat`: for each character, spawn near enemies, script attacks (combo, jump attack,
      dash attack, special, super, grab/throw), assert enemy hp decreases, assert hits land.
@@ -1281,8 +1301,8 @@ URL params (all only honored when `?autotest=1` or `?debug=1`):
   (`src/game/bot.js`): `balanced` (default, the behaviour the playtest scenarios are written
   against), `aggressive`, `defensive`, `masher`. One name applies to every slot; one name per joined
   slot gives each its own. A style is a whole player archetype (button speed, dodge rate, spacing, when it
-  retreats), not a difficulty setting — difficulty is an OPTIONS choice persisted by
-  `game/options.js`, with `?difficulty=` as a session override. Each style also carries a
+  retreats), not a difficulty setting — difficulty is chosen on DIFFICULTY select (or the OPTIONS row) and
+  persisted by `game/options.js`, with `?difficulty=` as a session override. Each style also carries a
   `throwChance` (issue #21: balanced 0.4, aggressive 0, defensive 0.9, masher 0.2) — the only intentional bot throw path, rolled at most once every 20 frames while armed and in range.
 - `enemythrow=1` — optional stretch (issue #21 step 21.6): a Scrap Slinger or Soot Cutthroat may lift and throw a nearby throwable prop at its target (`game/throwables.js` `tryEnemyPropThrow` /
   `thinkEnemyHeld`), spending an attack token like any other attack. Off by default and forced off whenever `world.game.net.active` (the START packet does not carry the flag, so a peer without it

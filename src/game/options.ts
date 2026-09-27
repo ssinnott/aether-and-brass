@@ -22,7 +22,7 @@ export const SHAKE_LEVELS = Object.freeze(['off', 'low', 'full']);
 export const SHAKE_SCALE = Object.freeze({ off: 0, low: 0.5, full: 1 });
 /** Integer steps a volume slider divides into (0..VOLUME_STEPS). */
 export const VOLUME_STEPS = 10;
-const DEFAULTS = Object.freeze({ difficulty: 'normal', music: 5, sfx: 10, shake: 'full' });
+const DEFAULTS = Object.freeze({ difficulty: 'medium', music: 5, sfx: 10, shake: 'full' });
 /** Value lists for the cycled (non-slider) settings. */
 const LISTS = { difficulty: DIFFICULTIES, shake: SHAKE_LEVELS };
 

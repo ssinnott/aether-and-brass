@@ -1,6 +1,6 @@
 // Gameplay screen: World + players + HUD + StageRunner (ARCHITECTURE.md sections 7, 9, 12, 15).
 // Exposes spawnEnemy / spawnEnemyAt / killAllEnemies / fillMeter / facePlayerToNearestEnemy / summary for window.__game.
-import { VIEW_W, VIEW_H, TEAM, ST, Z_MAX, METER, UI, MAX_PLAYERS, LOCAL_PLAYERS, NET_PLAYERS, ABANDONED_SEAT_FRAMES } from '../../constants.ts';
+import { VIEW_W, VIEW_H, TEAM, ST, Z_MAX, METER, UI, MAX_PLAYERS, LOCAL_PLAYERS, NET_PLAYERS, ABANDONED_SEAT_FRAMES, DIFFICULTY_TUNING } from '../../constants.ts';
 import { Screen } from '../game.ts';
 import { World } from '../world.ts';
 import { Player } from '../player.ts';
@@ -19,6 +19,7 @@ import { bestiary, entryOf } from '../bestiary.ts';
 // works in, the same arrangement (and for the same reason) as the block at the top of game/stage.ts. `import type`
 // is erased by tsc, esbuild and node alike, so none of these adds an edge to the module graph the browser loads.
 import type { Game, ScreenParams, ScreenSummary } from '../game.ts';
+import type { DifficultyTuning } from '../../constants.ts';
 import type { Backdrop } from '../world.ts';
 import type { Fighter, FighterDef } from '../fighter.ts';
 import type { EnemyOpts } from '../enemy.ts';
@@ -62,6 +63,17 @@ declare module '../player.ts' {
   }
 }
 
+/**
+ * Apply a difficulty row to a body as it spawns (spawnEnemyAt): max HP, which bosses are exempt from, and the enemy
+ * damage factor. The factor is kept on the body as well as folded in, because a boss re-applies its def on every
+ * phase change (Fighter.applyDef) and that is where it is multiplied back in rather than dropped with the old phase.
+ * Attack speed and tell length are not per body: the AI reads them off the run options every frame.
+ */
+export function applyDifficulty(e: Fighter, d: DifficultyTuning): void {
+  if (e.kind !== 'boss' && d.hpMult !== 1) { e.maxHp = Math.round(e.maxHp * d.hpMult); e.hp = e.maxHp; }
+  if (d.dmgMult !== 1) { e.difficultyDamageMult = d.dmgMult; e.damageMult = (e.damageMult || 1) * d.dmgMult; }
+}
+
 const GAME_OVER_DELAY = 150;
 // How often the bestiary is written during a run (issue #26). exit() flushes too, but a browser tab closed or
 // navigated away mid-run never reaches exit(), and losing a first-ever kill to that is exactly the moment the
@@ -71,23 +83,6 @@ const BESTIARY_FLUSH_EVERY = 300;
 const START_X = 100;
 /** Player z spread (issue #23): slot 3 lands at 70 + 3*16 = 118, inside Z_MAX 140 (today's slot*24 would hit 142). */
 const PLAYER_START_Z = 70, PLAYER_Z_PITCH = 16;
-/** One row of DIFFICULTY: what `?difficulty=` is worth (GDD 7). */
-export interface DifficultyTuning {
-  /** Enemy max HP multiplier, applied once at spawn (spawnEnemyAt). Bosses are exempt. */
-  hpMult: number;
-  /** Enemy damage multiplier, folded into the spawned body's own `damageMult`. */
-  dmgMult: number;
-  /** Wind-up length multiplier, handed to the content layer through `options.tellScale`. */
-  tellScale: number;
-  /** Continues a run starts with. */
-  continues: number;
-}
-/** Difficulty tuning (GDD 7): enemy HP / damage multipliers, tell speed, continues. */
-const DIFFICULTY: Record<string, DifficultyTuning> = {
-  easy: { hpMult: 0.75, dmgMult: 0.6, tellScale: 1.3, continues: 5 },
-  normal: { hpMult: 1, dmgMult: 1, tellScale: 1, continues: 3 },
-  hard: { hpMult: 1.25, dmgMult: 1.4, tellScale: 0.85, continues: 2 },
-};
 
 /**
  * A defeated body as `noteDefeat` reads one. `phaseIndex` is game/boss.ts's, which has not declared its own fields
@@ -172,8 +167,9 @@ export class GameplayScreen extends Screen {
     const chars = (params.chars && params.chars.length ? params.chars : opt.chars) || [0];
     this.stage = params.stage || getStage(opt.stage);
     this.backdrop = null;
-    this.difficulty = DIFFICULTY[opt.difficulty] || DIFFICULTY.normal;
+    this.difficulty = DIFFICULTY_TUNING[opt.difficulty] || DIFFICULTY_TUNING.medium;
     opt.tellScale = this.difficulty.tellScale;
+    opt.attackSpeed = this.difficulty.attackSpeed;
     this.world = new World({ stageLength: this.stage.length, game, backdrop: null, options: opt });
     // Bestiary (issue #26). Three hooks, because a defeat reaches this screen by three different routes: the normal
     // death path, a ring-out (game/items.js sets `dead` without calling die(), so onDeath never fires for it), and a
@@ -493,9 +489,7 @@ export class GameplayScreen extends Screen {
   spawnEnemyAt(type: string, variant: string, x: number, z: number, opts: SpawnEnemyAtOpts = {}): StageUnit {
     const def = opts.def || getEnemyDef(type, variant);
     const e = def.boss ? new Boss(def, { x, z, facing: opts.facing != null ? opts.facing : -1 }) : new Enemy(def, { x, z, ...opts });
-    const d = this.difficulty || DIFFICULTY.normal;
-    if (!def.boss && d.hpMult !== 1) { e.maxHp = Math.round(e.maxHp * d.hpMult); e.hp = e.maxHp; }
-    if (d.dmgMult !== 1) e.damageMult = (e.damageMult || 1) * d.dmgMult;
+    applyDifficulty(e, this.difficulty || DIFFICULTY_TUNING.medium);
     this.world.add(e);
     return e;
   }

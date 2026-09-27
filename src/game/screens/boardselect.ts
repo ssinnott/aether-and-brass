@@ -1,4 +1,4 @@
-// Board select (title -> BOARD SELECT -> character select): one brass plaque per board in content/stage/index.js,
+// Board select (title -> BOARD SELECT -> DIFFICULTY -> character select): one brass plaque per board in content/stage/index.js,
 // each with a hand-drawn vignette of the board, its stage number and name. Boards that have not been opened yet show
 // a riveted padlock plate with '? ? ? ? ?' and the board you have to clear to open them; confirming one buzzes and
 // shakes the plaque instead of starting. Cleared boards carry a stamped CLEARED plate with the best rank and score.
@@ -151,7 +151,9 @@ export class BoardSelectScreen extends Screen {
       if (++this.confirm >= CONFIRM_FRAMES && !this.leaving) {
         this.leaving = true;
         this.game.options.stage = this.cursor + 1;
-        this.game.fadeTo(() => this.game.replace('select'), 0.1);
+        // the board is chosen, then the difficulty (screens/difficulty.js), then the heroes
+        const next = this.game.factories.difficulty ? 'difficulty' : 'select';
+        this.game.fadeTo(() => this.game.replace(next), 0.1);
       }
       return;
     }

@@ -134,7 +134,8 @@ Playing online, everybody is on the first block: the keys are the same on every 
   during a local game) → **CONTROLS**: one key per action per layout. A key already used by the other player,
   or a global key (Escape, M, F1), is refused; a collision within your own layout swaps the two actions
   instead, so you can rearrange your block without ever unbinding anything. OPTIONS also has MUSIC and SFX volume
-  sliders, a SCREEN SHAKE setting (off / low / full) and difficulty, and everything there persists in the
+  sliders, a SCREEN SHAKE setting (off / low / full) and difficulty (the same setting the DIFFICULTY screen picks
+  when a run starts — see below), and everything there persists in the
   browser under `aetherAndBrass.options.v1` — same caveat as progress: if storage is unavailable the game
   still plays, it just falls back to defaults every session and nothing throws.
 - **Training**: TRAINING on the title menu, then pick a hero, opens the Funicular roof with a standing
@@ -278,7 +279,8 @@ START on the title screen opens **BOARD SELECT**: one brass plaque per board wit
 section count and the two factions the board leads with — BRASSBOUND & SOOTBORN, STORMCROWS & BRASSBOUND,
 CHANDLERY & BRASSBOUND, GLEANING & STORMCROWS. Left/right chooses, ENTER (or attack) confirms, ESC
 (or jump / dodge) goes back — the same two keys every menu in the game uses. A board you have not opened yet shows a padlock plate and the board you have to clear to open
-it; confirming it buzzes instead of starting a run.
+it; confirming it buzzes instead of starting a run. Confirming an open board goes on to **DIFFICULTY**, and
+from there to character select.
 
 Board 1 is always open, and clearing a board opens the next one for good. The results screen announces it
 with a **NEW BOARD OPEN** plate, and dismissing the plaque drops you back onto BOARD SELECT to watch it
@@ -294,6 +296,31 @@ board 1.
 `?stage=N` links straight to a board and opens it for that page load, so a shared link works on a fresh
 save. `?unlockall=1` opens every board for one page load without touching the save, and
 `?resetprogress=1` wipes the saved unlocks.
+
+## Difficulty
+
+Between BOARD SELECT and character select, **DIFFICULTY** puts three brass plaques side by side — **EASY**,
+**MEDIUM** and **HARD** — each with a pressure gauge reading green, amber or red and exactly what that level
+does to the board. Every level scales how hard enemies hit; EASY also slows their attacks down:
+
+|                 | EASY | MEDIUM | HARD |
+|-----------------|------|--------|------|
+| Enemy damage    | 60%  | 100%   | 140% |
+| Attack speed    | 75%  | 100%   | 100% |
+| Enemy health    | 75%  | 100%   | 125% |
+| Wind-up time    | 130% | 100%   | 85%  |
+| Continues       | 5    | 3      | 2    |
+
+**Attack speed** is the whole of an enemy's swing after its wind-up — the strike and the recovery — *and* the
+wait before its next attack or shot, so at 75% a swing takes a third longer and so does the pause before the next
+one. A lunge still covers the same ground; it just takes longer to get there. **Wind-up time**
+is the telegraph before each attack (the red lens, the chirp). Bosses keep their own health on every level but
+take the damage scaling like everything else, through every phase.
+
+MEDIUM is the board as it was built and balanced. The plaques read their numbers straight from the tuning table
+(`DIFFICULTY_TUNING` in `src/constants.ts`), so they cannot drift from what the board actually does. The choice is
+saved with the rest of OPTIONS, where the same setting can be changed between runs; the cursor opens on it next
+time. Online, the host's saved difficulty is the room's.
 
 ## Development
 
@@ -316,9 +343,9 @@ runs with no godmode and counts how often the ENGINE wins — a run lost is the 
 running out — across boards, difficulties, heroes, party sizes and autopilot styles:
 
 ```
-npm run winrate                                          # 4 boards x 4 heroes, solo, balanced, normal
+npm run winrate                                          # 4 boards x 4 heroes, solo, balanced, medium
 npm run winrate -- --stages 1 --styles all --seeds 8     # one board against every archetype
-npm run winrate -- --party 1,2,3,4 --difficulty easy,normal,hard --json out.json
+npm run winrate -- --party 1,2,3,4 --difficulty easy,medium,hard --json out.json
 ```
 
 Autopilot archetypes (`src/game/bot.js`): `balanced` (the default, and what the test suite is
@@ -330,7 +357,7 @@ Debug URL parameters: `?debug=1` (hitboxes, AI states, FPS), `?skipTo=gameplay&c
 `?skipTo=gallery`, `?skipTo=training&chars=0` (straight into the training room), `?bot=1`,
 `?botstyle=aggressive,defensive` (one archetype per slot),
 `?godmode=1`, `?nowaves=1`, `?seed=N`, `?stage=4`, `?unlockall=1`, `?resetprogress=1`,
-`?difficulty=easy|normal|hard` (session only — overrides the saved difficulty for this page load without
+`?difficulty=easy|medium|hard` (session only — overrides the saved difficulty for this page load without
 writing it back).
 
 ### Deployment

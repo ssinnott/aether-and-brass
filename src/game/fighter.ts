@@ -471,6 +471,9 @@ export class Fighter extends Entity {
   declare runSpeed: number;
   declare jumpVy: number;
   declare damageMult: number;
+  /** The difficulty's enemy damage factor (screens/gameplay.js spawnEnemyAt); 1 for everything else. Held apart from
+   *  `damageMult` so applyDef can fold it back in when a boss swaps its def for the next phase. */
+  declare difficultyDamageMult: number;
   /** traits.damageTakenMult, copied out for the hot path. */
   declare damageTaken: number;
   /** traits.noLaunch, likewise. */
@@ -628,6 +631,7 @@ export class Fighter extends Entity {
     const sc = this.rig.scale;
     this.w = Math.round(28 * sc); this.h = Math.round((this.rig.height || 72) * sc); this.zSize = 20;
     this.shadowW = Math.round(34 * sc);
+    this.difficultyDamageMult = 1;
     this.applyDef(def);
     this.hp = this.maxHp;
     initShield(this);
@@ -667,7 +671,7 @@ export class Fighter extends Entity {
     this.walkSpeed = def.walkSpeed || 1.8;
     this.runSpeed = def.runSpeed || this.walkSpeed * 1.7;
     this.jumpVy = def.jumpVy || JUMP_VY;
-    this.damageMult = def.damageMult || 1;
+    this.damageMult = (def.damageMult || 1) * this.difficultyDamageMult;
     this.damageTaken = this.traits.damageTakenMult;
     this.unlaunchable = this.traits.noLaunch;
     if (this.shield !== undefined) syncShield(this); // a phase change may raise, lower or remove the shield
@@ -794,9 +798,14 @@ export class Fighter extends Entity {
     const f = this.anim.frame;
     // `move` is declared `FrameMove | number` (lib/art/animation.ts and types/content.d.ts both), but only the
     // object form carries root motion and only the object form is honoured here; no content authors a bare number.
+    // Root motion is authored per frame of the animation, so it follows the animation's playback speed: an enemy
+    // swing slowed by the difficulty's attack speed (game/enemy.js updateTellSpeed) covers the ground it was
+    // authored to over more frames, rather than lunging further. `speed` is 1 for every player and every swing at
+    // full attack speed, and no tell frame carries root motion, so nothing else moves differently for it.
     if (f && f.move && !this.grabbedBy) {
-      this.x += ((f.move as FrameMove).x || 0) * this.facing;
-      if ((f.move as FrameMove).z) this.z += (f.move as FrameMove).z;
+      const k = this.anim.speed;
+      this.x += ((f.move as FrameMove).x || 0) * this.facing * k;
+      if ((f.move as FrameMove).z) this.z += (f.move as FrameMove).z * k;
       const vy = (f.move as FrameMove).vy != null ? (f.move as FrameMove).vy : (f.move as FrameMove).y;
       if (vy != null && this.anim.newFrame) { this.vy = vy; if (this.y <= 0) this.y = 0.01; }
     }

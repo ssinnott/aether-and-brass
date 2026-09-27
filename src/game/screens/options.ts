@@ -26,7 +26,7 @@ const NOTICE_FRAMES = 90, SETTLE_FRAMES = 3, FIRST_INPUT_FRAME = 3;
 // Rows end at y + 44 + 7*16 + 7 = y + 163; the notice/hint sit below that, clear of both rivet lines
 // (top y + 9, bottom y + PLATE.h - 9 = y + 223) and the outer border (y + PLATE.h).
 // Precomputed uppercase labels so draw() never calls toUpperCase() (no per-frame allocation).
-const DIFF_LABELS = { easy: 'EASY', normal: 'NORMAL', hard: 'HARD' };
+const DIFF_LABELS = { easy: 'EASY', medium: 'MEDIUM', hard: 'HARD' };
 const SHAKE_LABELS = { off: 'OFF', low: 'LOW', full: 'FULL' };
 // Precomputed finished row strings so draw() never builds a template string per frame (no
 // allocation in the draw path): DIFF_ROW / DIFF_ROW_LOCKED index by difficulty, MUTE_ROW by

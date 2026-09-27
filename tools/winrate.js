@@ -5,9 +5,9 @@
 // autopilot styles, and reports how often the ENGINE wins — a run lost is the continue stack running out.
 //
 // Usage:
-//   node tools/winrate.js                                   # default sweep: 4 boards x 4 heroes, solo, balanced, normal
+//   node tools/winrate.js                                   # default sweep: 4 boards x 4 heroes, solo, balanced, medium
 //   node tools/winrate.js --stages 1 --styles all --seeds 8  # one board against every autopilot archetype
-//   node tools/winrate.js --party 1,2,3,4 --difficulty easy,normal,hard
+//   node tools/winrate.js --party 1,2,3,4 --difficulty easy,medium,hard
 //   node tools/winrate.js --json out.json                   # raw per-run rows for further analysis
 //
 // Options (all comma-separated lists):
@@ -15,7 +15,7 @@
 //   --chars 0,1,2,3           hero indices; in party=2 each is paired with the next hero
 //   --party 1,2,3,4           party size (2 = a couch, 3-4 = an online room; every slot on autopilot)
 //   --styles balanced,...     autopilot archetypes (see BOT_STYLES in src/game/bot.ts), or `all`
-//   --difficulty easy,normal,hard
+//   --difficulty easy,medium,hard
 //   --seeds N                 runs per cell (default 5)
 //   --conc N                  parallel pages (default 6)
 //   --max N                   frame cap per run (default 60000, ~16 min of game time)
@@ -33,7 +33,7 @@ const CHUNK = 600;          // frames per step call
 const STALL_FRAMES = 9000;  // nothing in the run changed for this long => soft-lock, not a loss
 
 function parseArgs(argv) {
-  const o = { stages: [1, 2, 3, 4], chars: [0, 1, 2, 3], party: [1], styles: ['balanced'], difficulty: ['normal'],
+  const o = { stages: [1, 2, 3, 4], chars: [0, 1, 2, 3], party: [1], styles: ['balanced'], difficulty: ['medium'],
     seeds: 5, conc: 6, max: 60000, json: '', quiet: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], next = () => argv[++i];
@@ -54,7 +54,7 @@ function parseArgs(argv) {
     }
   }
   for (const s of o.styles) if (!BOT_STYLES[s]) { console.log(`unknown --styles ${s} (have: ${Object.keys(BOT_STYLES).join(', ')})`); process.exit(2); }
-  for (const d of o.difficulty) if (!['easy', 'normal', 'hard'].includes(d)) { console.log(`unknown --difficulty ${d}`); process.exit(2); }
+  for (const d of o.difficulty) if (!['easy', 'medium', 'hard'].includes(d)) { console.log(`unknown --difficulty ${d}`); process.exit(2); }
   for (const p of o.party) if (p < 1 || p > MAX_PLAYERS) { console.log(`unknown --party ${p} (have: 1..${MAX_PLAYERS})`); process.exit(2); }
   return o;
 }
