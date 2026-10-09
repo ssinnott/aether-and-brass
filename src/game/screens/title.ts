@@ -26,6 +26,7 @@ import { options } from '../options.ts';
 import { joinHint } from '../party.ts';
 import { confirmPressed } from '../menuinput.ts';
 import { links } from '../../engine/links.ts';
+import { arcade } from '../../engine/arcade.ts';
 // Type-only: this screen reaches down for the shapes it works in rather than adding a module edge, the same
 // arrangement (and for the same reason) as the block at the top of game/screens/gameplay.ts. `import type` is
 // erased by tsc, esbuild and node alike.
@@ -44,6 +45,10 @@ const LEGEND_MAX_W = VIEW_W - 16;
 // tools/playtest-options.js reaches OPTIONS by wrapping upwards from START rather than counting downs.
 const MENU = ['START', 'ONLINE CO-OP', 'TRAINING', 'BESTIARY', 'SOURCE CODE', 'OPTIONS'];
 const I_START = 0, I_ONLINE = 1, I_TRAIN = 2, I_BESTIARY = 3, I_SOURCE = 4, I_OPTIONS = 5;
+// BACK TO ARCADE (engine/arcade.ts) is not one of this game's rows but the arcade's way out of it, on the menu only
+// while the arcade frames this page. A way out goes at the bottom, so it sits under OPTIONS, which stays the last of
+// the game's own rows - and the last row of all everywhere else: standalone the menu is MENU exactly.
+const ARCADE_ROW = 'BACK TO ARCADE', I_ARCADE = MENU.length;
 // The menu plate and everything stacked under it: adding a row pushes PRESS START, the join hint and the
 // link notice down together rather than letting the plate grow into them.
 const PLATE_X = 200, PLATE_Y = 156, PLATE_W = 240, ROW_Y0 = PLATE_Y + 5, ROW_H = 14;
@@ -116,7 +121,9 @@ export class TitleScreen extends Screen {
   // The fields, for the checker only, in the order enter() writes them. `declare` because these are assignments
   // and nothing else: a plain field declaration would emit a class field per name (es2022 defines them before the
   // constructor body runs), which is a runtime change. Same reasoning, and the same wording, as game/entity.ts.
-  /** The highlighted MENU row. */
+  /** The rows on the plate: MENU, and ARCADE_ROW under it while the arcade frames this page. */
+  declare menu: readonly string[];
+  /** The highlighted `menu` row. */
   declare cursor: number;
   declare joinFlash: JoinFlash | null;
   /** The `joinState()` mask `hint` was built for; -1 until the first build. */
@@ -149,6 +156,7 @@ export class TitleScreen extends Screen {
       this.game.options.difficulty = options.difficulty();
       this.game.input.resetClaims();
     }
+    this.menu = arcade.active ? [...MENU, ARCADE_ROW] : MENU;
     this.cursor = 0; this.joinFlash = null; this.joinKey = -1; this.hint = ''; this.starting = false;
     this.notice = ''; this.noticeTimer = 0;
     // The drawn address is clickable for as long as this screen is on the stack. A mouse click is a real
@@ -210,10 +218,11 @@ export class TitleScreen extends Screen {
     const k = inp.joinState();
     if (k !== this.joinKey) { this.joinKey = k; this.hint = joinHint(inp); }
     if (this.frame < 10 || this.starting) return;
+    const rows = this.menu.length;
     for (let p = 0; p < MAX_PLAYERS; p++) {
       if (!inp.joined(p) || (joinedNow & (1 << p))) continue;
-      if (inp.pressed(p, 'up')) { this.cursor = (this.cursor + MENU.length - 1) % MENU.length; audio.play('menu_move'); }
-      if (inp.pressed(p, 'down')) { this.cursor = (this.cursor + 1) % MENU.length; audio.play('menu_move'); }
+      if (inp.pressed(p, 'up')) { this.cursor = (this.cursor + rows - 1) % rows; audio.play('menu_move'); }
+      if (inp.pressed(p, 'down')) { this.cursor = (this.cursor + 1) % rows; audio.play('menu_move'); }
       if (confirmPressed(inp, p)) { this.activate(this.cursor); return; }
     }
   }
@@ -243,6 +252,8 @@ export class TitleScreen extends Screen {
       // linkNotice() plays the sound, since a refused popup should not sound like a confirmation.
       this.linkNotice(links.open(REPO_URL));
     } else if (i === I_OPTIONS) { audio.play('menu_confirm'); this.game.push('options'); }
+    // No fade and no `starting`: the arcade takes the whole frame away, the title with it.
+    else if (i === I_ARCADE) { audio.play('menu_confirm'); arcade.exit(); }
   }
   override draw(ctx: CanvasRenderingContext2D): void {
     const f = this.frame;
@@ -303,25 +314,26 @@ export class TitleScreen extends Screen {
     pathPoly(ctx, [344, 90 + bob, 444, 90 + bob, 444, 93 + bob, 344, 93 + bob]); paint(ctx, UI.brass, null, 0);
     const open = progress.unlockedCount();
     drawText(ctx, `${open} OF ${STAGES.length} BOARDS OPEN`, 320, 146, { size: 1, color: open < STAGES.length ? '#4DF0E0' : UI.brassLight, align: 'center' });
-    // menu on a translucent plate
-    rrect(ctx, PLATE_X, PLATE_Y, PLATE_W, PLATE_H, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
-    for (let i = 0; i < MENU.length; i++) {
+    // menu on a translucent plate; the arcade's extra row pushes everything under the plate down with it
+    const grow = (this.menu.length - MENU.length) * ROW_H;
+    rrect(ctx, PLATE_X, PLATE_Y, PLATE_W, PLATE_H + grow, 5, 'rgba(10,6,14,0.55)', 'rgba(200,150,74,0.5)', 1);
+    for (let i = 0; i < this.menu.length; i++) {
       const sel = i === this.cursor, y = ROW_Y0 + i * ROW_H;
-      const label = MENU[i];
+      const label = this.menu[i];
       if (sel) { gear(ctx, 320 - drawTextWidth(label) / 2 - 12, y + 4, 5, 6, UI.brass, '#3a2010', 1, f * 0.05, 1.5); }
       drawText(ctx, label, 320, y, { size: 1, color: sel ? UI.white : UI.steel, align: 'center' });
       // How far through the book you are, on the row itself, so it is answerable without opening it.
       if (i === I_BESTIARY) drawText(ctx, this.bookPct, PLATE_X + PLATE_W - 8, y, { size: 1, color: this.bookFull ? UI.teal : UI.brass, align: 'right' });
     }
-    if ((f % 60) < 40) drawTextOutlined(ctx, 'PRESS START', 320, START_Y, { size: 2, color: '#ffffff', outline: '#3a2010', thickness: 1, align: 'center' });
+    if ((f % 60) < 40) drawTextOutlined(ctx, 'PRESS START', 320, START_Y + grow, { size: 2, color: '#ffffff', outline: '#3a2010', thickness: 1, align: 'center' });
     // Join status + compact controls legend on the walkway. A JOINED flash for whichever slot last
     // joined (in that slot's colour) briefly overrides the composite hint for the still-free slots.
     const p2 = this.game.input.joined(1);
     if (this.joinFlash && this.joinFlash.t > 0 && (f % 10) < 6) {
-      drawText(ctx, this.joinFlash.text, 320, HINT_Y, { size: 1, color: PLAYER_COLORS[this.joinFlash.slot], align: 'center' });
-    } else if (this.hint && (f % 90) < 60) drawText(ctx, this.hint, 320, HINT_Y, { size: 1, color: UI.p2, align: 'center' });
+      drawText(ctx, this.joinFlash.text, 320, HINT_Y + grow, { size: 1, color: PLAYER_COLORS[this.joinFlash.slot], align: 'center' });
+    } else if (this.hint && (f % 90) < 60) drawText(ctx, this.hint, 320, HINT_Y + grow, { size: 1, color: UI.p2, align: 'center' });
     // What the SOURCE CODE row (or a click on the address) just did, on the walkway above the address.
-    if (this.noticeTimer > 0) drawText(ctx, this.notice, 320, NOTICE_Y, { size: 1, color: this.notice === LINK_OPENED ? UI.teal : UI.copper, align: 'center' });
+    if (this.noticeTimer > 0) drawText(ctx, this.notice, 320, NOTICE_Y + grow, { size: 1, color: this.notice === LINK_OPENED ? UI.teal : UI.copper, align: 'center' });
     // The lead line is this player's own block, which is the same nine keys either way -- only its
     // label changes from '1P' to 'P1'. The second line is P2's block: a dimmed advertisement of the
     // keys a friend would take while nobody has, and their live legend once somebody has.
@@ -342,7 +354,7 @@ export class TitleScreen extends Screen {
   }
   override summary(): ScreenSummary {
     return {
-      screen: 'title', cursor: this.cursor, rows: MENU.length, row: MENU[this.cursor],
+      screen: 'title', cursor: this.cursor, rows: this.menu.length, row: this.menu[this.cursor], menu: this.menu.slice(),
       link: REPO_URL, linkLabel: REPO_LABEL, linkZone: LINK_ZONE, notice: this.noticeTimer > 0 ? this.notice : '',
     };
   }

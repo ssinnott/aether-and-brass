@@ -34,6 +34,10 @@ However you came by a build, it can point you back here: the title screen's **SO
 this repository in a new tab, and the address is drawn along the bottom of the title screen — click it
 with a mouse, or just read it off the screen if the browser refuses the tab.
 
+**In the arcade:** the game also sits on the shelf of the [arcade](https://github.com/ssinnott/arcade),
+beside the other games. There the title has one more row, **BACK TO ARCADE**, and an invite link opens
+the arcade at this game; on its own site nothing changes (`src/engine/arcade.ts`).
+
 **On a phone:** open the link above and add it to your home screen — Android's *Install app* /
 *Add to Home screen*, or Share → *Add to Home Screen* on iOS. It then launches from its own icon with
 no browser chrome, in landscape, and **works with no network at all**: the whole game is one page, and

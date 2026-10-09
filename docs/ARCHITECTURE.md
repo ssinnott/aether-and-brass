@@ -111,6 +111,7 @@ src/
     particles.js           # pooled particle system (sparks, dust, smoke, steam, debris, floating text)
     audio.js               # WebAudio synth: sfx.play(name, opts), music.play(track), master mute
     links.js               # the one module that navigates: opens the repo in a tab, shares the lobby invite link, owns the canvas's clickable rects
+    arcade.ts              # framed by github.com/ssinnott/arcade: BACK TO ARCADE on the title, invites into the arcade; inert anywhere else
     math.js                # clamp, lerp, approach, sign, rectsOverlap, easing helpers
     timer.js               # simple cooldown/tween helpers (optional)
   art/
@@ -365,6 +366,21 @@ the on-screen touch buttons), which a popup blocker may refuse — hence the boo
 printed on screen either way; a **mouse click** on the drawn address runs inside the click event, which
 is a real user gesture, so it always opens. Mouse only: `engine/touch.js` preventDefaults `touchstart`,
 so a tap never produces a synthetic click here.
+
+### `engine/arcade.ts`
+The [arcade](https://github.com/ssinnott/arcade) frames this page on a shelf beside other games.
+`arcade.init()` (main.js, before the first screen) recognises it by two things only it arranges
+together: a frame named `arcade:<its link to this game, room code left off>` and a parent on this
+page's own origin (reading another origin's location throws, so a page elsewhere that frames the game
+is not the arcade, whatever it names the frame). Found, `arcade.active` is true and three things
+change: the title's menu gains BACK TO ARCADE as a last row, under OPTIONS, and the plate grows a row
+downward to hold it; a hosted room's invite link is `arcade.inviteUrl(room)`, which opens the arcade at
+this game; and the host's code goes up to the arcade (`arcade.showRoom`) so its address bar carries that
+link. Talking back is `postMessage` to the parent on this origin only: `arcade:hello` at boot,
+`arcade:exit` from the row, `arcade:room` with the code. Not found - this game's own site, a file, an
+installed copy, `dist/artifact.html` in its host, a test, any other page that frames it - every member
+is a no-op and the game is exactly the game. `tools/scenarios/arcade.js` covers both halves, with
+`tools/arcade-host.html` standing in for the arcade. Nothing here is simulation.
 
 ### `engine/rng.js`
 ```js
