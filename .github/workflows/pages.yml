@@ -59,8 +59,12 @@ jobs:
 
       # The browser tier is separate because it is the only thing here that needs Chromium, and a
       # ~6-minute playthrough should not be what stands between a docs typo and a deploy.
+      # Through playwright-core, the package the harness actually launches with (package-lock.json pins it), so
+      # the browser build installed is the one it looks for. `npx playwright` fetches whatever the newest
+      # `playwright` release is, and its browser build moves on without the lockfile: "Executable doesn't exist at
+      # .../chromium_headless_shell-1243".
       - name: Install Chromium for the playtest harness
-        run: npx playwright install --with-deps chromium
+        run: npx playwright-core install --with-deps chromium
 
       - name: Headless playthrough
         run: npm run check:browser
