@@ -10,6 +10,7 @@
 // Exit code 1 on any failure.
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { ICONS, MANIFEST_PATH, SW_PATH, PRECACHE } from './pwa.js';
 
 const DIR = path.resolve(process.argv[2] || 'dist');
@@ -92,6 +93,29 @@ else {
     if (!sw.includes(JSON.stringify(rel))) fail(`${SW_PATH} does not precache ${rel}`);
     if (!read(rel.replace(/^\.\//, ''))) fail(`${SW_PATH} precaches ${rel}, which is not in ${path.basename(DIR)}/`);
   }
+  // Cache Storage belongs to the origin, and this origin is shared - the arcade and the other games keep their
+  // caches on it too. Activating must clear this worker's older caches and nothing else: run the worker's own
+  // activate handler against a cache list holding one of each.
+  if (version) {
+    const current = 'aether-brass-' + version;
+    try {
+      const left = await activateAgainst(sw, ['aether-brass-0ld', current, 'arcade-0ld', 'foodie-truck']);
+      if (left.join() !== [current, 'arcade-0ld', 'foodie-truck'].join()) fail(`${SW_PATH} activating left [${left.join()}]: it must delete its own old caches and no one else's`);
+    } catch (e) { fail(`${SW_PATH} activate handler threw: ${e.message}`); }
+  }
+}
+
+/** Run the worker source's 'activate' listener with `names` in Cache Storage; resolve to the names left. */
+async function activateAgainst(source, names) {
+  const kept = new Set(names);
+  const listeners = {};
+  const caches = { keys: async () => [...kept], delete: async (k) => kept.delete(k) };
+  const self = { addEventListener: (type, fn) => { listeners[type] = fn; }, clients: { claim: async () => {} } };
+  vm.runInNewContext(source, { self, caches, URL });
+  let done = null;
+  listeners.activate({ waitUntil: (p) => { done = p; } });
+  await done;
+  return [...kept];
 }
 
 if (problems.length) {

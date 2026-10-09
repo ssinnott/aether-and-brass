@@ -6,6 +6,7 @@ import { rng } from './lib/engine/rng.ts';
 import { createCanvas } from './lib/engine/canvas.ts';
 import { touch } from './engine/touch.ts';
 import { links } from './engine/links.ts';
+import { arcade } from './engine/arcade.ts';
 import { audio } from './engine/audio.ts';
 import { particles } from './engine/particles.ts';
 import { Game } from './game/game.ts';
@@ -131,6 +132,9 @@ function boot() {
   // Mouse clicks on the repository address the title draws (engine/links.js); touch.js already owns
   // every touch pointer on the same canvas.
   links.init(view);
+  // Framed by the arcade, the title gets a way back to its shelf and an invite opens the arcade (engine/arcade.ts).
+  // Anywhere else this finds nothing and changes nothing. Before the first screen, which is the title that asks.
+  arcade.init();
   audio.init();
 
   const game = new Game({ input, audio, rng, options });
@@ -225,7 +229,7 @@ function boot() {
   };
   // NOTE: Object.assign would evaluate getters once; live getters are defined separately below.
   Object.assign(hooks, {
-    game, input, rng, audio, particles, loop, options, progress, userOptions,
+    game, input, rng, audio, particles, loop, options, progress, userOptions, arcade,
     step(n = 1) { loop.step(Math.max(0, n | 0)); },
     screen() { return game.screenId(); },
     summary() {

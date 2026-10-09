@@ -92,7 +92,9 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
-    for (const key of await caches.keys()) if (key !== CACHE) await caches.delete(key);
+    // Ours only. Cache Storage belongs to the origin, and this one is shared: every site under
+    // ssinnott.github.io keeps its caches beside these, the arcade's offline copy among them.
+    for (const key of await caches.keys()) if (key.startsWith('aether-brass-') && key !== CACHE) await caches.delete(key);
     await self.clients.claim();
   })());
 });

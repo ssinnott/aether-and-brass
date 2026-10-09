@@ -25,6 +25,7 @@ import { drawText, drawTextOutlined, measureText } from '../../engine/text.ts';
 import { rrect, rivetLine, gear } from '../../lib/art/shapes.ts';
 import { makeRoomCode, ROOM_ALPHABET } from '../../net/signal.ts';
 import { links } from '../../engine/links.ts';
+import { arcade } from '../../engine/arcade.ts';
 import { progress } from '../progress.ts';
 import { STAGES } from '../../content/stage/index.ts';
 import { buildCharSlots, tickCharSlots, drawCharCard, cardX, CURSOR_COLORS, P1_CURSOR, P2_CURSOR } from './charcards.ts';
@@ -260,8 +261,9 @@ export class LobbyScreen extends Screen {
     this.transport = net.transport || this.transport;
     net.onStateChange((s) => this.onNetState(s));
     this.shownChars = new Array(MAX_PLAYERS).fill(-1);
-    // The URL still holds the guest-facing invite link from when the room was opened.
-    if (this.isHost && typeof window !== 'undefined' && window.location) this.setInvite(window.location.href);
+    // The URL still holds the guest-facing invite link from when the room was opened. In the arcade the link is the
+    // arcade's own, at this game (engine/arcade.ts), and this frame's URL is nobody's address bar.
+    if (this.isHost && typeof window !== 'undefined' && window.location) this.setInvite(arcade.inviteUrl(net.room) || window.location.href);
     if (this.party().length > 1) this.phase = 'lobby';
     else { this.phase = 'connecting'; this.status = 'WAITING FOR PLAYER 2'; }
     // The host's cursor lands on the board this party just opened - which is the whole point of
@@ -392,14 +394,17 @@ export class LobbyScreen extends Screen {
     // two hosts in a room never see each other: signal.js filters by role, so both sit waiting.
     // The address bar gets it too where there is one -- an installed copy on a home screen has
     // none, which is what the tap target over the drawn address is for (syncInviteZone).
+    // In the arcade the link opens the arcade at this game, and the address bar is the arcade's,
+    // which this frame can only ask for (engine/arcade.ts).
     if (this.isHost && typeof history !== 'undefined' && history.replaceState) {
       try {
         const u = new URL(window.location.href);
         u.searchParams.delete('host');
         u.searchParams.set('room', net.room);
         history.replaceState(null, '', u.toString());
-        this.setInvite(u.toString());
+        this.setInvite(arcade.inviteUrl(net.room) || u.toString());
       } catch { /* non-standard URL: fall back to showing the code alone */ }
+      arcade.showRoom(net.room);
     }
     const okStart = await net.connect();
     if (!okStart) { this.phase = 'error'; this.error = net.error || 'could not connect'; }
