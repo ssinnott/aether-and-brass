@@ -44,7 +44,8 @@ no browser chrome, in landscape, and **works with no network at all**: the whole
 an installed copy keeps it. There is no app store and nothing to download; a new version arrives on the
 launch after the one that fetched it. Touch controls appear the first time you tap the screen — a
 floating stick under your left thumb, and the buttons under your right — so no keyboard is needed.
-Turn the phone sideways; upright is too short a window to play in.
+The game is always landscape: held upright, the phone shows it on its side — turn the phone
+anticlockwise (top to the left) to play. That works with the rotation lock on, too.
 
 **Online co-op works from an installed copy, both ways.** Hosting hands you a room code to read out,
 and a tap on the invite link under it opens your phone's share sheet (or copies it, on a desktop) —

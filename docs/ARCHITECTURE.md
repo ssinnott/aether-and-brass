@@ -112,6 +112,7 @@ src/
     audio.js               # WebAudio synth: sfx.play(name, opts), music.play(track), master mute
     links.js               # the one module that navigates: opens the repo in a tab, shares the lobby invite link, owns the canvas's clickable rects
     arcade.ts              # framed by github.com/ssinnott/arcade: BACK TO ARCADE on the title, invites into the arcade; inert anywhere else
+    sideways.ts            # a phone held upright gets the game on its side; a press on it is measured through the turn
     math.js                # clamp, lerp, approach, sign, rectsOverlap, easing helpers
     timer.js               # simple cooldown/tween helpers (optional)
   art/
@@ -340,6 +341,17 @@ the right thumb; the two that are not a fight move, `start` and `taunt`, are the
 right-hand margin, clear of a panicked thumb. A button pressed and released between two steps is
 `latched` so the tap still registers for one step. `touchstart` / `touchmove` are preventDefaulted on the
 canvas, which is why `engine/links.js` is mouse-only.
+
+### `engine/sideways.js`
+A phone is always landscape. Held upright — `(hover: none) and (orientation: portrait)` — `index.html`
+draws the canvas a quarter turn clockwise, as wide as the phone (`!important` over the canvas library's
+inline size, `flex: none` so the body's flex row cannot squeeze it, `dvh` where it is understood), and the
+player turns the phone anticlockwise to play. It replaces a TURN YOUR DEVICE notice that a phone with its
+rotation lock on could never get past. `turnSideways(view)` (main.js, straight after `createCanvas`) is the
+input half: it wraps `view.toInternal` so a press on the turned canvas maps through the turn — x down the
+screen, y right to left — and `engine/touch.js` and `engine/links.js` keep asking the view. Whether the
+canvas is turned is read off its computed transform, cached with its rect until a resize, so the mapping
+follows what the stylesheet actually did. Scenario `upright` plays it.
 
 ### `engine/links.js`
 The only module in the build that leaves the canvas: the title's SOURCE CODE row and the repository
@@ -1288,7 +1300,7 @@ is what keeps them out of the body-only `dist/artifact.html` — a page embedded
 must not claim an app scope; and nothing in that head may spell a style or body tag, even inside a comment,
 because `tools/build.js` finds those by regex. `?autotest=1` skips registration outright, so the playtest
 harness is never racing a worker. `index.html` also asks for a landscape lock when it is running installed;
-where that is refused (iOS has no lock) the portrait notice in its CSS stays the fallback.
+where that is refused (iOS has no lock) the quarter turn in its CSS is the fallback (`engine/sideways.js`).
 
 ## 14. Code conventions
 - ES2022, `const`/`let`, named exports, one class per file where sensible, JSDoc on

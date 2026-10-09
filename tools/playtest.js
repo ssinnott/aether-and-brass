@@ -1,6 +1,6 @@
 // Headless playthrough harness. Usage:
 //   node tools/playtest.js                 # run every scenario
-//   node tools/playtest.js boot combat     # run selected scenarios (boot boards difficulty select combat shields thrown entrances obstacles stall platforms events cargo hazards bestiary playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad netrematch roomcode audio gallery botstyles options sourcelink training weapons arcade)
+//   node tools/playtest.js boot combat     # run selected scenarios (boot boards difficulty select combat shields thrown entrances obstacles stall platforms events cargo hazards bestiary playthrough playthrough2 playthrough3 playthrough4 coop coop4 netquad netrematch roomcode audio gallery botstyles options sourcelink training weapons arcade upright)
 //   KEEP=1 node tools/playtest.js          # keep browser output verbose
 // Requires Playwright: local dependency or the global install (NODE_PATH fallback).
 // This file is already close to its ~700-line budget: further scenarios belong in their own sibling
@@ -30,6 +30,7 @@ import { hazards } from './scenarios/hazards.js';
 import { bestiaryScenarios } from './scenarios/bestiary.js';
 import { roomCodeScenarios } from './scenarios/roomcode.js';
 import { arcadeScenarios } from './scenarios/arcade.js';
+import { uprightScenarios } from './scenarios/upright.js';
 
 const { chromium } = loadPlaywright();
 
@@ -774,6 +775,9 @@ Object.assign(scenarios, netrematchScenarios({ withPair, assert, readyUp }));
 Object.assign(scenarios, roomCodeScenarios({ withPage, assert }));
 // The page framed by the arcade, and by things that are not the arcade (tools/scenarios/arcade.js).
 Object.assign(scenarios, arcadeScenarios({ withPage, assert, makeApi }));
+// A phone held upright, where the game is drawn on its side and a thumb is measured through the turn
+// (tools/scenarios/upright.js).
+Object.assign(scenarios, uprightScenarios({ assert, makeApi }));
 
 async function main() {
   const wanted = process.argv.slice(2).filter((a) => !a.startsWith('-'));

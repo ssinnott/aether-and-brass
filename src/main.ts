@@ -5,6 +5,7 @@ import { input } from './engine/input.ts';
 import { rng } from './lib/engine/rng.ts';
 import { createCanvas } from './lib/engine/canvas.ts';
 import { touch } from './engine/touch.ts';
+import { turnSideways } from './engine/sideways.ts';
 import { links } from './engine/links.ts';
 import { arcade } from './engine/arcade.ts';
 import { audio } from './engine/audio.ts';
@@ -126,6 +127,9 @@ function boot() {
   audio.testMode = options.autotest;
   rng.seed(options.seed);
   const view = createCanvas(document.getElementById('game') || document.body);
+  // A phone held upright gets the game on its side (index.html), so a press on it has to be measured through the
+  // turn; this is the view the touch and link listeners below map their pointers through.
+  turnSideways(view);
   const ctx = view.ctx;
   input.init(view.displayCanvas);
   touch.init(view, options.touch);
