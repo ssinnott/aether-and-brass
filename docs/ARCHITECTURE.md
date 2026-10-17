@@ -979,10 +979,12 @@ Difficulty (`DIFFICULTY_TUNING` in `constants.js`, keyed by `DIFFICULTIES`: `eas
 ways. Per body, at spawn (`applyDifficulty` in `screens/gameplay.js`): max HP × `hpMult` (bosses exempt) and
 `damageMult` × `dmgMult` — the latter also held as `difficultyDamageMult`, which `Fighter.applyDef` folds back in, so
 a boss keeps it through every phase change. Per frame, off the run options `gameplay.enter()` hands the World:
-`options.tellScale` stretches tell frames, and `options.attackSpeed` plays the rest of every enemy attack (active
-and recovery frames, `Enemy.updateTellSpeed`) and runs the `attackCooldown` / `rangedCooldown` clocks at that rate,
-so EASY's 0.75 is a slower swing AND a longer wait before the next one. MEDIUM is 1 across the board and changes
-nothing; the multipliers stay short binary fractions so the fractional clocks add up exactly.
+`options.tellScale` stretches tell frames, and `options.attackDelay` runs the `attackCooldown` / `rangedCooldown`
+clocks at 1 / attackDelay a frame, so EASY's 1.6 is a wait 1.6 times as long before the next attack or shot. No level
+changes the speed of the swing itself: the rest of every enemy attack (active and recovery frames,
+`Enemy.updateTellSpeed`) plays at the unit's own `ai.attackSpeed`, so its animation and frame data are the same on
+every level. MEDIUM is 1 across the board and changes nothing; 1 / attackDelay stays a short binary fraction (0.625)
+so the fractional clock adds up exactly.
 
 ## 9. Screens (`game/screens/`)
 `Game` holds a stack `screens[]`; top screen gets `update()`, all screens draw bottom
@@ -992,7 +994,7 @@ to top if `transparent` (pause overlay). Each screen: `enter(params)`, `exit()`,
 (a clear that opened a board goes `results → boardselect` so the unlock plays out there; an ONLINE run goes
 `results → lobby`, back to the room it was played in — the session is handed back to its lobby rather than ended,
 docs/MULTIPLAYER.md).
-Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `BESTIARY` / `SOURCE CODE` / `OPTIONS`, "PRESS ATTACK", blinking; the BESTIARY row carries the book's completion percentage, read once in `enter()`; `SOURCE CODE` opens the repository in a new tab (`engine/links.js`) without leaving the title and says whether the tab actually opened, and the address itself is drawn along the credit line — lit while the row is highlighted or a mouse is on it, clickable there, and readable (typeable) either way; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Difficulty (`difficulty.js`): one brass plaque per level — EASY / MEDIUM / HARD — each with a pressure gauge (needle in the green, amber or red) and the level's `DIFFICULTY_TUNING` printed as ENEMY DAMAGE / ATTACK SPEED / ENEMY HEALTH / WIND-UP TIME / CONTINUES, a row teal where it is easier than MEDIUM and red where harder; left/right choose (wrapping), CONFIRM goes on to select with `{ back: 'difficulty' }`, BACK returns to boardselect. It is a second door onto the OPTIONS row's setting, not a second setting: it opens on `options.difficulty()` and saves only a CHANGE through `options.set`, so confirming the level a `?difficulty=` link asked for writes nothing back. Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ back: 'difficulty' }` from DIFFICULTY select, `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
+Title: animated backdrop, logo, a single `START` row plus `ONLINE CO-OP` / `TRAINING` / `BESTIARY` / `SOURCE CODE` / `OPTIONS`, "PRESS ATTACK", blinking; the BESTIARY row carries the book's completion percentage, read once in `enter()`; `SOURCE CODE` opens the repository in a new tab (`engine/links.js`) without leaving the title and says whether the tab actually opened, and the address itself is drawn along the credit line — lit while the row is highlighted or a mouse is on it, clickable there, and readable (typeable) either way; any free slot (1-3) joins with its own key/pad and a composite drop-in hint (`party.js joinHint`). Difficulty (`difficulty.js`): one brass plaque per level — EASY / MEDIUM / HARD — each with a pressure gauge (needle in the green, amber or red) and the level's `DIFFICULTY_TUNING` printed as ENEMY DAMAGE / ATTACK DELAY / ENEMY HEALTH / WIND-UP TIME / CONTINUES, a row teal where it is easier than MEDIUM and red where harder; left/right choose (wrapping), CONFIRM goes on to select with `{ back: 'difficulty' }`, BACK returns to boardselect. It is a second door onto the OPTIONS row's setting, not a second setting: it opens on `options.difficulty()` and saves only a CHANGE through `options.set`, so confirming the level a `?difficulty=` link asked for writes nothing back. Select: 4 portraits, up to four cursors (rings in the four card corners), any slot joins by its own key or pad, stats bars, confirm/back; an already-picked hero's later copy wears a tint (`dupTint`); `params.next` / `params.back` (default `intro` / `boardselect`) route confirm/back elsewhere — `{ back: 'difficulty' }` from DIFFICULTY select, `{ next: 'training', back: 'title' }` for the TRAINING row, heading reads TRAINING ROOM. The online co-op lobby
 (`lobby.js`) picks heroes on the same cards (`charcards.js`) and boards on the same plaques
 (`boardcards.js`, compact) on one screen, with the room's other two to three players driving the
 P2-P4 cursors, a status column per seat, and no two players allowed on one hero
@@ -1139,10 +1141,10 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   in every layout, no key under two actions or in two players' hands, no global key bound to a player action, nine
   distinct primary keys per block with taunt and start on the digits above it, the rebind refusals, and that a save
   from an older default table is dropped rather than merged. The `difficulty` suite runs real enemies in a bare
-  World: every level scales enemy damage and EASY also slows attacks; a MEDIUM lunge runs its authored frames at
-  speed 1 and covers its authored reach exactly, while an EASY one plays its swing at 0.75, takes longer by exactly
-  that much and still covers the same ground to within one step; the attack and ranged cooldowns run a third longer
-  on EASY and one a frame otherwise; and `applyDifficulty` scales a wave enemy's health but not a boss's, whose
+  World: every level scales enemy damage and EASY also rests enemies longer between attacks; a MEDIUM lunge runs its
+  authored frames at speed 1 and covers its authored reach exactly, while an EASY one stretches only its wind-up,
+  plays its swing at full speed and covers the same ground to within one step; the attack and ranged cooldowns last
+  1.6 times as long on EASY and run one a frame otherwise; and `applyDifficulty` scales a wave enemy's health but not a boss's, whose
   damage holds through all three phases at every level.
   It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
   after six minutes of playthroughs. `npm run simtest` runs it alone. The second:

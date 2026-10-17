@@ -761,7 +761,7 @@ function suiteBeats() {
 /** A bare world on one difficulty's run options: the two fields screens/gameplay.js enter() hands the AI. */
 function difficultyWorld(id) {
   const d = DIFFICULTY_TUNING[id];
-  return new World({ stageLength: 3000, game: null, backdrop: null, options: { tellScale: d.tellScale, attackSpeed: d.attackSpeed } });
+  return new World({ stageLength: 3000, game: null, backdrop: null, options: { tellScale: d.tellScale, attackDelay: d.attackDelay } });
 }
 
 /**
@@ -797,19 +797,21 @@ function suiteDifficulty() {
   console.log('\n== difficulty ==');
   const EASY = DIFFICULTY_TUNING.easy, MEDIUM = DIFFICULTY_TUNING.medium, HARD = DIFFICULTY_TUNING.hard;
 
-  // (a) the table: every level scales enemy damage, and EASY is the one that also slows the attacks down. MEDIUM is
-  //     the board as authored, so each of its multipliers is exactly 1 and nothing below changes a MEDIUM run.
+  // (a) the table: every level scales enemy damage, and EASY is the one that also rests its enemies longer between
+  //     attacks. MEDIUM is the board as authored, so each of its multipliers is exactly 1 and nothing below changes a
+  //     MEDIUM run.
   {
     ok(DIFFICULTIES.join(',') === 'easy,medium,hard', `the levels are EASY / MEDIUM / HARD, in wire order (${DIFFICULTIES.join(',')})`);
     ok(DIFFICULTIES.every((id) => DIFFICULTY_TUNING[id]), 'every level has a tuning row');
     ok(EASY.dmgMult < MEDIUM.dmgMult && MEDIUM.dmgMult < HARD.dmgMult, `enemy damage scales with the level (${EASY.dmgMult} / ${MEDIUM.dmgMult} / ${HARD.dmgMult})`);
-    ok(EASY.attackSpeed < 1, `EASY slows enemy attacks (attack speed ${EASY.attackSpeed})`);
-    ok(['hpMult', 'dmgMult', 'attackSpeed', 'tellScale'].every((k) => MEDIUM[k] === 1), 'MEDIUM leaves every multiplier at 1');
+    ok(EASY.attackDelay > 1, `EASY rests enemies longer between attacks (attack delay ${EASY.attackDelay})`);
+    ok(['hpMult', 'dmgMult', 'attackDelay', 'tellScale'].every((k) => MEDIUM[k] === 1), 'MEDIUM leaves every multiplier at 1');
   }
 
-  // (b) a whole attack: EASY plays the swing and recovery at its attack speed and the wind-up at 1 / tellScale, so the
-  //     lunge takes longer by exactly that much. MEDIUM plays every frame at 1 and takes the authored length. Either
-  //     way the state hands back one update after the last frame (Fighter.updateState sees the finished animation).
+  // (b) a whole attack: no level changes the speed of a swing. EASY plays the wind-up at 1 / tellScale and the swing
+  //     and recovery at 1, so only the wind-up takes longer. MEDIUM plays every frame at 1 and takes the authored
+  //     length. Either way the state hands back one update after the last frame (Fighter.updateState sees the
+  //     finished animation).
   {
     const frames = getEnemyDef('sootborn', 'cutthroat').anims.lunge.frames;
     const tellLen = frames.filter((f) => f.tell).reduce((n, f) => n + (f.dur || 1), 0);
@@ -818,32 +820,32 @@ function suiteDifficulty() {
     ok(med.frames === tellLen + restLen + 1, `MEDIUM: the lunge runs its authored ${tellLen + restLen} frames (${med.frames - 1})`);
     ok([...med.tell, ...med.rest].every((s) => s === 1), `MEDIUM: every frame of it plays at speed 1 (${med.tell} / ${med.rest})`);
     const easy = swing('easy', 'sootborn', 'cutthroat', 'lunge');
-    ok(easy.rest.length === 1 && easy.rest[0] === EASY.attackSpeed, `EASY: the swing and recovery play at the attack speed (${easy.rest})`);
+    ok(easy.rest.length === 1 && easy.rest[0] === 1, `EASY: the swing and recovery play at full speed, as on every level (${easy.rest})`);
     ok(easy.tell.length === 1 && Math.abs(easy.tell[0] - 1 / EASY.tellScale) < 1e-12, `EASY: the wind-up plays at 1 / tellScale (${easy.tell})`);
-    const ideal = tellLen * EASY.tellScale + restLen / EASY.attackSpeed;
+    const ideal = tellLen * EASY.tellScale + restLen;
     ok(Math.abs(easy.frames - 1 - ideal) <= 1, `EASY: the lunge takes ${easy.frames - 1} frames (${ideal} expected)`);
     const hard = swing('hard', 'sootborn', 'cutthroat', 'lunge');
     ok(hard.rest.every((s) => s === 1), `HARD: the swing itself stays at full speed (${hard.rest})`);
   }
 
-  // (c) root motion follows the animation: a slowed lunge covers the ground it was authored to over more frames,
-  //     rather than reaching a third further. A frame's last tick can straddle its end (a frame of 8 is 10.67 ticks at
-  //     0.75), so it may land one step either side of the authored reach -- never the 1 / attackSpeed overshoot.
+  // (c) root motion follows the animation: EASY's swing plays at full speed, so its lunge covers the same ground as
+  //     MEDIUM's. The slowed wind-up can hand the first swing frame a part-spent tick, so it may land one step either
+  //     side of the authored reach -- never further than that.
   {
     const frames = getEnemyDef('sootborn', 'cutthroat').anims.lunge.frames;
     const reach = frames.reduce((n, f) => n + (f.move && f.move.x ? f.move.x * (f.dur || 1) : 0), 0);
-    const step = Math.max(...frames.map((f) => (f.move && f.move.x) || 0)) * EASY.attackSpeed;
+    const step = Math.max(...frames.map((f) => (f.move && f.move.x) || 0));
     const med = swing('medium', 'sootborn', 'cutthroat', 'lunge'), easy = swing('easy', 'sootborn', 'cutthroat', 'lunge');
     ok(med.dx === -reach, `MEDIUM: the lunge covers its authored ${reach}px (${-med.dx})`);
-    ok(Math.abs(easy.dx - med.dx) <= step + 1e-9, `EASY: the slowed lunge covers the same ground to within one ${step}px step (${-easy.dx}px, authored ${reach}px)`);
+    ok(Math.abs(easy.dx - med.dx) <= step + 1e-9, `EASY: the lunge covers the same ground to within one ${step}px step (${-easy.dx}px, authored ${reach}px)`);
   }
 
-  // (d) the attack clocks: on EASY the wait before the next swing, and before the next shot, runs at the attack speed
-  //     too, so it lasts a third longer. MEDIUM and HARD count down one a frame, as they always have.
+  // (d) the attack clocks: on EASY the wait before the next swing, and before the next shot, ticks 1 / attackDelay a
+  //     frame, so it lasts attackDelay times as long. MEDIUM and HARD count down one a frame, as they always have.
   for (const field of ['attackCooldown', 'rangedCooldown']) {
     const med = cooldownFrames('medium', field, 60), hard = cooldownFrames('hard', field, 60), easy = cooldownFrames('easy', field, 60);
     ok(med === 60 && hard === 60, `${field}: MEDIUM and HARD run 60 down in 60 frames (${med}, ${hard})`);
-    const ideal = 60 / EASY.attackSpeed;
+    const ideal = 60 * EASY.attackDelay;
     ok(Math.abs(easy - ideal) <= 1, `${field}: EASY runs 60 down in ${easy} frames (${ideal} expected)`);
   }
 

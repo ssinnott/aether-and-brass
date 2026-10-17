@@ -35,7 +35,7 @@ const G_A0 = Math.PI * 0.75, G_SWEEP = Math.PI * 1.5;
 /** What each level reads as on its plaque: the name, the needle's place on the gauge (0..1), a tagline for the plate
  *  and a sentence for the footer. The numbers are not here -- they are DIFFICULTY_TUNING's. */
 const LEVELS: Record<string, { label: string; needle: number; tag: string; blurb: string }> = {
-  easy: { label: 'EASY', needle: 0.2, tag: 'ROOM TO LEARN', blurb: 'ENEMIES HIT SOFTER, SWING SLOWER AND FALL SOONER, WITH MORE CONTINUES TO SPARE' },
+  easy: { label: 'EASY', needle: 0.2, tag: 'ROOM TO LEARN', blurb: 'ENEMIES HIT SOFTER, REST LONGER AND FALL SOONER, WITH MORE CONTINUES TO SPARE' },
   medium: { label: 'MEDIUM', needle: 0.56, tag: 'THE FIGHT AS BUILT', blurb: 'EVERY ENEMY FIGHTS THE WAY IT WAS BUILT TO - THE BOARDS AS THEY ARE BALANCED' },
   hard: { label: 'HARD', needle: 0.88, tag: 'NO QUARTER GIVEN', blurb: 'ENEMIES HIT HARDER, TAKE MORE PUNISHMENT AND WIND UP FASTER, WITH FEWER CONTINUES' },
 };
@@ -43,7 +43,7 @@ const LEVELS: Record<string, { label: string; needle: number; tag: string; blurb
 /** The tuning rows a plaque prints, in order. `easierBelow`: a value under MEDIUM's makes the run easier. */
 const STATS: Array<{ label: string; key: keyof DifficultyTuning; pct: boolean; easierBelow: boolean }> = [
   { label: 'ENEMY DAMAGE', key: 'dmgMult', pct: true, easierBelow: true },
-  { label: 'ATTACK SPEED', key: 'attackSpeed', pct: true, easierBelow: true },
+  { label: 'ATTACK DELAY', key: 'attackDelay', pct: true, easierBelow: false },
   { label: 'ENEMY HEALTH', key: 'hpMult', pct: true, easierBelow: true },
   { label: 'WIND-UP TIME', key: 'tellScale', pct: true, easierBelow: false },
   { label: 'CONTINUES', key: 'continues', pct: false, easierBelow: false },
