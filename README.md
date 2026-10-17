@@ -318,9 +318,10 @@ does to the board. Every level scales how hard enemies hit; EASY also gives them
 
 **Attack delay** is the pause before an enemy's next attack or shot: at 160% it rests 1.6 times as long between
 swings. The swing itself — the strike and the recovery — plays at the same speed on every level, so an attack looks
-and times the same wherever you meet it. **Wind-up time**
-is the telegraph before each attack (the red lens, the chirp). Bosses keep their own health on every level but
-take the damage scaling like everything else, through every phase.
+and times the same wherever you meet it. **Wind-up time** is the telegraph before each attack (the red lens, the
+chirp): a longer one holds the enemy in its wind-up pose for the extra frames and a shorter one cuts into it, but the
+motion itself never slows down or speeds up. Bosses keep their own health on every level but take the damage scaling
+like everything else, through every phase.
 
 MEDIUM is the board as it was built and balanced. The plaques read their numbers straight from the tuning table
 (`DIFFICULTY_TUNING` in `src/constants.ts`), so they cannot drift from what the board actually does. The choice is

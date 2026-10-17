@@ -26,7 +26,7 @@
 //  riposteChance + riposteAnim + riposteCooldown   random riposte on a melee hit
 //  stallEvery N + stallFrames 70 + stallDamageMult 3 + stallGrabbable true   every Nth attack ends in a punishable stall (Hoister overheat)
 //  punishDamageMult 1 + punishGrabbable false   applied while the current frame has `punish: true` (recovery frames)
-//  tellScale 1 | attackSpeed 1   speed of tell / active frames (difficulty: world.options.tellScale; its attackDelay stretches the wait between attacks, never the swing) | tellWarnFrames 10 (rig.tellWarn)
+//  tellScale 1 | attackSpeed 1   length of a wind-up (held or skipped through, never slowed) / speed of active frames (difficulty: world.options.tellScale; its attackDelay stretches the wait between attacks, never the swing) | tellWarnFrames 10 (rig.tellWarn)
 //  targetBy 'nearest'|'highestCombo'|'lowestHp' | grabHoldHits 3 + grabHitEvery 18 (frames between hold squeezes: Hook Yank crush 25)
 //  blinkOnDamage N + blinkAnim 'aetherStep' + blinkChain 'caneFlurry' (teleport away after N damage in one combo, bosses)
 //  rig.look = { x, y } (-1..1 toward the target) is refreshed every step for part hooks (Sootborn eyes track the nearest player)
@@ -272,7 +272,8 @@ export interface AiConfig {
   /** Damage multiplier and grabbability while the current frame is `punish: true`. */
   punishDamageMult: number;
   punishGrabbable: boolean;
-  /** Tell frames play at 1 / (tellScale * options.tellScale) speed; active frames at attackSpeed, which no difficulty changes. */
+  /** A wind-up lasts tellScale * options.tellScale times its authored length (held or skipped, never slowed: updateTellSpeed);
+   *  active frames play at attackSpeed, which no difficulty changes. */
   tellScale: number;
   attackSpeed: number;
   /** Frames before the end of a tell at which `rig.tellWarn` lights. */
@@ -452,6 +453,11 @@ export class Enemy extends Fighter {
   declare retargetTimer: number;
   declare attackCooldown: number;
   declare rangedCooldown: number;
+  /** Frames the current run of tell frames still owes (updateTellSpeed): held on its pose (> 0) or skipped (< 0). */
+  declare tellHold: number;
+  /** The tell length multiplier that hold was worked out for (0 outside a tell), and the animation instance it is for. */
+  declare tellPace: number;
+  declare tellRun: number;
 
   // HOVER / flank geometry: which side of the target to circle on, at what distance, and the z offsets.
   declare hoverSide: number;
@@ -565,6 +571,7 @@ export class Enemy extends Fighter {
     this.aiState = entered ? 'APPROACH' : 'ENTER';
     this.aiTimer = 0; this.target = null; this.retargetTimer = 0;
     this.attackCooldown = this.ai.firstAttackDelay; this.rangedCooldown = Math.round(this.ai.firstAttackDelay * 0.8);
+    this.tellHold = 0; this.tellPace = 0; this.tellRun = -1;
     this.hoverSide = rng.sign(); this.hoverDist = 60; this.hoverZ = 0; this.flankZ = this.ai.flank ? rng.range(-40, 40) : 0;
     this.offscreenTimer = 0; this.enterTimer = 0; this.staggerTimer = 0; this.shieldStripped = false;
     this.fled = false; this.fleeTimer = 0; this.fleeing = false; this.fleeOff = false; this.fleeDir = 1; this.fleeChecked = false;
@@ -680,19 +687,33 @@ export class Enemy extends Fighter {
       default: this.thinkApproach(world, t);
     }
   }
-  /** Tell frames play at 1 / (ai.tellScale * options.tellScale) speed (or stretch to attack.tellFrames); the rest of
-   *  an attack (active and recovery frames) at the unit's own ai.attackSpeed. The difficulty never changes that: it
-   *  lengthens the wait between attacks instead (options.attackDelay, in think()). */
+  /**
+   * A wind-up plays its authored tell frames at speed 1, so every pose it shows is one of the animation's own whole
+   * frames. Its LENGTH still follows ai.tellScale * options.tellScale (or attack.tellFrames): the extra frames of a
+   * longer one are a hold on the pose its run of tell frames starts on (speed 0), and a shorter one skips whole frames
+   * on the way in (speed 2 or more, spread so the run ends on time). The rest of an attack (active and recovery
+   * frames) plays at the unit's own ai.attackSpeed. The difficulty never changes that either: it lengthens the wait
+   * between attacks instead (options.attackDelay, in think()).
+   */
   updateTellSpeed(world: EnemyWorld, f: PlayerFrame | null): void {
     const ai = this.ai, a = this.anim;
-    if (f && f.tell && this.state === ST.ATTACK) {
+    if (f && f.tell && this.state === ST.ATTACK && a.def) {
+      const frames = a.def.frames, atk = this.currentAttack;
       let k = ai.tellScale * ((world.options && world.options.tellScale) || 1);
-      const atk = this.currentAttack;
-      if (atk && atk.tellFrames && a.def) { let tot = 0; for (const fr of a.def.frames) if (fr.tell) tot += fr.dur || 1; if (tot > 0) k = atk.tellFrames / tot; }
-      a.speed = 1 / Math.max(0.1, k);
-      const remaining = ((f.dur || 1) - a.frameTime) * k, next = a.def ? a.def.frames[a.frameIndex + 1] : null;
-      this.rig.tellWarn = !(next && next.tell) && remaining <= ai.tellWarnFrames;
-    } else { a.speed = this.state === ST.ATTACK ? ai.attackSpeed : 1; this.rig.tellWarn = false; }
+      if (atk && atk.tellFrames) { let tot = 0; for (const fr of frames) if (fr.tell) tot += fr.dur || 1; if (tot > 0) k = atk.tellFrames / tot; }
+      k = Math.max(0.1, k);
+      // authored frames left in this run of tell frames, from where the animation stands
+      let left = (f.dur || 1) - a.frameTime;
+      for (let i = a.frameIndex + 1; i < frames.length && frames[i].tell; i++) left += frames[i].dur || 1;
+      // A new run is given its length here, and so is one re-paced part way: the Chandlery's LIT! rite cuts an
+      // ally's tellFrames mid-wind-up, and what is left of the run then takes the new pace.
+      if (this.tellRun !== a.instance || this.tellPace !== k) { this.tellRun = a.instance; this.tellPace = k; this.tellHold = Math.round(left * k - left); }
+      const next = frames[a.frameIndex + 1];
+      this.rig.tellWarn = !(next && next.tell) && left + this.tellHold <= ai.tellWarnFrames;
+      if (this.tellHold > 0) { a.speed = 0; this.tellHold--; }
+      else if (this.tellHold < 0) { a.speed = Math.min(left, Math.ceil(left / Math.max(1, left + this.tellHold))); this.tellHold += a.speed - 1; }
+      else a.speed = 1;
+    } else { a.speed = this.state === ST.ATTACK ? ai.attackSpeed : 1; this.rig.tellWarn = false; this.tellPace = 0; }
   }
   recordHistory(t: AiTarget): void { this.histX[this.histI] = t.x; this.histZ[this.histI] = t.z; this.histI = (this.histI + 1) % HIST; if (this.histN < HIST) this.histN++; }
   /** Target position `delay` frames ago (clamped to what has been recorded). */

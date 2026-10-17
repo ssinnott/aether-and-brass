@@ -979,12 +979,15 @@ Difficulty (`DIFFICULTY_TUNING` in `constants.js`, keyed by `DIFFICULTIES`: `eas
 ways. Per body, at spawn (`applyDifficulty` in `screens/gameplay.js`): max HP × `hpMult` (bosses exempt) and
 `damageMult` × `dmgMult` — the latter also held as `difficultyDamageMult`, which `Fighter.applyDef` folds back in, so
 a boss keeps it through every phase change. Per frame, off the run options `gameplay.enter()` hands the World:
-`options.tellScale` stretches tell frames, and `options.attackDelay` runs the `attackCooldown` / `rangedCooldown`
-clocks at 1 / attackDelay a frame, so EASY's 1.6 is a wait 1.6 times as long before the next attack or shot. No level
-changes the speed of the swing itself: the rest of every enemy attack (active and recovery frames,
-`Enemy.updateTellSpeed`) plays at the unit's own `ai.attackSpeed`, so its animation and frame data are the same on
-every level. MEDIUM is 1 across the board and changes nothing; 1 / attackDelay stays a short binary fraction (0.625)
-so the fractional clock adds up exactly.
+`options.tellScale` sets how long a wind-up lasts (as an attack's own `tellFrames` does for it), and
+`options.attackDelay` runs the `attackCooldown` / `rangedCooldown` clocks at 1 / attackDelay a frame, so EASY's 1.6
+is a wait 1.6 times as long before the next attack or shot. Neither changes the speed of an animation
+(`Enemy.updateTellSpeed`): tell frames always play at 1 -- a longer wind-up holds the pose its run of tell frames
+starts on for the extra frames, a shorter one skips whole frames on the way in -- and the rest of every enemy attack
+plays at the unit's own `ai.attackSpeed`. So every enemy pose on every level is one of its animation's own whole
+frames (which is what lets a pose be cached as a sprite), and an attack's frame data is the same everywhere. MEDIUM
+is 1 across the board and changes nothing; 1 / attackDelay stays a short binary fraction (0.625) so the fractional
+clock adds up exactly.
 
 ## 9. Screens (`game/screens/`)
 `Game` holds a stack `screens[]`; top screen gets `update()`, all screens draw bottom
@@ -1142,8 +1145,9 @@ log of player-dealt hits/grabs/throws/parries/dodges read by the training room's
   distinct primary keys per block with taunt and start on the digits above it, the rebind refusals, and that a save
   from an older default table is dropped rather than merged. The `difficulty` suite runs real enemies in a bare
   World: every level scales enemy damage and EASY also rests enemies longer between attacks; a MEDIUM lunge runs its
-  authored frames at speed 1 and covers its authored reach exactly, while an EASY one stretches only its wind-up,
-  plays its swing at full speed and covers the same ground to within one step; the attack and ranged cooldowns last
+  authored frames at speed 1, an EASY one holds its wind-up pose for the extra frames and a HARD one skips whole
+  frames of it, and on every level each frame is one of the animation's own whole frames, the tell warning leads the
+  strike by `tellWarnFrames` and the lunge covers exactly its authored reach; the attack and ranged cooldowns last
   1.6 times as long on EASY and run one a frame otherwise; and `applyDifficulty` scales a wave enemy's health but not a boss's, whose
   damage holds through all three phases at every level.
   It runs in a second and gates the browser harness, so a sequencing mistake fails immediately instead of
