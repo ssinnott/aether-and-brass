@@ -5,8 +5,8 @@
 // Covers: the screen opens on the level in play; its plaques print DIFFICULTY_TUNING; LEFT / RIGHT choose and CONFIRM
 // saves the choice exactly as the OPTIONS row would, and survives a reload; confirming the level a `?difficulty=` link
 // asked for writes nothing back; BACK walks the run's setup back a step at a time; and the level picked is the level
-// the board is played at -- enemy health and damage, a boss's damage through a phase change, the continues, and the
-// attack speed an enemy actually swings at.
+// the board is played at -- enemy health and damage, a boss's damage through a phase change, the continues, the attack
+// delay the AI reads, and the speed an enemy actually swings at (full speed, on every level).
 
 /** Title -> BOARD SELECT -> DIFFICULTY select, on whatever board the save opens on. */
 async function toDifficulty(g) {
@@ -47,8 +47,8 @@ export async function difficulty(server, { withPage, assert }) {
     assert(s.difficulty === 'medium' && s.cursor === 1, `a fresh save opens on MEDIUM (got ${s.difficulty})`);
     assert(s.levels.map((l) => l.label).join(',') === 'EASY,MEDIUM,HARD', `three plaques: EASY, MEDIUM, HARD (${s.levels.map((l) => l.label)})`);
     const [easy, medium, hard] = s.levels.map((l) => l.stats);
-    assert(easy.includes('ENEMY DAMAGE 60%') && easy.includes('ATTACK SPEED 75%'), `EASY prints its damage and attack speed (${easy.join(' | ')})`);
-    assert(medium.includes('ENEMY DAMAGE 100%') && medium.includes('ATTACK SPEED 100%'), `MEDIUM prints the board as authored (${medium.join(' | ')})`);
+    assert(easy.includes('ENEMY DAMAGE 60%') && easy.includes('ATTACK DELAY 160%'), `EASY prints its damage and attack delay (${easy.join(' | ')})`);
+    assert(medium.includes('ENEMY DAMAGE 100%') && medium.includes('ATTACK DELAY 100%'), `MEDIUM prints the board as authored (${medium.join(' | ')})`);
     assert(hard.includes('ENEMY DAMAGE 140%'), `HARD prints its damage (${hard.join(' | ')})`);
     await g.shot('difficulty-01-medium');
     await g.press(0, { left: true }, 2, 6);
@@ -93,7 +93,8 @@ export async function difficulty(server, { withPage, assert }) {
   });
 
   // 5. The board is played at the level picked. EASY: enemy health and damage scaled at spawn, a boss's damage kept
-  //    through a phase change (Fighter.applyDef used to drop it), five continues, and the attack speed the AI reads.
+  //    through a phase change (Fighter.applyDef used to drop it), five continues, and the attack delay the AI reads --
+  //    while the swing itself still plays at full speed.
   await withPage(server, 'seed=1&skipTo=gameplay&chars=0&nowaves=1&godmode=1&difficulty=easy', async (g) => {
     await g.step(30);
     const r = await g.eval(() => {
@@ -102,16 +103,16 @@ export async function difficulty(server, { withPage, assert }) {
       const b = gp.spawnEnemy('boss', 'vane', 300, 0);
       const phase1 = b.damageMult;
       b.applyPhase(1);
-      const out = { attackSpeed: w.options.attackSpeed, hp: e.maxHp, dmg: e.damageMult, phase1, phase2: b.damageMult, continues: gp.continues };
+      const out = { attackDelay: w.options.attackDelay, hp: e.maxHp, dmg: e.damageMult, phase1, phase2: b.damageMult, continues: gp.continues };
       window.__game.killAllEnemies();
       return out;
     });
-    assert(r.attackSpeed === 0.75, `EASY hands the AI attack speed 0.75 (got ${r.attackSpeed})`);
+    assert(r.attackDelay === 1.6, `EASY hands the AI attack delay 1.6 (got ${r.attackDelay})`);
     assert(r.hp === 23 && r.dmg === 0.6, `EASY: a Cutthroat spawns with 75% health and 60% damage (${r.hp} hp, x${r.dmg})`);
     assert(r.phase1 === 0.6 && r.phase2 === 0.6, `EASY: a boss hits at x0.6 before and after a phase change (${r.phase1} -> ${r.phase2})`);
     assert(r.continues === 5, `EASY starts the run with five continues (${r.continues})`);
     const sw = await swingSpeeds(g);
-    assert(sw.frames > 0 && sw.speeds.length === 1 && sw.speeds[0] === 0.75, `EASY: an enemy's swing plays at 0.75 (${JSON.stringify(sw)})`);
+    assert(sw.frames > 0 && sw.speeds.length === 1 && sw.speeds[0] === 1, `EASY: an enemy's swing still plays at full speed (${JSON.stringify(sw)})`);
   });
   await withPage(server, 'seed=1&skipTo=gameplay&chars=0&nowaves=1&godmode=1&difficulty=medium', async (g) => {
     await g.step(30);

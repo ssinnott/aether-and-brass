@@ -761,12 +761,15 @@ function suiteBeats() {
 /** A bare world on one difficulty's run options: the two fields screens/gameplay.js enter() hands the AI. */
 function difficultyWorld(id) {
   const d = DIFFICULTY_TUNING[id];
-  return new World({ stageLength: 3000, game: null, backdrop: null, options: { tellScale: d.tellScale, attackSpeed: d.attackSpeed } });
+  return new World({ stageLength: 3000, game: null, backdrop: null, options: { tellScale: d.tellScale, attackDelay: d.attackDelay } });
 }
 
 /**
  * Start one of a unit's own attacks by hand and run the world until it is over. Nobody else is in the room, so nothing
- * interrupts it. Returns the frames it took, the ground it covered, and the speeds its tell and the rest of it played at.
+ * interrupts it. Returns the frames it took, the ground it covered, the speeds its tell and the rest of it played at,
+ * how long the tell lasted and how many of those frames held its pose, how many frames before the strike rig.tellWarn
+ * lit (and the unit's tellWarnFrames to hold that to), and how many frames left the animation between two of its own
+ * whole frames -- which none may now: a pose has to be one the animation actually has for a sprite to be kept of it.
  */
 function swing(id, type, variant, anim) {
   rng.seed(11);
@@ -774,13 +777,16 @@ function swing(id, type, variant, anim) {
   const e = w.add(new Enemy(getEnemyDef(type, variant), { x: 320, z: 70, facing: -1 }));
   e.startAttack(e.ai.attacks.find((a) => a.anim === anim), null);
   const x0 = e.x, tell = new Set(), rest = new Set();
-  let frames = 0;
+  let frames = 0, tellLen = 0, held = 0, warnAt = -1, fractional = 0;
   while (e.state === ST.ATTACK && frames < 600) {
     const wasTell = !!e.anim.frame.tell;
     w.update(); frames++;
-    if (e.state === ST.ATTACK) (wasTell ? tell : rest).add(e.anim.speed);
+    if (e.state !== ST.ATTACK) break;
+    (wasTell ? tell : rest).add(e.anim.speed);
+    if (wasTell) { tellLen++; if (e.anim.speed === 0) held++; if (e.rig.tellWarn && warnAt < 0) warnAt = tellLen; }
+    if (!e.anim.done && !Number.isInteger(e.anim.frameTime)) fractional++;
   }
-  return { frames, dx: e.x - x0, tell: [...tell], rest: [...rest] };
+  return { frames, dx: e.x - x0, tell: [...tell], rest: [...rest], tellLen, held, warnLead: warnAt < 0 ? 0 : tellLen - warnAt + 1, warnFrames: e.ai.tellWarnFrames, fractional };
 }
 
 /** Frames a unit standing in an empty room takes to run one of its cooldowns down from `n`. */
@@ -797,19 +803,22 @@ function suiteDifficulty() {
   console.log('\n== difficulty ==');
   const EASY = DIFFICULTY_TUNING.easy, MEDIUM = DIFFICULTY_TUNING.medium, HARD = DIFFICULTY_TUNING.hard;
 
-  // (a) the table: every level scales enemy damage, and EASY is the one that also slows the attacks down. MEDIUM is
-  //     the board as authored, so each of its multipliers is exactly 1 and nothing below changes a MEDIUM run.
+  // (a) the table: every level scales enemy damage, and EASY is the one that also rests its enemies longer between
+  //     attacks. MEDIUM is the board as authored, so each of its multipliers is exactly 1 and nothing below changes a
+  //     MEDIUM run.
   {
     ok(DIFFICULTIES.join(',') === 'easy,medium,hard', `the levels are EASY / MEDIUM / HARD, in wire order (${DIFFICULTIES.join(',')})`);
     ok(DIFFICULTIES.every((id) => DIFFICULTY_TUNING[id]), 'every level has a tuning row');
     ok(EASY.dmgMult < MEDIUM.dmgMult && MEDIUM.dmgMult < HARD.dmgMult, `enemy damage scales with the level (${EASY.dmgMult} / ${MEDIUM.dmgMult} / ${HARD.dmgMult})`);
-    ok(EASY.attackSpeed < 1, `EASY slows enemy attacks (attack speed ${EASY.attackSpeed})`);
-    ok(['hpMult', 'dmgMult', 'attackSpeed', 'tellScale'].every((k) => MEDIUM[k] === 1), 'MEDIUM leaves every multiplier at 1');
+    ok(EASY.attackDelay > 1, `EASY rests enemies longer between attacks (attack delay ${EASY.attackDelay})`);
+    ok(['hpMult', 'dmgMult', 'attackDelay', 'tellScale'].every((k) => MEDIUM[k] === 1), 'MEDIUM leaves every multiplier at 1');
   }
 
-  // (b) a whole attack: EASY plays the swing and recovery at its attack speed and the wind-up at 1 / tellScale, so the
-  //     lunge takes longer by exactly that much. MEDIUM plays every frame at 1 and takes the authored length. Either
-  //     way the state hands back one update after the last frame (Fighter.updateState sees the finished animation).
+  // (b) a whole attack: no level changes the speed of an animation. A wind-up lasts round(authored * tellScale) frames
+  //     -- EASY holds its pose for the extra ones, HARD skips whole frames of it -- and every swing and recovery frame
+  //     plays at 1, so every pose shown is one of the animation's own whole frames and rig.tellWarn still lights
+  //     tellWarnFrames before the strike. MEDIUM plays every frame at 1 and takes the authored length. Either way the
+  //     state hands back one update after the last frame (Fighter.updateState sees the finished animation).
   {
     const frames = getEnemyDef('sootborn', 'cutthroat').anims.lunge.frames;
     const tellLen = frames.filter((f) => f.tell).reduce((n, f) => n + (f.dur || 1), 0);
@@ -817,33 +826,35 @@ function suiteDifficulty() {
     const med = swing('medium', 'sootborn', 'cutthroat', 'lunge');
     ok(med.frames === tellLen + restLen + 1, `MEDIUM: the lunge runs its authored ${tellLen + restLen} frames (${med.frames - 1})`);
     ok([...med.tell, ...med.rest].every((s) => s === 1), `MEDIUM: every frame of it plays at speed 1 (${med.tell} / ${med.rest})`);
-    const easy = swing('easy', 'sootborn', 'cutthroat', 'lunge');
-    ok(easy.rest.length === 1 && easy.rest[0] === EASY.attackSpeed, `EASY: the swing and recovery play at the attack speed (${easy.rest})`);
-    ok(easy.tell.length === 1 && Math.abs(easy.tell[0] - 1 / EASY.tellScale) < 1e-12, `EASY: the wind-up plays at 1 / tellScale (${easy.tell})`);
-    const ideal = tellLen * EASY.tellScale + restLen / EASY.attackSpeed;
-    ok(Math.abs(easy.frames - 1 - ideal) <= 1, `EASY: the lunge takes ${easy.frames - 1} frames (${ideal} expected)`);
-    const hard = swing('hard', 'sootborn', 'cutthroat', 'lunge');
+    const easy = swing('easy', 'sootborn', 'cutthroat', 'lunge'), longTell = Math.round(tellLen * EASY.tellScale);
+    ok(easy.rest.length === 1 && easy.rest[0] === 1, `EASY: the swing and recovery play at full speed, as on every level (${easy.rest})`);
+    ok(easy.tell.every((s) => s === 0 || s === 1) && easy.held === longTell - tellLen, `EASY: the wind-up holds its pose ${longTell - tellLen} frames and plays the rest at 1 (held ${easy.held}, speeds ${easy.tell})`);
+    ok(easy.frames - 1 === longTell + restLen, `EASY: the lunge takes ${easy.frames - 1} frames (${longTell + restLen} expected)`);
+    const hard = swing('hard', 'sootborn', 'cutthroat', 'lunge'), shortTell = Math.round(tellLen * HARD.tellScale);
     ok(hard.rest.every((s) => s === 1), `HARD: the swing itself stays at full speed (${hard.rest})`);
+    ok(hard.held === 0 && hard.tell.every((s) => Number.isInteger(s) && s >= 1) && hard.tellLen === shortTell, `HARD: the wind-up skips whole frames to last ${shortTell} (${hard.tellLen}, speeds ${hard.tell})`);
+    for (const [name, r] of [['MEDIUM', med], ['EASY', easy], ['HARD', hard]]) {
+      ok(r.fractional === 0, `${name}: every frame of the lunge is one of the animation's own whole frames (${r.fractional} between)`);
+      ok(r.warnLead === Math.min(r.warnFrames, r.tellLen), `${name}: the tell warning lights ${r.warnLead} frames before the strike (${Math.min(r.warnFrames, r.tellLen)} expected)`);
+    }
   }
 
-  // (c) root motion follows the animation: a slowed lunge covers the ground it was authored to over more frames,
-  //     rather than reaching a third further. A frame's last tick can straddle its end (a frame of 8 is 10.67 ticks at
-  //     0.75), so it may land one step either side of the authored reach -- never the 1 / attackSpeed overshoot.
+  // (c) root motion follows the animation: no level changes a swing's speed and every frame lands whole, so the lunge
+  //     covers exactly its authored reach on EASY and HARD as on MEDIUM.
   {
     const frames = getEnemyDef('sootborn', 'cutthroat').anims.lunge.frames;
     const reach = frames.reduce((n, f) => n + (f.move && f.move.x ? f.move.x * (f.dur || 1) : 0), 0);
-    const step = Math.max(...frames.map((f) => (f.move && f.move.x) || 0)) * EASY.attackSpeed;
-    const med = swing('medium', 'sootborn', 'cutthroat', 'lunge'), easy = swing('easy', 'sootborn', 'cutthroat', 'lunge');
+    const med = swing('medium', 'sootborn', 'cutthroat', 'lunge'), easy = swing('easy', 'sootborn', 'cutthroat', 'lunge'), hard = swing('hard', 'sootborn', 'cutthroat', 'lunge');
     ok(med.dx === -reach, `MEDIUM: the lunge covers its authored ${reach}px (${-med.dx})`);
-    ok(Math.abs(easy.dx - med.dx) <= step + 1e-9, `EASY: the slowed lunge covers the same ground to within one ${step}px step (${-easy.dx}px, authored ${reach}px)`);
+    ok(easy.dx === med.dx && hard.dx === med.dx, `EASY and HARD: the lunge covers the same ${reach}px (${-easy.dx}px, ${-hard.dx}px)`);
   }
 
-  // (d) the attack clocks: on EASY the wait before the next swing, and before the next shot, runs at the attack speed
-  //     too, so it lasts a third longer. MEDIUM and HARD count down one a frame, as they always have.
+  // (d) the attack clocks: on EASY the wait before the next swing, and before the next shot, ticks 1 / attackDelay a
+  //     frame, so it lasts attackDelay times as long. MEDIUM and HARD count down one a frame, as they always have.
   for (const field of ['attackCooldown', 'rangedCooldown']) {
     const med = cooldownFrames('medium', field, 60), hard = cooldownFrames('hard', field, 60), easy = cooldownFrames('easy', field, 60);
     ok(med === 60 && hard === 60, `${field}: MEDIUM and HARD run 60 down in 60 frames (${med}, ${hard})`);
-    const ideal = 60 / EASY.attackSpeed;
+    const ideal = 60 * EASY.attackDelay;
     ok(Math.abs(easy - ideal) <= 1, `${field}: EASY runs 60 down in ${easy} frames (${ideal} expected)`);
   }
 

@@ -98,8 +98,8 @@ Section 2 conveyor + molten channel in the mid-boss cargo bay; Time Stop dodge-c
 the chandelier (`game/items.js` + the section 4 props); tech roll (`player.js`); difficulty select
 (Easy/Medium/Hard — GDD 7's *Normal* is named *Medium* — on its own DIFFICULTY screen between BOARD SELECT and
 character select (`screens/difficulty.js`) and as an OPTIONS row, both writing the one setting persisted by
-`game/options.js` — see below — whose numbers are `DIFFICULTY_TUNING` in `constants.js`; Easy adds an enemy
-attack speed of 0.75 the GDD row does not list); crowd-clear bonus;
+`game/options.js` — see below — whose numbers are `DIFFICULTY_TUNING` in `constants.js`; Easy also stretches the
+wait between enemy attacks, an attack delay of 1.6 that GDD 7's row now lists); crowd-clear bonus;
 **no-damage wave bonus (+1000, `game/stage.js`)**.
 
 **SHOULD — not built (the one gap):** *co-op revive* in the GDD 7 sense — a partner at 0 lives

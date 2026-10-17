@@ -60,10 +60,12 @@ export interface DifficultyTuning {
   hpMult: number;
   /** Enemy damage multiplier, folded into the spawned body's own `damageMult` and kept across a boss's phases. */
   dmgMult: number;
-  /** Enemy attack speed, handed to the AI through `options.attackSpeed` (game/enemy.js): the swing and recovery of
-   *  every enemy attack play at this rate, and the wait before its next attack or shot runs on the same clock.
-   *  Keep it a short binary fraction (0.75, not 0.8): the frame and cooldown clocks then add up exactly. */
-  attackSpeed: number;
+  /** Enemy attack delay, handed to the AI through `options.attackDelay` (game/enemy.js): the wait before an enemy's
+   *  next attack or shot lasts this many times as long. The swing itself plays at the same speed on every level, so
+   *  an attack's animation and frame data never change with the difficulty. The cooldown clocks tick 1 / attackDelay
+   *  a frame, so keep that a short binary fraction (1.6 ticks 0.625, where 1.5 would tick 0.666...): it then adds up
+   *  exactly. */
+  attackDelay: number;
   /** Wind-up length multiplier, handed to the content layer through `options.tellScale`. */
   tellScale: number;
   /** Continues a run starts with. */
@@ -72,9 +74,9 @@ export interface DifficultyTuning {
 /** Difficulty tuning (GDD 7), keyed by DIFFICULTIES. The gameplay screen caches its row at enter(); the
  *  DIFFICULTY select screen prints it, so the plaques always read the numbers the board will use. */
 export const DIFFICULTY_TUNING: Readonly<Record<string, DifficultyTuning>> = Object.freeze({
-  easy: { hpMult: 0.75, dmgMult: 0.6, attackSpeed: 0.75, tellScale: 1.3, continues: 5 },
-  medium: { hpMult: 1, dmgMult: 1, attackSpeed: 1, tellScale: 1, continues: 3 },
-  hard: { hpMult: 1.25, dmgMult: 1.4, attackSpeed: 1, tellScale: 0.85, continues: 2 },
+  easy: { hpMult: 0.75, dmgMult: 0.6, attackDelay: 1.6, tellScale: 1.3, continues: 5 },
+  medium: { hpMult: 1, dmgMult: 1, attackDelay: 1, tellScale: 1, continues: 3 },
+  hard: { hpMult: 1.25, dmgMult: 1.4, attackDelay: 1, tellScale: 0.85, continues: 2 },
 });
 
 /** Teams. Players never hurt players; enemies never hurt enemies unless hit.friendly. */

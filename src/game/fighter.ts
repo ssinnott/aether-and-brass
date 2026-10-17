@@ -798,10 +798,10 @@ export class Fighter extends Entity {
     const f = this.anim.frame;
     // `move` is declared `FrameMove | number` (lib/art/animation.ts and types/content.d.ts both), but only the
     // object form carries root motion and only the object form is honoured here; no content authors a bare number.
-    // Root motion is authored per frame of the animation, so it follows the animation's playback speed: an enemy
-    // swing slowed by the difficulty's attack speed (game/enemy.js updateTellSpeed) covers the ground it was
-    // authored to over more frames, rather than lunging further. `speed` is 1 for every player and every swing at
-    // full attack speed, and no tell frame carries root motion, so nothing else moves differently for it.
+    // Root motion is authored per frame of the animation, so it follows the animation's playback speed. `speed` is 1
+    // for every player and every enemy swing; only a wind-up runs at anything else (0 while it holds its pose, 2 or
+    // more while it skips frames: game/enemy.js updateTellSpeed), and no tell frame carries root motion, so nothing
+    // moves differently for it.
     if (f && f.move && !this.grabbedBy) {
       const k = this.anim.speed;
       this.x += ((f.move as FrameMove).x || 0) * this.facing * k;

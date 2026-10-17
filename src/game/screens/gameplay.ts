@@ -67,7 +67,7 @@ declare module '../player.ts' {
  * Apply a difficulty row to a body as it spawns (spawnEnemyAt): max HP, which bosses are exempt from, and the enemy
  * damage factor. The factor is kept on the body as well as folded in, because a boss re-applies its def on every
  * phase change (Fighter.applyDef) and that is where it is multiplied back in rather than dropped with the old phase.
- * Attack speed and tell length are not per body: the AI reads them off the run options every frame.
+ * Attack delay and tell length are not per body: the AI reads them off the run options every frame.
  */
 export function applyDifficulty(e: Fighter, d: DifficultyTuning): void {
   if (e.kind !== 'boss' && d.hpMult !== 1) { e.maxHp = Math.round(e.maxHp * d.hpMult); e.hp = e.maxHp; }
@@ -169,7 +169,7 @@ export class GameplayScreen extends Screen {
     this.backdrop = null;
     this.difficulty = DIFFICULTY_TUNING[opt.difficulty] || DIFFICULTY_TUNING.medium;
     opt.tellScale = this.difficulty.tellScale;
-    opt.attackSpeed = this.difficulty.attackSpeed;
+    opt.attackDelay = this.difficulty.attackDelay;
     this.world = new World({ stageLength: this.stage.length, game, backdrop: null, options: opt });
     // Bestiary (issue #26). Three hooks, because a defeat reaches this screen by three different routes: the normal
     // death path, a ring-out (game/items.js sets `dead` without calling die(), so onDeath never fires for it), and a

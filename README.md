@@ -306,21 +306,22 @@ save. `?unlockall=1` opens every board for one page load without touching the sa
 
 Between BOARD SELECT and character select, **DIFFICULTY** puts three brass plaques side by side — **EASY**,
 **MEDIUM** and **HARD** — each with a pressure gauge reading green, amber or red and exactly what that level
-does to the board. Every level scales how hard enemies hit; EASY also slows their attacks down:
+does to the board. Every level scales how hard enemies hit; EASY also gives them a longer breather between attacks:
 
 |                 | EASY | MEDIUM | HARD |
 |-----------------|------|--------|------|
 | Enemy damage    | 60%  | 100%   | 140% |
-| Attack speed    | 75%  | 100%   | 100% |
+| Attack delay    | 160% | 100%   | 100% |
 | Enemy health    | 75%  | 100%   | 125% |
 | Wind-up time    | 130% | 100%   | 85%  |
 | Continues       | 5    | 3      | 2    |
 
-**Attack speed** is the whole of an enemy's swing after its wind-up — the strike and the recovery — *and* the
-wait before its next attack or shot, so at 75% a swing takes a third longer and so does the pause before the next
-one. A lunge still covers the same ground; it just takes longer to get there. **Wind-up time**
-is the telegraph before each attack (the red lens, the chirp). Bosses keep their own health on every level but
-take the damage scaling like everything else, through every phase.
+**Attack delay** is the pause before an enemy's next attack or shot: at 160% it rests 1.6 times as long between
+swings. The swing itself — the strike and the recovery — plays at the same speed on every level, so an attack looks
+and times the same wherever you meet it. **Wind-up time** is the telegraph before each attack (the red lens, the
+chirp): a longer one holds the enemy in its wind-up pose for the extra frames and a shorter one cuts into it, but the
+motion itself never slows down or speeds up. Bosses keep their own health on every level but take the damage scaling
+like everything else, through every phase.
 
 MEDIUM is the board as it was built and balanced. The plaques read their numbers straight from the tuning table
 (`DIFFICULTY_TUNING` in `src/constants.ts`), so they cannot drift from what the board actually does. The choice is

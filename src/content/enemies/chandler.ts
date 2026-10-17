@@ -669,7 +669,8 @@ function sprintStep(f, world) {
 }
 /**
  * THE LIGHT. The ally's remaining tell is cut to LIT_CUT of itself through the engine's own tellFrames plumbing
- * (enemy.js updateTellSpeed stretches or squeezes the tell keys to currentAttack.tellFrames): a FRESH currentAttack
+ * (enemy.js updateTellSpeed holds or skips the tell to currentAttack.tellFrames, and re-paces what is left of it the
+ * moment the number changes): a FRESH currentAttack
  * object, never a write into the shared ai.attacks entry, so the Limeburner's slake is still 30f next time. Going
  * through the speed rather than jumping the frame index keeps the active key's event firing the normal way.
  */

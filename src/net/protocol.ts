@@ -29,8 +29,12 @@ export type { Decoded } from '../lib/net/protocol.ts';
  * 4 — the checksum kernel moved to the library and took its type tags with it (a string, a boolean and null hash
  *     under distinct tags now). Two builds hashing the same simulation differently would report a desync that is
  *     not one, so they must never be allowed to start a match together.
+ * 5 — enemy animations stopped changing speed. EASY's attack speed became an attack delay (the wait between attacks
+ *     stretches, the swing does not slow), and a wind-up longer or shorter than authored holds its pose or skips
+ *     whole frames instead of playing slower or faster. Wire format untouched; two builds would diverge on the first
+ *     such wind-up.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /** Bit index of `run`, after the 11 actions. Frozen: changing it is a wire break, so bump the version. */
 export const RUN_BIT = 11;
